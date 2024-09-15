@@ -1,11 +1,20 @@
 name: UPM
 
 on:
+  workflow_dispatch:
+    inputs:
+      tag_name:
+        description: "Tag to merge"
+        required: true
+        type: string
   push:
     branches:
       - 'main'
     tags:
       - '*'
+
+env:
+  TAG_NAME: inputs.tag_name || $GITHUB_REF_NAME
 
 jobs:
   sync-to-upm:
@@ -17,8 +26,8 @@ jobs:
         fetch-depth: 0
         path: upm
     - name: Merge
-      run: git merge $GITHUB_REF
+      run: git merge $TAG_NAME
     - name: Create tag
       uses: rickstaa/action-create-tag@v1.7.2
       with:
-        tag: upm-$GITHUB_REF
+        tag: upm-$TAG_NAME
