@@ -1,5 +1,5 @@
 {
-  "name": "org.mujoco",
+  "name": "org.mujoco.mujoco",
   "displayName": "MuJoCo",
   "version": "2.1.1",
   "description": "MuJoCo importer and runtime plug-in",
