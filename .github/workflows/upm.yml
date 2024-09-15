@@ -8,10 +8,9 @@ on:
         required: true
         type: string
   push:
-    branches:
-      - 'main'
     tags:
       - '*'
+      - '!upm-*'
 
 env:
   TAG_NAME: inputs.tag_name || $GITHUB_REF_NAME
