@@ -17,7 +17,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
     - name: Set environment variables
-      run: echo "TAG_NAME=${{ inputs.tag_name || $GITHUB_REF_NAME }}" >> $GITHUB_ENV
+      run: echo "TAG_NAME=${{ inputs.tag_name || env.GITHUB_REF_NAME }}" >> $GITHUB_ENV
     - name: Checkout
       uses: actions/checkout@v4
       with:
