@@ -24,7 +24,12 @@ jobs:
         fetch-depth: 0
         ref: upm
     - name: Merge
-      run: git merge $TAG_NAME
+      uses: devmasx/merge-branch@master
+      with:
+        type: now
+        from_branch: $TAG_NAME
+        target_branch: upm
+        github_token: ${{ secrets.GITHUB_TOKEN }}
     - name: Create tag
       uses: rickstaa/action-create-tag@v1.7.2
       with:
