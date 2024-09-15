@@ -27,10 +27,10 @@ jobs:
       uses: devmasx/merge-branch@master
       with:
         type: now
-        from_branch: $TAG_NAME
+        from_branch: ${{ env.TAG_NAME }}
         target_branch: upm
         github_token: ${{ secrets.GITHUB_TOKEN }}
     - name: Create tag
       uses: rickstaa/action-create-tag@v1.7.2
       with:
-        tag: upm-$TAG_NAME
+        tag: upm-${{ env.TAG_NAME }}
