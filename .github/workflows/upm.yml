@@ -1,0 +1,20 @@
+name: UPM
+
+on:
+  push:
+    branches:
+      - 'main'
+    tags:
+      - '*'
+
+jobs:
+  sync-to-upm:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v3
+      with:
+        fetch-depth: 0
+      run: git merge $GITHUB_REF
+    - uses: rickstaa/action-create-tag@v1.7.2
+      with:
+        tag: upm-$GITHUB_REF
