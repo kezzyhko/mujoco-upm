@@ -13,7 +13,7 @@ on:
       - '!upm-*'
 
 env:
-  TAG_NAME: inputs.tag_name || $GITHUB_REF_NAME
+  TAG_NAME: ${{ inputs.tag_name }} || $GITHUB_REF_NAME
 
 jobs:
   sync-to-upm:
