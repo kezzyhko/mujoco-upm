@@ -12,13 +12,12 @@ on:
       - '*'
       - '!upm-*'
 
-env:
-  TAG_NAME: ${{ inputs.tag_name || $GITHUB_REF_NAME }}
-
 jobs:
   sync-to-upm:
     runs-on: ubuntu-latest
     steps:
+    - name: Set environment variables
+      run: echo "TAG_NAME=${{ inputs.tag_name || $GITHUB_REF_NAME }}" >> $GITHUB_ENV
     - name: Checkout
       uses: actions/checkout@v4
       with:
