@@ -11,10 +11,14 @@ jobs:
   sync-to-upm:
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v3
+    - name: Checkout
+      uses: actions/checkout@v3
       with:
         fetch-depth: 0
+        path: upm
+    - name: Merge
       run: git merge $GITHUB_REF
-    - uses: rickstaa/action-create-tag@v1.7.2
+    - name: Create tag
+      uses: rickstaa/action-create-tag@v1.7.2
       with:
         tag: upm-$GITHUB_REF
