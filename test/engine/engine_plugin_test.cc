@@ -206,7 +206,7 @@ int RegisterSensorPlugin() {
   plugin.nattribute = sizeof(attributes) / sizeof(*attributes);
   plugin.attributes = attributes;
 
-  plugin.type |= mjPLUGIN_SENSOR;
+  plugin.capabilityflags |= mjPLUGIN_SENSOR;
 
   plugin.nstate = +[](const mjModel* m, int instance) { return 3; };
   plugin.nsensordata =
@@ -224,8 +224,9 @@ int RegisterSensorPlugin() {
     TestSensor::DestroyCount()++;
   };
 
-  plugin.reset = +[](const mjModel* m, mjData* d, int instance) {
-    auto sensor = reinterpret_cast<TestSensor*>(d->plugin_data[instance]);
+  plugin.reset = +[](const mjModel* m, double* plugin_state, void* plugin_data,
+                     int instance) {
+    auto sensor = reinterpret_cast<TestSensor*>(plugin_data);
     sensor->Reset();
   };
   plugin.compute = +[](const mjModel* m, mjData* d, int instance, int type) {
@@ -250,7 +251,7 @@ int RegisterActuatorPlugin() {
   plugin.nattribute = sizeof(attributes) / sizeof(*attributes);
   plugin.attributes = attributes;
 
-  plugin.type |= mjPLUGIN_ACTUATOR;
+  plugin.capabilityflags |= mjPLUGIN_ACTUATOR;
 
   plugin.nstate = +[](const mjModel* m, int instance) { return 3; };
 
@@ -266,8 +267,9 @@ int RegisterActuatorPlugin() {
     TestActuator::DestroyCount()++;
   };
 
-  plugin.reset = +[](const mjModel* m, mjData* d, int instance) {
-    auto actuator = reinterpret_cast<TestActuator*>(d->plugin_data[instance]);
+  plugin.reset = +[](const mjModel* m, double* plugin_state, void* plugin_data,
+                     int instance) {
+    auto actuator = reinterpret_cast<TestActuator*>(plugin_data);
     actuator->Reset();
   };
   plugin.compute = +[](const mjModel* m, mjData* d, int instance, int type) {
@@ -292,7 +294,7 @@ int RegisterPassivePlugin() {
   plugin.nattribute = sizeof(attributes) / sizeof(*attributes);
   plugin.attributes = attributes;
 
-  plugin.type |= mjPLUGIN_PASSIVE;
+  plugin.capabilityflags |= mjPLUGIN_PASSIVE;
 
   plugin.nstate = +[](const mjModel* m, int instance) { return 0; };
 
@@ -306,8 +308,9 @@ int RegisterPassivePlugin() {
     d->plugin_data[instance] = 0;
   };
 
-  plugin.reset = +[](const mjModel* m, mjData* d, int instance) {
-    auto passive = reinterpret_cast<TestPassive*>(d->plugin_data[instance]);
+  plugin.reset = +[](const mjModel* m, double* plugin_state, void* plugin_data,
+                     int instance) {
+    auto passive = reinterpret_cast<TestPassive*>(plugin_data);
     passive->Reset();
   };
   plugin.compute = +[](const mjModel* m, mjData* d, int instance, int type) {

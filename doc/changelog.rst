@@ -2,6 +2,56 @@
 Changelog
 =========
 
+Version 2.3.2 (February 7, 2023)
+-----------------------------------
+
+General
+^^^^^^^
+
+1. A more performant mju_transposeSparse has been implemented that doesn't require dense memory allocation.
+   For a constraint Jacobian matrix from the
+   `humanoid100.xml <https://github.com/deepmind/mujoco/blob/main/model/humanoid100/humanoid100.xml>`_ model,
+   this function is 35% faster.
+#. The function :ref:`mj_name2id` is now implemented using a hash function instead of a linear search for better
+   performance.
+#. Geom names are now parsed from URDF. Any duplicate names are ignored.
+   ``mj_printData`` output now contains contacting geom names.
+
+Bug fixes
+^^^^^^^^^
+
+4. Fixed a bug that for :at:`shellinertia` equal to ``true`` caused the mesh orientation to be overwritten by the
+   principal components of the shell inertia, while the vertex coordinates are rotated using the volumetric inertia.
+   Now the volumetric inertia orientation is used also in the shell case.
+#. Fixed misalignment bug in mesh-to-primitive fitting when using the bounding box fitting option :at:`fitaabb`.
+
+.. image:: images/changelog/meshfit.png
+   :align: right
+   :width: 300px
+
+#. The ``launch_repl`` functionality in the Python viewer has been fixed.
+#. Set ``time`` correctly in ``mjd_transitionFD``, to support time-dependent user code.
+#. Fixed sensor data dimension validation when ``user`` type sensors are present.
+#. Fixed incorrect plugin error message when a null ``nsensordata`` callback is encountered during model compilation.
+#. Correctly end the timer (``TM_END``) ``mj_fwdConstraint`` returns early.
+#. Fixed an infinite loop in ``mj_deleteFileVFS``.
+
+Simulate
+^^^^^^^^
+
+12. Increased precision of simulate sensor plot y-axis by 1 digit
+    (`#719 <https://github.com/deepmind/mujoco/issues/719>`_).
+#.  Body labels are now drawn at the body frame rather than inertial frame, unless inertia is being visualised.
+
+Plugins
+^^^^^^^
+
+14. The ``reset`` callback now receives instance-specific ``plugin_state`` and ``plugin_data`` as arguments, rather than
+    the entire ``mjData``. Since ``reset`` is called inside ``mj_resetData`` before any physics forwarding call has been
+    made, it is an error to read anything from ``mjData`` at this stage.
+#.  The ``capabilities`` field in ``mjpPlugin`` is renamed ``capabilityflags`` to more clearly indicate that this is a
+    bit field.
+
 
 Version 2.3.1 (December 6, 2022)
 -----------------------------------
@@ -34,7 +84,7 @@ General
 
 #. Removed the requirement that stateless actuators come before stateful actuators.
 #. Added :ref:`mju_fill`, :ref:`mju_symmetrize` and :ref:`mju_eye` utility functions.
-#. Added :at:`gravcomp` attribute to :ref:`body<body>`, implementing gravity compensation and bouyancy.
+#. Added :at:`gravcomp` attribute to :ref:`body<body>`, implementing gravity compensation and buoyancy.
    See `balloons.xml <https://github.com/deepmind/mujoco/tree/main/model/balloons/balloons.xml>`_ example model.
 #. Renamed the ``cable`` plugin library to ``elasticity``.
 #. Added :at:`actdim` attribute to :ref:`general actuators<actuator-general>`. Values greater than 1 are only allowed
@@ -64,16 +114,16 @@ General
    - Only suitable for small strains (large displacements but small deformations). Tetrahedra may invert if subject to
      large loads.
 
-#. Add API functions ``mj_loadPluginLibrary`` and  ``mj_loadAllPluginLibraries``. The first function is identical to
+#. Added API functions ``mj_loadPluginLibrary`` and  ``mj_loadAllPluginLibraries``. The first function is identical to
    ``dlopen`` on a POSIX system, and to ``LoadLibraryA`` on Windows. The second function scans a specified directory for
    all dynamic libraries file and loads each library found. Dynamic libraries opened by these functions are assumed to
    register one or more MuJoCo plugins on load.
-#. Add an optional ``visualize`` callback to plugins, which is called during ``mjv_updateScene``. This callback allows
+#. Added an optional ``visualize`` callback to plugins, which is called during ``mjv_updateScene``. This callback allows
    custom plugin visualizations. Enable stress visualization for the Cable plugin as an example.
 #. Sensors of type :ref:`user<sensor-user>` no longer require :at:`objtype`, :at:`objname` and :at:`needstage`. If
    unspecified, the objtype is now :ref:`mjOBJ_UNKNOWN<mjtObj>`. ``user`` sensors :at:`datatype` default is now
    :at-val:`"real"`, :at:`needstage` default is now :at-val:`"acc"`.
-#. Add support for capsules in URDF import.
+#. Added support for capsules in URDF import.
 #. On macOS, issue an informative error message when run under `Rosetta 2 <https://support.apple.com/en-gb/HT211861>`_
    translation on an Apple Silicon machine. Pre-built MuJoCo binaries make use of
    `AVX <https://en.wikipedia.org/wiki/Advanced_Vector_Extensions>`_ instructions on x86-64 machines, which is not

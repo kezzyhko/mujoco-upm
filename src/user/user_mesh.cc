@@ -114,7 +114,8 @@ mjCMesh::mjCMesh(mjCModel* _model, mjCDef* _def) {
   face = NULL;
   graph = NULL;
   needhull = false;
-  validorientation = true;
+  invalidorientation.first = -1;
+  invalidorientation.second = -1;
   validarea = true;
   validvolume = true;
   valideigenvalue = true;
@@ -275,7 +276,8 @@ void mjCMesh::Compile(const mjVFS* vfs) {
     std::sort(useredge.begin(), useredge.end());
     auto iterator = std::adjacent_find(useredge.begin(), useredge.end());
     if (iterator != useredge.end()) {
-      validorientation = false;
+      invalidorientation.first = iterator->first+1;
+      invalidorientation.second = iterator->second+1;
     }
   }
 
@@ -332,6 +334,9 @@ double* mjCMesh::GetQuatPtr(mjtMeshType type) {
 void mjCMesh::FitGeom(mjCGeom* geom, double* meshpos) {
   int i;
 
+  // copy mesh pos into meshpos
+  mjuu_copyvec(meshpos, GetPosPtr(geom->typeinertia), 3);
+
   // use inertial box
   if (!model->fitaabb) {
     // get inertia box type (shell or volume)
@@ -361,9 +366,6 @@ void mjCMesh::FitGeom(mjCGeom* geom, double* meshpos) {
     default:
       throw mjCError(this, "invalid geom type in fitting mesh %s", name.c_str());
     }
-
-    // copy mesh pos into meshpos
-    mjuu_copyvec(meshpos, GetPosPtr(geom->typeinertia), 3);
   }
 
   // use AABB
@@ -383,13 +385,10 @@ void mjCMesh::FitGeom(mjCGeom* geom, double* meshpos) {
     // find AABB box center
     double cen[3] = {(AABB[0]+AABB[3])/2, (AABB[1]+AABB[4])/2, (AABB[2]+AABB[5])/2};
 
-    // copy box center into meshpos
-    mjuu_copyvec(meshpos, cen, 3);
-
-    // get AABB box half-sizes
-    double sz0 = AABB[3] - cen[0];
-    double sz1 = AABB[4] - cen[1];
-    double sz2 = AABB[5] - cen[2];
+    // add box center into meshpos
+    meshpos[0] += cen[0];
+    meshpos[1] += cen[1];
+    meshpos[2] += cen[2];
 
     // compute depending on type
     switch (geom->type) {
@@ -438,9 +437,9 @@ void mjCMesh::FitGeom(mjCGeom* geom, double* meshpos) {
 
     case mjGEOM_ELLIPSOID:
     case mjGEOM_BOX:
-      geom->size[0] = sz0;
-      geom->size[1] = sz1;
-      geom->size[2] = sz2;
+      geom->size[0] = AABB[3] - cen[0];
+      geom->size[1] = AABB[4] - cen[1];
+      geom->size[2] = AABB[5] - cen[2];
       break;
 
     default:
@@ -1153,7 +1152,7 @@ void mjCMesh::Process() {
 
     // copy quat
     for (j=0; j<4; j++) {
-      GetQuatPtr(type)[j] = quattmp[j];
+      GetQuatPtr(type)[j] = type == mjVOLUME_MESH ? quattmp[j] : GetQuatPtr(mjVOLUME_MESH)[j];
     }
 
     // rotate vertices and normals into axis-aligned frame
@@ -1195,8 +1194,11 @@ void mjCMesh::CheckMesh() {
   if (!processed) {
     return;
   }
-  if (!validorientation)
-    throw mjCError(this, "faces have inconsistent orientation: %s", name.c_str());
+  if (invalidorientation.first>=0 || invalidorientation.second>=0)
+    throw mjCError(this,
+                   "faces of mesh '%s' have inconsistent orientation. Please check the "
+                   "faces containing the vertices %d and %d.",
+                   name.c_str(), invalidorientation.first, invalidorientation.second);
   if (!validarea)
     throw mjCError(this, "mesh surface area is too small: %s", name.c_str());
   if (!validvolume)

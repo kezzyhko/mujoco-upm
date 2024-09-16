@@ -73,7 +73,7 @@ void QuatDiff(mjtNum* quat, const mjtNum body_quat[4],
 //     stiffness   - material parameters
 //     quat        - orientation of the body in local coordinates
 //     omega0      - initial curvature
-//     xquat       - cartesian orientation of the body (optional)
+//     xquat       - Cartesian orientation of the body (optional)
 //     scl         - scaling of the force
 //   outputs:
 //     stress      - local stress contribution
@@ -277,7 +277,7 @@ void Cable::RegisterPlugin() {
   mjp_defaultPlugin(&plugin);
 
   plugin.name = "mujoco.elasticity.cable";
-  plugin.type |= mjPLUGIN_PASSIVE;
+  plugin.capabilityflags |= mjPLUGIN_PASSIVE;
 
   const char* attributes[] = {"twist", "bend", "flat", "vmax"};
   plugin.nattribute = sizeof(attributes) / sizeof(attributes[0]);
@@ -297,10 +297,11 @@ return 0;
     delete reinterpret_cast<Cable*>(d->plugin_data[instance]);
     d->plugin_data[instance] = 0;
   };
-  plugin.compute = +[](const mjModel* m, mjData* d, int instance, int type) {
-    auto* elasticity = reinterpret_cast<Cable*>(d->plugin_data[instance]);
-    elasticity->Compute(m, d, instance);
-  };
+  plugin.compute =
+      +[](const mjModel* m, mjData* d, int instance, int capability_bit) {
+        auto* elasticity = reinterpret_cast<Cable*>(d->plugin_data[instance]);
+        elasticity->Compute(m, d, instance);
+      };
   plugin.visualize =
       +[](const mjModel* m, mjData* d, mjvScene* scn, int instance) {
         auto* elasticity = reinterpret_cast<Cable*>(d->plugin_data[instance]);

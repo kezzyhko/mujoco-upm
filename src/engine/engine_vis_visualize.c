@@ -575,7 +575,7 @@ void mjv_addGeoms(const mjModel* m, mjData* d, const mjvOption* vopt,
       sz[0] = scl * m->vis.scale.constraint;
       mjv_makeConnector(thisgeom, mjGEOM_CAPSULE, sz[0],
                         selpos[0], selpos[1], selpos[2],
-                        pert->refpos[0], pert->refpos[1], pert->refpos[2]);
+                        pert->reflocalpos[0], pert->reflocalpos[1], pert->reflocalpos[2]);
 
       // prepare color
       mixcolor(rgba, m->vis.rgba.constraint,
@@ -593,7 +593,7 @@ void mjv_addGeoms(const mjModel* m, mjData* d, const mjvOption* vopt,
       sz[0] = 2*sz[0];
       sz[1] = sz[2] = sz[0];
       mju_quat2Mat(mat, pert->refquat);
-      mjv_initGeom(thisgeom, mjGEOM_SPHERE, sz, pert->refpos, mat, rgba);
+      mjv_initGeom(thisgeom, mjGEOM_SPHERE, sz, pert->reflocalpos, mat, rgba);
 
       FINISH
     }
@@ -706,8 +706,8 @@ void mjv_addGeoms(const mjModel* m, mjData* d, const mjvOption* vopt,
 
         // construct geom
         thisgeom->type = mjGEOM_LABEL;
-        mju_n2f(thisgeom->pos, d->xipos+3*i, 3);
-        mju_n2f(thisgeom->mat, d->ximat+9*i, 9);
+        mju_n2f(thisgeom->pos, d->xpos+3*i, 3);
+        mju_n2f(thisgeom->mat, d->xmat+9*i, 9);
 
         // vopt->label
         makeLabel(m, mjOBJ_BODY, i, thisgeom->label);

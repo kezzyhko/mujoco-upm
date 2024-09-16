@@ -78,6 +78,9 @@ MJAPI int mj_jacDifPair(const mjModel* m, const mjData* d, int* chain,
 
 //-------------------------- name functions --------------------------------------------------------
 
+// get string hash, see http://www.cse.yorku.ca/~oz/hash.html
+uint64_t mj_hashdjb2(const char* s, uint64_t n);
+
 // get id of object with specified name; -1: not found; type is mjtObj
 MJAPI int mj_name2id(const mjModel* m, int type, const char* name);
 
@@ -111,7 +114,7 @@ MJAPI void mj_setMSparse(const mjModel* m, mjData* d, mjtNum* dst,
 
 //-------------------------- perturbations ---------------------------------------------------------
 
-// apply cartesian force and torque
+// apply Cartesian force and torque
 MJAPI void mj_applyFT(const mjModel* m, mjData* d,
                       const mjtNum force[3], const mjtNum torque[3],
                       const mjtNum point[3], int body, mjtNum* qfrc_target);

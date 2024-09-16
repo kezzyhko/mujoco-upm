@@ -314,7 +314,7 @@ static void mj_setPtrModel(mjModel* m) {
   char* ptr = (char*)m->buffer;
   int sz;
 
-  // prepare sybmols needed by xmacro
+  // prepare symbols needed by xmacro
   MJMODEL_POINTERS_PREAMBLE(m);
 
   // assign pointers with padding
@@ -438,6 +438,11 @@ mjModel* mj_makeModel(int nq, int nv, int nu, int na, int nbody, int njnt,
   m->nuser_actuator = nuser_actuator;
   m->nuser_sensor = nuser_sensor;
   m->nnames = nnames;
+  m->nnames_map = mjLOAD_MULTIPLE
+                  * (nbody + njnt + ngeom + nsite + ncam + nlight + nmesh
+                     + nskin + nhfield + ntex + nmat + npair + nexclude + neq
+                     + ntendon  + nu + nsensor + nnumeric + ntext + ntuple
+                     + nkey + nplugin);
 
 #define X(name)                                    \
   if ((m->name) < 0) {                             \
@@ -1149,7 +1154,8 @@ static void _resetData(const mjModel* m, mjData* d, unsigned char debug_value) {
     d->plugin[i] = m->plugin[i];
     const mjpPlugin* plugin = mjp_getPluginAtSlot(m->plugin[i]);
     if (plugin->reset) {
-      plugin->reset(m, d, i);
+      plugin->reset(m, &d->plugin_state[m->plugin_stateadr[i]],
+                    (void*)(d->plugin_data[i]), i);
     }
   }
 }
@@ -1209,7 +1215,7 @@ void mj_deleteData(mjData* d) {
 const int nPOS[4] = {7, 4, 1, 1};
 const int nVEL[4] = {6, 3, 1, 1};
 
-static int sensorSize(mjtSensor sensor_type, int nuser_sensor) {
+static int sensorSize(mjtSensor sensor_type, int sensor_dim) {
   switch (sensor_type) {
   case mjSENS_TOUCH:
   case mjSENS_RANGEFINDER:
@@ -1254,7 +1260,7 @@ static int sensorSize(mjtSensor sensor_type, int nuser_sensor) {
     return 4;
 
   case mjSENS_USER:
-    return nuser_sensor;
+    return sensor_dim;
 
   case mjSENS_PLUGIN:
     return -1;
@@ -1593,7 +1599,7 @@ const char* mj_validateReferences(const mjModel* m) {
       }
       sensor_size = plugin->nsensordata(m, m->sensor_plugin[i], i);
     } else {
-      sensor_size = sensorSize(sensor_type, m->nuser_sensor);
+      sensor_size = sensorSize(sensor_type, m->sensor_dim[i]);
     }
     if (sensor_size < 0) {
         return "Invalid model: Bad sensor_type.";

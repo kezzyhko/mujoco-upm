@@ -230,7 +230,7 @@ static const char* MJCF[nMJCF][mjXATTRNUM] = {
     {"body", "R", "11", "name", "childclass", "pos", "quat", "mocap",
         "axisangle", "xyaxes", "zaxis", "euler", "gravcomp", "user"},
     {"<"},
-        {"plugin", "*", "3", "name", "plugin", "instance"},
+        {"plugin", "*", "2", "plugin", "instance"},
         {"<"},
           {"config", "*", "2", "key", "value"},
         {">"},
@@ -259,7 +259,7 @@ static const char* MJCF[nMJCF][mjXATTRNUM] = {
             "flatinertia", "solrefsmooth", "solimpsmooth", "vertex",
             "initial", "curve", "size"},
         {"<"},
-            {"plugin", "*", "3", "name", "plugin", "instance"},
+            {"plugin", "*", "2", "plugin", "instance"},
             {"<"},
               {"config", "*", "2", "key", "value"},
             {">"},
@@ -3186,8 +3186,9 @@ void mjXReader::Sensor(XMLElement* section) {
       if (psen->objtype == mjOBJ_UNKNOWN && !psen->objname.empty()) {
         throw mjXError(elem, "objname is specified but objtype is not");
       }
-      ReadAttrTxt(elem, "reftype", text);
-      psen->reftype = (mjtObj)mju_str2Type(text.c_str());
+      if (ReadAttrTxt(elem, "reftype", text)) {
+        psen->reftype = (mjtObj)mju_str2Type(text.c_str());
+      }
       ReadAttrTxt(elem, "refname", psen->refname);
       if (psen->reftype != mjOBJ_UNKNOWN && psen->refname.empty()) {
         throw mjXError(elem, "reftype is specified but refname is not");

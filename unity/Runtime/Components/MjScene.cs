@@ -78,11 +78,14 @@ public class MjScene : MonoBehaviour {
 
   private List<MjComponent> _orderedComponents;
 
+  public EventHandler<MjStepArgs> postInitEvent;
   public EventHandler preUpdateEvent;
   public EventHandler<MjStepArgs> ctrlCallback;
   public EventHandler postUpdateEvent;
+  public EventHandler<MjStepArgs> preDestroyEvent;
 
   protected unsafe void Start() {
+    SceneRecreationAtLateUpdateRequested = false;
     CreateScene();
   }
 
@@ -167,6 +170,7 @@ public class MjScene : MonoBehaviour {
       // Compile the scene from the Mjcf.
       CompileScene(sceneMjcf, _orderedComponents);
     }
+    postInitEvent?.Invoke(this, new MjStepArgs(Model, Data));
     return sceneMjcf;
   }
 
@@ -305,6 +309,7 @@ public class MjScene : MonoBehaviour {
 
   // Destroys the Mujoco scene.
   public unsafe void DestroyScene() {
+    preDestroyEvent?.Invoke(this, new MjStepArgs(Model, Data));
     if (Model != null) {
       MujocoLib.mj_deleteModel(Model);
       Model = null;
@@ -401,12 +406,17 @@ public class MjScene : MonoBehaviour {
     MjRoot.AppendChild(GenerateMjcfSection(
         doc, components.Where(component => component is MjBaseConstraint), "equality"));
 
-    MjRoot.AppendChild(GenerateMjcfSection(
-        doc, components.Where(component => component is MjActuator), "actuator"));
+    MjRoot.AppendChild(
+        GenerateMjcfSection(doc,
+                            components.Where(component => component is MjActuator)
+                                .OrderBy(component => component.transform.GetSiblingIndex()),
+                            "actuator"));
 
-    MjRoot.AppendChild(GenerateMjcfSection(
-        doc, components.Where(component => component is MjBaseSensor), "sensor"));
-
+    MjRoot.AppendChild(
+        GenerateMjcfSection(doc,
+                            components.Where(component => component is MjBaseSensor)
+                                .OrderBy(component => component.transform.GetSiblingIndex()),
+                            "sensor"));
     // Generate the Mjcf of the runtime dependencies added to the context.
     _generationContext.GenerateMjcf(MjRoot);
     return doc;

@@ -550,10 +550,10 @@ ENUMS: Mapping[str, EnumDecl] = dict([
              ('mjSTEREO_SIDEBYSIDE', 2),
          ]),
      )),
-    ('mjtPluginTypeBit',
+    ('mjtPluginCapabilityBit',
      EnumDecl(
-         name='mjtPluginTypeBit',
-         declname='enum mjtPluginTypeBit_',
+         name='mjtPluginCapabilityBit',
+         declname='enum mjtPluginCapabilityBit_',
          values=dict([
              ('mjPLUGIN_ACTUATOR', 1),
              ('mjPLUGIN_SENSOR', 2),
@@ -626,6 +626,8 @@ ENUMS: Mapping[str, EnumDecl] = dict([
              ('mjEVENT_SCROLL', 4),
              ('mjEVENT_KEY', 5),
              ('mjEVENT_RESIZE', 6),
+             ('mjEVENT_REDRAW', 7),
+             ('mjEVENT_FILESDROP', 8),
          ]),
      )),
     ('mjtItem',

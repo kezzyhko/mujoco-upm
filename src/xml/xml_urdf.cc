@@ -13,6 +13,7 @@
 // limitations under the License.
 
 #include <cstring>
+#include <iostream>
 #include <string>
 #include <vector>
 
@@ -64,6 +65,7 @@ void mjXURDF::Clear(void) {
   urChildren.clear();
   urMat.clear();
   urRGBA.clear();
+  urGeomNames.clear();
 }
 
 
@@ -245,6 +247,8 @@ void mjXURDF::Body(XMLElement* body_elem) {
 
   // process all visual and geometry elements in order
   float rgba[4] = {-1, 0, 0, 0};
+  std::string geom_name;
+
   elem = body_elem->FirstChildElement();
   while (elem) {
     name = elem->Value();
@@ -276,6 +280,17 @@ void mjXURDF::Body(XMLElement* body_elem) {
         if (rgba[0]>=0) {
           std::memcpy(pgeom->rgba, rgba, 4*sizeof(float));
         }
+
+        // save name if it doesn't already exist.
+        mjXUtil::ReadAttrTxt(elem, "name", geom_name);
+        if (urGeomNames.find(geom_name) == urGeomNames.end()) {
+          pgeom->name = geom_name;
+          urGeomNames.insert(geom_name);
+        } else {
+          std::cerr << "WARNING: Geom with duplicate name '" << geom_name
+                    << "' encountered in URDF, creating an unnamed geom."
+                    << std::endl;
+        }
       }
     }
 
@@ -286,6 +301,17 @@ void mjXURDF::Body(XMLElement* body_elem) {
       // use color from last visual
       if (rgba[0]>=0) {
         std::memcpy(pgeom->rgba, rgba, 4*sizeof(float));
+      }
+
+      // save name if it doesn't already exist.
+      mjXUtil::ReadAttrTxt(elem, "name", geom_name);
+      if (urGeomNames.find(geom_name) == urGeomNames.end()) {
+        pgeom->name = geom_name;
+        urGeomNames.insert(geom_name);
+      } else {
+        std::cerr << "WARNING: Geom with duplicate name '" << geom_name
+                  << "' encountered in URDF, creating an unnamed geom."
+                  << std::endl;
       }
     }
 

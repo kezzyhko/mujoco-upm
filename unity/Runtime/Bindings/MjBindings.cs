@@ -101,7 +101,7 @@ public const int mjMAXLINEPNT = 1000;
 public const int mjMAXPLANEGRID = 200;
 public const bool THIRD_PARTY_MUJOCO_MJXMACRO_H_ = true;
 public const bool THIRD_PARTY_MUJOCO_MUJOCO_H_ = true;
-public const int mjVERSION_HEADER = 231;
+public const int mjVERSION_HEADER = 232;
 
 
 // ------------------------------------Enums------------------------------------
@@ -361,7 +361,7 @@ public enum mjtLRMode : int{
   mjLRMODE_MUSCLEUSER = 2,
   mjLRMODE_ALL = 3,
 }
-public enum mjtPluginTypeBit : int{
+public enum mjtPluginCapabilityBit : int{
   mjPLUGIN_ACTUATOR = 1,
   mjPLUGIN_SENSOR = 2,
   mjPLUGIN_PASSIVE = 4,
@@ -403,6 +403,8 @@ public enum mjtEvent : int{
   mjEVENT_SCROLL = 4,
   mjEVENT_KEY = 5,
   mjEVENT_RESIZE = 6,
+  mjEVENT_REDRAW = 7,
+  mjEVENT_FILESDROP = 8,
 }
 public enum mjtCatBit : int{
   mjCAT_STATIC = 1,
@@ -1910,6 +1912,7 @@ public unsafe struct mjModel_ {
   public int nuser_actuator;
   public int nuser_sensor;
   public int nnames;
+  public int nnames_map;
   public int nM;
   public int nD;
   public int nemax;
@@ -2209,6 +2212,7 @@ public unsafe struct mjModel_ {
   public int* name_keyadr;
   public int* name_pluginadr;
   public char* names;
+  public int* names_map;
 }
 
 [StructLayout(LayoutKind.Sequential)]
@@ -2277,6 +2281,7 @@ public unsafe struct mjrContext_ {
   public int windowStereo;
   public int windowDoublebuffer;
   public int currentBuffer;
+  public int readPixelFormat;
 }
 
 [StructLayout(LayoutKind.Sequential)]
@@ -2329,6 +2334,8 @@ public unsafe struct mjuiState_ {
   public int mouserect;
   public int dragrect;
   public int dragbutton;
+  public int dropcount;
+  public char** droppaths;
 }
 
 [StructLayout(LayoutKind.Sequential)]
@@ -2458,6 +2465,7 @@ public unsafe struct mjvPerturb_ {
   public int active2;
   public fixed double refpos[3];
   public fixed double refquat[4];
+  public fixed double reflocalpos[3];
   public fixed double localpos[3];
   public double scale;
 }
@@ -3478,6 +3486,9 @@ public static unsafe extern int mju_eig3(double* eigval, double* eigvec, double*
 
 [DllImport("mujoco", CallingConvention = CallingConvention.Cdecl)]
 public static unsafe extern int mju_boxQP(double* res, double* R, int* index, double* H, double* g, int n, double* lower, double* upper);
+
+[DllImport("mujoco", CallingConvention = CallingConvention.Cdecl)]
+public static unsafe extern void mju_boxQPmalloc(double** res, double** R, int** index, double** H, double** g, int n, double** lower, double** upper);
 
 [DllImport("mujoco", CallingConvention = CallingConvention.Cdecl)]
 public static unsafe extern double mju_muscleGain(double len, double vel, double* lengthrange, double acc0, double* prm);

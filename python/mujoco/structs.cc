@@ -39,6 +39,7 @@
 #include "errors.h"
 #include "function_traits.h"
 #include "indexers.h"
+#include "mjdata_meta.h"
 #include "raw.h"
 #include "serialization.h"
 #include <pybind11/numpy.h>
@@ -1550,7 +1551,7 @@ This is useful for example when the MJB is not available as a file on disk.)"));
     using GroupedViews = MjModelGroupedViews;                                  \
     py::class_<MjModelGroupedViews> groupedViews(m, "_" #MjModelGroupedViews); \
     FIELD_XMACROS                                                              \
-    groupedViews.def("__repr__", StructRepr<GroupedViews>);                    \
+    groupedViews.def("__repr__", MjModelStructRepr<GroupedViews>);             \
     groupedViews.def_property_readonly("id", [](GroupedViews& views) {         \
       return views.index();                                                    \
     });                                                                        \
@@ -1867,7 +1868,7 @@ This is useful for example when the MJB is not available as a file on disk.)"));
     using GroupedViews = MjDataGroupedViews;                                 \
     py::class_<MjDataGroupedViews> groupedViews(m, "_" #MjDataGroupedViews); \
     FIELD_XMACROS                                                            \
-    groupedViews.def("__repr__", StructRepr<GroupedViews>);                  \
+    groupedViews.def("__repr__", MjDataStructRepr<GroupedViews>);            \
     groupedViews.def_property_readonly("id", [](GroupedViews& views) {       \
       return views.index();                                                  \
     });                                                                      \

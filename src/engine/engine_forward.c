@@ -279,7 +279,7 @@ void mj_fwdActuation(const mjModel* m, mjData* d) {
       if (!plugin) {
         mju_error_i("invalid plugin slot: %d", slot);
       }
-      if (plugin->type & mjPLUGIN_ACTUATOR) {
+      if (plugin->capabilityflags & mjPLUGIN_ACTUATOR) {
         if (!plugin->compute) {
           mju_error_i("`compute` is a null function pointer for plugin at slot %d", slot);
         }
@@ -452,6 +452,7 @@ void mj_fwdConstraint(const mjModel* m, mjData* d) {
     mju_copy(d->qacc_warmstart, d->qacc_smooth, nv);
     mju_zero(d->qfrc_constraint, nv);
     d->solver_iter = 0;
+    TM_END(mjTIMER_CONSTRAINT);
     return;
   }
 
@@ -733,7 +734,7 @@ void mj_implicitSkip(const mjModel *m, mjData *d, int skipfactor) {
   // advance state and time
   mj_advance(m, d, d->act_dot, qacc, NULL);
 
-  mjFREESTACK
+  mjFREESTACK;
 }
 
 
@@ -777,6 +778,7 @@ void mj_forwardSkip(const mjModel* m, mjData* d, int skipstage, int skipsensor) 
   if (mjcb_control && !mjDISABLED(mjDSBL_ACTUATION)) {
     mjcb_control(m, d);
   }
+
   mj_fwdActuation(m, d);
   mj_fwdAcceleration(m, d);
   mj_fwdConstraint(m, d);

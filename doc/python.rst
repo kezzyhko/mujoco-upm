@@ -102,6 +102,9 @@ The Python bindings should now be installed! To check that they've been
 successfully installed, ``cd`` outside of the ``mujoco`` directory and run
 ``python -c "import mujoco"``.
 
+As a reference, a working build configuration can be found in MuJoCo's
+[continuous integration setup](https://github.com/deepmind/mujoco/blob/main/.github/workflows/build.yml) on GitHub.
+
 .. _PyViewer:
 
 Interactive viewer
@@ -122,7 +125,7 @@ Three distinct use cases are supported:
    using one of the following invocations:
 
    - ``viewer.launch()`` launches an empty visualization session, where a model can be loaded by drag-and-drop.
-   - ``viewer.launch(model)`` launches a visualzation session for the given ``mjModel`` where the visualizer
+   - ``viewer.launch(model)`` launches a visualization session for the given ``mjModel`` where the visualizer
      internally creates its own instance of ``mjData``
    - ``viewer.launch(model, data)`` is the same as above, except that the visualizer operates directly on the given
      ``mjData`` instance -- upon exit the ``data`` object will have been modified.

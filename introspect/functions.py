@@ -579,7 +579,7 @@ FUNCTIONS: Mapping[str, FunctionDecl] = dict([
                  ),
              ),
          ),
-         doc='Allocate mjData correponding to given model. If the model buffer is unallocated the initial configuration will not be set.',  # pylint: disable=line-too-long
+         doc='Allocate mjData corresponding to given model. If the model buffer is unallocated the initial configuration will not be set.',  # pylint: disable=line-too-long
      )),
     ('mj_copyData',
      FunctionDecl(
@@ -1018,7 +1018,7 @@ FUNCTIONS: Mapping[str, FunctionDecl] = dict([
                  ),
              ),
          ),
-         doc='Add up all non-constraint forces, compute qacc_unc.',
+         doc='Add up all non-constraint forces, compute qacc_smooth.',
      )),
     ('mj_fwdConstraint',
      FunctionDecl(
@@ -1704,7 +1704,7 @@ FUNCTIONS: Mapping[str, FunctionDecl] = dict([
                  ),
              ),
          ),
-         doc='Compute inverse constaint inertia efc_AR.',
+         doc='Compute inverse constraint inertia efc_AR.',
      )),
     ('mj_referenceConstraint',
      FunctionDecl(
@@ -2393,7 +2393,7 @@ FUNCTIONS: Mapping[str, FunctionDecl] = dict([
                  ),
              ),
          ),
-         doc='Apply cartesian force and torque (outside xfrc_applied mechanism).',  # pylint: disable=line-too-long
+         doc='Apply Cartesian force and torque (outside xfrc_applied mechanism).',  # pylint: disable=line-too-long
      )),
     ('mj_objectVelocity',
      FunctionDecl(
@@ -2837,7 +2837,7 @@ FUNCTIONS: Mapping[str, FunctionDecl] = dict([
                  ),
              ),
          ),
-         doc='Interect ray with hfield, return nearest distance or -1 if no intersection.',  # pylint: disable=line-too-long
+         doc='Intersect ray with hfield, return nearest distance or -1 if no intersection.',  # pylint: disable=line-too-long
      )),
     ('mj_rayMesh',
      FunctionDecl(
@@ -2875,7 +2875,7 @@ FUNCTIONS: Mapping[str, FunctionDecl] = dict([
                  ),
              ),
          ),
-         doc='Interect ray with mesh, return nearest distance or -1 if no intersection.',  # pylint: disable=line-too-long
+         doc='Intersect ray with mesh, return nearest distance or -1 if no intersection.',  # pylint: disable=line-too-long
      )),
     ('mju_rayGeom',
      FunctionDecl(
@@ -2922,7 +2922,7 @@ FUNCTIONS: Mapping[str, FunctionDecl] = dict([
                  type=ValueType(name='int'),
              ),
          ),
-         doc='Interect ray with pure geom, return nearest distance or -1 if no intersection.',  # pylint: disable=line-too-long
+         doc='Intersect ray with pure geom, return nearest distance or -1 if no intersection.',  # pylint: disable=line-too-long
      )),
     ('mju_raySkin',
      FunctionDecl(
@@ -2971,7 +2971,7 @@ FUNCTIONS: Mapping[str, FunctionDecl] = dict([
                  ),
              ),
          ),
-         doc='Interect ray with skin, return nearest distance or -1 if no intersection, and also output nearest vertex id.',  # pylint: disable=line-too-long
+         doc='Intersect ray with skin, return nearest distance or -1 if no intersection, and also output nearest vertex id.',  # pylint: disable=line-too-long
      )),
     ('mjv_defaultCamera',
      FunctionDecl(

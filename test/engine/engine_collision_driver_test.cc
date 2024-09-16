@@ -31,6 +31,7 @@ using MjCollisionTest = MujocoTest;
 using GeomPair = std::pair<std::string, std::string>;
 using ::testing::IsEmpty;
 using ::testing::ElementsAre;
+using ::testing::NotNull;
 
 // Returns a sorted list of pairs of colliding geom names, where each pair of
 // geom names is sorted.
@@ -108,5 +109,112 @@ TEST_F(MjCollisionTest, ZeroedHessian) {
   mj_deleteData(data);
   mj_deleteModel(model);
 }
+
+TEST_F(MjCollisionTest, ContactCount) {
+  constexpr char xml[] = R"(
+  <mujoco>
+    <worldbody>
+      <body>
+        <geom type="plane" size="5 5 .01"/>
+      </body>
+      <body pos="0 0 0.9">
+        <freejoint/>
+        <geom type="sphere" size="1" pos="-1 -1 0"/>
+        <geom type="sphere" size="1" pos="-1  1 0"/>
+        <geom type="sphere" size="1" pos=" 1 -1 0"/>
+        <geom type="sphere" size="1" pos=" 1  1 0"/>
+        <geom type="sphere" size="1" pos="-2 -2 0"/>
+        <geom type="sphere" size="1" pos="-2  2 0"/>
+        <geom type="sphere" size="1" pos=" 2 -2 0"/>
+        <geom type="sphere" size="1" pos=" 2  2 0"/>
+      </body>
+    </worldbody>
+  </mujoco>
+  )";
+  mjModel* m = LoadModelFromString(xml);
+  ASSERT_THAT(m, NotNull());
+  mjData* d = mj_makeData(m);
+  ASSERT_THAT(d, NotNull());
+
+  mj_forward(m, d);
+
+  // there are 8 spheres, all touching the floor
+  EXPECT_EQ(d->ncon, 8);
+
+  mj_deleteData(d);
+  mj_deleteModel(m);
+}
+
+TEST_F(MjCollisionTest, FilterParent) {
+  constexpr char xml[] = R"(
+  <mujoco>
+    <worldbody>
+      <body pos="0 0 0">
+        <freejoint/>
+        <geom name="colliding1" size="1" pos="0 0 100"/>
+        <body>
+          <geom size="1"/>
+          <body>
+            <joint axis="1 0 0"/>
+            <geom size="1" pos="0 0 50"/>
+            <body>
+              <geom name="colliding2" size="1" pos="0 0 99.5"/>
+            </body>
+          </body>
+        </body>
+      </body>
+    </worldbody>
+  </mujoco>
+  )";
+  mjModel* m = LoadModelFromString(xml);
+  ASSERT_THAT(m, NotNull());
+  mjData* d = mj_makeData(m);
+  ASSERT_THAT(d, NotNull());
+
+  mj_fwdPosition(m, d);
+
+  // there should be zero contacts, because colliding1 and colliding2 are in
+  // bodies that have a parent-child relationship, through welds
+  EXPECT_EQ(d->ncon, 0);
+
+  // when this filtering is disabled, the geoms should collide
+  m->opt.disableflags |= mjDSBL_FILTERPARENT;
+  mj_fwdPosition(m, d);
+
+  EXPECT_THAT(colliding_pairs(m, d),
+              ElementsAre(GeomPair("colliding1", "colliding2")));
+
+  mj_deleteData(d);
+  mj_deleteModel(m);
+}
+
+TEST_F(MjCollisionTest, FilterParentDoesntAffectWorldBody) {
+  constexpr char xml[] = R"(
+  <mujoco>
+    <worldbody>
+      <geom name="colliding1" size="1" pos="0 0 100"/>
+      <body pos="0 0 0">
+        <joint axis="1 0 0"/>
+        <geom name="colliding2" size="1" pos="0 0 99.5"/>
+      </body>
+    </worldbody>
+  </mujoco>
+  )";
+  mjModel* m = LoadModelFromString(xml);
+  ASSERT_THAT(m, NotNull());
+  mjData* d = mj_makeData(m);
+  ASSERT_THAT(d, NotNull());
+
+  mj_fwdPosition(m, d);
+
+  // even though colliding1 and colliding2 are have a parent-child relationship,
+  // they collide because colliding1 is in <worldbody>
+  EXPECT_THAT(colliding_pairs(m, d),
+              ElementsAre(GeomPair("colliding1", "colliding2")));
+
+  mj_deleteData(d);
+  mj_deleteModel(m);
+}
+
 }  // namespace
 }  // namespace mujoco

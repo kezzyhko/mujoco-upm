@@ -56,7 +56,10 @@ templates_path = ['templates']
 # List of patterns, relative to source directory, that match files and
 # directories to ignore when looking for source files.
 # This pattern also affects html_static_path and html_extra_path.
-exclude_patterns = ['_build', 'Thumbs.db', '.DS_Store', 'includes/*']
+exclude_patterns = [
+    '_build', 'Thumbs.db', '.DS_Store', 'includes/*', 'functions.rst',
+    'functions_override.rst', 'XMLschema.rst'
+]
 
 redirects = {
     # index.rst just contains the table of contents definition.
@@ -64,8 +67,8 @@ redirects = {
 }
 
 rst_prolog = """
-.. include:: includes/macros.rst
-.. include:: includes/roles.rst
+.. include:: /includes/macros.rst
+.. include:: /includes/roles.rst
 .. include:: <isonum.txt>
 """
 
@@ -142,8 +145,6 @@ html_css_files = [
 ]
 
 html_favicon = 'favicons/favicon-32x32.png'
-
-html_permalinks_icon = "🔗"
 
 # -- Options for katex ------------------------------------------------------
 

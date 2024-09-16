@@ -785,6 +785,7 @@ struct mjModel_ {
   int nuser_actuator;             // number of mjtNums in actuator_user
   int nuser_sensor;               // number of mjtNums in sensor_user
   int nnames;                     // number of chars in all names
+  int nnames_map;                 // number of slots in the names hash map
 
   // sizes set after mjModel construction (only affect mjData)
   int nM;                         // number of non-zeros in sparse inertia matrix
@@ -1146,21 +1147,22 @@ struct mjModel_ {
   int*      name_keyadr;          // keyframe name pointers                   (nkey x 1)
   int*      name_pluginadr;       // plugin instance name pointers            (nplugin x 1)
   char*     names;                // names of all objects, 0-terminated       (nnames x 1)
+  int*      names_map;            // internal hash map of names               (nnames_map x 1)
 };
 typedef struct mjModel_ mjModel;
-typedef enum mjtPluginTypeBit_ {
+typedef enum mjtPluginCapabilityBit_ {
   mjPLUGIN_ACTUATOR = 1<<0,
   mjPLUGIN_SENSOR   = 1<<1,
   mjPLUGIN_PASSIVE  = 1<<2,
-} mjtPluginTypeBit;
+} mjtPluginCapabilityBit;
 struct mjpPlugin_ {
-  const char* name;    // globally unique name identifying the plugin
+  const char* name;     // globally unique name identifying the plugin
 
   int nattribute;                 // number of configuration attributes
   const char* const* attributes;  // name of configuration attributes
 
-  int type;            // bitfield of mjtPluginTypeBits specifying the plugin type
-  int needstage;       // an mjtStage enum value specifying the sensor computation stage
+  int capabilityflags;  // bitfield of mjtPluginCapabilityBit specifying plugin capabilities
+  int needstage;        // an mjtStage enum value specifying the sensor computation stage
 
   // number of mjtNums needed to store the state of a plugin instance (required)
   int (*nstate)(const mjModel* m, int instance);
@@ -1178,13 +1180,16 @@ struct mjpPlugin_ {
   void (*copy)(mjData* dest, const mjModel* m, const mjData* src, int instance);
 
   // called when an mjData is being reset (required)
-  void (*reset)(const mjModel* m, mjData* d, int instance);
+  void (*reset)(const mjModel* m, double* plugin_state, void* plugin_data, int instance);
 
   // called when the plugin needs to update its outputs (required)
-  void (*compute)(const mjModel* m, mjData* d, int instance, int type);
+  void (*compute)(const mjModel* m, mjData* d, int instance, int capability_bit);
 
   // called when time integration occurs (optional)
   void (*advance)(const mjModel* m, mjData* d, int instance);
+
+  // called by mjv_updateScene (optional)
+  void (*visualize)(const mjModel*m, mjData* d, mjvScene* scn, int instance);
 };
 typedef struct mjpPlugin_ mjpPlugin;
 typedef enum mjtGridPos_ {        // grid position for overlay
@@ -1297,6 +1302,9 @@ struct mjrContext_ {              // custom OpenGL context
 
   // framebuffer
   int     currentBuffer;          // currently active framebuffer: mjFB_WINDOW or mjFB_OFFSCREEN
+
+  // pixel output format
+  int     readPixelFormat;        // default color pixel format for mjr_readPixels
 };
 typedef struct mjrContext_ mjrContext;
 typedef enum mjtButton_ {         // mouse button
@@ -1312,7 +1320,9 @@ typedef enum mjtEvent_ {          // mouse and keyboard event type
   mjEVENT_RELEASE,                // mouse button release
   mjEVENT_SCROLL,                 // scroll
   mjEVENT_KEY,                    // key press
-  mjEVENT_RESIZE                  // resize
+  mjEVENT_RESIZE,                 // resize
+  mjEVENT_REDRAW,                 // redraw
+  mjEVENT_FILESDROP               // files drop
 } mjtEvent;
 typedef enum mjtItem_ {           // UI item type
   mjITEM_END = -2,                // end of definition list (not an item)
@@ -1371,6 +1381,10 @@ struct mjuiState_ {               // mouse and keyboard state
   int mouserect;                  // which rectangle contains mouse
   int dragrect;                   // which rectangle is dragged with mouse
   int dragbutton;                 // which button started drag (mjtButton)
+
+  // files dropping (only valid when type == mjEVENT_FILESDROP)
+  int dropcount;                  // number of files dropped
+  const char** droppaths;         // paths to files dropped
 };
 typedef struct mjuiState_ mjuiState;
 struct mjuiThemeSpacing_ {        // UI visualization theme spacing
@@ -1618,8 +1632,9 @@ struct mjvPerturb_ {              // object selection and perturbation
   int      skinselect;            // selected skin id; negative: none
   int      active;                // perturbation bitmask (mjtPertBit)
   int      active2;               // secondary perturbation bitmask (mjtPertBit)
-  mjtNum   refpos[3];             // desired position for selected object
-  mjtNum   refquat[4];            // desired orientation for selected object
+  mjtNum   refpos[3];             // reference position for selected object
+  mjtNum   refquat[4];            // reference orientation for selected object
+  mjtNum   reflocalpos[3];        // reference selection point in object coordinates
   mjtNum   localpos[3];           // selection point in object coordinates
   mjtNum   scale;                 // relative mouse motion-to-space scaling (set by initPerturb)
 };
@@ -1792,7 +1807,7 @@ struct mjvFigure_ {               // abstract 2D figure passed to OpenGL rendere
 };
 typedef struct mjvFigure_ mjvFigure;
 
-//---------------------- MJAPI FUNCTIONS ------------------------
+//----------------------------- MJAPI FUNCTIONS --------------------------------
 void mj_defaultVFS(mjVFS* vfs);
 int mj_addFileVFS(mjVFS* vfs, const char* directory, const char* filename);
 int mj_makeEmptyFileVFS(mjVFS* vfs, const char* filename, int filesize);

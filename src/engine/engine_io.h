@@ -23,6 +23,9 @@
 extern "C" {
 #endif
 
+// internal hash map size factor (2 corresponds to a load factor of 0.5)
+#define mjLOAD_MULTIPLE 2
+
 //------------------------------- initialization ---------------------------------------------------
 
 // Set default options for length range computation.
@@ -79,7 +82,7 @@ MJAPI const char* mj_validateReferences(const mjModel* m);
 
 //------------------------------- mjData -----------------------------------------------------------
 
-// Allocate mjData correponding to given model.
+// Allocate mjData corresponding to given model.
 // If the model buffer is unallocated the initial configuration will not be set.
 MJAPI mjData* mj_makeData(const mjModel* m);
 

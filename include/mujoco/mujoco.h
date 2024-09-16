@@ -24,7 +24,7 @@ extern "C" {
 #endif
 
 // header version; should match the library version as returned by mj_version()
-#define mjVERSION_HEADER 231
+#define mjVERSION_HEADER 232
 
 // needed to define size_t, fabs and log10
 #include <stdlib.h>
@@ -176,7 +176,7 @@ MJAPI void mj_deleteModel(mjModel* m);
 // Return size of buffer needed to hold model.
 MJAPI int mj_sizeModel(const mjModel* m);
 
-// Allocate mjData correponding to given model.
+// Allocate mjData corresponding to given model.
 // If the model buffer is unallocated the initial configuration will not be set.
 MJAPI mjData* mj_makeData(const mjModel* m);
 
@@ -246,7 +246,7 @@ MJAPI void mj_fwdVelocity(const mjModel* m, mjData* d);
 // Compute actuator force qfrc_actuator.
 MJAPI void mj_fwdActuation(const mjModel* m, mjData* d);
 
-// Add up all non-constraint forces, compute qacc_unc.
+// Add up all non-constraint forces, compute qacc_smooth.
 MJAPI void mj_fwdAcceleration(const mjModel* m, mjData* d);
 
 // Run selected constraint solver.
@@ -345,7 +345,7 @@ MJAPI void mj_collision(const mjModel* m, mjData* d);
 // Construct constraints.
 MJAPI void mj_makeConstraint(const mjModel* m, mjData* d);
 
-// Compute inverse constaint inertia efc_AR.
+// Compute inverse constraint inertia efc_AR.
 MJAPI void mj_projectConstraint(const mjModel* m, mjData* d);
 
 // Compute efc_vel, efc_aref.
@@ -419,7 +419,7 @@ MJAPI void mj_mulM2(const mjModel* m, const mjData* d, mjtNum* res, const mjtNum
 // Destination can be sparse uncompressed, or dense when all int* are NULL
 MJAPI void mj_addM(const mjModel* m, mjData* d, mjtNum* dst, int* rownnz, int* rowadr, int* colind);
 
-// Apply cartesian force and torque (outside xfrc_applied mechanism).
+// Apply Cartesian force and torque (outside xfrc_applied mechanism).
 MJAPI void mj_applyFT(const mjModel* m, mjData* d, const mjtNum force[3], const mjtNum torque[3],
                       const mjtNum point[3], int body, mjtNum* qfrc_target);
 
@@ -482,19 +482,19 @@ MJAPI mjtNum mj_ray(const mjModel* m, const mjData* d, const mjtNum pnt[3], cons
                     const mjtByte* geomgroup, mjtByte flg_static, int bodyexclude,
                     int geomid[1]);
 
-// Interect ray with hfield, return nearest distance or -1 if no intersection.
+// Intersect ray with hfield, return nearest distance or -1 if no intersection.
 MJAPI mjtNum mj_rayHfield(const mjModel* m, const mjData* d, int geomid,
                           const mjtNum pnt[3], const mjtNum vec[3]);
 
-// Interect ray with mesh, return nearest distance or -1 if no intersection.
+// Intersect ray with mesh, return nearest distance or -1 if no intersection.
 MJAPI mjtNum mj_rayMesh(const mjModel* m, const mjData* d, int geomid,
                         const mjtNum pnt[3], const mjtNum vec[3]);
 
-// Interect ray with pure geom, return nearest distance or -1 if no intersection.
+// Intersect ray with pure geom, return nearest distance or -1 if no intersection.
 MJAPI mjtNum mju_rayGeom(const mjtNum pos[3], const mjtNum mat[9], const mjtNum size[3],
                          const mjtNum pnt[3], const mjtNum vec[3], int geomtype);
 
-// Interect ray with skin, return nearest distance or -1 if no intersection,
+// Intersect ray with skin, return nearest distance or -1 if no intersection,
 // and also output nearest vertex id.
 MJAPI mjtNum mju_raySkin(int nface, int nvert, const int* face, const float* vert,
                          const mjtNum pnt[3], const mjtNum vec[3], int vertid[1]);

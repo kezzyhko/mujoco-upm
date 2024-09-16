@@ -819,7 +819,7 @@ void mjCBody::Compile(void) {
 
     model->ResolvePlugin(this, plugin_name, plugin_instance_name, &plugin_instance);
     const mjpPlugin* plugin = mjp_getPluginAtSlot(plugin_instance->plugin_slot);
-    if (!(plugin->type & mjPLUGIN_PASSIVE)) {
+    if (!(plugin->capabilityflags & mjPLUGIN_PASSIVE)) {
       throw mjCError(this, "plugin '%s' does not support passive forces", plugin->name);
     }
   }
@@ -1393,7 +1393,7 @@ void mjCGeom::Compile(void) {
   else {
     const char* err = alt.Set(quat, inertia, model->degree, model->euler);
     if (err) {
-      throw mjCError(this, "alternative specification error '%s' in geom %d", err, id);
+      throw mjCError(this, "orientation specification error '%s' in geom %d", err, id);
     }
   }
 
@@ -1569,7 +1569,7 @@ void mjCSite::Compile(void) {
   else {
     const char* err = alt.Set(quat, 0, model->degree, model->euler);
     if (err) {
-      throw mjCError(this, "alternative specification error '%s' in site %d", err, id);
+      throw mjCError(this, "orientation specification error '%s' in site %d", err, id);
     }
   }
 
@@ -1628,7 +1628,7 @@ void mjCCamera::Compile(void) {
   // process orientation specifications
   const char* err = alt.Set(quat, 0, model->degree, model->euler);
   if (err) {
-    throw mjCError(this, "alternative specification error '%s' in site %d", err, id);
+    throw mjCError(this, "orientation specification error '%s' in camera %d", err, id);
   }
 
   // normalize quaternion
@@ -3618,7 +3618,7 @@ void mjCActuator::Compile(void) {
 
     model->ResolvePlugin(this, plugin_name, plugin_instance_name, &plugin_instance);
     const mjpPlugin* plugin = mjp_getPluginAtSlot(plugin_instance->plugin_slot);
-    if (!(plugin->type & mjPLUGIN_ACTUATOR)) {
+    if (!(plugin->capabilityflags & mjPLUGIN_ACTUATOR)) {
       throw mjCError(this, "plugin '%s' does not support actuators", plugin->name);
     }
   }
@@ -4006,7 +4006,7 @@ void mjCSensor::Compile(void) {
     {
       model->ResolvePlugin(this, plugin_name, plugin_instance_name, &plugin_instance);
       const mjpPlugin* plugin = mjp_getPluginAtSlot(plugin_instance->plugin_slot);
-      if (!(plugin->type & mjPLUGIN_SENSOR)) {
+      if (!(plugin->capabilityflags & mjPLUGIN_SENSOR)) {
         throw mjCError(this, "plugin '%s' does not support sensors", plugin->name);
       }
       needstage = static_cast<mjtStage>(plugin->needstage);

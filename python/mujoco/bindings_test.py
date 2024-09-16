@@ -128,6 +128,10 @@ class MuJoCoBindingsTest(parameterized.TestCase):
     np.testing.assert_array_equal(
         qpos_ref, [0.789]*len(self.data.qpos))
 
+  # This test is disabled on PyPy as it uses sys.getrefcount
+  # However PyPy is not officially supported by MuJoCo
+  @absltest.skipIf(sys.implementation.name == 'pypy',
+                   reason='requires sys.getrefcount')
   def test_array_keeps_struct_alive(self):
     model = mujoco.MjModel.from_xml_string(TEST_XML)
     qpos0 = model.qpos0
@@ -641,7 +645,7 @@ class MuJoCoBindingsTest(parameterized.TestCase):
 
     # Check that the res argument must have the right size.
     with self.assertRaises(TypeError):
-      mujoco.mju_rotVecQuat(np.empty(4, np.float64), vec, quat)
+      mujoco.mju_rotVecQuat(np.zeros(4, np.float64), vec, quat)
 
     # Check that the vec argument must have the right size.
     with self.assertRaises(TypeError):
@@ -733,6 +737,7 @@ Euler integrator, semi-implicit in velocity.
 
   def test_float_constant(self):
     self.assertEqual(mujoco.mjMAXVAL, 1e10)
+    self.assertEqual(mujoco.mjMINVAL, 1e-15)
 
   def test_string_constants(self):
     self.assertLen(mujoco.mjDISABLESTRING, mujoco.mjtDisableBit.mjNDISABLE)
@@ -962,6 +967,10 @@ Euler integrator, semi-implicit in velocity.
     self.assertEqual(sensor_callback.count, 1)
     self.assertEqual(data_with_sensor.sensordata[0], 17)
 
+  # This test is disabled on PyPy as it uses sys.getrefcount
+  # However PyPy is not officially supported by MuJoCo
+  @absltest.skipIf(sys.implementation.name == 'pypy',
+                   reason='requires sys.getrefcount')
   def test_mjcb_control_not_leak_memory(self):
     model_instances = []
     data_instances = []
