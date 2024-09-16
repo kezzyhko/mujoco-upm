@@ -363,9 +363,7 @@ TEST_F(ContentTypeTest, TextureLoadPng) {
   // load VFS on the heap
   auto vfs = std::make_unique<mjVFS>();
   mj_defaultVFS(vfs.get());
-  mj_makeEmptyFileVFS(vfs.get(), filename, 105);
-  int i = mj_findFileVFS(vfs.get(), filename);
-  memcpy(vfs->filedata[i], tiny, tiny_sz);
+  mj_addBufferVFS(vfs.get(), filename, tiny, tiny_sz);
 
   // loading the file should be successful
   mjModel* model = LoadModelFromString(xml, error, error_sz, vfs.get());
@@ -542,7 +540,7 @@ TEST_F(RelativeFrameSensorParsingTest, BadRefName) {
   std::array<char, 1024> error;
   LoadModelFromString(xml, error.data(), error.size());
   EXPECT_THAT(error.data(),
-              HasSubstr("unrecognized name 'wrong_name' of reference frame"));
+              HasSubstr("unrecognized name 'wrong_name' of object"));
   EXPECT_THAT(error.data(), HasSubstr("line 8"));
 }
 
@@ -601,7 +599,7 @@ TEST_F(RelativeFrameSensorParsingTest, BadObjRefName) {
   ASSERT_THAT(model, IsNull());
   EXPECT_THAT(
       error.data(),
-      HasSubstr("unrecognized name 'alessio' of reference frame object"));
+      HasSubstr("unrecognized name 'alessio' of object"));
   EXPECT_THAT(error.data(), HasSubstr("name 'tom'"));
   EXPECT_THAT(error.data(), HasSubstr("line 7"));
 }

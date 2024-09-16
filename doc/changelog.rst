@@ -2,6 +2,40 @@
 Changelog
 =========
 
+Version 3.1.6 (Jun 3, 2024)
+---------------------------
+
+General
+^^^^^^^
+
+1. Added :ref:`mj_geomDistance` for computing the shortest signed distance between two geoms and optionally a segment
+   connecting them. Relatedly, added the 3 sensors: :ref:`distance<sensor-distance>`, :ref:`normal<sensor-normal>`,
+   :ref:`fromto<sensor-fromto>`. See the function and sensor documentation for details. Fixes :github:issue:`51`.
+2. Improvements to position actuators:
+
+   - Added :ref:`timeconst<actuator-position-timeconst>` attribute to the :ref:`position actuator<actuator-position>`.
+     When set to a positive value, the actuator is made stateful with :at:`filterexact` dynamics.
+   - Added :ref:`dampratio<actuator-position-dampratio>` to both :el:`position` and :el:`intvelocity` actuators. An
+     alternative to the :at:`kv` attribute, it provides a convenient way to set actuator damping using natural units.
+     See attribute documentation for details.
+
+MJX
+^^^
+
+3. Add height-field collision support. Fixes :github:issue:`1491`.
+4. Add a pre-compiled field ``mesh_convex`` to ``mjx.Model`` so that mesh properties can be vmapped over.
+   Fixes :github:issue:`1655`.
+5. Fix a bug in convex mesh collisions, where erroneous edge contacts were being created even though face
+   separating axes were found. Fixes :github:issue:`1695`.
+
+Bug fixes
+^^^^^^^^^
+
+6. Fixed a bug the could cause collisions to be missed when :ref:`fusestatic<compiler-fusestatic>` is enabled, as is
+   often the case for URDF imports. Fixes :github:issue:`1069`, :github:issue:`1577`.
+7. Fixed a bug that was causing the visualization of SDF iterations to write outside the size of the vector storing
+   them. Fixes :github:issue:`1539`.
+
 Version 3.1.5 (May 7, 2024)
 ---------------------------
 
@@ -61,7 +95,7 @@ Bug fixes
 22. Prevent overwriting of frame names by body names when saving an XML. Bug introduced in 3.1.4.
 23. Fixed bug in Python binding of :ref:`mj_saveModel`: ``buffer`` argument was documented as optional but was actually
     not optional.
-24. Fixed bug that prevented memory allocations larger than 2.15 GB.
+24. Fixed bug that prevented memory allocations larger than 2.15 GB. Fixes :github:issue:`1606`.
 
 
 Version 3.1.4 (April 10th, 2024)
