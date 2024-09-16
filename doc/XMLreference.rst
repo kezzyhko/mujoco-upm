@@ -12,10 +12,10 @@ This chapter is the reference manual for the MJCF modeling language used in MuJo
 XML schema
 ~~~~~~~~~~
 
-| The table below summarizes the XML elements and their attributes in MJCF. It is generated automatically with the
-  function :ref:`mj_printSchema` which prints out the custom schema used by the parser to validate the model file.
-  Note that all information in MJCF is entered through elements and attributes. Text content in elements is not used;
-  if present, the parser ignores it. The symbols in the second column of the table have the following meaning:
+The table below summarizes the XML elements and their attributes in MJCF. It is generated automatically with the
+function :ref:`mj_printSchema` which prints out the custom schema used by the parser to validate the model file.
+Note that all information in MJCF is entered through elements and attributes. Text content in elements is not used;
+if present, the parser ignores it. The symbols in the second column of the table have the following meaning:
 
 ====== ===================================================
 **!**  required element, can appear only once
@@ -23,8 +23,6 @@ XML schema
 **\*** optional element, can appear many times
 **R**  optional element, can appear many times recursively
 ====== ===================================================
-
-|
 
 +--------------------------+----+------------------------------------------------------------------------------------+
 | :el:`mujoco`             | !  | .. table::                                                                         |
@@ -99,7 +97,7 @@ XML schema
 |                          |    |    +-------------------------+-------------------------+-------------------------+ |
 |                          |    |    | :at:`override`          | :at:`energy`            | :at:`fwdinv`            | |
 |                          |    |    +-------------------------+-------------------------+-------------------------+ |
-|                          |    |    | :at:`sensornoise`       |                         |                         | |
+|                          |    |    | :at:`sensornoise`       | :at:`multiccd`          |                         | |
 |                          |    |    +-------------------------+-------------------------+-------------------------+ |
 +--------------------------+----+------------------------------------------------------------------------------------+
 | |_|:el:`size`            | \* | .. table::                                                                         |
@@ -274,7 +272,7 @@ XML schema
 |                          |    |    +-------------------------+-------------------------+-------------------------+ |
 |                          |    |    | :at:`mesh`              | :at:`fitscale`          | :at:`rgba`              | |
 |                          |    |    +-------------------------+-------------------------+-------------------------+ |
-|                          |    |    | :at:`user`              |                         |                         | |
+|                          |    |    | :at:`user`              | :at:`fluidshape`        | :at:`fluidcoef`         | |
 |                          |    |    +-------------------------+-------------------------+-------------------------+ |
 +--------------------------+----+------------------------------------------------------------------------------------+
 | |_2|:el:`site`           | ?  | .. table::                                                                         |
@@ -355,15 +353,17 @@ XML schema
 |                          |    |    :class: mjcf-attributes                                                         |
 |                          |    |                                                                                    |
 |                          |    |    +-------------------------+-------------------------+-------------------------+ |
-|                          |    |    | :at:`ctrllimited`       | :at:`forcelimited`      | :at:`ctrlrange`         | |
+|                          |    |    | :at:`ctrllimited`       | :at:`forcelimited`      | :at:`actlimited`        | |
 |                          |    |    +-------------------------+-------------------------+-------------------------+ |
-|                          |    |    | :at:`forcerange`        | :at:`gear`              | :at:`cranklength`       | |
+|                          |    |    | :at:`ctrlrange`         | :at:`forcerange`        | :at:`actrange`          | |
 |                          |    |    +-------------------------+-------------------------+-------------------------+ |
-|                          |    |    | :at:`user`              | :at:`group`             | :at:`dyntype`           | |
+|                          |    |    | :at:`gear`              |  :at:`cranklength`      |                         | |
 |                          |    |    +-------------------------+-------------------------+-------------------------+ |
-|                          |    |    | :at:`gaintype`          | :at:`biastype`          | :at:`dynprm`            | |
+|                          |    |    | :at:`user`              | :at:`group`             |                         | |
 |                          |    |    +-------------------------+-------------------------+-------------------------+ |
-|                          |    |    | :at:`gainprm`           | :at:`biasprm`           |                         | |
+|                          |    |    | :at:`dyntype`           | :at:`gaintype`          | :at:`biastype`          | |
+|                          |    |    +-------------------------+-------------------------+-------------------------+ |
+|                          |    |    | :at:`dynprm`            | :at:`gainprm`           | :at:`biasprm`           | |
 |                          |    |    +-------------------------+-------------------------+-------------------------+ |
 +--------------------------+----+------------------------------------------------------------------------------------+
 | |_2|:el:`motor`          | ?  | .. table::                                                                         |
@@ -389,6 +389,30 @@ XML schema
 |                          |    |    +-------------------------+-------------------------+-------------------------+ |
 +--------------------------+----+------------------------------------------------------------------------------------+
 | |_2|:el:`velocity`       | ?  | .. table::                                                                         |
+|                          |    |    :class: mjcf-attributes                                                         |
+|                          |    |                                                                                    |
+|                          |    |    +-------------------------+-------------------------+-------------------------+ |
+|                          |    |    | :at:`ctrllimited`       | :at:`forcelimited`      | :at:`ctrlrange`         | |
+|                          |    |    +-------------------------+-------------------------+-------------------------+ |
+|                          |    |    | :at:`forcerange`        | :at:`gear`              | :at:`cranklength`       | |
+|                          |    |    +-------------------------+-------------------------+-------------------------+ |
+|                          |    |    | :at:`user`              | :at:`group`             | :at:`kv`                | |
+|                          |    |    +-------------------------+-------------------------+-------------------------+ |
++--------------------------+----+------------------------------------------------------------------------------------+
+| |_2|:el:`intvelocity`    | ?  | .. table::                                                                         |
+|                          |    |    :class: mjcf-attributes                                                         |
+|                          |    |                                                                                    |
+|                          |    |    +-------------------------+-------------------------+-------------------------+ |
+|                          |    |    | :at:`ctrllimited`       | :at:`forcelimited`      | :at:`ctrlrange`         | |
+|                          |    |    +-------------------------+-------------------------+-------------------------+ |
+|                          |    |    | :at:`forcerange`        | :at:`gear`              | :at:`cranklength`       | |
+|                          |    |    +-------------------------+-------------------------+-------------------------+ |
+|                          |    |    | :at:`user`              | :at:`group`             | :at:`kp`                | |
+|                          |    |    +-------------------------+-------------------------+-------------------------+ |
+|                          |    |    | :at:`actrange`          |                         |                         | |
+|                          |    |    +-------------------------+-------------------------+-------------------------+ |
++--------------------------+----+------------------------------------------------------------------------------------+
+| |_2|:el:`damper`         | ?  | .. table::                                                                         |
 |                          |    |    :class: mjcf-attributes                                                         |
 |                          |    |                                                                                    |
 |                          |    |    +-------------------------+-------------------------+-------------------------+ |
@@ -608,6 +632,8 @@ XML schema
 |                          |    |    | :at:`euler`             | :at:`hfield`            | :at:`mesh`              | |
 |                          |    |    +-------------------------+-------------------------+-------------------------+ |
 |                          |    |    | :at:`fitscale`          | :at:`rgba`              | :at:`user`              | |
+|                          |    |    +-------------------------+-------------------------+-------------------------+ |
+|                          |    |    | :at:`fluidshape`        | :at:`fluidcoef`         |                         | |
 |                          |    |    +-------------------------+-------------------------+-------------------------+ |
 +--------------------------+----+------------------------------------------------------------------------------------+
 | |_2|:el:`site`           | \* | .. table::                                                                         |
@@ -889,19 +915,21 @@ XML schema
 |                          |    |    +-------------------------+-------------------------+-------------------------+ |
 |                          |    |    | :at:`name`              | :at:`class`             | :at:`group`             | |
 |                          |    |    +-------------------------+-------------------------+-------------------------+ |
-|                          |    |    | :at:`ctrllimited`       | :at:`forcelimited`      | :at:`ctrlrange`         | |
+|                          |    |    | :at:`ctrllimited`       | :at:`forcelimited`      | :at:`actlimited`        | |
 |                          |    |    +-------------------------+-------------------------+-------------------------+ |
-|                          |    |    | :at:`forcerange`        | :at:`lengthrange`       | :at:`gear`              | |
+|                          |    |    | :at:`ctrlrange`         | :at:`forcerange`        | :at:`actrange`          | |
 |                          |    |    +-------------------------+-------------------------+-------------------------+ |
-|                          |    |    | :at:`cranklength`       | :at:`user`              | :at:`joint`             | |
+|                          |    |    | :at:`joint`             | :at:`tendon`            | :at:`site`              | |
 |                          |    |    +-------------------------+-------------------------+-------------------------+ |
-|                          |    |    | :at:`jointinparent`     | :at:`tendon`            | :at:`slidersite`        | |
+|                          |    |    | :at:`lengthrange`       | :at:`gear`              | :at:`jointinparent`     | |
 |                          |    |    +-------------------------+-------------------------+-------------------------+ |
-|                          |    |    | :at:`cranksite`         | :at:`site`              | :at:`dyntype`           | |
+|                          |    |    | :at:`cranklength`       | :at:`cranksite`         | :at:`slidersite`        | |
 |                          |    |    +-------------------------+-------------------------+-------------------------+ |
-|                          |    |    | :at:`gaintype`          | :at:`biastype`          | :at:`dynprm`            | |
+|                          |    |    | :at:`user`              |                         |                         | |
 |                          |    |    +-------------------------+-------------------------+-------------------------+ |
-|                          |    |    | :at:`gainprm`           | :at:`biasprm`           |                         | |
+|                          |    |    | :at:`dyntype`           | :at:`gaintype`          | :at:`biastype`          | |
+|                          |    |    +-------------------------+-------------------------+-------------------------+ |
+|                          |    |    | :at:`dynprm`            | :at:`gainprm`           | :at:`biasprm`           | |
 |                          |    |    +-------------------------+-------------------------+-------------------------+ |
 +--------------------------+----+------------------------------------------------------------------------------------+
 | |_2|:el:`motor`          | \* | .. table::                                                                         |
@@ -939,6 +967,42 @@ XML schema
 |                          |    |    +-------------------------+-------------------------+-------------------------+ |
 +--------------------------+----+------------------------------------------------------------------------------------+
 | |_2|:el:`velocity`       | \* | .. table::                                                                         |
+|                          |    |    :class: mjcf-attributes                                                         |
+|                          |    |                                                                                    |
+|                          |    |    +-------------------------+-------------------------+-------------------------+ |
+|                          |    |    | :at:`name`              | :at:`class`             | :at:`group`             | |
+|                          |    |    +-------------------------+-------------------------+-------------------------+ |
+|                          |    |    | :at:`ctrllimited`       | :at:`forcelimited`      | :at:`ctrlrange`         | |
+|                          |    |    +-------------------------+-------------------------+-------------------------+ |
+|                          |    |    | :at:`forcerange`        | :at:`lengthrange`       | :at:`gear`              | |
+|                          |    |    +-------------------------+-------------------------+-------------------------+ |
+|                          |    |    | :at:`cranklength`       | :at:`user`              | :at:`joint`             | |
+|                          |    |    +-------------------------+-------------------------+-------------------------+ |
+|                          |    |    | :at:`jointinparent`     | :at:`tendon`            | :at:`slidersite`        | |
+|                          |    |    +-------------------------+-------------------------+-------------------------+ |
+|                          |    |    | :at:`cranksite`         | :at:`site`              | :at:`kv`                | |
+|                          |    |    +-------------------------+-------------------------+-------------------------+ |
++--------------------------+----+------------------------------------------------------------------------------------+
+| |_2|:el:`intvelocity`    | \* | .. table::                                                                         |
+|                          |    |    :class: mjcf-attributes                                                         |
+|                          |    |                                                                                    |
+|                          |    |    +-------------------------+-------------------------+-------------------------+ |
+|                          |    |    | :at:`name`              | :at:`class`             | :at:`group`             | |
+|                          |    |    +-------------------------+-------------------------+-------------------------+ |
+|                          |    |    | :at:`ctrllimited`       | :at:`forcelimited`      | :at:`ctrlrange`         | |
+|                          |    |    +-------------------------+-------------------------+-------------------------+ |
+|                          |    |    | :at:`forcerange`        | :at:`lengthrange`       | :at:`actrange`          | |
+|                          |    |    +-------------------------+-------------------------+-------------------------+ |
+|                          |    |    | :at:`gear`              | :at:`cranklength`       | :at:`user`              | |
+|                          |    |    +-------------------------+-------------------------+-------------------------+ |
+|                          |    |    | :at:`joint`             | :at:`jointinparent`     | :at:`tendon`            | |
+|                          |    |    +-------------------------+-------------------------+-------------------------+ |
+|                          |    |    | :at:`slidersite`        | :at:`cranksite`         | :at:`site`              | |
+|                          |    |    +-------------------------+-------------------------+-------------------------+ |
+|                          |    |    | :at:`kp`                |                         |                         | |
+|                          |    |    +-------------------------+-------------------------+-------------------------+ |
++--------------------------+----+------------------------------------------------------------------------------------+
+| |_2|:el:`damper`         | \* | .. table::                                                                         |
 |                          |    |    :class: mjcf-attributes                                                         |
 |                          |    |                                                                                    |
 |                          |    |    +-------------------------+-------------------------+-------------------------+ |
@@ -1214,6 +1278,8 @@ XML schema
 |                          |    |    +-------------------------+-------------------------+-------------------------+ |
 |                          |    |    | :at:`cutoff`            | :at:`noise`             | :at:`user`              | |
 |                          |    |    +-------------------------+-------------------------+-------------------------+ |
+|                          |    |    | :at:`reftype`           | :at:`refname`           |                         | |
+|                          |    |    +-------------------------+-------------------------+-------------------------+ |
 +--------------------------+----+------------------------------------------------------------------------------------+
 | |_2|:el:`framequat`      | \* | .. table::                                                                         |
 |                          |    |    :class: mjcf-attributes                                                         |
@@ -1222,6 +1288,8 @@ XML schema
 |                          |    |    | :at:`name`              | :at:`objtype`           | :at:`objname`           | |
 |                          |    |    +-------------------------+-------------------------+-------------------------+ |
 |                          |    |    | :at:`cutoff`            | :at:`noise`             | :at:`user`              | |
+|                          |    |    +-------------------------+-------------------------+-------------------------+ |
+|                          |    |    | :at:`reftype`           | :at:`refname`           |                         | |
 |                          |    |    +-------------------------+-------------------------+-------------------------+ |
 +--------------------------+----+------------------------------------------------------------------------------------+
 | |_2|:el:`framexaxis`     | \* | .. table::                                                                         |
@@ -1232,6 +1300,8 @@ XML schema
 |                          |    |    +-------------------------+-------------------------+-------------------------+ |
 |                          |    |    | :at:`cutoff`            | :at:`noise`             | :at:`user`              | |
 |                          |    |    +-------------------------+-------------------------+-------------------------+ |
+|                          |    |    | :at:`reftype`           | :at:`refname`           |                         | |
+|                          |    |    +-------------------------+-------------------------+-------------------------+ |
 +--------------------------+----+------------------------------------------------------------------------------------+
 | |_2|:el:`frameyaxis`     | \* | .. table::                                                                         |
 |                          |    |    :class: mjcf-attributes                                                         |
@@ -1240,6 +1310,8 @@ XML schema
 |                          |    |    | :at:`name`              | :at:`objtype`           | :at:`objname`           | |
 |                          |    |    +-------------------------+-------------------------+-------------------------+ |
 |                          |    |    | :at:`cutoff`            | :at:`noise`             | :at:`user`              | |
+|                          |    |    +-------------------------+-------------------------+-------------------------+ |
+|                          |    |    | :at:`reftype`           | :at:`refname`           |                         | |
 |                          |    |    +-------------------------+-------------------------+-------------------------+ |
 +--------------------------+----+------------------------------------------------------------------------------------+
 | |_2|:el:`framezaxis`     | \* | .. table::                                                                         |
@@ -1250,6 +1322,8 @@ XML schema
 |                          |    |    +-------------------------+-------------------------+-------------------------+ |
 |                          |    |    | :at:`cutoff`            | :at:`noise`             | :at:`user`              | |
 |                          |    |    +-------------------------+-------------------------+-------------------------+ |
+|                          |    |    | :at:`reftype`           | :at:`refname`           |                         | |
+|                          |    |    +-------------------------+-------------------------+-------------------------+ |
 +--------------------------+----+------------------------------------------------------------------------------------+
 | |_2|:el:`framelinvel`    | \* | .. table::                                                                         |
 |                          |    |    :class: mjcf-attributes                                                         |
@@ -1259,6 +1333,8 @@ XML schema
 |                          |    |    +-------------------------+-------------------------+-------------------------+ |
 |                          |    |    | :at:`cutoff`            | :at:`noise`             | :at:`user`              | |
 |                          |    |    +-------------------------+-------------------------+-------------------------+ |
+|                          |    |    | :at:`reftype`           | :at:`refname`           |                         | |
+|                          |    |    +-------------------------+-------------------------+-------------------------+ |
 +--------------------------+----+------------------------------------------------------------------------------------+
 | |_2|:el:`frameangvel`    | \* | .. table::                                                                         |
 |                          |    |    :class: mjcf-attributes                                                         |
@@ -1267,6 +1343,8 @@ XML schema
 |                          |    |    | :at:`name`              | :at:`objtype`           | :at:`objname`           | |
 |                          |    |    +-------------------------+-------------------------+-------------------------+ |
 |                          |    |    | :at:`cutoff`            | :at:`noise`             | :at:`user`              | |
+|                          |    |    +-------------------------+-------------------------+-------------------------+ |
+|                          |    |    | :at:`reftype`           | :at:`refname`           |                         | |
 |                          |    |    +-------------------------+-------------------------+-------------------------+ |
 +--------------------------+----+------------------------------------------------------------------------------------+
 | |_2|:el:`framelinacc`    | \* | .. table::                                                                         |
@@ -1333,7 +1411,9 @@ XML schema
 |                          |    |    +-------------------------+-------------------------+-------------------------+ |
 |                          |    |    | :at:`name`              | :at:`time`              | :at:`qpos`              | |
 |                          |    |    +-------------------------+-------------------------+-------------------------+ |
-|                          |    |    | :at:`qvel`              | :at:`act`               |                         | |
+|                          |    |    | :at:`qvel`              | :at:`act`               | :at:`ctrl`              | |
+|                          |    |    +-------------------------+-------------------------+-------------------------+ |
+|                          |    |    | :at:`mpos`              | :at:`mquat`             |                         | |
 |                          |    |    +-------------------------+-------------------------+-------------------------+ |
 +--------------------------+----+------------------------------------------------------------------------------------+
 
@@ -1440,9 +1520,10 @@ This element is used to set options for the built-in parser and compiler. After 
 any effect. The settings here are global and apply to the entire model.
 
 :at:`boundmass`: :at-val:`real, "0"`
-   This attribute imposes a lower bound on the mass of each body except for the world body. It can be used as a quick
-   fix for poorly designed models that contain massless moving bodies, such as the dummy bodies often used in URDF
-   models to attach sensors. Note that in MuJoCo there is no need to create dummy bodies.
+   This attribute imposes a lower bound on the mass of each body except for the world body. Setting this attribute to
+   a value greater than 0 can be used as a quick fix for poorly designed models that contain massless moving bodies,
+   such as the dummy bodies often used in URDF models to attach sensors. Note that in MuJoCo there is no need to create
+   dummy bodies.
 :at:`boundinertia`: :at-val:`real, "0"`
    This attribute imposes a lower bound on the diagonal inertia components of each body except for the world body. Its
    use is similar to boundmass above.
@@ -1641,10 +1722,11 @@ adjust it properly through the XML.
    around this convention (both the camera and perturbation commands are based on it) so we do not recommend deviating
    from it.
 :at:`wind`: :at-val:`real(3), "0 0 0"`
-   Velocity vector of the medium (i.e. wind). This vector is subtracted from the 3D translational velocity of each body,
-   and the result is used to compute viscous, lift and drag forces acting on the body; recall :ref:`Passive forces
+   Velocity vector of the medium (i.e., wind). This vector is subtracted from the 3D translational velocity of each
+   body, and the result is used to compute viscous, lift and drag forces acting on the body; recall :ref:`Passive forces
    <gePassive>` in the Computation chapter. The magnitude of these forces scales with the values of the next two
    attributes.
+
 :at:`magnetic`: :at-val:`real(3), "0 -0.5 0"`
    Global magnetic flux. This vector is used by magnetometer sensors, which are defined as sites and return the magnetic
    flux at the site position expressed in the site frame.
@@ -1744,7 +1826,7 @@ from its default.
    This flag disables the clamping of control inputs to all actuators, even if the actuator-specific attributes are set
    to enable clamping.
 :at:`warmstart`: :at-val:`[disable, enable], "enable"`
-   This flag disables warm-starting of the constraint solver. By default the solver uses the solution (i.e. the
+   This flag disables warm-starting of the constraint solver. By default the solver uses the solution (i.e., the
    constraint force) from the previous time step to initialize the iterative optimization. This feature should be
    disabled when evaluating the dynamics at a collection of states that do not form a trajectory - in which case warm
    starts make no sense and are likely to slow down the solver.
@@ -1774,18 +1856,26 @@ from its default.
    This flag enables the simulation of sensor noise. When disabled (which is the default) noise is not added to
    sensordata, even if the sensors specify non-zero noise amplitudes. When enabled, zero-mean Gaussian noise is added to
    the underlying deterministic sensor data. Its standard deviation is determined by the noise parameter of each sensor.
+:at:`multiccd`: :at-val:`[disable, enable], "disable"`             **(experimental feature)**
+   This flag enables multiple-contact collision detection for geom pairs that use the general-purpose convex-convex
+   collider based on :ref:`libccd <coChecking>` e.g., mesh-mesh collisions. This can be useful when the contacting geoms
+   have a flat surface, and the single contact point generated by the convex-convex collider cannot accurately capture
+   the surface contact, leading to instabilities that typically manifest as sliding or wobbling. Multiple contact points
+   are found by rotating the two geoms by ±1e-3 radians around the tangential axes and re-running the collision
+   function. If a new contact is detected it is added, allowing for up to 4 additional contact points. This feature is
+   currently considered experimental, and both the behavior and the way it is activated may change in the future.
 
 .. _size:
 
 **size** (*)
-~~~~~~~~~~~~~~~~~~~~~~~~~
+~~~~~~~~~~~~
 
 This element specifies size parameters that cannot be inferred from the number of elements in the model. Unlike the
 fields of mjOption which can be modified at runtime, sizes are structural parameters and should not be modified after
 compilation.
 
 :at:`njmax`: :at-val:`int, "-1"`
-   This and the next two attributes specify the maximum sizes of the dynamic arrays in mjData, i.e. arrays whose
+   This and the next two attributes specify the maximum sizes of the dynamic arrays in mjData, i.e., arrays whose
    effective length varies at runtime. This attribute specifies the maximum number of scalar constraints (or
    equivalently, rows of the constraint Jacobian) that can be handled at runtime. If the number of active constraints is
    about to exceed this maximum (usually because too many contacts become active) the extra constraints are discarded
@@ -1801,7 +1891,7 @@ compilation.
    warning is generated. The actual number of contacts is stored in mjData.ncon. If this value is negative, the compiler
    will use a heuristic to guess an appropriate number.
 :at:`nstack`: :at-val:`int, "-1"`
-   This attribute specifies the size of the pre-allocated stack in mjData, in units of sizeof(mjtNum) which is currently
+   This attribute specifies the size of the preallocated stack in mjData, in units of sizeof(mjtNum) which is currently
    defined as double; thus the size in bytes is 8 times larger. The custom stack is used by all MuJoCo functions that
    need dynamically allocated memory. We do not use heap memory allocation at runtime, so as to speed up processing as
    well as avoid heap fragmentation. Note that the internal allocator keeps track of how much stack space has ever been
@@ -1814,23 +1904,23 @@ compilation.
    The number of key frames allocated in mjModel is the larger of this value and the number of :ref:`key <key>` elements
    below. Note that the interactive simulator has the ability to take snapshots of the system state and save them as key
    frames.
-:at:`nuser_body`: :at-val:`int, "0"`
+:at:`nuser_body`: :at-val:`int, "-1"`
    The number of custom user parameters added to the definition of each body. See also :ref:`User parameters <CUser>`.
    The parameter values are set via the user attribute of the :ref:`body <body>` element. These values are not accessed
    by MuJoCo. They can be used to define element properties needed in user callbacks and other custom code.
-:at:`nuser_jnt`: :at-val:`int, "0"`
+:at:`nuser_jnt`: :at-val:`int, "-1"`
    The number of custom user parameters added to the definition of each :ref:`joint <joint>`.
-:at:`nuser_geom`: :at-val:`int, "0"`
+:at:`nuser_geom`: :at-val:`int, "-1"`
    The number of custom user parameters added to the definition of each :ref:`geom <geom>`.
-:at:`nuser_site"`: :at-val:`int, "0"`
+:at:`nuser_site`: :at-val:`int, "-1"`
    The number of custom user parameters added to the definition of each :ref:`site <site>`.
-:at:`nuser_cam"`: :at-val:`int, "0"`
+:at:`nuser_cam`: :at-val:`int, "-1"`
    The number of custom user parameters added to the definition of each :ref:`camera <camera>`.
-:at:`nuser_tendon`: :at-val:`int, "0"`
+:at:`nuser_tendon`: :at-val:`int, "-1"`
    The number of custom user parameters added to the definition of each :ref:`tendon <tendon>`.
-:at:`nuser_actuator`: :at-val:`int, "0"`
+:at:`nuser_actuator`: :at-val:`int, "-1"`
    The number of custom user parameters added to the definition of each :ref:`actuator <actuator>`.
-:at:`nuser_sensor`: :at-val:`int, "0"`
+:at:`nuser_sensor`: :at-val:`int, "-1"`
    The number of custom user parameters added to the definition of each :ref:`sensor <sensor>`.
 
 .. _visual:
@@ -1843,7 +1933,7 @@ compilation.
   yields a list of geometric entities for subsequent rendering. The settings here are global, in contrast with the
   element-specific visual settings. The global and element-specific settings refer to non-overlapping properties. Some
   of the global settings affect properties such as triangulation of geometric primitives that cannot be set per element.
-  Other global settings affect the properties of decorative objects, i.e. objects such as contact points and force
+  Other global settings affect the properties of decorative objects, i.e., objects such as contact points and force
   arrows which do not correspond to model elements. The visual settings are grouped semantically into several
   subsections.
 | This element is a good candidate for the :ref:`file include <CInclude>` mechanism. One can create an XML file with
@@ -1858,7 +1948,7 @@ While all settings in mjVisual are global, the settings here could not be fit in
 is effectively a miscellaneous subsection.
 
 :at:`fovy`: :at-val:`real, "45"`
-   This attribute specifies the vertical field of view of the free camera, i.e. the camera that is always available in
+   This attribute specifies the vertical field of view of the free camera, i.e., the camera that is always available in
    the visualizer even if no cameras are explicitly defined in the model. It is always expressed in degrees, regardless
    of the setting of the angle attribute of :ref:`compiler <compiler>`, and is also represented in the low level model
    in degrees. This is because we pass it to OpenGL which uses degrees. The same convention applies to the fovy
@@ -1888,7 +1978,7 @@ possibly slower speed. Note that `simulate.cc <https://github.com/deepmind/mujoc
 displays the frames per second (FPS). The target FPS is 60 Hz; if the number shown in the visualizer is substantially
 lower, this means that the GPU is over-loaded and the visualization should somehow be simplified.
 
-:at:`shadowsize`: :at-val:`int, "1024"`
+:at:`shadowsize`: :at-val:`int, "4096"`
    This attribute specifies the size of the square texture used for shadow mapping. Higher values result is smoother
    shadows. The size of the area over which a :ref:`light <light>` can cast shadows also affects smoothness, so these
    settings should be adjusted jointly. The default here is somewhat conservative. Most modern GPUs are able to handle
@@ -2013,7 +2103,7 @@ documented below.
 :at:`light`: :at-val:`real, "0.3"`
    The size of the decorative object used to represent model lights in the rendering.
 :at:`selectpoint`: :at-val:`real, "0.2"`
-   The radius of the sphere used to render the selection point (i.e. the point where the user left-double-clicked to
+   The radius of the sphere used to render the selection point (i.e., the point where the user left-double-clicked to
    select a body). Note that the local and global coordinates of this point can be printed in the 3D view by activating
    the corresponding rendering flags. In this way, the coordinates of points of interest can be found.
 :at:`jointlength`: :at-val:`real, "1.0"`
@@ -2093,7 +2183,7 @@ disables the rendering of the corresponding object.
    Color of slider-crank mechanisms.
 :at:`crankbroken`: :at-val:`real(4), "0.9 0 0 1"`
    Color used to render the crank of slide-crank mechanisms, in model configurations where the specified rod length
-   cannot be maintained, i.e. it is "broken".
+   cannot be maintained, i.e., it is "broken".
 
 .. _statistic:
 
@@ -2258,6 +2348,22 @@ slidersite, cranksite.
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 All :ref:`velocity <velocity>` attributes are available here except: name, class, joint, jointinparent, site, tendon,
+slidersite, cranksite.
+
+.. _default-intvelocity:
+
+:el-prefix:`default/` **intvelocity** (?)
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+All :ref:`intvelocity <intvelocity>` attributes are available here except: name, class, joint, jointinparent, site, tendon,
+slidersite, cranksite.
+
+.. _default-damper:
+
+:el-prefix:`default/` **damper** (?)
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+All :ref:`damper <damper>` attributes are available here except: name, class, joint, jointinparent, site, tendon,
 slidersite, cranksite.
 
 .. _default-cylinder:
@@ -2458,7 +2564,7 @@ chapter.
    different from "none", the texture is treated as procedural and any file names are ignored. The keywords have the
    following meaning:
    The **gradient** type generates a color gradient from rgb1 to rgb2. The interpolation in color space is done through
-   a sigmoid function. For cube and skybox textures the gradient is along the +Y axis, i.e. from top to bottom for
+   a sigmoid function. For cube and skybox textures the gradient is along the +Y axis, i.e., from top to bottom for
    skybox rendering.
 
    The **checker** type generates a 2-by-2 checker pattern with alternating colors given by rgb1 to rgb2. This is
@@ -2486,11 +2592,11 @@ chapter.
    texture size and probability need to be adjusted jointly. Together with a gradient skybox texture, this can create
    the appearance of a night sky with stars.
 :at:`width`: :at-val:`int, "0"`
-   The width of the procedural texture, i.e. the number of columns in the image. For cube and skybox procedural textures
-   the width and height must be equal. Larger values usually result in higher quality images, although in some cases
-   (e.g. checker patterns) small values are sufficient.
+   The width of the procedural texture, i.e., the number of columns in the image. For cube and skybox procedural
+   textures the width and height must be equal. Larger values usually result in higher quality images, although in some
+   cases (e.g. checker patterns) small values are sufficient.
 :at:`height`: :at-val:`int, "0"`
-   The height of the procedural texture, i.e. the number of rows in the image.
+   The height of the procedural texture, i.e., the number of rows in the image.
 :at:`hflip`: :at-val:`[false, true], "false"`
    If true, images loaded from file are flipped in the horizontal direction. Does not affect procedural textures.
 :at:`vflip`: :at-val:`[false, true], "false"`
@@ -2548,7 +2654,7 @@ also known as terrain map, is a 2D matrix of elevation data. The data can be spe
    with the file contents.
 :at:`nrow`: :at-val:`int, "0"`
    This attribute and the next are used to allocate a height field in mjModel and leave the elevation data undefined
-   (i.e. set to 0). This attribute specifies the number of rows in the elevation data matrix. The default value of 0
+   (i.e., set to 0). This attribute specifies the number of rows in the elevation data matrix. The default value of 0
    means that the data will be loaded from a file, which will be used to infer the size of the matrix.
 :at:`ncol`: :at-val:`int, "0"`
    This attribute specifies the number of columns in the elevation data matrix.
@@ -2576,52 +2682,57 @@ also known as terrain map, is a 2D matrix of elevation data. The data can be spe
 :el-prefix:`asset/` **mesh** (*)
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-| This element creates a mesh asset, which can then be referenced from geoms. If the referencing geom type is "mesh" the
-  mesh is instantiated in the model, otherwise a geometric primitive is automatically fitted to it; see the
-  :ref:`geom <geom>` element below.
+This element creates a mesh asset, which can then be referenced from geoms. If the referencing geom type is
+:at-val:`mesh` the mesh is instantiated in the model, otherwise a geometric primitive is automatically fitted to it; see
+the :ref:`geom <geom>` element below.
 
-| MuJoCo works with triangulated meshes. They can be loaded from binary STL files, binary MSH files with custom format
-  described below, or vertex and face data specified directly in the XML. Software such as MeshLab can be used to
-  convert from other mesh formats to STL. While any collection of triangles can be loaded as a mesh and rendered,
-  collision detection works with the convex hull of the mesh as explained in :ref:`Collision` in the Computation
-  chapter. See also the convexhull attribute of the :ref:`compiler <compiler>` element which controls the automatic
-  generation of convex hulls. The mesh appearance (including texture mapping) is controlled by the material and rgba
-  attributes of the referencing geom, similarly to height fields.
-| Starting with MuJoCo 2.0, meshes can have explicit texture coordinates instead of relying on the automated texture
-  mapping mechanism. When provided, these explicit coordinates have priority. Note that texture coordinates can be
-  specified with custom binary files, as well as explicitly in the XML with the texcoord attribute, but not via STL
-  files. These mechanism cannot be mixed. So if you have an STL mesh, the only way to add texture coordinates to it is
-  to convert to one of the other supported formats.
-| The binary MSH file starts with 4 integers specifying the number of vertex positions (nvertex), vertex normals
-  (nnormal), vertex texture coordinates (ntexcoord), and vertex indices making up the faces (nface), followed by the
-  numeric data. nvertex must be at least 4. nnormal and ntexcoord can be zero (in which case the corresponding data is
-  not defined) or equal to nvertex. nface can also be zero, in which case faces are constructed automatically from the
-  convex hull of the vertex positions. The file size in bytes must be exactly: 16 + 12*(nvertex + nnormal + nface) +
-  8*ntexcoord. The contents of the file must be as follows:
+MuJoCo works with triangulated meshes. They can be loaded from binary STL files, OBJ files or MSH files with custom
+format described below, or vertex and face data specified directly in the XML. Software such as MeshLab can be used to
+convert from other mesh formats to STL or OBJ. While any collection of triangles can be loaded as a mesh and rendered,
+collision detection works with the convex hull of the mesh as explained in :ref:`Collision`. See also the convexhull
+attribute of the :ref:`compiler <compiler>` element which controls the automatic generation of convex hulls. The mesh
+appearance (including texture mapping) is controlled by the :at:`material` and :at:`rgba` attributes of the referencing
+geom, similarly to height fields.
 
-.. code:: Text
+Starting with MuJoCo 2.0, meshes can have explicit texture coordinates instead of relying on the automated texture
+mapping mechanism. When provided, these explicit coordinates have priority. Note that texture coordinates can be
+specified with OBJ files and MSH files, as well as explicitly in the XML with the :at:`texcoord` attribute, but not via
+STL files. These mechanism cannot be mixed. So if you have an STL mesh, the only way to add texture coordinates to it is
+to convert to one of the other supported formats.
 
-       (int32)   nvertex
-       (int32)   nnormal
-       (int32)   ntexcoord
-       (int32)   nface
-       (float)   vertex_positions[3*nvertex]
-       (float)   vertex_normals[3*nnormal]
-       (float)   vertex_texcoords[2*ntexcoord]
-       (int32)   face_vertex_indices[3*nface]
+MSH file format
+   The binary MSH file starts with 4 integers specifying the number of vertex positions (nvertex), vertex normals
+   (nnormal), vertex texture coordinates (ntexcoord), and vertex indices making up the faces (nface), followed by the
+   numeric data. nvertex must be at least 4. nnormal and ntexcoord can be zero (in which case the corresponding data is
+   not defined) or equal to nvertex. nface can also be zero, in which case faces are constructed automatically from the
+   convex hull of the vertex positions. The file size in bytes must be exactly: 16 + 12*(nvertex + nnormal + nface) +
+   8*ntexcoord. The contents of the file must be as follows:
 
-| Poorly designed meshes can display rendering artifacts. In particular, the shadow mapping mechanism relies on having
-  some distance between front and back-facing triangle faces. If the faces are repeated, with opposite normals as
-  determined by the vertex order in each triangle, this causes shadow aliasing. The solution is to remove the repeated
-  faces (which can be done in MeshLab) or use a better designed mesh.
-| The size of the mesh is determined by the 3D coordinates of the vertex data in the mesh file, multiplied by the
-  components of the scale attribute below. Scaling is applied separately for each coordinate axis. Note that negative
-  scaling values can be used to flip the mesh; this is a legitimate operation. The size parameters of the referening
-  geoms are ignored, similarly to height fields. As of MuJoCo 2.0 we also provide a mechanism to translate and rotate
-  the 3D coordinates, using the attributes refpos and refquat.
-| Another new feature in MuJoCo 2.0 is that a mesh can be defined without faces (a point cloud essentially). In that
-  case the convex hull is constructed automatically, even if the compiler attribute convexhull is false. This makes is
-  easy to construct simple shapes directly in the XML. For example, a pyramid can be created as:
+   .. code:: Text
+
+          (int32)   nvertex
+          (int32)   nnormal
+          (int32)   ntexcoord
+          (int32)   nface
+          (float)   vertex_positions[3*nvertex]
+          (float)   vertex_normals[3*nnormal]
+          (float)   vertex_texcoords[2*ntexcoord]
+          (int32)   face_vertex_indices[3*nface]
+
+Poorly designed meshes can display rendering artifacts. In particular, the shadow mapping mechanism relies on having
+some distance between front and back-facing triangle faces. If the faces are repeated, with opposite normals as
+determined by the vertex order in each triangle, this causes shadow aliasing. The solution is to remove the repeated
+faces (which can be done in MeshLab) or use a better designed mesh.
+
+The size of the mesh is determined by the 3D coordinates of the vertex data in the mesh file, multiplied by the
+components of the :at:`scale` attribute below. Scaling is applied separately for each coordinate axis. Note that
+negative scaling values can be used to flip the mesh; this is a legitimate operation. The size parameters of the
+referening geoms are ignored, similarly to height fields. As of MuJoCo 2.0 we also provide a mechanism to translate and
+rotate the 3D coordinates, using the attributes refpos and refquat.
+
+Another new feature in MuJoCo 2.0 is that a mesh can be defined without faces (a point cloud essentially). In that case
+the convex hull is constructed automatically, even if the compiler attribute convexhull is false. This makes it easy to
+construct simple shapes directly in the XML. For example, a pyramid can be created as:
 
 .. code-block:: xml
 
@@ -2634,7 +2745,7 @@ whose origin is not inside the mesh. In contrast, MuJoCo expects the origin of a
 geometric center of the shape. We resolve this discrepancy by pre-processing the mesh in the compiler, so that it is
 centered around (0,0,0) and its principal axes of inertia are the coordinate axes. We also save the translation and
 rotation offsets needed to achieve such alignment. These offsets are then applied to the referencing geom's position and
-orientation; see also mesh attribute of :ref:`geom <geom>` below. Fortunately most meshes used in robot models are
+orientation; see also :at:`mesh` attribute of :ref:`geom <geom>` below. Fortunately most meshes used in robot models are
 designed in a coordinate frame centered at the joint. This makes the corresponding MJCF model intuitive: we set the body
 frame at the joint, so that the joint position is (0,0,0) in the body frame, and simply reference the mesh. Below is an
 MJCF model fragment of a forearm, containing all the information needed to put the mesh where one would expect it to be.
@@ -2654,15 +2765,16 @@ practice this is rarely needed.
        <geom type="mesh" mesh="forearm"/>
    </body>
 
-| The inertial computation mentioned above is part of an algorithm used not only to center and align the mesh, but also
-  to infer the mass and inertia of the body to which it is attached. This is done by computing the centroid of the
-  triangle faces, connecting each face with the centroid to form a triangular pyramid, computing the mass and inertia of
-  all pyramids and accumulating them. This algorithm comes from Astronomy where it is used to estimate inertial
-  properties of asteroids. It is exact for convex meshes but is not always exact for non-convex meshes; indeed no
-  algorithm can be exact when the notion of interior is ill-defined. Thus for non-convex models designed in CAD software
-  (which usually knows what the interior is) it is better to ask that software to compute the inertial properties of the
-  body and enter them in the MJCF file explicitly via the :ref:`inertial <inertial>` element.
-| The full list of processing steps applied by the compiler to each mesh is as follows:
+The inertial computation mentioned above is part of an algorithm used not only to center and align the mesh, but also
+to infer the mass and inertia of the body to which it is attached. This is done by computing the centroid of the
+triangle faces, connecting each face with the centroid to form a triangular pyramid, computing the mass and inertia of
+all pyramids and accumulating them. This algorithm comes from Astronomy where it is used to estimate inertial
+properties of asteroids. It is exact for convex meshes but is not always exact for non-convex meshes; indeed no
+algorithm can be exact when the notion of interior is ill-defined. Thus for non-convex models designed in CAD software
+(which usually knows what the interior is) it is better to ask that software to compute the inertial properties of the
+body and enter them in the MJCF file explicitly via the :ref:`inertial <inertial>` element.
+
+The full list of processing steps applied by the compiler to each mesh is as follows:
 
 #. For STL meshes, remove any repeated vertices and re-index the faces if needed. If the mesh is not STL, we assume that
    the desired vertices and faces have already been generated and do not apply removal or re-indexing;
@@ -2718,39 +2830,42 @@ practice this is rarely needed.
 :el-prefix:`asset/` **skin** (*)
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-| Skinned meshes (or skins) were added in MuJoCo 2.0. These are deformable meshes whose vertex positions and normals are
-  computed each time the model is rendered. MuJoCo skins are only used for visualization and do not affect the physics
-  in any way. In particular, collisions involve the geoms of the bodies to which the skin is attached, and not the skin
-  itself. Unlike regular meshes which are referenced from geoms and participate in collisions, the skin is not
-  referenced from anywhere else in the model. It is a stand-alone asset that is used by renderer and not by the
-  simulator.
-| The skin has vertex positions and normals updated at runtime, and triangle faces and optional texture coordinates
-  which are predefined. It also has "bones" used for updating. Bones are regular MuJoCo bodies referenced with the
-  :el:`bone` subelement. Each bone has a list of vertex indices and corresponding real-valued weights which specify how
-  much the bone position and orientation influence the corresponding vertex. The vertex has local coordinates with
-  respect to every bone that influences it. The local coordinates are computed by the model compiler, given global
-  vertex coordinates and global bind poses for each body. The bind poses do not have to correspond to the model
-  reference configuration qpos0. Note that the vertex positions and bone bind poses provided in the skin definition are
-  always global, even if the model itself is defined in local coordinates.
-| At runtime the local coordinates of each vertex with respect to each bone that influences it are converted to global
-  coordinates, and averaged in proportion to the corresponding weights to obtain a single set of 3D coordinates for each
-  vertex. Normals then are computed automatically given the resulting global vertex positions and face information.
-  Finally, the skin can be inflated by applying an offset to each vertex position along its (computed) normal.
-| Skins are one-sided for rendering purposes; this is because back-face culling is needed to avoid shading and aliasing
-  artifacts. When the skin is a closed 3D shape this does not matter because the back sides cannot be seen. But if the
-  skin is a 2D object, we have to specify both sides and offset them slightly to avoid artifacts. Note that the
-  composite objects introduced in MuJoCo 2.0 generate skins automatically. So one can save an XML model with a composite
-  object, and obtain an elaborate example of how a skin is specified in the XML.
-| Similar to meshes, skins can be specified directly in the XML via attributes documented later, or loaded from a binary
-  SKN file which is in a custom format. The specification of skins is more complex than meshes because of the bone
-  subelements. The file format starts with a header of 4 integers: nvertex, ntexcoord, nface, nbone. The first three are
-  the same as in meshes, and specify the total number of vertices, texture coordinate pairs, and triangle faces in the
-  skin. ntexcoord can be zero or equal to nvertex. nbone specifies the number of MuJoCo bodies that will be used as
-  bones in the skin. The header is followed by the vertex, texcoord and face data, followed by a specification for each
-  bone. The bone specification contains the name of the corresponding model body, 3D bind position, 4D bind quaterion,
-  number of vertices influenced by the bone, and the vertex index array and weight array. Body names are represented as
-  fixed-length character arrays and are expected to be 0-terminated. Characters after the first 0 are ignored. The
-  contents of the SKN file are:
+Skinned meshes (or skins) were added in MuJoCo 2.0. These are deformable meshes whose vertex positions and normals are
+computed each time the model is rendered. MuJoCo skins are only used for visualization and do not affect the physics
+in any way. In particular, collisions involve the geoms of the bodies to which the skin is attached, and not the skin
+itself. Unlike regular meshes which are referenced from geoms and participate in collisions, the skin is not
+referenced from anywhere else in the model. It is a stand-alone asset that is used by renderer and not by the
+simulator.
+
+The skin has vertex positions and normals updated at runtime, and triangle faces and optional texture coordinates
+which are predefined. It also has "bones" used for updating. Bones are regular MuJoCo bodies referenced with the
+:el:`bone` subelement. Each bone has a list of vertex indices and corresponding real-valued weights which specify how
+much the bone position and orientation influence the corresponding vertex. The vertex has local coordinates with
+respect to every bone that influences it. The local coordinates are computed by the model compiler, given global
+vertex coordinates and global bind poses for each body. The bind poses do not have to correspond to the model
+reference configuration qpos0. Note that the vertex positions and bone bind poses provided in the skin definition are
+always global, even if the model itself is defined in local coordinates.
+
+At runtime the local coordinates of each vertex with respect to each bone that influences it are converted to global
+coordinates, and averaged in proportion to the corresponding weights to obtain a single set of 3D coordinates for each
+vertex. Normals then are computed automatically given the resulting global vertex positions and face information.
+Finally, the skin can be inflated by applying an offset to each vertex position along its (computed) normal.
+Skins are one-sided for rendering purposes; this is because back-face culling is needed to avoid shading and aliasing
+artifacts. When the skin is a closed 3D shape this does not matter because the back sides cannot be seen. But if the
+skin is a 2D object, we have to specify both sides and offset them slightly to avoid artifacts. Note that the
+composite objects introduced in MuJoCo 2.0 generate skins automatically. So one can save an XML model with a composite
+object, and obtain an elaborate example of how a skin is specified in the XML.
+
+Similar to meshes, skins can be specified directly in the XML via attributes documented later, or loaded from a binary
+SKN file which is in a custom format. The specification of skins is more complex than meshes because of the bone
+subelements. The file format starts with a header of 4 integers: nvertex, ntexcoord, nface, nbone. The first three are
+the same as in meshes, and specify the total number of vertices, texture coordinate pairs, and triangle faces in the
+skin. ntexcoord can be zero or equal to nvertex. nbone specifies the number of MuJoCo bodies that will be used as
+bones in the skin. The header is followed by the vertex, texcoord and face data, followed by a specification for each
+bone. The bone specification contains the name of the corresponding model body, 3D bind position, 4D bind quaternion,
+number of vertices influenced by the bone, and the vertex index array and weight array. Body names are represented as
+fixed-length character arrays and are expected to be 0-terminated. Characters after the first 0 are ignored. The
+contents of the SKN file are:
 
 .. code:: Text
 
@@ -2962,7 +3077,7 @@ axes of inertia of the body. Thus the inertia matrix is diagonal in this frame.
 :at:`fullinertia`: :at-val:`real(6), optional`
    Full inertia matrix M. Since M is 3-by-3 and symmetric, it is specified using only 6 numbers in the following order:
    M(1,1), M(2,2), M(3,3), M(1,2), M(1,3), M(2,3). The compiler computes the eigenvalue decomposition of M and sets the
-   frame orientation and diagonal inertia accordingly. If non-positive eigenvalues are encountered (i.e. if M is not
+   frame orientation and diagonal inertia accordingly. If non-positive eigenvalues are encountered (i.e., if M is not
    positive definite) a compile error is generated.
 
 .. _joint:
@@ -3005,7 +3120,7 @@ unit quaternions.
 
    The **hinge** type creates a hinge joint with one rotational degree of freedom. The rotation takes place around a
    specified axis through a specified position. This is the most common type of joint and is therefore the default. Most
-   models contact only hinge and free joints.
+   models contain only hinge and free joints.
 :at:`group`: :at-val:`int, "0"`
    Integer group to which the joint belongs. This attribute can be used for custom tags. It is also used by the
    visualizer to enable and disable the rendering of entire groups of joints.
@@ -3058,7 +3173,7 @@ unit quaternions.
    Armature inertia (or rotor inertia, or reflected inertia) of all degrees of freedom created by this joint. These are
    constants added to the diagonal of the inertia matrix in generalized coordinates. They make the simulation more
    stable, and often increase physical realism. This is because when a motor is attached to the system with a
-   transmission that amplifies the motor force by c, the inertia of the rotor (i.e. the moving part of the motor) is
+   transmission that amplifies the motor force by c, the inertia of the rotor (i.e., the moving part of the motor) is
    amplified by c*c. The same holds for gears in the early stages of planetary gear boxes. These extra inertias often
    dominate the inertias of the robot parts that are represented explicitly in the model, and the armature attribute is
    the way to model them.
@@ -3079,11 +3194,17 @@ unit quaternions.
 :el-prefix:`body/` **freejoint** (*)
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-This element creates a free joint whose only attribute is name. The same effect can be achieved with the :ref:`joint
-<joint>` element, however in that case default settings intended for actuated joints may also affect the free joint
-(depending on how the defaults classes are specified), which is usually undesirable. To avoid this complication, the
-freejoint element was introduced. It is merely an XML shortcut. The compiler transforms it into a regular joint in
-mjModel. If the XML model is saved, it will appear as a regular joint of type "free".
+This element creates a free joint whose only attributes are :at:`name` and :at:`group`. The :el:`freejoint` element is
+an XML shortcut for
+
+.. code-block:: xml
+
+   <joint type="free" stiffness="0" damping="0" frictionloss="0" armature="0"/>
+
+While this joint can evidently be created with the :ref:`joint <joint>` element, default joint settings could affect it.
+This is usually undesirable as physical free bodies do not have nonzero stiffness, damping, friction or armature. To
+avoid this complication, the :el:`freejoint` element was introduced, ensuring joint defaults are *not inherited*. If
+the XML model is saved, it will appear as a regular joint of type :at:`free`.
 
 :at:`name`: :at-val:`string, optional`
    Name of the joint.
@@ -3096,18 +3217,19 @@ mjModel. If the XML model is saved, it will appear as a regular joint of type "f
 :el-prefix:`body/` **geom** (*)
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-| This element creates a geom, and attaches it rigidly to the body within which the geom is defined. Multiple geoms can
-  be attached to the same body. At runtime they determine the appearance and collision properties of the body. At
-  compile time they can also determine the inertial properties of the body, depending on the presence of the
-  :ref:`inertial <inertial>` element and the setting of the inertiafromgeom attribute of :ref:`compiler <compiler>`.
-  This is done by summing the masses and inertias of all geoms attached to the body with geom group in the range
-  specified by the inertiagrouprange attribute of :ref:`compiler <compiler>`. The geom masses and inertias are computed
-  using the geom shape, a specified density or a geom mass which implies a density, and the assumption of uniform
-  density.
-| Geoms are not strictly required for physics simulation. One can create and simulate a model that only has bodies and
-  joints. Such a model can even be visualized, using equivalent inertia boxes to represent bodies. Only contact forces
-  would be missing from such a simulation. We do not recommend using such models, but knowing that this is possible
-  helps clarify the role of bodies and geoms in MuJoCo.
+This element creates a geom, and attaches it rigidly to the body within which the geom is defined. Multiple geoms can
+be attached to the same body. At runtime they determine the appearance and collision properties of the body. At
+compile time they can also determine the inertial properties of the body, depending on the presence of the
+:ref:`inertial <inertial>` element and the setting of the inertiafromgeom attribute of :ref:`compiler <compiler>`.
+This is done by summing the masses and inertias of all geoms attached to the body with geom group in the range
+specified by the inertiagrouprange attribute of :ref:`compiler <compiler>`. The geom masses and inertias are computed
+using the geom shape, a specified density or a geom mass which implies a density, and the assumption of uniform
+density.
+
+Geoms are not strictly required for physics simulation. One can create and simulate a model that only has bodies and
+joints. Such a model can even be visualized, using equivalent inertia boxes to represent bodies. Only contact forces
+would be missing from such a simulation. We do not recommend using such models, but knowing that this is possible
+helps clarify the role of bodies and geoms in MuJoCo.
 
 :at:`name`: :at-val:`string, optional`
    Name of the geom.
@@ -3280,7 +3402,7 @@ mjModel. If the XML model is saved, it will appear as a regular joint of type "f
    in :ref:`CSolver`. The quantity this function is applied to is the distance between
    the two geoms minus the margin plus the gap.
 :at:`gap`: :at-val:`real, "0"`
-   This attribute is used to enable the generation of inactive contacts, i.e. contacts that are ignored by the
+   This attribute is used to enable the generation of inactive contacts, i.e., contacts that are ignored by the
    constraint solver but are included in mjData.contact for the purpose of custom computations. When this value is
    positive, geom distances between margin and margin-gap correspond to such inactive contacts.
 :at:`fromto`: :at-val:`real(6), optional`
@@ -3312,6 +3434,30 @@ mjModel. If the XML model is saved, it will appear as a regular joint of type "f
    This attribute is used only when a primitive geometric type is being fitted to a mesh asset. The scale specified here
    is relative to the output of the automated fitting procedure. The default value of 1 leaves the result unchanged, a
    value of 2 makes all sizes of the fitted geom two times larger.
+:at:`fluidshape`: :at-val:`[none, ellipsoid], "none"`
+   "ellipsoid" Activates geom-level stateless fluid interaction model based on an ellipsoidal approximation of the geom
+   shape. When active, the model based on :ref:`body inertia sizes <gePassive>` is disabled for the parent body.
+:at:`fluidcoef`: :at-val:`real(5), "0.5 0.25 1.5 1.0 1.0"`
+   Dimensionless coefficients of fluid interaction model, as follows.
+
+
+.. table::
+   :align: left
+
+   +--------+-----------------------------+----------+
+   | Index  | Description                 | Default  |
+   +========+=============================+==========+
+   | 0      | Blunt drag coefficient.     | 0.5      |
+   +--------+-----------------------------+----------+
+   | 1      | Slender drag coeficient.    | 0.25     |
+   +--------+-----------------------------+----------+
+   | 2      | Angular drag coefficient.   | 1.5      |
+   +--------+-----------------------------+----------+
+   | 3      | Kutta lift coeficient.      | 1.0      |
+   +--------+-----------------------------+----------+
+   | 4      | Magnus lift coeficient.     | 1.0      |
+   +--------+-----------------------------+----------+
+
 :at:`user`: :at-val:`real(nuser_geom), "0 0 ..."`
    See :ref:`CUser`.
 
@@ -3380,7 +3526,7 @@ and the +Y axis points up. Thus the frame position and orientation are the key a
 :at:`mode`: :at-val:`[fixed, track, trackcom, targetbody, targetbodycom], "fixed"`
    This attribute specifies how the camera position and orientation in world coordinates are computed in forward
    kinematics (which in turn determine what the camera sees). "fixed" means that the position and orientation specified
-   below are fixed relative to the parent (i.e. the body where the camera is defined). "track" means that the camera
+   below are fixed relative to the parent (i.e., the body where the camera is defined). "track" means that the camera
    position is at a constant offset from the parent in world coordinates, while the camera orientation is constant in
    world coordinates. These constants are determined by applying forward kinematics in qpos0 and treating the camera as
    fixed. Tracking can be used for example to position a camera above a body, point it down so it sees the body, and
@@ -3447,7 +3593,7 @@ the direction specified by the dir attribute. It does not have a full spatial fr
    computed by the compiler but can also be overridden by specifying the extent attribute of :ref:`statistic
    <statistic>`. Internally the shadow-mapping mechanism renders the scene from the light viewpoint (as if it were a
    camera) into a depth texture, and then renders again from the camera viewpoint, using the depth texture to create
-   shadows. The internal rendering pass uses the same near and far clipping planes as regular rendering, i.e. these
+   shadows. The internal rendering pass uses the same near and far clipping planes as regular rendering, i.e., these
    clipping planes bound the cone or box shadow volume in the light direction. As a result, some shadows (especially
    those very close to the light) may be clipped.
 :at:`active`: :at-val:`[false, true], "true"`
@@ -3765,7 +3911,7 @@ element.
 :at:`margin`: :at-val:`real, "0"`
    Distance threshold below which contacts are detected and included in the global array mjData.contact.
 :at:`gap`: :at-val:`real, "0"`
-   This attribute is used to enable the generation of inactive contacts, i.e. contacts that are ignored by the
+   This attribute is used to enable the generation of inactive contacts, i.e., contacts that are ignored by the
    constraint solver but are included in mjData.contact for the purpose of custom computations. When this value is
    positive, geom distances between margin and margin-gap correspond to such inactive contacts.
 
@@ -3850,7 +3996,7 @@ of the other body, without any joint elements in the child body.
    and changing the corresponding component of mjModel.eq_active at runtime can be used to fix the body temporarily.
 :at:`relpose`: :at-val:`real(7), "0 1 0 0 0 0 0"`
    This attribute specifies the relative pose (3D position followed by 4D quaternion orientation) of body2 relative to
-   body1. If the quaternion part (i.e. last 4 components of the vector) are all zeros, as in the default setting, this
+   body1. If the quaternion part (i.e., last 4 components of the vector) are all zeros, as in the default setting, this
    attribute is ignored and the relative pose is the one corresponding to the model reference pose in qpos0. The unusual
    default is because all equality constraint types share the same default for their numeric parameters.
 
@@ -3929,19 +4075,19 @@ can also represent different forms of mechanical coupling.
     :width: 400px
     :align: right
 
-| This element creates a spatial tendon, which is a minimum-length path passing through specified via-points and
-  wrapping around specified obstacle geoms. The objects along the path are defined with the sub-elements
-  :ref:`site <spatial-site>` and :ref:`geom <spatial-geom>` below. One can also define :ref:`pulleys <spatial-pulley>`
-  which split the path in multiple branches. Each branch of the tendon path must start and end with a site, and if it
-  has multiple obstacle geoms they must be separated by sites - so as to avoid the need for an iterative solver at the
-  tendon level. This example illustrates a multi-branch tendon acting as a finger extensor, with a counter-weight
-  instead of an actuator.
+This element creates a spatial tendon, which is a minimum-length path passing through specified via-points and
+wrapping around specified obstacle geoms. The objects along the path are defined with the sub-elements
+:ref:`site <spatial-site>` and :ref:`geom <spatial-geom>` below. One can also define :ref:`pulleys <spatial-pulley>`
+which split the path in multiple branches. Each branch of the tendon path must start and end with a site, and if it
+has multiple obstacle geoms they must be separated by sites - so as to avoid the need for an iterative solver at the
+tendon level. This example illustrates a multi-branch tendon acting as a finger extensor, with a counter-weight
+instead of an actuator.
 
-| MuJoCo 2.0 introduced a second form of wrapping, where the tendon is constrained to pass through a geom rather than
-  wrap around it. This is enabled automatically when a sidesite is specified and its position is inside the volume of
-  the obstacle geom.
+MuJoCo 2.0 introduced a second form of wrapping, where the tendon is constrained to pass through a geom rather than
+wrap around it. This is enabled automatically when a sidesite is specified and its position is inside the volume of
+the obstacle geom.
 
-| `tendon.xml <_static/tendon.xml>`__
+`tendon.xml <_static/tendon.xml>`__
 
 :at:`name`: :at-val:`string, optional`
    Name of the tendon.
@@ -4098,16 +4244,23 @@ specify them independently.
    Integer group to which the actuator belongs. This attribute can be used for custom tags. It is also used by the
    visualizer to enable and disable the rendering of entire groups of actuators.
 :at:`ctrllimited`: :at-val:`[false, true], "false"`
-   If true, the control input to this actuator is automatically clamped to ctrlrange at runtime. If false, control input
-   clamping is disabled. Note that control input clamping can also be globally disabled with the clampctrl attribute of
-   option/ :ref:`flag <option-flag>`.
+   If true, the control input to this actuator is automatically clamped to :at:`ctrlrange` at runtime. If false, control
+   input clamping is disabled. Note that control input clamping can also be globally disabled with the :at:`clampctrl`
+   attribute of :ref:`option/flag <option-flag>`.
 :at:`forcelimited`: :at-val:`[false, true], "false"`
-   If true, the force output of this actuator is automatically clamped to forcerange at runtime. If false, force output
+   If true, the force output of this actuator is automatically clamped to :at:`forcerange` at runtime. If false, force
    clamping is disabled.
+:at:`actlimited`: :at-val:`[false, true], "false"`
+   If true, the internal state (activation) associated with this actuator is automatically clamped to :at:`actrange` at
+   runtime. If false, activation clamping is disabled. See the :ref:`Activation clamping <CActRange>` section for more
+   details.
 :at:`ctrlrange`: :at-val:`real(2), "0 0"`
    Range for clamping the control input. The compiler expects the first value to be smaller than the second value.
 :at:`forcerange`: :at-val:`real(2), "0 0"`
    Range for clamping the force output. The compiler expects the first value to be no greater than the second value.
+:at:`actrange`: :at-val:`real(2), "0 0"`
+   Range for clamping the activation state. The compiler expects the first value to be no greater than the second value.
+   See the :ref:`Activation clamping <CActRange>` section for more details.
 :at:`lengthrange`: :at-val:`real(2), "0 0"`
    Range of feasible lengths of the actuator's transmission. See :ref:`Length Range <CLengthRange>`.
 :at:`gear`: :at-val:`real(6), "1 0 0 0 0 0"`
@@ -4145,7 +4298,7 @@ specify them independently.
    If specified, the actuator acts on the given tendon. The actuator length equals the tendon length times the gear
    ratio. Both spatial and fixed tendons can be used.
 :at:`cranksite`: :at-val:`string, optional`
-   If specified, the actuator acts on a slider-crank mechanism which is implicitly determined by the actuator (i.e. it
+   If specified, the actuator acts on a slider-crank mechanism which is implicitly determined by the actuator (i.e., it
    is not a separate model element). The specified site corresponds to the pin joining the crank and the connecting rod.
    The actuator length equals the position of the slider-crank mechanism times the gear ratio.
 :at:`slidersite`: :at-val:`string, required for slider-crank transmission`
@@ -4213,12 +4366,13 @@ specify them independently.
 :el-prefix:`actuator/` **motor** (*)
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-| This and the next three elements are the :ref:`Actuator shortcuts <CActuator>` discussed earlier. When a
-  such shortcut is encountered, the parser creates a :el:`general` actuator and sets its dynprm, gainprm and biasprm
-  attributes to the internal defaults shown above, regardless of any default settings. It then adjusts dyntype, gaintype
-  and biastype depending on the shortcut, parses any custom attributes (beyond the common ones), and translates them
-  into regular attributes (i.e. attributes of the :el:`general` actuator type) as explained here.
-| This element creates a direct-drive actuator. The underlying :el:`general` attributes are set as follows:
+This and the next three elements are the :ref:`Actuator shortcuts <CActuator>` discussed earlier. When a
+such shortcut is encountered, the parser creates a :el:`general` actuator and sets its dynprm, gainprm and biasprm
+attributes to the internal defaults shown above, regardless of any default settings. It then adjusts dyntype, gaintype
+and biastype depending on the shortcut, parses any custom attributes (beyond the common ones), and translates them
+into regular attributes (i.e., attributes of the :el:`general` actuator type) as explained here.
+
+This element creates a direct-drive actuator. The underlying :el:`general` attributes are set as follows:
 
 ========= ======= ========= =======
 Attribute Setting Attribute Setting
@@ -4228,8 +4382,8 @@ gaintype  fixed   gainprm   1 0 0
 biastype  none    biasprm   0 0 0
 ========= ======= ========= =======
 
-|
-| This element does not have custom attributes. It only has common attributes, which are:
+
+This element does not have custom attributes. It only has common attributes, which are:
 
 
 .. |actuator/motor attrib list| replace::
@@ -4245,7 +4399,7 @@ biastype  none    biasprm   0 0 0
 :el-prefix:`actuator/` **position** (*)
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-| This element creates a position servo. The underlying :el:`general` attributes are set as follows:
+This element creates a position servo. The underlying :el:`general` attributes are set as follows:
 
 ========= ======= ========= =======
 Attribute Setting Attribute Setting
@@ -4255,8 +4409,8 @@ gaintype  fixed   gainprm   kp 0 0
 biastype  affine  biasprm   0 -kp 0
 ========= ======= ========= =======
 
-|
-| This element has one custom attribute in addition to the common attributes:
+
+This element has one custom attribute in addition to the common attributes:
 
 .. |actuator/position attrib list| replace::
    :at:`name`, :at:`class`, :at:`group`, :at:`ctrllimited`, :at:`forcelimited`, :at:`ctrlrange`, :at:`forcerange`,
@@ -4273,9 +4427,9 @@ biastype  affine  biasprm   0 -kp 0
 :el-prefix:`actuator/` **velocity** (*)
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-| This element creates a velocity servo. Note that in order create a PD controller, one has to define two actuators: a
-  position servo and a velocity servo. This is because MuJoCo actuators are SISO while a PD controller takes two control
-  inputs (reference position and reference velocity). The underlying :el:`general` attributes are set as follows:
+This element creates a velocity servo. Note that in order create a PD controller, one has to define two actuators: a
+position servo and a velocity servo. This is because MuJoCo actuators are SISO while a PD controller takes two control
+inputs (reference position and reference velocity). The underlying :el:`general` attributes are set as follows:
 
 ========= ======= ========= =======
 Attribute Setting Attribute Setting
@@ -4285,8 +4439,7 @@ gaintype  fixed   gainprm   kv 0 0
 biastype  affine  biasprm   0 0 -kv
 ========= ======= ========= =======
 
-|
-| This element has one custom attribute in addition to the common attributes:
+This element has one custom attribute in addition to the common attributes:
 
 .. |actuator/velocity attrib list| replace::
    :at:`name`, :at:`class`, :at:`group`, :at:`ctrllimited`, :at:`forcelimited`, :at:`ctrlrange`, :at:`forcerange`,
@@ -4298,13 +4451,70 @@ biastype  affine  biasprm   0 0 -kv
 :at:`kv`: :at-val:`real, "1"`
    Velocity feedback gain.
 
+.. _intvelocity:
+
+:el-prefix:`actuator/` **intvelocity** (*)
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+This element creates an integrated-velocity servo. For more information, see the
+:ref:`Activation clamping <CActRange>` section of the Modeling chapter. The underlying
+:el:`general` attributes are set as follows:
+
+==========   =========== ========= =======
+Attribute    Setting     Attribute Setting
+==========   =========== ========= =======
+dyntype      integrator  dynprm    1 0 0
+gaintype     fixed       gainprm   kp 0 0
+biastype     affine      biasprm   0 -kp 0
+actlimited   true
+==========   =========== ========= =======
+
+This element has one custom attribute in addition to the common attributes:
+
+.. |actuator/intvelocity attrib list| replace::
+   :at:`name`, :at:`class`, :at:`group`, :at:`ctrllimited`, :at:`forcelimited`, :at:`ctrlrange`, :at:`forcerange`,
+   :at:`lengthrange`, :at:`gear`, :at:`cranklength`, :at:`joint`, :at:`jointinparent`, :at:`tendon`, :at:`cranksite`,
+   :at:`slidersite`, :at:`site`, :at:`user`
+
+|actuator/intvelocity attrib list|
+   Same as in actuator/ :ref:`general <general>`.
+:at:`kp`: :at-val:`real, "1"`
+   Position feedback gain.
+
+.. _damper:
+
+:el-prefix:`actuator/` **damper** (*)
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+This element is an active damper which produces a force proportional to both velocity and control: ``F = - kv * velocity * control``, where ``kv`` must be nonnegative. :at:`ctrlrange` is required and must also be nonnegative. The underlying :el:`general` attributes are set as follows: 
+
+=========== ======= ========= =======
+Attribute   Setting Attribute Setting
+=========== ======= ========= =======
+dyntype     none    dynprm    1 0 0
+gaintype    affine  gainprm   0 0 kv
+biastype    none    biasprm   0 0 0
+ctrllimited true
+=========== ======= ========= =======
+
+
+This element has one custom attribute in addition to the common attributes:
+
+.. |actuator/damper attrib list| replace::
+   :at:`name`, :at:`class`, :at:`group`, :at:`ctrllimited`, :at:`forcelimited`, :at:`ctrlrange`, :at:`forcerange`, :at:`lengthrange`, :at:`gear`, :at:`cranklength`, :at:`joint`, :at:`jointinparent`, :at:`tendon`, :at:`cranksite`, :at:`slidersite`, :at:`site`, :at:`user`
+
+|actuator/damper attrib list|
+   Same as in actuator/ :ref:`general <general>`.
+:at:`kv`: :at-val:`real, "1"`
+   Velocity feedback gain.
+
 .. _cylinder:
 
 :el-prefix:`actuator/` **cylinder** (*)
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-| This element is suitable for modeling pneumatic or hidraulic cylinders. The underlying :el:`general` attributes are
-  set as follows:
+This element is suitable for modeling pneumatic or hidraulic cylinders. The underlying :el:`general` attributes are
+set as follows:
 
 ========= ======= ========= =============
 Attribute Setting Attribute Setting
@@ -4314,8 +4524,8 @@ gaintype  fixed   gainprm   area 0 0
 biastype  affine  biasprm   bias(3)
 ========= ======= ========= =============
 
-|
-| This element has four custom attributes in addition to the common attributes:
+
+This element has four custom attributes in addition to the common attributes:
 
 .. |actuator/cylinder attrib list| replace::
    :at:`name`, :at:`class`, :at:`group`, :at:`ctrllimited`, :at:`forcelimited`, :at:`ctrlrange`, :at:`forcerange`,
@@ -4338,8 +4548,8 @@ biastype  affine  biasprm   bias(3)
 :el-prefix:`actuator/` **muscle** (*)
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-| This element is used to model a muscle actuator, as described in the :ref:`Muscles actuators <CMuscle>`
-  section. The underlying :el:`general` attributes are set as follows:
+This element is used to model a muscle actuator, as described in the :ref:`Muscles actuators <CMuscle>`
+section. The underlying :el:`general` attributes are set as follows:
 
 ========= ======= ========= ======================================================
 Attribute Setting Attribute Setting
@@ -4349,8 +4559,8 @@ gaintype  muscle  gainprm   range(2), force, scale, lmin, lmax, vmax, fpmax, fvm
 biastype  muscle  biasprm   same as gainprm
 ========= ======= ========= ======================================================
 
-|
-| This element has nine custom attributes in addition to the common attributes:
+
+This element has nine custom attributes in addition to the common attributes:
 
 .. |actuator/muscle attrib list| replace::
    :at:`name`, :at:`class`, :at:`group`, :at:`ctrllimited`, :at:`forcelimited`, :at:`ctrlrange`, :at:`forcerange`,
@@ -4387,14 +4597,15 @@ biastype  muscle  biasprm   same as gainprm
 **sensor** (*)
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-| This is a grouping element for sensor definitions. It does not have attributes. The outputs of all sensors are
-  concatenated in the field mjData.sensordata which has size mjModel.nsensordata. This data is not used in any internal
-  computations.
-| In addition to the sensors created with the elements below, the top-level function
-  :ref:`mj_step` computes the quantities mjData.cacc, mjData.cfrc_int and mjData.crfc_ext
-  corresponding to body accelerations and interaction forces. Some of these quantities are used to compute the output of
-  certain sensors (force, acceleration etc.) but even if no such sensors are defined in the model, these quantities
-  themselves are "features" that could be of interest to the user.
+This is a grouping element for sensor definitions. It does not have attributes. The outputs of all sensors are
+concatenated in the field mjData.sensordata which has size mjModel.nsensordata. This data is not used in any internal
+computations.
+
+In addition to the sensors created with the elements below, the top-level function
+:ref:`mj_step` computes the quantities mjData.cacc, mjData.cfrc_int and mjData.crfc_ext
+corresponding to body accelerations and interaction forces. Some of these quantities are used to compute the output of
+certain sensors (force, acceleration etc.) but even if no such sensors are defined in the model, these quantities
+themselves are "features" that could be of interest to the user.
 
 .. _sensor-touch:
 
@@ -4462,10 +4673,9 @@ simulate an inertial measurement unit (IMU).
 
 This element creates a 3-axis force sensor. The sensor outputs three numbers, which are the interaction force between a
 child and a parent body, expressed in the site frame defining the sensor. The convention is that the site is attached to
-the child body, and the force points from the child towards the parent. To change the sign of the sensor reading, use
-the scale attribute. The computation here takes into account all forces acting on the system, including contacts as well
-as external perturbations. Using this sensor often requires creating a dummy body welded to its parent (i.e. having no
-joint elements).
+the child body, and the force points from the child towards the parent. The computation here takes into account all
+forces acting on the system, including contacts as well as external perturbations. Using this sensor often requires
+creating a dummy body welded to its parent (i.e., having no joint elements).
 
 :at:`name`, :at:`noise`, :at:`cutoff`, :at:`user`
    See :ref:`CSensor`.
@@ -4724,7 +4934,8 @@ This element creates a tendon limit sensor for constraint force.
 :el-prefix:`sensor/` **framepos** (*)
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-This element creates a sensor that returns the 3D position of the spatial frame of the object, in global coordinates.
+This element creates a sensor that returns the 3D position of the spatial frame of the object, in global coordinates or
+optionally with respect to a given frame-of-reference.
 
 :at:`name`, :at:`noise`, :at:`cutoff`, :at:`user`
    See :ref:`CSensor`.
@@ -4734,6 +4945,12 @@ This element creates a sensor that returns the 3D position of the spatial frame 
    the joint with the parent body).
 :at:`objname`: :at-val:`string, required`
    The name of the object to which the sensor is attached.
+:at:`reftype`: :at-val:`[body, xbody, geom, site, camera]`
+   The type of object to which the frame-of-reference is attached. The semantics are identical to the :at:`objtype`
+   attribute. If :at:`reftype` and :at:`refname` are given, the sensor values will be measured with respect to this
+   frame. If they are not given, sensor values will be measured with respect to the global frame.
+:at:`refname`: :at-val:`string`
+   The name of the object to which the frame-of-reference is attached.
 
 .. _sensor-framequat:
 
@@ -4746,11 +4963,13 @@ object, in global coordinates.
 :at:`name`, :at:`noise`, :at:`cutoff`, :at:`user`
    See :ref:`CSensor`.
 :at:`objtype`: :at-val:`[body, xbody, geom, site, camera], required`
-   The type of object to which the sensor is attached. This must be an object type that has a spatial frame. "body"
-   refers to the inertial frame of the body, while "xbody" refers to the regular frame of the body (usually centered at
-   the joint with the parent body).
+   See :ref:`framepos<sensor-framepos>` sensor.
 :at:`objname`: :at-val:`string, required`
-   The name of the object to which the sensor is attached.
+   See :ref:`framepos<sensor-framepos>` sensor.
+:at:`reftype`: :at-val:`[body, xbody, geom, site, camera]`
+   See :ref:`framepos<sensor-framepos>` sensor.
+:at:`refname`: :at-val:`string`
+   See :ref:`framepos<sensor-framepos>` sensor.
 
 .. _sensor-framexaxis:
 
@@ -4763,11 +4982,13 @@ object, in global coordinates.
 :at:`name`, :at:`noise`, :at:`cutoff`, :at:`user`
    See :ref:`CSensor`.
 :at:`objtype`: :at-val:`[body, xbody, geom, site, camera], required`
-   The type of object to which the sensor is attached. This must be an object type that has a spatial frame. "body"
-   refers to the inertial frame of the body, while "xbody" refers to the regular frame of the body (usually centered at
-   the joint with the parent body).
+   See :ref:`framepos<sensor-framepos>` sensor.
 :at:`objname`: :at-val:`string, required`
-   The name of the object to which the sensor is attached.
+   See :ref:`framepos<sensor-framepos>` sensor.
+:at:`reftype`: :at-val:`[body, xbody, geom, site, camera]`
+   See :ref:`framepos<sensor-framepos>` sensor.
+:at:`refname`: :at-val:`string`
+   See :ref:`framepos<sensor-framepos>` sensor.
 
 .. _sensor-frameyaxis:
 
@@ -4780,11 +5001,13 @@ object, in global coordinates.
 :at:`name`, :at:`noise`, :at:`cutoff`, :at:`user`
    See :ref:`CSensor`.
 :at:`objtype`: :at-val:`[body, xbody, geom, site, camera], required`
-   The type of object to which the sensor is attached. This must be an object type that has a spatial frame. "body"
-   refers to the inertial frame of the body, while "xbody" refers to the regular frame of the body (usually centered at
-   the joint with the parent body).
+   See :ref:`framepos<sensor-framepos>` sensor.
 :at:`objname`: :at-val:`string, required`
-   The name of the object to which the sensor is attached.
+   See :ref:`framepos<sensor-framepos>` sensor.
+:at:`reftype`: :at-val:`[body, xbody, geom, site, camera]`
+   See :ref:`framepos<sensor-framepos>` sensor.
+:at:`refname`: :at-val:`string`
+   See :ref:`framepos<sensor-framepos>` sensor.
 
 .. _sensor-framezaxis:
 
@@ -4797,11 +5020,13 @@ object, in global coordinates.
 :at:`name`, :at:`noise`, :at:`cutoff`, :at:`user`
    See :ref:`CSensor`.
 :at:`objtype`: :at-val:`[body, xbody, geom, site, camera], required`
-   The type of object to which the sensor is attached. This must be an object type that has a spatial frame. "body"
-   refers to the inertial frame of the body, while "xbody" refers to the regular frame of the body (usually centered at
-   the joint with the parent body).
+   See :ref:`framepos<sensor-framepos>` sensor.
 :at:`objname`: :at-val:`string, required`
-   The name of the object to which the sensor is attached.
+   See :ref:`framepos<sensor-framepos>` sensor.
+:at:`reftype`: :at-val:`[body, xbody, geom, site, camera]`
+   See :ref:`framepos<sensor-framepos>` sensor.
+:at:`refname`: :at-val:`string`
+   See :ref:`framepos<sensor-framepos>` sensor.
 
 .. _sensor-framelinvel:
 
@@ -4814,11 +5039,13 @@ coordinates.
 :at:`name`, :at:`noise`, :at:`cutoff`, :at:`user`
    See :ref:`CSensor`.
 :at:`objtype`: :at-val:`[body, xbody, geom, site, camera], required`
-   The type of object to which the sensor is attached. This must be an object type that has a spatial frame. "body"
-   refers to the inertial frame of the body, while "xbody" refers to the regular frame of the body (usually centered at
-   the joint with the parent body).
+   See :ref:`framepos<sensor-framepos>` sensor.
 :at:`objname`: :at-val:`string, required`
-   The name of the object to which the sensor is attached.
+   See :ref:`framepos<sensor-framepos>` sensor.
+:at:`reftype`: :at-val:`[body, xbody, geom, site, camera]`
+   See :ref:`framepos<sensor-framepos>` sensor.
+:at:`refname`: :at-val:`string`
+   See :ref:`framepos<sensor-framepos>` sensor.
 
 .. _sensor-frameangvel:
 
@@ -4831,11 +5058,13 @@ coordinates.
 :at:`name`, :at:`noise`, :at:`cutoff`, :at:`user`
    See :ref:`CSensor`.
 :at:`objtype`: :at-val:`[body, xbody, geom, site, camera], required`
-   The type of object to which the sensor is attached. This must be an object type that has a spatial frame. "body"
-   refers to the inertial frame of the body, while "xbody" refers to the regular frame of the body (usually centered at
-   the joint with the parent body).
+   See :ref:`framepos<sensor-framepos>` sensor.
 :at:`objname`: :at-val:`string, required`
-   The name of the object to which the sensor is attached.
+   See :ref:`framepos<sensor-framepos>` sensor.
+:at:`reftype`: :at-val:`[body, xbody, geom, site, camera]`
+   See :ref:`framepos<sensor-framepos>` sensor.
+:at:`refname`: :at-val:`string`
+   See :ref:`framepos<sensor-framepos>` sensor.
 
 .. _sensor-framelinacc:
 
@@ -4848,11 +5077,9 @@ coordinates.
 :at:`name`, :at:`noise`, :at:`cutoff`, :at:`user`
    See :ref:`CSensor`.
 :at:`objtype`: :at-val:`[body, xbody, geom, site, camera], required`
-   The type of object to which the sensor is attached. This must be an object type that has a spatial frame. "body"
-   refers to the inertial frame of the body, while "xbody" refers to the regular frame of the body (usually centered at
-   the joint with the parent body).
+   See :ref:`framepos<sensor-framepos>` sensor.
 :at:`objname`: :at-val:`string, required`
-   The name of the object to which the sensor is attached.
+   See :ref:`framepos<sensor-framepos>` sensor.
 
 .. _sensor-frameangacc:
 
@@ -4865,11 +5092,9 @@ coordinates.
 :at:`name`, :at:`noise`, :at:`cutoff`, :at:`user`
    See :ref:`CSensor`.
 :at:`objtype`: :at-val:`[body, xbody, geom, site, camera], required`
-   The type of object to which the sensor is attached. This must be an object type that has a spatial frame. "body"
-   refers to the inertial frame of the body, while "xbody" refers to the regular frame of the body (usually centered at
-   the joint with the parent body).
+   See :ref:`framepos<sensor-framepos>` sensor.
 :at:`objname`: :at-val:`string, required`
-   The name of the object to which the sensor is attached.
+   See :ref:`framepos<sensor-framepos>` sensor.
 
 .. _sensor-subtreecom:
 
@@ -4910,6 +5135,16 @@ at a specified body, in global coordinates.
 :at:`body`: :at-val:`string, required`
    Name of the body where the kinematic subtree is rooted.
 
+.. _sensor-clock:
+
+:el-prefix:`sensor/` **clock** (*)
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+This element creates sensor that returns the simulation time.
+
+:at:`name`, :at:`noise`, :at:`cutoff`, :at:`user`
+   See :ref:`CSensor`.
+
 .. _sensor-user:
 
 :el-prefix:`sensor/` **user** (*)
@@ -4930,7 +5165,7 @@ bodies whose center of mass is of interest.
 :at:`objname`: :at-val:`string, required`
    Name of the MuJoCo object to which the sensor is attached.
 :at:`datatype`: :at-val:`[real, positive, axis, quaternion], required`
-   The type of output generated by this sensor. "axis" means a unit-length 3D vector. "quat" means a unit quaterion.
+   The type of output generated by this sensor. "axis" means a unit-length 3D vector. "quat" means a unit quaternion.
    These need to be declared because when MuJoCo adds noise, it must respect the vector normalization. "real" means a
    generic array (or scalar) of real values to which noise can be added independently.
 :at:`needstage`: :at-val:`[pos, vel, acc], required`
@@ -4971,3 +5206,9 @@ This element sets the data for one of the keyframes. They are set in the order i
    Vector of joint velocities, copied into mjData.qvel when the simulation state is set to this keyframe.
 :at:`act`: :at-val:`real(mjModel.na), "0 0 ..."`
    Vector of actuator activations, copied into mjData.act when the simulation state is set to this keyframe.
+:at:`ctrl`: :at-val:`real(mjModel.nu), "0 0 ..."`
+   Vector of controls, copied into mjData.ctrl when the simulation state is set to this keyframe.
+:at:`mpos`: :at-val:`real(3*mjModel.nmocap), default = mjModel.body_pos`
+   Vector of mocap body positions, copied into mjData.mocap_pos when the simulation state is set to this keyframe.
+:at:`mquat`: :at-val:`real(4*mjModel.nmocap), default = mjModel.body_quat`
+   Vector of mocap body quaternions, copied into mjData.mocap_quat when the simulation state is set to this keyframe.

@@ -189,7 +189,7 @@ change at runtime. In that case there is still a fixed enumeration order (corres
 elements appear in ``mjModel``) but any inactive constraints are omitted.
 
 The number of position coordinates :math:`n_Q` is larger than the number of degrees of freedom :math:`n_V` whenever
-quaternions are used to represent 3D orientations. This occurs when the model contains ball joints or free joints (i.e.
+quaternions are used to represent 3D orientations. This occurs when the model contains ball joints or free joints (i.e.,
 in most models). In that case :math:`\dot{q}` does not equal :math:`v`, at least not in the usual sense. Instead one has
 to consider the group of rigid body orientations :math:`SO(3)` - which has the geometry of a unit sphere in 4D space.
 Velocities live in the 3D tangent space to this sphere. This is taken into account by all internal computations. For
@@ -314,7 +314,7 @@ Putting all this together, the net force in generalized coordinates contributed 
 .. math::
    \sum_i \nabla l_i(q) \; p_i \left(u_i, w_i, l_i(q), \dot{l}_i(q, v) \right)
 
-This quantity is stored in ``mjData.qfrc_actuation``. It is added to the applied force vector :math:`\tau`, together
+This quantity is stored in ``mjData.qfrc_actuator``. It is added to the applied force vector :math:`\tau`, together
 with any user-defined forces in joint or Cartesian coordinates (which are stored in ``mjData.qfrc_applied`` and
 ``mjData.xfrc_applied`` respectively).
 
@@ -326,7 +326,7 @@ Passive forces
 Passive forces are defined as forces that depend only on position and velocity, and not on control in forward dynamics
 or acceleration in inverse dynamics. As a result, such forces are inputs to both the forward and inverse dynamics
 computations, and are identical in both cases. They are stored in ``mjData.qfrc_passive``. The passive forces computed
-by MuJoCo are also passive in the sense of physics, i.e. they do not increase energy, however the user can install the
+by MuJoCo are also passive in the sense of physics, i.e., they do not increase energy, however the user can install the
 callback :ref:`mjcb_passive` and add forces to ``mjData.qfrc_passive`` that may increase energy. This will not interfere
 with MuJoCo's operation as long as such user forces depend only on position and velocity.
 
@@ -385,53 +385,218 @@ Numerical integration
 ~~~~~~~~~~~~~~~~~~~~~
 
 MuJoCo computes forward and inverse dynamics in continuous time. The end result of forward dynamics is the joint
-acceleration :math:`\dot{v}` as well as the actuator activations :math:`\dot{w}` when present in the model. These are
+acceleration :math:`a=\dot{v}` as well as the actuator activations :math:`\dot{w}` when present in the model. These are
 used to advance the simulation time from :math:`t` to :math:`t+h`, and to update the state variables :math:`q, v, w`.
-Two numerical integrators are currently available:
+Three numerical integrators are available:
 
 Semi-implicit Euler method (Euler)
    This method updates the activation and velocity with the usual Euler method, however the position is updated using
-   the new velocity:
+   the *new* velocity; this is known as a "semi-implicit" update:
 
    .. math::
       \begin{aligned}
-      w(t+h) &= w(t) + h \dot{w}(t) \\
-      v(t+h) &= v(t) + h \dot{v}(t) \\
-      q(t+h) &= q(t) + h v(t+h)
+         \textrm{activation: }w_{t+h} &= w_t + h \dot{w}_t \\
+         \textrm{velocity: }v_{t+h} &= v_t + h a_t \\
+         \textrm{position: }q_{t+h} &= q_t + h v_{t+h}
       \end{aligned}
 
-   Using the new velocity in the position update improves stability, and is standard in physics engines. The summation
-   in the position update generally involves vectors with different dimensionality, and is done by taking into account
-   the properties of quaternions. When joint damping is defined in the model, the Euler method automatically uses
-   implicit damping integration as follows. Consider the first-order Taylor expansion
+   Using the new velocity in the position update improves stability, and is standard in physics simulation. The
+   summation in the position update generally involves vectors with different dimensionality, and is done by taking into
+   account the properties of quaternions.
+
+   When joint damping is defined in the model, the Euler method applies a correction to the inertia matrix that
+   corresponds to implicit integration of damping forces. Let :math:`B` be the diagonal matrix of negative joint damping
+   coefficients. Letting :math:`\widehat{M} = M-h B`, we then update the velocity using a corrected acceleration as
+   follows:
 
    .. math::
-      \tau(v(t+h)) = \tau(v(t)) + h {\partial\tau \over \partial v} \dot{v} + o \left( h^2 \right)
+      \begin{aligned}
+         v_{t+h} &= v_t + h \widehat{M}^{-1} M a_t
+      \end{aligned}
 
-   Moving the acceleration term to the left hand side of the equations of motion :eq:`eq:motion`, the effective inertia
-   matrix becomes
+   This correction is temporary, and the original acceleration computed by forward dynamics and saved in ``mjData.qacc``
+   is not modified. We explain below how this correction is derived, and why it is a special case of implicit
+   integration.
+
+Implicit-in-velocity Euler method (implicit)
+   This method approximates the following discrete-time update:
 
    .. math::
-      \hat{M} = M - h {\partial\tau \over \partial v}
+      \begin{aligned}
+         w_{t+h} &= w_t + h \dot{w}_t \\
+         v_{t+h} &= v_t + h a_{t+h} \\
+         q_{t+h} &= q_t + h v_{t+h}
+      \end{aligned}
 
-   We use this matrix to correct the acceleration term in the Euler update. The correction however is temporary, and the
-   original acceleration computed by forward dynamics and saved in ``mjData.qacc`` is not modified. In principle this
-   approach could be applied to any velocity-dependent force, however joint damping has the advantage that it does not
-   affect the sparsity structure of the inertia matrix and is trivial to compute - which is why it is the only
-   velocity-dependent force that we currently integrate implicitly.
+   Note the acceleration :math:`a_{t+h}=\dot{v}_{t+h}` on the right hand side of the velocity update is evaluated at
+   :math:`t+h`, making the integrator fully implicit in velocity. When applied to Hamiltonian systems, such integrators
+   are called symplectic, and there is a large mathematical literature on them. Hamiltonian systems have the property
+   that certain quantities (symplectic forms) remain constant over time in the true continuous-time system. Symplectic
+   integrators have the unique property that they preserve the same quantities exactly, despite using a discrete-time
+   approximation. Few MuJoCo models used in practice correspond to Hamiltonian systems; these are systems without
+   activation dynamics, contacts, friction, driving forces etc. Nevertheless this type of integrator has appealing
+   properties in terms of accuracy and stability, achieved at the expense of added computation. It is particularly
+   effective in systems where instabilities (of the regular Euler integrator) are caused by velocity-dependent forces:
+   multi-joint pendulums, bodies tumbling through space, systems with substantial lift and drag forces, systems with
+   substantial damping in tendons and actuators (as well as joints, but joint damping is already handled implicitly in
+   the regular Euler integrator).
+
+   Writing the acceleration (i.e. the forward dynamics) more explicitly as a function of velocity: :math:`a_t=\dot
+   {v}_t = a(v_t)`, the velocity update we aim to approximate is
+
+   .. math:: v_{t+h} = v_t + h a(v_{t+h})
+
+   This is a non-linear equation in the unknown vector :math:`v_{t+h}`. It must be solved numerically at each time step
+   in order to implement an implicit integrator. We approximate the solution using a single step of Newton's method,
+   based on the first-order Taylor series expansion of :math:`a(v_{t+h})` around :math:`v_t`. Recall that the forward
+   dynamics are
+
+   .. math:: a(v) = M^{-1} \big(\tau(v) - c(v) + J^T f(v)\big)
+
+   Here we will ignore the velocity dependence of the constraint forces :math:`J^T f(v)`, because differentiating them
+   is complicated, and furthermore MuJoCo uses soft constraints whose integration is very stable even without implicit
+   integration. Thus we define the approximate derivative
+
+   .. math::
+      \begin{aligned}
+          {\partial a(v) \over \partial v} &\approx M^{-1} D(v) \\
+          D(v) &= {\partial\big(\tau(v) - c (v)\big) \over \partial v}
+      \end{aligned}
+
+   MuJoCo computes :math:`D(v)` analytically, by differentating the Recursive Newton-Euler algorithm as well as the code
+   that computes applied and bias forces. A further approximation is that we restrict :math:`D` to have the same
+   sparsity pattern as :math:`M`, for computational efficiency (see below). This restriction will exclude damping in
+   tendons which connect bodies that are on different branches of the kinematic tree. The velocity update corresponding
+   to Newton's method is as follows. First, we expand the right hand side to first order
+
+   .. math::
+      \begin{aligned}
+         v_{t+h} &= v_t + h a(v_{t+h}) \\
+                 &= v_t + h a(v_t + v_{t+h}-v_t) \\
+                 &\approx v_t + h a(v_t) + h M^{-1} D \cdot (v_{t+h}-v_t)
+      \end{aligned}
+
+   Premultiplying by :math:`M` and rearranging yields
+
+   .. math:: (M-h D) v_{t+h} = (M-h D) v_t + h M a(v_t)
+
+   Now letting :math:`\widehat{M} = M-h D`, we obtain the implicit update
+
+   .. math:: v_{t+h} = v_t + h \widehat{M}^{-1} M a(v_t)
+
+   Comparing to the regular Euler method with damping correction, we see that the matrix :math:`B` in the regular Euler
+   method corresponds to :math:`D` used here, but restricted to joint damping. Since :math:`D` and :math:`M` have the
+   same sparsity pattern corresponding to the topology of the kinematic tree, reverse-order LU factorization of
+   :math:`\widehat{M}` is guaranteed to have no fill-in, which is the computational speed-up mentioned above. This
+   factorization is stored ``mjData.qLU``. It is now also clear why the Euler method uses :math:`B` rather than
+   :math:`D`: since :math:`B` is diagonal, :math:`\widehat{M}` remains symmetric and can be factorized with Cholesky
+   rather than LU.
 
 4th-order Runge-Kutta method (RK4)
    One advantage of our continuous-time formulation is that we can use more advanced integrators such as Runge-Kutta or
    multistep methods. The only such integrator currently implemented is the fixed-step 4th-order Runge-Kutta method. We
    have observed that for energy-conserving systems it is qualitatively better than the Euler method, both in terms of
-   stability and accuracy, despite the fact that it performs 4 mini-updates per step. In the presence of contacts we
-   have not observed significant benefits, although a more systematic investigation remains to be performed.
+   stability and accuracy, even when the timestep of the Euler method is decreased by a factor of 4 (so the
+   computational effort is identical). In the presence of contacts we have not observed significant benefits, although a
+   more systematic investigation remains to be performed.
 
-The accuracy and stability of both integrators can be improved by reducing the time step :math:`h` which is stored in
-``mjModel.opt.timestep``. Of course this also slows down the simulation. The time step is perhaps the most important
-parameter that the user can adjust. If it is too large, the simulation will become unstable. If it is too small, CPU
-time will be wasted without meaningful improvement in accuracy. There is always a comfortable range where the time step
-is "just right", but that range is model-dependent.
+.. note::
+   The accuracy and stability of all integrators can be improved by reducing the time step :math:`h` which is stored in
+   ``mjModel.opt.timestep``. Of course this also slows down the simulation. The time step is perhaps the most important
+   parameter that the user can adjust. If it is too large, the simulation will become unstable. If it is too small, CPU
+   time will be wasted without meaningful improvement in accuracy. There is always a comfortable range where the time
+   step is "just right", but that range is model-dependent.
+
+
+.. _geState:
+
+The **state**
+~~~~~~~~~~~~~
+
+To complete our description of the general framework we will now discuss the notion of *state*. MuJoCo has a compact,
+well-defined internal state which, together with the deterministic computational pipeline, means that operations like
+resetting the state and computing dynamics derivatives are also well-defined. The state is entirely encapsulated in the
+``mjData`` struct and consists of several components:
+
+.. _gePhysicsState:
+
+Physics state
+^^^^^^^^^^^^^
+| The *physics state* contains all quantities which are time-integrated during stepping.
+| They are ``mjData.{qpos, qvel, act, time}``:
+
+  Mechanical state: ``qpos`` and ``qvel``
+    The *mechanical state* of a simulation is given by the generalized position (``mjData.qpos``) and velocity
+    (``mjData.qvel``) vectors, denoted above as :math:`q` and :math:`v`, respectively.
+
+  Actuator activations: ``act``
+    ``mjData.act`` contains the internal states of stateful actuators, denoted above as :math:`w`.
+
+  Time: ``time``
+    The time of the simulation is given by the scalar ``mjData.time``. Since physics is time-invariant, it is
+    often excluded from the *physics state*; an exception could be a time-dependent user callback (e.g., an open-loop
+    controller), in which case time should be included.
+
+.. _geInput:
+
+User inputs
+^^^^^^^^^^^
+These input fields are set by the user and affect the physics simulation, but are untouched by the simulator.
+
+  Controls: ``ctrl``
+    Controls are defined by the :ref:`actuator<actuator>` section of the XML. ``mjData.ctrl`` values either produce
+    generalized forces directly (stateless actuators), or affects the actuator activations in ``mjData.act``, which then
+    produce forces.
+
+  Auxillary Controls: ``qfrc_applied`` and ``xfrc_applied``
+    | ``mjData.qfrc_applied`` are directly applied generalised forces.
+    | ``mjData.xfrc_applied`` are Cartesian wrenches applied to the CoM of individual bodies. This field is used for
+      example, by the :ref:`native viewer<saSimulate>` to apply mouse perturbations.
+    | Note that the effects of ``qfrc_applied`` and ``xfrc_applied`` can usually be recreated by appropriate actuator
+      definitions.
+
+  MoCap poses: ``mocap_pos`` and ``mocap_quat``
+    ``mjData.mocap_pos`` and ``mjData.mocap_quat`` are special optional kinematic states :ref:`described here<CMocap>`,
+    which allow the user to set the positions and orientations of static bodies in real-time, for example when streaming
+    6D poses from a motion-capture device.
+
+  User data: ``userdata``
+    ``mjData.userdata`` acts as a user-defined memory space untouched by the engine. For example it can be used by
+    callbacks. This is described in more detail in the :ref:`Programming chapter<siSimulation>`.
+
+.. _geWarmstart:
+
+Warmstart accelerations
+^^^^^^^^^^^^^^^^^^^^^^^
+
+  ``qacc_warmstart``
+    ``mjData.qacc_warmstart`` are accelerations used to warmstart the constraint solver, saved from the previous step.
+    When using a slowly-converging :ref:`constraint solver<Solver>` like PGS, these can speed up simulation by reducing
+    the number of iterations required for convergence. Note however that the default Newton solver converges so quickly
+    (usually 2-3 iterations), that warmstarts often have no effect on speed and can be disabled.
+
+    Different warmstarts have no preceptible effect on the dynamics but should be saved if perfect numerical
+    reproducibility is required when loading a non-initial state. Note that even though their effect on physics is
+    negligible, many physical systems will accumulate small differences  `exponentially
+    <https://en.wikipedia.org/wiki/Lyapunov_exponent>`__ when time-stepping, quickly leading to divergent trajectories
+    for different warmstarts.
+
+.. _geIntegrationState:
+
+Integration state
+^^^^^^^^^^^^^^^^^
+The *integration state* is the union of all the above ``mjData`` fields and constitutes the entire set of inputs to
+the *forward dynamics*. In the case of *inverse dynamics*, ``mjData.qacc`` is also treated as an input variable. All
+other ``mjData`` fields are functions of the integration state.
+
+.. _geSimulationState:
+
+Simulation state: ``mjData``
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+The *simulation state* is the entirety of the ``mjData`` struct and associated memory buffer. This state includes
+all derived quantities computed during dynamics computation. Because the ``mjData`` buffers are preallocated for the
+worst case, it is often significantly faster to recompute derived quantities from the *integration state* rather than
+using ``mj_copyData``.
 
 .. _Constraint:
 
@@ -460,7 +625,7 @@ constraint contributes :math:`\dim(r)` elements to the total constraint count :m
 properties of quaternions, differentiation with respect to :math:`q` produces vectors of size :math:`n_V` rather than
 :math:`n_Q`.
 
-Among other applications, equality constraints can be used to create "loop joints", i.e. joints that cannot be modeled
+Among other applications, equality constraints can be used to create "loop joints", i.e., joints that cannot be modeled
 via the kinematic tree. Gaming engines represent all joints in this way. The same can be done in MuJoCo but is not
 recommended - because it leads to both slower and less accurate simulation, effectively turning MuJoCo into a gaming
 engine. The only reason to represent joints with equality constraints would be to model soft joints - which can be done
@@ -562,7 +727,7 @@ with a 1 at the joint address. For tendons this is known as the moment arm vecto
    spatial tendons this could be used to model friction between the tendon and the surfaces it wraps around. Such
    friction will be load-independent though. To construct a more detailed model of this phenomenon, create several small
    floating spheres and connect them with tendons in series. Then the contacts between the spheres and the surrounding
-   surfaces will have load-dependent (i.e. Coulomb) friction, but this is less efficient to simulate.
+   surfaces will have load-dependent (i.e., Coulomb) friction, but this is less efficient to simulate.
 
 .. _coLimit:
 
@@ -588,7 +753,7 @@ because solving for equality constraint forces is generally faster.
 ``joint`` : 1 or 2
    Limits can be defined for scalar joints (hinge and slide) as well as for ball joints. Scalar joints are treated as
    described above. Ball joint limits are applied to the exponential-map or angle-axis representation of the joint
-   quaternion, i.e. the vector :math:`(\theta x, \theta y, \theta z)` where :math:`\theta` is the rotation angle and
+   quaternion, i.e., the vector :math:`(\theta x, \theta y, \theta z)` where :math:`\theta` is the rotation angle and
    :math:`(x, y, z)` is the unit vector corresponding to the rotation axis. The limit is applied to the absolute value
    of the rotation angle :math:`\theta`. At runtime the limit is determined by the larger of the two range parameters.
    For semantic clarity however, one should use the second range parameter to specify the limit and set the first range
@@ -1022,7 +1187,7 @@ compute it.
 
 Note that the quadratic term in the inverse problem is weighted by :math:`R` instead of :math:`A+R`. This tells us two
 things. First, in the limit :math:`R \to 0` corresponding to hard constraints the inverse is no longer defined, as one
-would expect. Second and more useful, the inverse problem is diagonal, i.e. it decouples into independent optimization
+would expect. Second and more useful, the inverse problem is diagonal, i.e., it decouples into independent optimization
 problems over the individual constraint forces. The only remaining coupling is due to the constraint set :math:`\Omega`,
 but that set is also decoupled over the conceptual constraints discussed earlier. It turns out that all these
 independent optimization problems can be solved analytically. The only non-trivial case is the elliptic friction cone
@@ -1110,7 +1275,7 @@ Substituting :math:`f^+` in the constraint dynamics :eq:`eq:identity` and rearra
 
 Thus the constrained acceleration interpolates between the unconstrained and the reference acceleration. In particular,
 in the limit :math:`R \to 0` we have a hard constraint and :math:`a^1 = a^*`, while in the limit :math:`R \to \infty` we
-have have an infinitely soft constraint (i.e. no constraint) and :math:`a^1 = a^0`. It is then natural to introduce a
+have have an infinitely soft constraint (i.e., no constraint) and :math:`a^1 = a^0`. It is then natural to introduce a
 model parameter which directly controls the interpolation. We call this parameter *impedance* and denote it :math:`d`.
 It is a vector with dimensionality :math:`n_C` satisfying :math:`0<d<1` element-wise. Once it is specified, we compute
 the diagonal elements of the regularizer as
@@ -1347,6 +1512,35 @@ The top-level function :ref:`mj_inverse` invokes the following sequence of compu
 #. Compute sensor data that depends on force and acceleration if enabled.
 #. Compute the vector ``mjData.qfrc_inverse`` by combining all results. This is the main output of inverse dynamics. It
    equals the sum of external and actuation forces.
+
+
+.. _derivatives:
+
+Derivatives
+-----------
+
+MuJoCo's entire computational pipline and uniquely -- its contraint solver -- are analytically differentiable. Writing
+efficient implementations of these derivatives is a long term goal of the development team. Analytic derivatives of the
+smooth dynamics with respect to velocity are already in place and power the :ref:`implicit integrator<geIntegration>`.
+
+The function ``mjd_transitionFD`` computes state-transition and control-transition Jacobians. Given any valid MuJoCo
+model ``mjModel* m`` with an initial :ref:`simulation state<geState>` in ``mjData* d``,
+
+- let :math:`x` denote the *physics state* of the simulation at time :math:`t` -- the concatenation of positions,
+  velocities and actuator states ``[d->qpos; d->qvel; d->act]``.
+- Let :math:`u` denote the vector of controls at time :math:`t`, corresponding to ``d->ctrl``.
+- Let :math:`y` denote the physical state of the simulation at time :math:`t+h`, where :math:`h` corresponds to
+  ``m->opt.timstep``.
+- The high level function ``mj_step(m, d)`` computes :math:`y(x, u)` -- the next state as a function of
+  the current state and control.
+- ``mjd_transitionFD`` computes the Jacobians :math:`A = \frac{\partial y}{\partial x}` and
+  :math:`B = \frac{\partial y}{\partial u}` using efficient finite-differencing of ``mj_step``.
+
+These derivatives are efficient by exploiting MuJoCo's configurable computation pipeline so that quantities are not
+recomputed when not required. For example when differencing with respect to controls, quantities which depend only on
+position and velocity are not recomputed. Additionally, solver warmstarts, quaternions and control clamping are handled
+correctly. Both forward and centered differences are supported.
+
 
 .. _References:
 

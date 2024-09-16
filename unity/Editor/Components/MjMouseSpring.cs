@@ -1,3 +1,17 @@
+// Copyright 2019 DeepMind Technologies Limited
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//      http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
 #if UNITY_EDITOR
 using System;
 using UnityEditor;
@@ -145,7 +159,8 @@ namespace Mujoco {
               MujocoLib.mj_objectVelocity(
                   scene.Model, scene.Data, (int)MujocoLib.mjtObj.mjOBJ_BODY, body.MujocoId, res, 0);
               // linear velocity is in the last 3 entries
-              bodyVel = MjEngineTool.UnityVector3(res, 1);
+              bodyVel = MjEngineTool.UnityVector3(
+                  MjEngineTool.MjVector3AtEntry(res, 1));
             }
 
             float springStiffness = 100;

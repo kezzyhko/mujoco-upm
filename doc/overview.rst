@@ -8,9 +8,8 @@ Introduction
 aims to facilitate research and development in robotics, biomechanics, graphics and animation, machine learning, and
 other areas that demand fast and accurate simulation of articulated structures interacting with their environment.
 Initially developed by Roboti LLC, it was acquired and made `freely available
-<https://github.com/deepmind/mujoco/blob/main/LICENSE>`__ by DeepMind in October 2021, with the goal of making MuJoCo an
-open-source project. The MuJoCo codebase will be made available at the `deepmind/mujoco
-<https://github.com/deepmind/mujoco>`__ repository on GitHub.
+<https://github.com/deepmind/mujoco/blob/main/LICENSE>`__ by DeepMind in October 2021, and open sourced in May 2022.
+The MuJoCo codebase is available at the `deepmind/mujoco <https://github.com/deepmind/mujoco>`__ repository on GitHub.
 
 MuJoCo is a C/C++ library with a C API, intended for researchers and developers. The runtime simulation module is tuned
 to maximize performance and operates on low-level data structures which are preallocated by the built-in XML parser and
@@ -64,7 +63,7 @@ Tendon geometry
 General actuation model
    Designing a sufficiently rich actuation model while using a model-agnostic API is challenging. MuJoCo achieves this
    goal by adopting an abstract actuation model that can have different types of transmission, force generation, and
-   internal dynamics (i.e. state variables which make the overall dynamics 3rd order). These components can be
+   internal dynamics (i.e., state variables which make the overall dynamics 3rd order). These components can be
    instantiated so as to model motors, pneumatic and hydraulic cylinders, PD controllers, biological muscles and many
    other actuators in a unified way.
 
@@ -89,7 +88,7 @@ Separation of model and data
       this is done by the user.
    -  ``mjData`` contains all dynamic variables and intermediate results. It is used as a scratch pad where all
       functions read their inputs and write their outputs -- which then become the inputs to subsequent stages in the
-      simulation pipeline. It also contains a pre-allocated and internally managed stack, so that the runtime module
+      simulation pipeline. It also contains a preallocated and internally managed stack, so that the runtime module
       does not need to call memory allocation functions after the model is initialized.
 
    ``mjModel`` is constructed by the compiler. :ref:`mjData` is constructed at runtime, given
@@ -354,15 +353,14 @@ purpose of including an asset is to reference it, and referencing can only be do
 undefined.
 
 Mesh
-   MuJoCo can load triangulated meshes from binary STL files. Software such as `MeshLab <https://www.meshlab.net/>`__
-   can be used to convert from other formats. While any collection of triangles can be loaded and visualized as a mesh,
-   the collision detector works with the convex hull. There are compile-time options for scaling the mesh, as well as
-   fitting a primitive geometric shape to it. The mesh can also be used to automatically infer inertial properties - by
-   treating it as a union of triangular pyramids and combining their masses and inertias. Note that the STL format does
-   not support color; some software packages write color information in unused fields but this is not consistent.
-   Instead the mesh is colored using the material properties of the referencing geom. In contrast, all spatial
-   properties are determined by the mesh data. MuJoCo supports a custom binary file format that can additionally specify
-   normals and texture coordinates. Meshes can also be embedded directly in the XML.
+   MuJoCo can load triangulated meshes from OBJ files and binary STL. Software such as `MeshLab
+   <https://www.meshlab.net/>`__ can be used to convert from other formats. While any collection of triangles can be
+   loaded and visualized as a mesh, the collision detector works with the convex hull. There are compile-time options
+   for scaling the mesh, as well as fitting a primitive geometric shape to it. The mesh can also be used to
+   automatically infer inertial properties -- by treating it as a union of triangular pyramids and combining their
+   masses and inertias. Note that meshes have no color, instead the mesh is colored using the material properties of the
+   referencing geom. In contrast, all spatial properties are determined by the mesh data. MuJoCo supports both OBJ and a
+   custom binary file format for normals and texture coordinates. Meshes can also be embedded directly in the XML.
 
 Skin
    Skinned meshes (or skins) are meshes whose shape can deform at runtime. Their vertices are attached to rigid bodies
@@ -593,6 +591,79 @@ section is to preemptively clarify the aspects that are most likely to be confus
 and a tutorial on selected topics. We will need to refer to material covered later in the documentation, but
 nevertheless the text below is as self-contained and introductory as possible.
 
+.. _Divergence:
+
+Divergence
+~~~~~~~~~~
+
+Divergence of a simulation happens when elements of the state tend quickly to infinity. In MuJoCo this is usually
+manifested as an :ref:`mjWARN_BADQACC<mjtwarning>` warning. Divergence is endemic to all physics simulation and is not
+necessarily indicative of a bad model or bug in the simulator, but is rather a hint that the timestep  is too large for
+the given choice of integrator. In physics simulation there is always a tension between speed (large time steps) and
+stability (small timesteps). A model which is well-tuned for speed has the largest possible timestep that does not
+diverge, which usually means that it *can* be made to diverge under extreme conditions. In that sense *rare* cases of
+divergence can actually be indicative of a well-tuned model. In all cases it should be possible to prevent divergence by
+reducing the timestep and/or switching to a more stable :ref:`integrator <geIntegration>`. If that fails, the culprit is
+different. For example in models where bodies are initialized in penetration, large repulsive forces could push them
+away and cause divergence.
+
+
+.. _Units:
+
+Units are undefined
+~~~~~~~~~~~~~~~~~~~
+
+In MuJoCo basic physical units are undefined. The user may interpret the system of units as they choose, as long as it
+is consistent. To understand this, consider an example: the dynamics of a 1 Meter spaceship that weighs 1 Kg and has a 1
+Newton thruster are the same as those of a 1 cm spaceship that weighs 1 gram and has a 1 dyn thruster. This is because
+both `MKS <https://en.wikipedia.org/wiki/MKS_system_of_units>`__ and `CGS
+<https://en.wikipedia.org/wiki/Centimetre%E2%80%93gram%E2%80%93second_system_of_units>`__ are consistent systems of
+units. This property allows the user to scale their model as they choose, which is useful when simulating very small or
+very large things, to improve the numerical properties of the simulation.
+
+That said, users are encouraged to use MKS, as there are two places where MuJoCo uses MKS-like default values:
+
+- The default value of :ref:`gravity<option>` is (0, 0, -9.81), which corresponds to Earth surface gravity in MKS.
+  Note that this does not really define system of units to be MKS, since we might be using CGS on
+  `Enceladus <https://en.wikipedia.org/wiki/Enceladus>`__.
+- The default value of :ref:`geom density<geom>` (used to infer body masses and inertias) is 1000, which corresponds to
+  the density of water in MKS.
+
+Once a consistent system of basic units (length, mass, time) is chosen, all derived units correspond to this system, as
+in `Dimensional Analysis <https://en.wikipedia.org/wiki/Dimensional_analysis>`__. For example if our model is
+interpreted as MKS, then forces and torques are in Newton and Newton-Meter, respectively.
+
+**Angles:** Although angles can be specified using degrees in MJCF (and indeed degrees are the
+:ref:`default <compiler>`), internally all angles are `Radians <https://en.wikipedia.org/wiki/Radian>`__. So e.g., if we
+are using MKS, angular velocities reported by :ref:`gyroscopes<sensor-gyro>` would be in rad/s while stiffness of hinge
+joints would be in Nm/rad.
+
+
+.. _SurprisingCollisions:
+
+Surprising Collisions
+~~~~~~~~~~~~~~~~~~~~~
+
+MuJoCo by default excludes collisions between geoms that belong to body pairs which have a direct parent-child
+relationship. For example, consider the arm model in the :ref:`Examples` section above: there is no collision at the
+"elbow" even though the capsule geoms are penetrating, because the forearm is an immediate child of the upper arm.
+
+However, this exclusion is **not applied if the parent is a static body** i.e., the world body, or a body without any
+degrees of freedom relative to the world body. This behavior, documented in the :ref:`Collision detection<Collision>`
+section, prevents objects from falling through the floor or moving through walls. However, this behavior often leads to
+the following situation:
+
+The user comments out the root joint of a floating-base model, perhaps in order to prevent it from falling; now that the
+base body is counted as static, new collisions appear that were not there before and the user is confused. There are two
+easy ways to avoid this problem:
+
+1. Don't remove the root joint. Perhaps it is enough to :ref:`disable gravity<option-flag>` and possibly add some
+   :ref:`fluid viscosity<option>` in order to prevent your model from moving around too much.
+
+2. Use :ref:`collision filtering<Collision>` to explicitly disable the unwanted collisions, either by setting the
+   relevant :at:`contype` and :at:`conaffinity` attributes, or by using a contact :ref:`exclude <exclude>` directive.
+
+
 .. _NotObject:
 
 Not object-oriented
@@ -660,7 +731,7 @@ first, followed by the limits of the second joint etc. This ordering reflects th
 row-major format.
 
 The available element types are defined in
-`mjmodel.h <https://github.com/deepmind/mujoco/blob/main/include/mjmodel.h#L243>`_, in the enum type :ref:`mjtObj`.
+`mjmodel.h <https://github.com/deepmind/mujoco/blob/main/include/mujoco/mjmodel.h#L243>`_, in the enum type :ref:`mjtObj`.
 These enums are mostly used internally. One exception are the functions :ref:`mj_name2id` and :ref:`mj_id2name` in the
 MuJoCo API, which map element names to integer ids and vice versa. These functions take an element type as input.
 
@@ -714,8 +785,8 @@ properties.
 Sites are light geoms. They have the same appearance properties but cannot participate in collisions and cannot be used
 to infer body masses. On the other hand sites can do things that geoms cannot do: they can specify the volumes of touch
 sensors, the attachment of IMU sensors, the routing of spatial tendons, the end-points of slider-crank actuators. These
-are all spatial quantities, and yet they do not correspond to entities that should have mass or collide other entities -
-which is why the site element was created. Sites can also be used to specify points (or rather frames) of interest to
+are all spatial quantities, and yet they do not correspond to entities that should have mass or collide other entities
+-- which is why the site element was created. Sites can also be used to specify points (or rather frames) of interest to
 the user.
 
 The following example illustrates the point that multiple sites and geoms can be attached to the same body: two sites
@@ -724,14 +795,14 @@ and two geoms to one body in this case.
 .. code:: XML
 
    <mujoco>
-      <worldbody>
-         <body pos="0 0 0">
-            <geom type="sphere" size=".1" rgba=".9 .9 .1 1"/>
-            <geom type="capsule" pos="0 0 .1" size=".05 .1" rgba=".9 .9 .1 1"/>
-            <site type="box" pos="0 -.1 .3" size=".02 .02 .02" rgba=".9 .1 .9 1"/>
-            <site type="ellipsoid" pos="0 .1 .3" size=".02 .03 .04" rgba=".9 .1 .9 1"/>
-         </body>
-      </worldbody>
+     <worldbody>
+       <body pos="0 0 0">
+         <geom type="sphere" size=".1" rgba=".9 .9 .1 1"/>
+         <geom type="capsule" pos="0 0 .1" size=".05 .1" rgba=".9 .9 .1 1"/>
+         <site type="box" pos="0 -.1 .3" size=".02 .02 .02" rgba=".9 .1 .9 1"/>
+         <site type="ellipsoid" pos="0 .1 .3" size=".02 .03 .04" rgba=".9 .1 .9 1"/>
+       </body>
+     </worldbody>
    </mujoco>
 
 .. figure:: images/overview/bodygeomsite.png
@@ -784,7 +855,7 @@ When working in joint coordinates, you cannot simply set the position and orient
 you want. To achieve that effect you would have to implement some form of inverse kinematics, which computes a (not
 necessarily unique) set of joint coordinates for which the forward kinematics place the body where you want it to be.
 
-The situation is different for floating bodies, i.e. bodies that are connected to the world with a free joint. The
+The situation is different for floating bodies, i.e., bodies that are connected to the world with a free joint. The
 positions and orientations as well as the linear and angular velocities of such bodies are explicitly represented in
 ``mjData.qpos`` and ``mjData.qvel``, and can therefore be manipulated directly. The general approach is to find the
 addresses in qpos and qvel where the body's data are. Of course qpos and qvel represents joints and not bodies, so you
@@ -805,7 +876,7 @@ can be obtained as:
          qveladr = m->jnt_dofadr[m->body_jntadr[bodyid]];
       }
 
-Now if everything went well (i.e. "myfloatingbody" was indeed a floating body), qposadr and qveladr are the addresses in
-qpos and qvel where the data for our floating body/joint lives. The position data is 7 numbers (3D position followed by
-unit quaternion) while the velocity data is 6 numbers (3D linear velocity followed by 3D angular velocity). These
+Now if everything went well (i.e., "myfloatingbody" was indeed a floating body), qposadr and qveladr are the addresses
+in qpos and qvel where the data for our floating body/joint lives. The position data is 7 numbers (3D position followed
+by unit quaternion) while the velocity data is 6 numbers (3D linear velocity followed by 3D angular velocity). These
 numbers can now be set to the desired pose and velocity of the body.

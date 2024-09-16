@@ -16,8 +16,8 @@ Installation instructions
 
 The plug-in directory (available at https://github.com/deepmind/mujoco/tree/main/unity) includes a ``package.json``
 file.  Unity's package manager recognizes this file and will import the plug-in's C# codebase to your project.  In
-addition, Unity also needs the native MuJoCo library, which can be found in the specific platfomr archive at
-https://github.com/deepmind/mujoco/release.
+addition, Unity also needs the native MuJoCo library, which can be found in the specific platform archive at
+https://github.com/deepmind/mujoco/releases.
 
 On Unity version 2020.2 and later, the Package Manager will look for the native library file and copy it to the package
 directory when the package is imported. Alternatively, you can manually copy the native library to the package directory
@@ -29,14 +29,14 @@ _____
 
 The MuJoCo app needs to be run at least once before the native library can be used, in order to register the library as
 a trusted binary. Then, copy the dynamic library file from
-``/Applications/MuJoCo.app/Contents/Frameworks/MuJoCo.framework/Versions/Current/libmujoco.2.1.1.dylib`` (it can be
+``/Applications/MuJoCo.app/Contents/Frameworks/mujoco.framework/Versions/Current/libmujoco.2.2.1.dylib`` (it can be
 found by browsing the contents of ``MuJoCo.app``) and rename it as ``mujoco.dylib``.
 
 Linux
 _____
 
 Expand the ``tar.gz`` archive to ``~/.mujoco``. Then copy the dynamic library from
-``~/.mujoco/mujoco-2.1.1/lib/libmujoco_nogl.so.2.1.1`` (note the ``_nogl`` suffix) and rename it as ``libmujoco.so``.
+``~/.mujoco/mujoco-2.2.1/lib/libmujoco.so.2.2.1`` and rename it as ``libmujoco.so``.
 
 Windows
 _______
@@ -170,7 +170,7 @@ components, you can call ``MjScene.CreateScene()`` when the initialization phase
 
 Scene recreation maintains continuity of physics and state in the following way:
 
-1. The position and velocity of joints is cached.
+1. The position and velocity of joints are cached.
 2. MuJoCo’s state is reset (to ``qpos0``) and Unity transforms are synchronized.
 3. A new XML is generated, creating a model that has the same ``qpos0`` as the previous one for the joints that
    persisted.

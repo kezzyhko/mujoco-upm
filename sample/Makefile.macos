@@ -1,12 +1,23 @@
-COMMON=-O2 -I../include -L../bin -std=c++11 -stdlib=libc++ -mavx -pthread
+# This Makefile assumes that GLFW is installed via Homebrew.
+# If your setup is different, you will need to set GLFWROOT manually.
+
+# This Makefile also assumes that MuJoCo.app is present in /Applications.
+
+GLFWROOT?=$(shell brew --prefix)
+MUJOCOPATH?=/Applications/MuJoCo.app/Contents/Frameworks
+
+CFLAGS=-O2 -F$(MUJOCOPATH) -I$(GLFWROOT)/include -pthread
+CXXFLAGS=$(CFLAGS) -std=c++17 -stdlib=libc++
+ALLFLAGS=$(CXXFLAGS) -L$(GLFWROOT)/lib -Wl,-rpath,$(MUJOCOPATH)
 
 all:
-	clang++ $(COMMON) testxml.cc    -lmujoco210nogl      -o ../bin/testxml
-	clang++ $(COMMON) testspeed.cc  -lmujoco210nogl      -o ../bin/testspeed
-	clang++ $(COMMON) compile.cc    -lmujoco210nogl      -o ../bin/compile
-	clang++ $(COMMON) derivative.cc -lmujoco210nogl      -o ../bin/derivative
-	clang++ $(COMMON) basic.cc      -lmujoco210 -lglfw.3 -o ../bin/basic
-	clang++ $(COMMON) record.cc     -lmujoco210 -lglfw.3 -o ../bin/record
-	clang -c -O2 -mavx -I../include ../include/uitools.c
-	clang++ $(COMMON) uitools.o simulate.cc -lmujoco210 -lglfw.3 -o ../bin/simulate
+	clang++ $(ALLFLAGS)    testxml.cc    -framework mujoco        -o testxml
+	clang++ $(ALLFLAGS)    testspeed.cc  -framework mujoco        -o testspeed
+	clang++ $(ALLFLAGS)    compile.cc    -framework mujoco        -o compile
+	clang++ $(ALLFLAGS)    derivative.cc -framework mujoco        -o derivative
+	clang++ $(ALLFLAGS)    basic.cc      -framework mujoco -lglfw -o basic
+	clang++ $(ALLFLAGS)    record.cc     -framework mujoco -lglfw -o record
+	clang   -c $(CFLAGS)   uitools.c
+	clang++ -c $(CXXFLAGS) macos_save.mm
+	clang++ $(ALLFLAGS)    simulate.cc uitools.o macos_save.o -framework mujoco -framework Cocoa -lglfw -o simulate
 	rm *.o

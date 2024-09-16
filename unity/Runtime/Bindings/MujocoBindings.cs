@@ -1,17 +1,18 @@
-// Copyright 2019 DeepMind Technologies Limited
+// Copyright 2022 DeepMind Technologies Limited
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
 //
-//      http://www.apache.org/licenses/LICENSE-2.0
+//     http://www.apache.org/licenses/LICENSE-2.0
 //
 // Unless required by applicable law or agreed to in writing, software
 // distributed under the License is distributed on an "AS IS" BASIS,
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-
+// ==============================================================================
+// THIS FILE IS AUTO-GENERATED
 using System;
 using System.Runtime.InteropServices;
 using System.Text;
@@ -24,9 +25,13 @@ public static class MujocoLib {
 // ----------------------------------Constants----------------------------------
 
 public const bool THIRD_PARTY_MUJOCO_MJDATA_H_ = true;
+public const bool THIRD_PARTY_MUJOCO_MJEXPORT_H_ = true;
+public const bool MUJOCO_HELPER_DLL_LOCAL = true;
+public const bool MUJOCO_HELPER_DLL_IMPORT = true;
+public const bool MUJOCO_HELPER_DLL_EXPORT = true;
+public const bool MJAPI = true;
+public const bool MJLOCAL = true;
 public const bool THIRD_PARTY_MUJOCO_MJMODEL_H_ = true;
-public const bool mjUSEDOUBLE = true;
-public const double mjMINVAL = 1e-15;
 public const double mjPI = 3.141592653589793;
 public const double mjMAXVAL = 10000000000.0;
 public const double mjMINMU = 1e-05;
@@ -39,12 +44,16 @@ public const int mjNEQDATA = 7;
 public const int mjNDYN = 10;
 public const int mjNGAIN = 10;
 public const int mjNBIAS = 10;
+public const int mjNFLUID = 12;
 public const int mjNREF = 2;
 public const int mjNIMP = 5;
 public const int mjNSOLVER = 1000;
 public const bool THIRD_PARTY_MUJOCO_MJRENDER_H_ = true;
 public const int mjNAUX = 10;
 public const int mjMAXTEXTURE = 1000;
+public const bool THIRD_PARTY_MUJOCO_INCLUDE_MJTNUM_H_ = true;
+public const bool mjUSEDOUBLE = true;
+public const double mjMINVAL = 1e-15;
 public const bool THIRD_PARTY_MUJOCO_MJUI_H_ = true;
 public const int mjMAXUISECT = 10;
 public const int mjMAXUIITEM = 80;
@@ -82,19 +91,14 @@ public const int mjKEY_F11 = 300;
 public const int mjKEY_F12 = 301;
 public const bool THIRD_PARTY_MUJOCO_MJVISUALIZE_H_ = true;
 public const int mjNGROUP = 6;
+public const int mjMAXLIGHT = 100;
 public const int mjMAXOVERLAY = 500;
 public const int mjMAXLINE = 100;
 public const int mjMAXLINEPNT = 1000;
 public const int mjMAXPLANEGRID = 200;
 public const bool THIRD_PARTY_MUJOCO_MJXMACRO_H_ = true;
 public const bool THIRD_PARTY_MUJOCO_MUJOCO_H_ = true;
-public const int mjVERSION_HEADER = 211;
-public const bool THIRD_PARTY_MUJOCO_MUJOCO_EXPORT_H_ = true;
-public const bool MUJOCO_HELPER_DLL_LOCAL = true;
-public const bool MUJOCO_HELPER_DLL_IMPORT = true;
-public const bool MUJOCO_HELPER_DLL_EXPORT = true;
-public const bool MJAPI = true;
-public const bool MJLOCAL = true;
+public const int mjVERSION_HEADER = 221;
 
 
 // ------------------------------------Enums------------------------------------
@@ -145,7 +149,8 @@ public enum mjtEnableBit : int{
   mjENBL_ENERGY = 2,
   mjENBL_FWDINV = 4,
   mjENBL_SENSORNOISE = 8,
-  mjNENABLE = 4,
+  mjENBL_MULTICCD = 16,
+  mjNENABLE = 5,
 }
 public enum mjtJoint : int{
   mjJNT_FREE = 0,
@@ -186,6 +191,7 @@ public enum mjtTexture : int{
 public enum mjtIntegrator : int{
   mjINT_EULER = 0,
   mjINT_RK4 = 1,
+  mjINT_IMPLICIT = 2,
 }
 public enum mjtCollision : int{
   mjCOL_ALL = 0,
@@ -238,8 +244,9 @@ public enum mjtDyn : int{
 }
 public enum mjtGain : int{
   mjGAIN_FIXED = 0,
-  mjGAIN_MUSCLE = 1,
-  mjGAIN_USER = 2,
+  mjGAIN_AFFINE = 1,
+  mjGAIN_MUSCLE = 2,
+  mjGAIN_USER = 3,
 }
 public enum mjtBias : int{
   mjBIAS_NONE = 0,
@@ -433,33 +440,35 @@ public enum mjtFrame : int{
   mjFRAME_SITE = 3,
   mjFRAME_CAMERA = 4,
   mjFRAME_LIGHT = 5,
-  mjFRAME_WORLD = 6,
-  mjNFRAME = 7,
+  mjFRAME_CONTACT = 6,
+  mjFRAME_WORLD = 7,
+  mjNFRAME = 8,
 }
 public enum mjtVisFlag : int{
   mjVIS_CONVEXHULL = 0,
   mjVIS_TEXTURE = 1,
   mjVIS_JOINT = 2,
-  mjVIS_ACTUATOR = 3,
-  mjVIS_CAMERA = 4,
-  mjVIS_LIGHT = 5,
-  mjVIS_TENDON = 6,
-  mjVIS_RANGEFINDER = 7,
-  mjVIS_CONSTRAINT = 8,
-  mjVIS_INERTIA = 9,
-  mjVIS_SCLINERTIA = 10,
-  mjVIS_PERTFORCE = 11,
-  mjVIS_PERTOBJ = 12,
-  mjVIS_CONTACTPOINT = 13,
-  mjVIS_CONTACTFORCE = 14,
-  mjVIS_CONTACTSPLIT = 15,
-  mjVIS_TRANSPARENT = 16,
-  mjVIS_AUTOCONNECT = 17,
-  mjVIS_COM = 18,
-  mjVIS_SELECT = 19,
-  mjVIS_STATIC = 20,
-  mjVIS_SKIN = 21,
-  mjNVISFLAG = 22,
+  mjVIS_CAMERA = 3,
+  mjVIS_ACTUATOR = 4,
+  mjVIS_ACTIVATION = 5,
+  mjVIS_LIGHT = 6,
+  mjVIS_TENDON = 7,
+  mjVIS_RANGEFINDER = 8,
+  mjVIS_CONSTRAINT = 9,
+  mjVIS_INERTIA = 10,
+  mjVIS_SCLINERTIA = 11,
+  mjVIS_PERTFORCE = 12,
+  mjVIS_PERTOBJ = 13,
+  mjVIS_CONTACTPOINT = 14,
+  mjVIS_CONTACTFORCE = 15,
+  mjVIS_CONTACTSPLIT = 16,
+  mjVIS_TRANSPARENT = 17,
+  mjVIS_AUTOCONNECT = 18,
+  mjVIS_COM = 19,
+  mjVIS_SELECT = 20,
+  mjVIS_STATIC = 21,
+  mjVIS_SKIN = 22,
+  mjNVISFLAG = 23,
 }
 public enum mjtRndFlag : int{
   mjRND_SHADOW = 0,
@@ -1644,10 +1653,17 @@ public unsafe struct mjData_ {
   public double* efc_aref;
   public double* subtree_linvel;
   public double* subtree_angmom;
+  public double* qH;
+  public double* qHDiagInv;
+  public int* D_rownnz;
+  public int* D_rowadr;
+  public int* D_colind;
+  public double* qDeriv;
+  public double* qLU;
   public double* actuator_force;
   public double* qfrc_actuator;
-  public double* qfrc_unc;
-  public double* qacc_unc;
+  public double* qfrc_smooth;
+  public double* qacc_smooth;
   public double* efc_b;
   public double* efc_force;
   public int* efc_state;
@@ -1870,6 +1886,7 @@ public unsafe struct mjModel_ {
   public int nuser_sensor;
   public int nnames;
   public int nM;
+  public int nD;
   public int nemax;
   public int njmax;
   public int nconmax;
@@ -1950,6 +1967,7 @@ public unsafe struct mjModel_ {
   public double* geom_friction;
   public double* geom_margin;
   public double* geom_gap;
+  public double* geom_fluid;
   public double* geom_user;
   public float* geom_rgba;
   public int* site_type;
@@ -2087,11 +2105,13 @@ public unsafe struct mjModel_ {
   public int* actuator_group;
   public byte* actuator_ctrllimited;
   public byte* actuator_forcelimited;
+  public byte* actuator_actlimited;
   public double* actuator_dynprm;
   public double* actuator_gainprm;
   public double* actuator_biasprm;
   public double* actuator_ctrlrange;
   public double* actuator_forcerange;
+  public double* actuator_actrange;
   public double* actuator_gear;
   public double* actuator_cranklength;
   public double* actuator_acc0;
@@ -2103,6 +2123,8 @@ public unsafe struct mjModel_ {
   public int* sensor_needstage;
   public int* sensor_objtype;
   public int* sensor_objid;
+  public int* sensor_reftype;
+  public int* sensor_refid;
   public int* sensor_dim;
   public int* sensor_adr;
   public double* sensor_cutoff;
@@ -2125,6 +2147,7 @@ public unsafe struct mjModel_ {
   public double* key_act;
   public double* key_mpos;
   public double* key_mquat;
+  public double* key_ctrl;
   public int* name_bodyadr;
   public int* name_jntadr;
   public int* name_geomadr;
@@ -2209,7 +2232,7 @@ public unsafe struct mjrContext_ {
   public fixed int charWidthBig[127];
   public int charHeight;
   public int charHeightBig;
-  public int glewInitialized;
+  public int glInitialized;
   public int windowAvailable;
   public int windowSamples;
   public int windowStereo;
@@ -2473,7 +2496,7 @@ public unsafe struct mjvOption_ {
   public fixed byte jointgroup[6];
   public fixed byte tendongroup[6];
   public fixed byte actuatorgroup[6];
-  public fixed byte flags[22];
+  public fixed byte flags[23];
 }
 
 [StructLayout(LayoutKind.Sequential)]
@@ -2497,6 +2520,98 @@ public unsafe struct mjvScene_ {
   public mjvLight_ lights5;
   public mjvLight_ lights6;
   public mjvLight_ lights7;
+  public mjvLight_ lights8;
+  public mjvLight_ lights9;
+  public mjvLight_ lights10;
+  public mjvLight_ lights11;
+  public mjvLight_ lights12;
+  public mjvLight_ lights13;
+  public mjvLight_ lights14;
+  public mjvLight_ lights15;
+  public mjvLight_ lights16;
+  public mjvLight_ lights17;
+  public mjvLight_ lights18;
+  public mjvLight_ lights19;
+  public mjvLight_ lights20;
+  public mjvLight_ lights21;
+  public mjvLight_ lights22;
+  public mjvLight_ lights23;
+  public mjvLight_ lights24;
+  public mjvLight_ lights25;
+  public mjvLight_ lights26;
+  public mjvLight_ lights27;
+  public mjvLight_ lights28;
+  public mjvLight_ lights29;
+  public mjvLight_ lights30;
+  public mjvLight_ lights31;
+  public mjvLight_ lights32;
+  public mjvLight_ lights33;
+  public mjvLight_ lights34;
+  public mjvLight_ lights35;
+  public mjvLight_ lights36;
+  public mjvLight_ lights37;
+  public mjvLight_ lights38;
+  public mjvLight_ lights39;
+  public mjvLight_ lights40;
+  public mjvLight_ lights41;
+  public mjvLight_ lights42;
+  public mjvLight_ lights43;
+  public mjvLight_ lights44;
+  public mjvLight_ lights45;
+  public mjvLight_ lights46;
+  public mjvLight_ lights47;
+  public mjvLight_ lights48;
+  public mjvLight_ lights49;
+  public mjvLight_ lights50;
+  public mjvLight_ lights51;
+  public mjvLight_ lights52;
+  public mjvLight_ lights53;
+  public mjvLight_ lights54;
+  public mjvLight_ lights55;
+  public mjvLight_ lights56;
+  public mjvLight_ lights57;
+  public mjvLight_ lights58;
+  public mjvLight_ lights59;
+  public mjvLight_ lights60;
+  public mjvLight_ lights61;
+  public mjvLight_ lights62;
+  public mjvLight_ lights63;
+  public mjvLight_ lights64;
+  public mjvLight_ lights65;
+  public mjvLight_ lights66;
+  public mjvLight_ lights67;
+  public mjvLight_ lights68;
+  public mjvLight_ lights69;
+  public mjvLight_ lights70;
+  public mjvLight_ lights71;
+  public mjvLight_ lights72;
+  public mjvLight_ lights73;
+  public mjvLight_ lights74;
+  public mjvLight_ lights75;
+  public mjvLight_ lights76;
+  public mjvLight_ lights77;
+  public mjvLight_ lights78;
+  public mjvLight_ lights79;
+  public mjvLight_ lights80;
+  public mjvLight_ lights81;
+  public mjvLight_ lights82;
+  public mjvLight_ lights83;
+  public mjvLight_ lights84;
+  public mjvLight_ lights85;
+  public mjvLight_ lights86;
+  public mjvLight_ lights87;
+  public mjvLight_ lights88;
+  public mjvLight_ lights89;
+  public mjvLight_ lights90;
+  public mjvLight_ lights91;
+  public mjvLight_ lights92;
+  public mjvLight_ lights93;
+  public mjvLight_ lights94;
+  public mjvLight_ lights95;
+  public mjvLight_ lights96;
+  public mjvLight_ lights97;
+  public mjvLight_ lights98;
+  public mjvLight_ lights99;
   public mjvGLCamera_ camera0;
   public mjvGLCamera_ camera1;
   public byte enabletransform;
@@ -2547,12 +2662,6 @@ public unsafe struct mjvFigure_ {
 }public struct mjuiItem_ {}public struct mjfItemEnable {}
 
 // ----------------------------Function declarations----------------------------
-
-[DllImport("mujoco", CallingConvention = CallingConvention.Cdecl)]
-public static unsafe extern int mj_activate([MarshalAs(UnmanagedType.LPStr)]string filename);
-
-[DllImport("mujoco", CallingConvention = CallingConvention.Cdecl)]
-public static unsafe extern void mj_deactivate();
 
 [DllImport("mujoco", CallingConvention = CallingConvention.Cdecl)]
 public static unsafe extern void mj_defaultVFS(void* vfs);
@@ -2663,10 +2772,13 @@ public static unsafe extern void mj_setConst(mjModel_* m, mjData_* d);
 public static unsafe extern int mj_setLengthRange(mjModel_* m, mjData_* d, int index, mjLROpt_* opt, StringBuilder error, int error_sz);
 
 [DllImport("mujoco", CallingConvention = CallingConvention.Cdecl)]
-public static unsafe extern void mj_printFormattedModel(mjModel_* m, [MarshalAs(UnmanagedType.LPStr)]string filename, [MarshalAs(UnmanagedType.LPStr)]string float_format_str);
+public static unsafe extern void mj_printFormattedModel(mjModel_* m, [MarshalAs(UnmanagedType.LPStr)]string filename, [MarshalAs(UnmanagedType.LPStr)]string float_format);
 
 [DllImport("mujoco", CallingConvention = CallingConvention.Cdecl)]
 public static unsafe extern void mj_printModel(mjModel_* m, [MarshalAs(UnmanagedType.LPStr)]string filename);
+
+[DllImport("mujoco", CallingConvention = CallingConvention.Cdecl)]
+public static unsafe extern void mj_printFormattedData(mjModel_* m, mjData_* d, [MarshalAs(UnmanagedType.LPStr)]string filename, [MarshalAs(UnmanagedType.LPStr)]string float_format);
 
 [DllImport("mujoco", CallingConvention = CallingConvention.Cdecl)]
 public static unsafe extern void mj_printData(mjModel_* m, mjData_* d, [MarshalAs(UnmanagedType.LPStr)]string filename);
@@ -3111,6 +3223,12 @@ public static unsafe extern void mj_warning(mjData_* d, int warning, int info);
 public static unsafe extern void mju_writeLog([MarshalAs(UnmanagedType.LPStr)]string type, [MarshalAs(UnmanagedType.LPStr)]string msg);
 
 [DllImport("mujoco", CallingConvention = CallingConvention.Cdecl)]
+public static unsafe extern int mj_activate([MarshalAs(UnmanagedType.LPStr)]string filename);
+
+[DllImport("mujoco", CallingConvention = CallingConvention.Cdecl)]
+public static unsafe extern void mj_deactivate();
+
+[DllImport("mujoco", CallingConvention = CallingConvention.Cdecl)]
 public static unsafe extern void mju_zero3(double* res);
 
 [DllImport("mujoco", CallingConvention = CallingConvention.Cdecl)]
@@ -3370,5 +3488,8 @@ public static unsafe extern string mju_strncpy(StringBuilder dst, [MarshalAs(Unm
 
 [DllImport("mujoco", CallingConvention = CallingConvention.Cdecl)]
 public static unsafe extern double mju_sigmoid(double x);
+
+[DllImport("mujoco", CallingConvention = CallingConvention.Cdecl)]
+public static unsafe extern void mjd_transitionFD(mjModel_* m, mjData_* d, double eps, byte centered, double* A, double* B);
 }
 }

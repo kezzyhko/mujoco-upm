@@ -2,6 +2,299 @@
 Changelog
 =========
 
+.. Upcoming version (not yet released)
+.. -----------------------------------
+
+Version 2.2.1 (July 18, 2022)
+-----------------------------
+
+General
+^^^^^^^
+
+- Added ``mjd_transitionFD`` to compute efficient finite difference approximations of the state-transition and
+  control-transition matrices, :ref:`see here<derivatives>` for more details.
+- Added derivatives for the ellipsoid fluid model.
+- Added ``ctrl`` attribute to :ref:`keyframes<keyframe>`.
+- Added ``clock`` sensor which :ref:`measures time<sensor-clock>`.
+- Added visualisation groups to skins.
+- Added actuator visualisation for ``free`` and ``ball`` joints and for actuators with ``site`` transmission.
+- Added visualisation for actuator activations.
+- Added ``<intvelocity>`` actuator shortcut for "integrated velocity" actuators, documented :ref:`here <intvelocity>`.
+- Added ``<damper>`` actuator shortcut for active-damping actuators, documented :ref:`here <damper>`.
+- ``mju_rotVecMat`` and ``mju_rotVecMatT`` now support in-place multiplication.
+- ``mjData.ctrl`` values are no longer clamped in-place, remain untouched by the engine.
+- Arrays in mjData's buffer now align to 64-byte boundaries rather than 8-byte.
+- Add memory poisoning when building with Address Sanitizer (ASAN) and Memory Sanitizer (MSAN). This allows ASAN to
+  detect reads and writes to regions in ``mjModel.buffer`` and ``mjData.buffer`` that do not lie within an array, and
+  for MSAN to detect reads from uninitialised fields in ``mjData`` following ``mj_resetData``.
+- Add a `slider-crank example <https://github.com/deepmind/mujoco/tree/2.2.1/model/slider_crank>`_ to ``model/``.
+
+Bug fixes
+^^^^^^^^^
+
+- :ref:`Activation clamping <CActRange>` was not being applied in the :ref:`implicit integrator<geIntegration>`.
+- Stricter parsing of orientation specifiers. Before this change, a specification that included both ``quat`` and an
+  :ref:`alternative specifier<COrientation>` e.g., ``<geom ... quat=".1 .2 .3 .4" euler="10 20 30">``, would lead to the
+  ``quat`` being ignored and only ``euler`` being used. After this change a parse error will be thrown.
+- Stricter parsing of XML attributes. Before this change an erroneous XML snippet like ``<geom size="1/2 3 4">`` would
+  have been parsed as ``size="1 0 0"`` and no error would have been thrown. Now throws an error.
+- Trying to load a ``NaN`` via XML like ``<geom size="1 NaN 4">``, while allowed for debugging purposes, will now print
+  a warning.
+- Fixed null pointer dereference in ``mj_loadModel``.
+- Fixed memory leaks when loading an invalid model from MJB.
+- Integer overflows are now avoided when computing ``mjModel`` buffer sizes.
+- Added missing warning string for ``mjWARN_BADCTRL``.
+
+Packaging
+^^^^^^^^^
+
+- Changed MacOS packaging so that the copy of ``mujoco.framework`` embedded in ``MuJoCo.app`` can be used to build
+  applications externally.
+
+
+Version 2.2.0 (May 23, 2022)
+----------------------------
+
+Open Sourcing
+^^^^^^^^^^^^^
+
+1. MuJoCo is now fully open-source software. Newly available top level directories are:
+
+   a. ``src/``: All source files. Subdirectories correspond to the modules described in the Programming chapter
+   :ref:`introduction<inIntro>`:
+
+   - ``src/engine/``: Core engine.
+   - ``src/xml/``: XML parser.
+   - ``src/user/``: Model compiler.
+   - ``src/visualize/``: Abstract visualizer.
+   - ``src/ui/``: UI framework.
+
+   b. ``test/``: Tests and corresponding asset files.
+
+   c. ``dist/``: Files related to packaging and binary distribution.
+
+#. Added `contributor's guide <https://github.com/deepmind/mujoco/blob/main/CONTRIBUTING.md>`_ and
+   `style guide <https://github.com/deepmind/mujoco/blob/main/STYLEGUIDE.md>`_.
+
+General
+^^^^^^^
+
+3. Added analytic derivatives of smooth (unconstrained) dynamics forces, with respect to velocities:
+
+   - Centripetal and Coriolis forces computed by the Recursive Newton-Euler algorithm.
+   - Damping and fluid-drag passive forces.
+   - Actuation forces.
+
+#. Added ``implicit`` integrator. Using the analytic derivatives above, a new implicit-in-velocity integrator was added.
+   This integrator lies between the Euler and Runge Kutta integrators in terms of both stability and computational
+   cost. It is most useful for models which use fluid drag (e.g. for flying or swimming) and for models which use
+   :ref:`velocity actuators<velocity>`. For more details, see the :ref:`Numerical Integration<geIntegration>` section.
+
+#. Added :at:`actlimited` and :at:`actrange` attributes to :ref:`general actuators<general>`, for clamping actuator
+   internal states (activations). This clamping is useful for integrated-velocity actuators, see the :ref:`Activation
+   clamping <CActRange>` section for details.
+
+#. ``mjData`` fields ``qfrc_unc`` (unconstrained forces) and ``qacc_unc`` (unconstrained accelerations) were renamed
+   ``qfrc_smooth`` and ``qacc_smooth``, respectively. While "unconstrained" is precise, "smooth" is more intelligible
+   than "unc".
+
+#. Public headers have been moved from ``/include`` to ``/include/mujoco/``, in line with the directory layout common in
+   other open source projects. Developers are encouraged to include MuJoCo public headers in their own codebase via
+   ``#include <mujoco/filename.h>``.
+
+#. The default shadow resolution specified by the :ref:`shadowsize<quality>` attribute was increased from 1024 to 4096.
+
+#. Saved XMLs now use 2-space indents.
+
+Bug fixes
+^^^^^^^^^
+
+10. Antialiasing was disabled for segmentation rendering. Before this change, if the :ref:`offsamples<quality>`
+    attribute was greater than 0 (the default value is 4), pixels that overlapped with multiple geoms would receive
+    averaged segmentation IDs, leading to incorrect or non-existent IDs. After this change :at:`offsamples` is ignored
+    during segmentation rendering.
+
+#.  The value of the enable flag for the experimental multiCCD feature was made sequential with other enable flags.
+    Sequentiality is assumed in the ``simulate`` UI and elsewhere.
+
+#.  Fix issue of duplicated meshes when saving models with OBJ meshes using mj_saveLastXML.
+
+
+Version 2.1.5 (Apr. 13, 2022)
+-----------------------------
+
+General
+^^^^^^^
+
+1. Added an experimental feature: multi-contact convex collision detection, activated by an enable flag. See full
+   description :ref:`here <option-flag>`.
+
+Bug fixes
+^^^^^^^^^
+
+2. GLAD initialization logic on Linux now calls ``dlopen`` to load a GL platform dynamic library if a
+   ``*GetProcAddress`` function is not already present in the process' global symbol table. In particular, processes
+   that use GLFW to set up a rendering context that are not explicitly linked against ``libGLX.so`` (this applies to the
+   Python interpreter, for example) will now work correctly rather than fail with a ``gladLoadGL`` error when
+   ``mjr_makeContext`` is called.
+
+#. In the Python bindings, named indexers for scalar fields (e.g. the ``ctrl`` field for actuators) now return a NumPy
+   array of shape ``(1,)`` rather than ``()``. This allows values to be assigned to these fields more straightforwardly.
+
+Version 2.1.4 (Apr. 4, 2022)
+----------------------------
+
+General
+^^^^^^^
+
+1. MuJoCo now uses GLAD to manage OpenGL API access instead of GLEW. On Linux, there is no longer a need to link against
+   different GL wrangling libraries depending on whether GLX, EGL, or OSMesa is being used. Instead, users can simply
+   use GLX, EGL, or OSMesa to create a GL context and ``mjr_makeContext`` will detect which one is being used.
+
+#. Added visualisation for contact frames. This is useful when writing or modifying collision functions, when the actual
+   direction of the x and y axes of a contact can be important.
+
+Binary build
+^^^^^^^^^^^^
+
+3. The ``_nogl`` dynamic library is no longer provided on Linux and Windows. The switch to GLAD allows us to resolve
+   OpenGL symbols when ``mjr_makeContext`` is called rather than when the library is loaded. As a result, the MuJoCo
+   library no longer has an explicit dynamic dependency on OpenGL, and can be used on system where OpenGL is not
+   present.
+
+Simulate
+^^^^^^^^
+
+4. Fixed a bug in simulate where pressing '[' or ']' when a model is not loaded causes a crash.
+
+#. Contact frame visualisation was added to the Simulate GUI.
+
+#. Renamed "set key", "reset to key" to "save key" and "load key", respectively.
+
+#. Changed bindings of F6 and F7 from the not very useful "vertical sync" and "busy wait" to the more useful cycling of
+   frames and labels.
+
+Bug fixes
+^^^^^^^^^
+
+8. ``mj_resetData`` zeroes out the ``solver_nnz`` field.
+
+#. Removed a special branch in ``mju_quat2mat`` for unit quaternions. Previously, ``mju_quat2mat`` skipped all
+   computation if the real part of the quaternion equals 1.0. For very small angles (e.g. when finite differencing), the
+   cosine can evaluate to exactly 1.0 at double precision while the sine is still nonzero.
+
+
+Version 2.1.3 (Mar. 23, 2022)
+-----------------------------
+
+General
+^^^^^^^
+
+1. ``simulate`` now support cycling through cameras (with ``[`` and ``]`` keys).
+#. ``mjVIS_STATIC`` toggles all static bodies, not just direct children of the world.
+
+Python bindings
+^^^^^^^^^^^^^^^
+
+3. Added a ``free()`` method to ``MjrContext``.
+#. Enums now support arithmetic and bitwise operations with numbers.
+
+Bug fixes
+^^^^^^^^^
+
+5. Fixed rendering bug for planes, introduced in 2.1.2. This broke maze environments in
+   `dm_control <https://github.com/deepmind/dm_control>`_.
+
+
+Version 2.1.2 (Mar. 15, 2022)
+-----------------------------
+
+New modules
+^^^^^^^^^^^
+
+1. Added new :doc:`Python bindings<python>`, which can be installed via ``pip install mujoco``,
+   and imported as ``import mujoco``.
+#. Added new :doc:`Unity plug-in<unity>`.
+#. Added a new ``introspect`` module, which provides reflection-like capability for MuJoCo's public API, currently
+   describing functions and enums. While implemented in Python, this module is expected to be generally useful for
+   automatic code generation targeting multiple languages. (This is not shipped as part of the ``mujoco`` Python
+   bindings package.)
+
+API changes
+^^^^^^^^^^^
+
+4. Moved definition of ``mjtNum`` floating point type into a new header
+   `mjtnum.h <https://github.com/deepmind/mujoco/blob/3577e2cf8bf841475b489aefff52276a39f24d51/include/mjtnum.h>`_.
+#. Renamed header `mujoco_export.h` to :ref:`mjexport.h<inHeader>`.
+#. Added ``mj_printFormattedData``, which accepts a format string for floating point numbers, for example to increase
+   precision.
+
+General
+^^^^^^^
+
+7. MuJoCo can load `OBJ <https://en.wikipedia.org/wiki/Wavefront_.obj_file>`_ mesh files.
+
+   a. Meshes containing polygons with more than 4 vertices are not supported.
+   #. In OBJ files containing multiple object groups, any groups after the first one will be ignored.
+   #. Added (post-release, not included in the 2.1.2 archive) textured
+      `mug <https://github.com/deepmind/mujoco/blob/main/model/mug/mug.xml>`_ example model:
+
+      .. image:: images/changelog/mug.png
+         :width: 300px
+
+
+#. Added optional frame-of-reference specification to :ref:`framepos<sensor-framepos>`,
+   :ref:`framequat<sensor-framequat>`, :ref:`framexaxis<sensor-framexaxis>`, :ref:`frameyaxis<sensor-frameyaxis>`,
+   :ref:`framezaxis<sensor-framezaxis>`, :ref:`framelinvel<sensor-framelinvel>`, and
+   :ref:`frameangvel<sensor-frameangvel>` sensors. The frame-of-reference is specified by new :at:`reftype` and
+   :at:`refname` attributes.
+
+#. Sizes of :ref:`user parameters <CUser>` are now automatically inferred.
+
+   a. Declarations of user parameters in the top-level :ref:`size <size>` clause (e.g. :at:`nuser_body`,
+      :at:`nuser_jnt`, etc.) now accept a value of -1, which is the default. This will automatically set the value to
+      the length of the maximum associated :at:`user` attribute defined in the model.
+   #. Setting a value smaller than -1 will lead to a compiler error (previously a segfault).
+   #. Setting a value to a length smaller than some :at:`user` attribute defined in the model will lead to an error
+      (previously additional values were ignored).
+
+#. Increased the maximum number of lights in an :ref:`mjvScene` from 8 to 100.
+
+#. Saved XML files only contain explicit :ref:`inertial <inertial>` elements if the original XML included them. Inertias
+   that were automatically inferred by the compiler's :ref:`inertiafromgeom <compiler>` mechanism remain unspecified.
+
+#. User-selected geoms are always rendered as opaque. This is useful in interactive visualizers.
+
+#. Static geoms now respect their :ref:`geom group<geom>` for visualisation. Until this change rendering of static geoms
+   could only be toggled using the :ref:`mjVIS_STATIC<mjtVisFlag>` visualisation flag . After this change, both the geom
+   group and the visualisation flag need to be enabled for the geom to be rendered.
+
+#. Pointer parameters in function declarations in :ref:`mujoco.h<inHeader>` that are supposed to represent fixed-length
+   arrays are now spelled as arrays with extents, e.g. ``mjtNum quat[4]`` rather than ``mjtNum* quat``. From the
+   perspective of C and C++, this is a non-change since array types in function signatures decay to pointer types.
+   However, it allows autogenerated code to be aware of expected input shapes.
+
+#. Experimental stateless fluid interaction model. As described :ref:`here <gePassive>`, fluid forces use sizes computed
+   from body inertia. While sometimes convenient, this is very rarely a good approximation. In the new model forces act
+   on geoms, rather than bodies, and have a several user-settable parameters. The model is activated by setting a new
+   attribute: ``<geom fluidshape="ellipsoid"/>``. The parameters are described succinctly :ref:`here<geom>`, but we
+   leave a full description or the model and its parameters to when this feature leaves experimental status.
+
+Bug fixes
+^^^^^^^^^
+
+16. ``mj_loadXML`` and ``mj_saveLastXML`` are now locale-independent. The Unity plugin should now work correctly for
+    users whose system locales use commas as decimal separators.
+#.  XML assets in VFS no longer need to end in a null character. Instead, the file size is determined by the size
+    parameter of the corresponding VFS entry.
+#.  Fix a vertex buffer object memory leak in ``mjrContext`` when skins are used.
+#.  Camera quaternions are now normalized during XML compilation.
+
+Binary build
+^^^^^^^^^^^^
+
+20. Windows binaries are now built with Clang.
+
 Version 2.1.1 (Dec. 16, 2021)
 -----------------------------
 
@@ -45,7 +338,7 @@ Bug Fixes
    :ref:`weld <equality-weld>` constraints.
 
    .. note::
-      Forces generated by :ref:`spatial tendons <spatial>` which are outside the kinematic tree (i.e. between bodies
+      Forces generated by :ref:`spatial tendons <spatial>` which are outside the kinematic tree (i.e., between bodies
       which have no ancestral relationship) are still not taken into account by force and torque sensors. This remains a
       future work item.
 
@@ -118,7 +411,7 @@ New features
 General
 ^^^^^^^
 
-3. The pre-allocated sizes in the virtual file system (VFS) increased to 2000 and 1000, to allow for larger projects.
+3. The preallocated sizes in the virtual file system (VFS) increased to 2000 and 1000, to allow for larger projects.
 #. The C structs in the ``mjuiItem`` union are now named, for compatibility.
 #. Fixed: ``mjcb_contactfilter`` type is ``mjfConFilt`` (was ``mjfGeneric``).
 #. Fixed: The array of sensors in ``mjCModel`` was not cleared.
@@ -155,10 +448,10 @@ License manager
 ^^^^^^^^^^^^^^^
 
 23. Removed the entire license manager. The functions ``mj_activate`` and ``mj_deactivate`` are still there for
-    backward compabitibily, but now they do nothing and it is no longer necessary to call them.
+    backward compatibility, but now they do nothing and it is no longer necessary to call them.
 #. Removed the remote license certificate functions ``mj_certXXX``.
 
-Earlier Versions
+Earlier versions
 ----------------
 
 For changelogs of earlier versions please see `roboti.us <https://www.roboti.us/download.html>`_.

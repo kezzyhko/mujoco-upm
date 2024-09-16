@@ -2,6 +2,8 @@
 Programming
 ===========
 
+.. _inIntro:
+
 Introduction
 ------------
 
@@ -10,45 +12,16 @@ is a dynamic library compatible with Windows, Linux and macOS, which requires a 
 library exposes the full functionality of the simulator through a compiler-independent shared-memory C API. It can also
 be used in C++ programs.
 
-MuJoCo is a free product currently distributed as a pre-built dynamic library and will soon be made available as an
-open-source project. The software distribution contains a compiled version of GLFW which is used in the code samples to
-create an OpenGL window and direct user input to it. The Linux distribution also contains compiled versions of GLEW
-which is used for OpenGL symbol loading and allow the user to choose between X11, EGL or MESA. For projects where
-rendering is not needed, there is a smaller "nogl" library which does not have a dependence on OpenGL. This is suitable
-for running on headless servers without video drivers installed. The distribution for each platform contains the
-following dynamic libraries:
+The MuJoCo codebase is organized into subdirectories corresponding to different major areas of functionality:
 
-.. code-block:: Text
-
-     Windows:  mujoco210.dll     (stub library: mujoco210.lib)
-               mujoco210nogl.dll (stub library: mujoco210nogl.lib)
-               glfw3.dll         (stub library: glfw3.lib)
-
-     Linux:    mujoco210.so
-               mujoco210nogl.so
-               glewXXX.so
-               glfw.so.3
-
-     macOS:    mujoco210.dylib
-               mujoco210nogl.dylib
-               glfw.3.dylib
-
-Note that the software :ref:`version <inVersion>` number is contained in the library name (and obviously changes with
-every release), so for example ``mujoco210`` means version 2.1.
-
-Even though MuJoCo is a single dynamic library with unified C API, it contains several modules, some of which are
-implemented in C++. We have taken advantage of the convenience of C++ for functionality that is used before the
-simulation starts (namely the parser and compiler), and have gone to the trouble of writing carefully-tuned C code for
-all runtime functionality. The modules are:
-
+Engine
+   The simulator (or physics engine) is written in C. It is responsible for all runtime computations.
 Parser
    The XML parser is written in C++. It can parse MJCF models and URDF models, converting them into an internal mjCModel
    C++ object which is not directly exposed to the user.
 Compiler
    The compiler is written in C++. It takes an mjCModel C++ object constructed by the parser, and converts it into an
    mjModel C structure used at runtime.
-Simulator
-   The simulator (or physics engine) is written in C. It is responsible for all runtime computations.
 Abstract visualizer
    The abstract visualizer is written in C. It generates a list of abstract geometric entities representing the
    simulation state, with all information needed for actual rendering. It also provides abstract mouse hooks for camera
@@ -67,18 +40,23 @@ UI framework
 Getting started
 ~~~~~~~~~~~~~~~
 
-The software distribution is a single .zip (Windows) or .tar.gz (Mac and Linux) archive whose name contains the platform
-and software version, e.g. mujoco210_windows.zip. There is no installer. Simply unzip this archive in a directory of
-your choice (where you have write access). You may need to use chmod to set execute permissions or otherwise give
-permissions to run the libraries. From the bin subdirectory, you can now run the precompiled code samples, for example:
+MuJoCo is an open-source project. Pre-built dynamic libraries are available for x86_64 and arm64 machines running
+Windows, Linux, and macOS. These can be downloaded from the `GitHub Releases page <https://github.com/deepmind/mujoco/releases>`_.
+Users who do not intend to develop or modify core MuJoCo code are encouraged to use our pre-built libraries, as these
+come bundled with the same versions of dependencies that we regularly test against, and benefit from build flags
+that have been tuned for performance. Our pre-built libraries are almost entirely self-contained and do not require
+any other library to be present, outside the standard C runtime. We also hide all symbols apart from
+those that form MuJoCo's public API, thus ensuring that it can coexist with any other libraries that may be loaded into
+the process (including other versions of libraries that MuJoCo depends on).
+
+The pre-built distribution is a single .zip on Windows, .dmg on macOS, and .tar.gz on Linux. There is no installer.
+On Windows and Linux, simply extract the archive in a directory of your choice. From the ``bin`` subdirectory, you can
+now run the precompiled code samples, for example:
 
 .. code-block:: Text
 
      Windows:           simulate ..\model\humanoid.xml
      Linux and macOS:   ./simulate ../model/humanoid.xml
-
-Prior to MuJoCo 2.0, running the code samples needed LD_LIBRARY_PATH on Linux. As of MuJoCo 2.0, they are compiled with
-"rpath $ORIGIN" so the library is found in the executable directory (if it is not in the path).
 
 The directory structure is shown below. Users can re-organize it if needed, as well as install the dynamic libraries in
 other directories and set the path accordingly. The only file created automatically is MUJOCO_LOG.TXT in the executable
@@ -86,24 +64,59 @@ directory; it contains error and warning messages, and can be deleted at any tim
 
 .. code-block:: Text
 
-     mujoco210
-       bin     - dynamic libraries, executables, MUJOCO_LOG.TXT
-       doc     - README.txt and REFERENCE.txt
-       include - header files needed to develop with MuJoCo
-       model   - model collection (extra models available on the Forum)
-       sample  - code samples and makefile need to build them
+     bin     - dynamic libraries, executables, MUJOCO_LOG.TXT
+     doc     - README.txt and REFERENCE.txt
+     include - header files needed to develop with MuJoCo
+     model   - model collection
+     sample  - code samples and makefile need to build them
 
-After verifying that the simulator works, the next step is to re-compile the code samples so as to ensure that the
-development environment is properly installed. The distribution includes a platform-specific makefile in the sample
-subdirectory, which assumes Visual Studio on Windows, GCC on Linux and Clang on macOS. On Windows, remember to open a
-Visual Studio command prompt with native x64 tools. Assuming the compilation succeeded and the resulting executables in
-the bin subdirectory work, you are ready to start developing with MuJoCo.
+After verifying that the simulator works, you may also want to re-compile the code samples to ensure that you have a
+working development environment. We provide Makefiles for `Windows <https://github.com/deepmind/mujoco/blob/main/sample/Makefile.windows>`_,
+`macOS <https://github.com/deepmind/mujoco/blob/main/sample/Makefile.macos>`_, and
+`Linux <https://github.com/deepmind/mujoco/blob/main/sample/Makefile>`_, and also a cross-platform
+`CMake <https://github.com/deepmind/mujoco/blob/main/sample/CMakeLists.txt>`_ setup that can be used to build sample
+applications independently of the MuJoCo library itself. If you are using the vanilla Makefile, we assume that you are
+using Visual Studio on Windows and LLVM/Clang on Linux. On Windows, you also need to either open a Visual Studio command
+prompt with native x64 tools or call the ``vcvarsall.bat`` script that comes with your MSVC installation to set up the
+appropriate environment variables.
 
-As already mentioned, MuJoCo is a compiler-independent library. In theory the user should be able to switch to any
-compiler of their choice. In practice we are using C++11 features as well as std:: functionality internally, and despite
-our efforts to statically link all necessary runtime libraries, this is not always possible - especially on Linux where
-licensing restrictions prevent static linking. If MuJoCo fails to start because of missing or incompatible dynamic
-libraries, please install the necessary libraries.
+On macOS, the DMG disk image contains ``MuJoCo.app``, which you can double-click to launch the ``simulate`` GUI.
+You can also drag ``MuJoCo.app`` into the ``/Application`` on your system, as you would to install any other app.
+While ``MuJoCo.app`` may look like a file, it is in fact an `Application Bundle <https://developer.apple.com/go/?id=bundle-structure>`_,
+which is a directory that contains executable binaries for all of MuJoCo's sample applications, along with an embedded
+`framework <https://developer.apple.com/library/archive/documentation/MacOSX/Conceptual/BPFrameworks/Concepts/WhatAreFrameworks.html>`_,
+which is a subdirectory containing the MuJoCo dynamic library and all of its public headers. In other words,
+``MuJoCo.app`` contains all the same files that are shipped in the archive on Windows and Linux. To see this, right
+click (or control-click) on ``MuJoCo.app`` and click "Show Package Contents".
+
+As mentioned above, ``mujoco.framework`` contains the library and headers that are necessary to build any application
+that depends on MuJoCo. If you are using Xcode, you can import it as a framework dependency on your project. (This also
+works for Swift projects without any modification). If you are building manually, you can use ``-F`` and
+``-framework mujoco`` to specify the header search path and the library search path respectively. The macOS Makefile
+provides an example for this.
+
+.. _inBuild:
+
+Building MuJoCo from source
+~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+To build MuJoCo from source, you will need CMake and a working C++17 compiler installed. The steps are:
+
+  #. Clone the ``mujoco`` repository from GitHub.
+  #. Create a new build directory somewhere, and ``cd`` into it.
+  #. Run ``cmake $PATH_TO_CLONED_REPO`` to configure the build.
+  #. Run ``cmake --build .`` to build.
+
+MuJoCo's build system automatically fetches dependencies from upstream repositories over the Internet using CMake's
+`FetchContent <https://cmake.org/cmake/help/latest/module/FetchContent.html>`_ module.
+
+The main CMake setup will build the MuJoCo library itself along with all sample applications, but the Python
+bindings are not built. Those come with their own build instructions, which can be found in the :doc:`python`
+section of the documentation.
+
+Additionally, the CMake setup also implements an installation phase which will copy and organize the output files to a
+target directory. Specify the directory using ``cmake $PATH_TO_CLONED_REPO -DCMAKE_INSTALL_PREFIX=<my_install_dir>``.
+After successfully building MuJoCo following the instructions above, you can install it using ``cmake --install .``.
 
 .. _inHeader:
 
@@ -113,26 +126,31 @@ Header files
 The distribution contains several header files which are identical on all platforms. They are also available from the
 links below, to make this documentation self-contained.
 
-mujoco.h   `(source) <https://github.com/deepmind/mujoco/blob/main/include/mujoco.h>`__
+mujoco.h   `(source) <https://github.com/deepmind/mujoco/blob/main/include/mujoco/mujoco.h>`__
    This is the main header file and must be included in all programs using MuJoCo. It defines all API functions and
    global variables, and includes the next 5 files which provide the necessary type definitions.
-mjmodel.h   `(source) <https://github.com/deepmind/mujoco/blob/main/include/mjmodel.h>`__
+mjmodel.h   `(source) <https://github.com/deepmind/mujoco/blob/main/include/mujoco/mjmodel.h>`__
    This file defines the C structure :ref:`mjModel` which is the runtime representation of the
    model being simulated. It also defines a number of primitive types and other structures needed to define mjModel.
-mjdata.h   `(source) <https://github.com/deepmind/mujoco/blob/main/include/mjdata.h>`__
+mjdata.h   `(source) <https://github.com/deepmind/mujoco/blob/main/include/mujoco/mjdata.h>`__
    This file defines the C structure :ref:`mjData` which is the workspace where all computations
    read their inputs and write their outputs. It also defines primitive types and other structures needed to define
    mjData.
-mjvisualize.h   `(source) <https://github.com/deepmind/mujoco/blob/main/include/mjvisualize.h>`__
+mjvisualize.h   `(source) <https://github.com/deepmind/mujoco/blob/main/include/mujoco/mjvisualize.h>`__
    This file defines the primitive types and structures needed by the abstract visualizer.
-mjrender.h   `(source) <https://github.com/deepmind/mujoco/blob/main/include/mjrender.h>`__
+mjrender.h   `(source) <https://github.com/deepmind/mujoco/blob/main/include/mujoco/mjrender.h>`__
    This file defines the primitive types and structures needed by the OpenGL renderer.
-mjui.h   `(source) <https://github.com/deepmind/mujoco/blob/main/include/mjui.h>`__
+mjui.h   `(source) <https://github.com/deepmind/mujoco/blob/main/include/mujoco/mjui.h>`__
    This file defines the primitive types and structures needed by the UI framework.
-mjxmacro.h   `(source) <https://github.com/deepmind/mujoco/blob/main/include/mjxmacro.h>`__
+mjtnum.h   `(source) <https://github.com/deepmind/mujoco/blob/main/include/mujoco/mjtnum.h>`__
+   Defines MuJoCo's ``mjtNum`` floating-point type to be either ``double`` or ``float``. See :ref:`mjtNum`.
+mjxmacro.h   `(source) <https://github.com/deepmind/mujoco/blob/main/include/mujoco/mjxmacro.h>`__
    This file is optional and is not included by mujoco.h. It defines :ref:`X Macros <tyXMacro>` that can
    automate the mapping of mjModel and mjData into scripting languages, as well as other operations that require
    accessing all fields of mjModel and mjData. See code sample :ref:`testxml.cc <saTestXML>`.
+mjexport.h   `(source) <https://github.com/deepmind/mujoco/blob/main/include/mujoco/mjexport.h>`__
+   Macros used for exporting public symbols from the MuJoCo library. This header should not be used directly by client
+   code.
 glfw3.h
    This file is optional and is not included by mujoco.h. It is the only header file needed for the GLFW library. See
    code sample :ref:`simulate.cc <saSimulate>`.
@@ -149,11 +167,6 @@ API. While we encourage users to upgrade to the latest version, we recognize tha
 especially when other developers release software that relies on MuJoCo. Therefore we have introduced simple
 mechanisms to help avoid version conflicts, as follows.
 
-As noted above, the version number is contained in the name of the dynamic library, e.g. mujoco210.dll for version 2.1.
-Thus if an executable was compiled and linked with version 2.1 and the currently installed MuJoCo version is different,
-the dynamic library will not be found. Please avoid the temptation to rename the library so as to fool the dynamic
-linker; this is never a good idea. Instead you should obtain the required version of the library.
-
 The situation is more subtle if existing code was developed with a certain version of MuJoCo, and is now being
 compiled and linked with a different version. If the definitions of the API functions used in that code have changed,
 either the compiler or the linker will generate errors. But even if the function definitions have not changed, it may
@@ -165,7 +178,7 @@ the symbol :ref:`mjVERSION_HEADER <glNumeric>` and the library provides the func
 
    // recommended version check
    if( mjVERSION_HEADER!=mj_version() )
-       complain();
+     complain();
 
 Note that only the main header defines this symbol. We assume that the collection of headers released with each software
 version will stay together and will not be mixed between versions. To avoid complications with floating-point
@@ -219,55 +232,22 @@ mjcb\_
 Using OpenGL
 ~~~~~~~~~~~~
 
-The use of MuJoCo's native OpenGL renderer will be explained in :ref:`Rendering`. Here we only cover issues
-related to external libraries and resolving dependencies. For projects that do not need rendering, one can use the
-"nogl" version of the MuJoCo library.
+The use of MuJoCo's native OpenGL renderer will be explained in :ref:`Rendering`. For rendering, MuJoCo uses OpenGL 1.5
+in the compatibility profile with the ``ARB_framebuffer_object`` and ``ARB_vertex_buffer_object`` extensions. OpenGL
+symbols are loaded via `GLAD <https://github.com/Dav1dde/glad>`_ the first time the :ref:`mjr_makeContext` function
+is called. This means that the MuJoCo library itself does not have an explicit dependency on OpenGL and can be used
+on systems without OpenGL support, as long as ``mjr_`` functions are not called.
 
-For rendering MuJoCo uses OpenGL 1.5 with the ARB_framebuffer_object extension (provided by all modern drivers.) It
-also uses GLEW 2.0.0 for loading OpenGL symbols. On Windows and macOS, both GLEW and the OpenGL library (OpenGL32.lib
-or OpenGL.framework respectively) are linked with MuJoCo. On these platforms the user does not have to take additional
-steps to resolve dependencies.
+Applications that use MuJoCo's built-in rendering functionalities are responsible for linking against an appropriate
+OpenGL context creation library and for ensuring that there is an OpenGL context that is made current on the running
+thread. On Windows and macOS, there is a canonical OpenGL library provided by the operating system. On Linux, MuJoCo
+currently supports GLX for rendering to an X11 window, OSMesa for headless software rendering, and EGL for hardware
+accelerated headless rendering.
 
-On Linux the situation is more complex, because there are multiple OpenGL implementations and ways to load symbols.
-The renderer and linking process are organized so as to allow multiple use cases shown below. libmujoco210.so calls
-GLEW and OpenGL functions without linking the corresponding libraries. Users must resolve the dependencies by linking
-whatever flavor of GLEW and OpenGL are suitable for their needs. For illustration, see how
-:ref:`record.cc <saRecord>` on Linux is compiled and linked in three different ways (makefile in the sample
-directory).
-
-No OpenGL: link with **libmujoco210nogl**.so
-   This version of the MuJoCo library is compiled without the renderer, so it does not make any calls to OpenGL or GLEW.
-   It can be used on compute servers where graphics drivers are not installed. The main header file mujoco.h still
-   declares the rendering functions (mjr_XXX), but the library does not implement them, therefore calling these
-   functions from user code will result in unresolved symbols at link time. In the code samples, we use this version of
-   the library in text-only applications.
-X11 OpenGL: link with **libmujoco210**.so, **libglew**.so, **libGL**.so
-   This is the most common way of using OpenGL on Linux desktop, with X11 for context creation and symbol loading.
-OSMESA OpenGL: link with **libmujoco210**.so, **libglewosmesa**.so, **libOSMesa**.so
-   This can be used for software rendering with the OSMesa library. Note that we are linking a different version of GLEW
-   here, built with OSMesa support instead of the standard GLX. Ideally users will find a way to avoid software
-   rendering and use hardware acceleration. But OSMesa is a convenient fall-back option when all else fails.
-EGL OpenGL: link with **libmujoco210**.so, **libEGL**.so, **libglewegl**.so, **libOpenGL**.so
-   This is the key feature for headless rendering. It enables hardware-accelerated OpenGL on servers without X11. User
-   code must use EGL for context creation, as illustrated in :ref:`record.cc <saRecord>`. libglewegl.so uses EGL to
-   load OpenGL symbols instead of using GLX. libOpenGL.so is the vendor-independent library which exposes only OpenGL
-   functionality without introducing a dependence on X11 (as opposed to libGL.so which depends on libGLX.so). NVidia's
-   drivers provide libOpenGL.so when installed with the "--install-libglvnd" option. libEGL.so can be obtained from Mesa
-   and is driver-independent (sudo apt-get install libegl1-mesa-dev).
-
-Finally, instead of using the compiled libglew we have provided, users can compile their own, or link glew.c statically
-in their project (it is a single C file). Static linking requires the GLEW_STATIC symbol to be defined. In addition, the
-following symbols must be defined when building GLEW 2.0.0 for different use cases:
-
-::
-
-     libglew.so:        GLEW_NO_GLU
-     libglewegl.so:     GLEW_NO_GLU  GLEW_EGL
-     libgleweomesa.so:  GLEW_NO_GLU  GLEW_OSMESA
-
-For headless rendering to work, it is essential to eliminate the dependence on GLU, because otherwise a dependence on
-X11 will be introduced via libGLU.so. Note that GLEW can also be built for Mir and Wayland. We have not tested these,
-but in theory they should work.
+Before version 2.1.4, MuJoCo used GLEW rather than GLAD to manage OpenGL symbols, which required linking against
+different GLEW libraries at build time depending on the GL implementation used. In order to avoid having manage OpenGL
+dependency when no rendering was required, "nogl" builds of the library was made available. Since OpenGL symbols are
+now lazily resolved at runtime after the switch to GLAD, the "nogl" libraries are no longer provided.
 
 .. _Sample:
 
@@ -355,13 +335,16 @@ This code sample is a full-featured interactive simulator. It opens an OpenGL wi
 GLFW library, and renders the simulation state in it. There is built-in help, simulation statistics, profiler, sensor
 data plots. The model file can be specified as a command-line argument, or loaded at runtime using drag-and-drop
 functionality. As of MuJoCo 2.0, this code sample uses the native UI to render various controls, and provides an
-illustration of how the new UI framework is intended to be used.
+illustration of how the new UI framework is intended to be used. Below is a screen-capture of ``simulate`` in action:
 
-Interaction is done with the mouse; see the built-in help for summary of available commands. Briefly, an object is
-selected by left-double-click. The user can then apply forces and torques on the selected object by holding Ctrl and
-dragging the mouse. Dragging the mouse alone (without Ctrl) moves the camera. There are keyboard shortcuts for pausing
-the simulation, resetting, and re-loading the model file. The latter functionality is very useful while editing the
-model in an XML editor.
+..  youtube:: 0ORsj_E17B0
+    :align: center
+
+Interaction is done with the mouse; built-in help with a summary of available commands is available by pressing the 'F1'
+key. Briefly, an object is selected by left-double-click. The user can then apply forces and torques on the selected
+object by holding Ctrl and dragging the mouse. Dragging the mouse alone (without Ctrl) moves the camera. There are
+keyboard shortcuts for pausing the simulation, resetting, and re-loading the model file. The latter functionality is
+very useful while editing the model in an XML editor.
 
 The code is quite long yet reasonably commented, so it is best to just read it. Here we provide a high-level overview.
 The ``main()`` function initializes both MuJoCo and GLFW, opens a window, and install GLFW callbacks for mouse and
@@ -379,9 +362,10 @@ is extracted from the diagnostic fields of mjData. It is a very useful tool for 
 constraint solver algorithms. The outputs of the sensors defined in the model are visualized as a bar graph.
 
 Note that the profiler shows timing information collected with high-resolution timers. On Windows, depending on the
-power settings, the OS may reduce the CPU frequency; this is because simulate.cc sleeps most of the time in order to
-slow down to realtime. This results in inaccurate timings. To avoid this problem, change the Windows power plan so
-that the minimum processor state is 100%.
+power settings, the OS may reduce the CPU frequency; this is because `simulate.cc
+<https://github.com/deepmind/mujoco/blob/main/sample/simulate.cc>`_ sleeps most of the time in order to slow down to
+realtime. This results in inaccurate timings. To avoid this problem, change the Windows power plan so that the minimum
+processor state is 100%.
 
 .. _saRecord:
 
@@ -390,11 +374,12 @@ that the minimum processor state is 100%.
 
 This code sample simulates the passive dynamics of a given model, renders it offscreen, reads the color and depth pixel
 values, and saves them into a raw data file that can then be converted into a movie file with tools such as ffmpeg. The
-rendering is simplified compared to simulate.cc because there is no user interaction, visualization options or timing;
-instead we simply render with the default settings as fast as possible. The dimensions and number of multi-samples for
-the offscreen buffer are specified in the MuJoCo model, while the simulation duration, frames-per-second to be rendered
-(usually much less than the physics simulation rate), and output file name are specified as command-line arguments. For
-example, a 5 second animation at 60 frames per second is created with:
+rendering is simplified compared to `simulate.cc <https://github.com/deepmind/mujoco/blob/main/sample/simulate.cc>`_
+because there is no user interaction, visualization options or timing; instead we simply render with the default
+settings as fast as possible. The dimensions and number of multi-samples for the offscreen buffer are specified in the
+MuJoCo model, while the simulation duration, frames-per-second to be rendered (usually much less than the physics
+simulation rate), and output file name are specified as command-line arguments. For example, a 5 second animation at 60
+frames per second is created with:
 
 .. code-block:: Shell
 
@@ -456,12 +441,12 @@ more accurate. Here ``f`` is one of the functions
 
 The code sample computes six Jacobian matrices, containing the derivative of each function with respect to its three
 arguments. The results are stored in the array ``deriv``. All six Jacobian matrices are square, with dimensionality
-equal to the number of degrees of freedom mjModel.nv. When the model configuration includes quaternion joints,
+equal to the number of degrees of freedom ``mjModel.nv``. When the model configuration includes quaternion joints,
 mjData.qpos has larger dimensionality than the other vectors, however the derivative is only defined in the tangent
-space to the configuration manifold. This is why, when differentiating with respect to the elements of mjData.qpos, we
-do not directly add ``eps`` but instead use the function :ref:`mju_quatIntegrate`
-to perturb the quaternion in the tangent space, keeping it normalized. This technique should also be used in any other
-situation where quaternions need to be perturbed.
+space to the configuration manifold. This is why, when differentiating with respect to the elements of ``mjData.qpos``,
+we do not directly add ``eps`` but instead use the function :ref:`mju_quatIntegrate` to perturb the quaternion in the
+tangent space, keeping it normalized. This technique should also be used in any other situation where quaternions need
+to be perturbed.
 
 There are some important subtleties in this code that improve speed as well as accuracy. To speed up the computation,
 we re-use intermediate results whenever possible. This relies on the skip mechanism described under :ref:`forward
@@ -475,9 +460,9 @@ Accuracy depends on the value of ``eps`` which is user-adjustable, as well as th
 of forward dynamics however, the function evaluation involves an iterative constraint solver, and this must be handled
 with care. In general, the difference between ``f(x+eps)`` and ``f(x)`` is very small, thus any noise affecting the
 two function evaluations differently can make the resulting derivatives meaningless. Different warm-starts or
-different number of solver iterations can act as such noise here. Therefore we fix the warm-start mjData.qacc to a
+different number of solver iterations can act as such noise here. Therefore we fix the warm-start ``mjData.qacc`` to a
 value pre-computed at the center point, using ``nwarmup`` extra major iterations to obtain a more accurate warm-start.
-We also fix the number of solver iterations to ``niter`` and set mjModel.opt.tolerance = 0; this disables the early
+We also fix the number of solver iterations to ``niter`` and set ``mjModel.opt.tolerance = 0``; this disables the early
 termination mechanism. Note that the original simulation options are restored in the serial code which advances the
 state.
 
@@ -485,18 +470,19 @@ We emphasize that the above subtleties are not high-order corrections that can b
 of unilateral constraints, numerical derivatives are hard to compute and there is no shortcut around it; indeed they
 would not even be defined if it wasn't for our soft-constraint model. Making the constraints softer results in more
 accurate results. This effect is so strong that in some situations it makes sense to intentionally work with the wrong
-model, i.e. a model that is softer than desired, so as to obtain more accurate derivatives.
+model, i.e., a model that is softer than desired, so as to obtain more accurate derivatives.
 
 .. _saUItools:
 
 uitools
 ~~~~~~~
 
-`(uitools.h) <https://github.com/deepmind/mujoco/blob/main/sample/uitools.h>`_
-`(uitools.c) <https://github.com/deepmind/mujoco/blob/main/sample/uitools.c>`_
-This is not a stand-alone code sample, but rather a small utility used to hook up the new UI to GLFW. It is used in
-simulate.cc and can also be used in user projects that involve the new UI. If GLFW is replaced with a different window
-library, this is the only file that would have to be changed in order to access the UI functionality.
+`(uitools.h) <https://github.com/deepmind/mujoco/blob/main/sample/uitools.h>`_ `(uitools.c)
+<https://github.com/deepmind/mujoco/blob/main/sample/uitools.c>`_ This is not a stand-alone code sample, but rather a
+small utility used to hook up the new UI to GLFW. It is used in `simulate.cc
+<https://github.com/deepmind/mujoco/blob/main/sample/simulate.cc>`_ and can also be used in user projects that involve
+the new UI. If GLFW is replaced with a different window library, this is the only file that would have to be changed in
+order to access the UI functionality.
 
 .. _Simulation:
 
@@ -514,7 +500,7 @@ be discussed later.
 
 mjModel and mjData should never be allocated directly by the user. Instead they are allocated and initialized by the
 corresponding API functions. These are very elaborate data structures, containing (arrays of) other structures,
-pre-allocated data arrays for all intermediate results, as well as an :ref:`internal stack <siStack>`. Our strategy is
+preallocated data arrays for all intermediate results, as well as an :ref:`internal stack <siStack>`. Our strategy is
 to allocate all necessary heap memory at the beginning of the simulation, and free it after the simulation is done, so
 that we never have to call the C memory allocation and deallocation functions during the simulation. This is done for
 speed, avoidance of memory fragmentation, future GPU portability, and ease of managing the state of the entire
@@ -532,7 +518,7 @@ available options are
    mjModel* m = mj_loadXML("mymodel.xml", NULL, errstr, errstr_sz);
 
    // option 2: parse and compile XML from virtual file system
-   mjModel* m = mj_loadXML("mymodel.xml", vfs, errstr_sz);
+   mjModel* m = mj_loadXML("mymodel.xml", vfs, errstr, errstr_sz);
 
    // option 3: load precompiled model from MJB file
    mjModel* m = mj_loadModel("mymodel.mjb", NULL);
@@ -599,7 +585,7 @@ function :ref:`mj_step` in a loop such as
 
    // simulate until t = 10 seconds
    while( d->time<10 )
-       mj_step(m, d);
+     mj_step(m, d);
 
 This by itself will simulate the passive dynamics, because we have not provided any control signals or applied forces.
 The default (and recommended) way to control the system is to implement a control callback, for example
@@ -609,16 +595,16 @@ The default (and recommended) way to control the system is to implement a contro
    // simple controller applying damping to each dof
    void mycontroller(const mjModel* m, mjData* d)
    {
-       if( m->nu==m->nv )
-           mju_scl(d->ctrl, d->qvel, -0.1, m->nv);
+     if( m->nu==m->nv )
+       mju_scl(d->ctrl, d->qvel, -0.1, m->nv);
    }
 
-This illustrates two concepts. First, we are checking if the number of controls mjModel.nu equals the number of dofs
-mjModel.nv. In general, the same callback may be used with multiple models depending on how the user code is structured,
-and so it is a good idea to check the model dimensions in the callback. Second, MuJoCo has a library of BLAS-like
-functions that are very useful; indeed a large part of the code base consists of calling such functions internally. The
-:ref:`mju_scl` function above scales the velocity vector mjData.qvel by a constant feedback
-gain and copies the result into the control vector mjData.ctrl. To install this callback, we simply assign it to the
+This illustrates two concepts. First, we are checking if the number of controls ``mjModel.nu`` equals the number of
+DoFs ``mjModel.nv``. In general, the same callback may be used with multiple models depending on how the user code is
+structured, and so it is a good idea to check the model dimensions in the callback. Second, MuJoCo has a library of
+BLAS-like functions that are very useful; indeed a large part of the code base consists of calling such functions
+internally. The :ref:`mju_scl` function above scales the velocity vector ``mjData.qvel`` by a constant feedback
+gain and copies the result into the control vector ``mjData.ctrl``. To install this callback, we simply assign it to the
 global control callback pointer :ref:`mjcb_control`:
 
 .. code-block:: C
@@ -631,48 +617,46 @@ signal is needed by the simulation pipeline, and as a result we will end up simu
 damping does not really do justice to the notion of control, and is better implemented as a passive joint property,
 but these are finer points).
 
-Instead of relying on a control callback, we could set the control vector mjData.ctrl directly. Alternatively we could
-set applied forces as explained in :ref:`state and control <siStateControl>`. If we could compute these
-control-related quantities before mj_step is called, then the simulation loop for the controlled dynamics (without
-using a control callback) would become
+Instead of relying on a control callback, we could set the control vector ``mjData.ctrl`` directly. Alternatively we
+could set applied forces as explained in :ref:`state and control <siStateControl>`. If we could compute these control-
+related quantities before ``mj_step`` is called, then the simulation loop for the controlled dynamics (without using a
+control callback) would become
 
 .. code-block:: C
 
-   while( d->time<10 )
-   {
-       // set d->ctrl or d->qfrc_applied or d->xfrc_applied
-       mj_step(m, d);
+   while( d->time<10 ) {
+     // set d->ctrl or d->qfrc_applied or d->xfrc_applied
+     mj_step(m, d);
    }
 
-Why would we not be able to compute the controls before mj_step is called? After all, isn't this what causality means?
+Why would we not be able to compute the controls before ``mj_step`` is called? After all, isn't this what causality means?
 The answer is subtle but important, and has to do with the fact that we are simulating in discrete time. The top-level
-simulation function mj_step basically does two things: compute the :ref:`forward dynamics <siForward>` in continuous
-time, and then integrate over a time period specified by mjModel.opt.timestep. Forward dynamics computes the
-acceleration mjData.qacc at time mjData.time, given the :ref:`state and control <siStateControl>` at time mjData.time.
-The numerical integrator then advances the state and time to mjData.time + mjModel.opt.timestep. Now, the control is
-required to be a function of the state at time mjData.time. However a general feedback controller can be a very complex
-function, depending on various features of the state - in particular all the features computed by MuJoCo as intermediate
-results of the simulation. These may include contacts, Jacobians, passive forces. None of these quantities are available
-before mj_step is called (or rather, they are available but outdated by one time step). In contrast, when mj_step calls
-our control callback, it does so as late in the computation as possible - namely after all the intermediate results
-dependent on the state but not on the control have been computed.
+simulation function ``mj_step`` basically does two things: compute the :ref:`forward dynamics <siForward>` in continuous
+time, and then integrate over a time period specified by ``mjModel.opt.timestep``. Forward dynamics computes the
+acceleration ``mjData.qacc`` at time ``mjData.time``, given the :ref:`state and control <siStateControl>` at time
+``mjData.time``. The numerical integrator then advances the state and time to ``mjData.time + mjModel.opt.timestep``.
+Now, the control is required to be a function of the state at time ``mjData.time``. However a general feedback
+controller can be a very complex function, depending on various features of the state - in particular all the features
+computed by MuJoCo as intermediate results of the simulation. These may include contacts, Jacobians, passive forces.
+None of these quantities are available before ``mj_step`` is called (or rather, they are available but outdated by one
+time step). In contrast, when ``mj_step`` calls our control callback, it does so as late in the computation as possible
+- namely after all the intermediate results dependent on the state but not on the control have been computed.
 
-The same effect can be achieved without using a control callback. This is done by breaking mj_step in two parts:
+The same effect can be achieved without using a control callback. This is done by breaking ``mj_step`` in two parts:
 before the control is needed, and after the control is needed. The simulation loop now becomes
 
 .. code-block:: C
 
-   while( d->time<10 )
-   {
-       mj_step1(m, d);
-       // set d->ctrl or d->qfrc_applied or d->xfrc_applied
-       mj_step2(m, d);
+   while( d->time<10 ) {
+     mj_step1(m, d);
+     // set d->ctrl or d->qfrc_applied or d->xfrc_applied
+     mj_step2(m, d);
    }
 
 There is one complication however: this only works with Euler integration. The Runge-Kutta integrator (as well as other
 advanced integrators we plan to implement) need to evaluate the entire dynamics including the feedback control law
 multiple times per step, which can only be done using a control callback. But with Euler integration, the above
-separation of mj_step into :ref:`mj_step1` and :ref:`mj_step2` is sufficient to provide the control law with the
+separation of ``mj_step`` into :ref:`mj_step1` and :ref:`mj_step2` is sufficient to provide the control law with the
 intermediate results of the computation.
 
 To make the above discussion more clear, we provide the internal implementation of mj_step, mj_step1 and mj_step2,
@@ -680,23 +664,22 @@ omitting some code that computes timing diagnostics. The main simulation functio
 
 .. code-block:: C
 
-   void mj_step(const mjModel* m, mjData* d)
-   {
-       // common to all integrators
-       mj_checkPos(m, d);
-       mj_checkVel(m, d);
-       mj_forward(m, d);
-       mj_checkAcc(m, d);
+   void mj_step(const mjModel* m, mjData* d) {
+     // common to all integrators
+     mj_checkPos(m, d);
+     mj_checkVel(m, d);
+     mj_forward(m, d);
+     mj_checkAcc(m, d);
 
-       // compare forward and inverse solutions if enabled
-       if( mjENABLED(mjENBL_FWDINV) )
-           mj_compareFwdInv(m, d);
+     // compare forward and inverse solutions if enabled
+     if( mjENABLED(mjENBL_FWDINV) )
+       mj_compareFwdInv(m, d);
 
-       // use selected integrator
-       if( m->opt.integrator==mjINT_RK4 )
-           mj_RungeKutta(m, d, 4);
-       else
-           mj_Euler(m, d);
+     // use selected integrator
+     if( m->opt.integrator==mjINT_RK4 )
+       mj_RungeKutta(m, d, 4);
+     else
+       mj_Euler(m, d);
    }
 
 The checking functions reset the simulation automatically if any numerical values have become invalid or too large.
@@ -705,40 +688,40 @@ The control callback (if any) is called from within the forward dynamics functio
 Next we show the implementation of the two-part stepping approach, although the specifics will make sense only after
 we explain the :ref:`forward dynamics <siForward>` later. Note that the control callback is now called directly, since
 we have essentially unpacked the forward dynamics function. Note also that we always call the Euler integrator in
-mj_step2 regardless of the setting of mjModel.opt.integrator.
+mj_step2 regardless of the setting of ``mjModel.opt.integrator``.
 
 .. code-block:: C
 
    void mj_step1(const mjModel* m, mjData* d)
    {
-       mj_checkPos(m, d);
-       mj_checkVel(m, d);
-       mj_fwdPosition(m, d);
-       mj_sensorPos(m, d);
-       mj_energyPos(m, d);
-       mj_fwdVelocity(m, d);
-       mj_sensorVel(m, d);
-       mj_energyVel(m, d);
+     mj_checkPos(m, d);
+     mj_checkVel(m, d);
+     mj_fwdPosition(m, d);
+     mj_sensorPos(m, d);
+     mj_energyPos(m, d);
+     mj_fwdVelocity(m, d);
+     mj_sensorVel(m, d);
+     mj_energyVel(m, d);
 
-       // if we had a callback we would be using mj_step, but call it anyway
-       if( mjcb_control )
-           mjcb_control(m, d);
+     // if we had a callback we would be using mj_step, but call it anyway
+     if( mjcb_control )
+       mjcb_control(m, d);
    }
 
    void mj_step2(const mjModel* m, mjData* d)
    {
-       mj_fwdActuation(m, d);
-       mj_fwdAcceleration(m, d);
-       mj_fwdConstraint(m, d);
-       mj_sensorAcc(m, d);
-       mj_checkAcc(m, d);
+     mj_fwdActuation(m, d);
+     mj_fwdAcceleration(m, d);
+     mj_fwdConstraint(m, d);
+     mj_sensorAcc(m, d);
+     mj_checkAcc(m, d);
 
-       // compare forward and inverse solutions if enabled
-       if( mjENABLED(mjENBL_FWDINV) )
-           mj_compareFwdInv(m, d);
+     // compare forward and inverse solutions if enabled
+     if( mjENABLED(mjENBL_FWDINV) )
+       mj_compareFwdInv(m, d);
 
-       // integrate with Euler; ignore integrator option
-       mj_Euler(m, d);
+     // integrate with Euler; ignore integrator option
+     mj_Euler(m, d);
    }
 
 .. _siStateControl:
@@ -767,19 +750,19 @@ The state vector in MuJoCo is:
 
 For a second-order dynamical system the state contains only position and velocity, however MuJoCo can also model
 actuators (such as cylinders and biological muscles) that have their own activation states assembled in the vector
-mjData.act. While the physics model is time-invariant, user-defined control laws may be time-varying; in particular
-control laws obtained from trajectory optimizers would normally be indexed by mjData.time.
+``mjData.act``. While the physics model is time-invariant, user-defined control laws may be time-varying; in particular
+control laws obtained from trajectory optimizers would normally be indexed by ``mjData.time``.
 
 The reason for the "official" caveat above is because user callbacks may store additional state variables that change
-over time and affect the callback outputs; indeed the field mjData.userdata exists mostly for that purpose. Other
-state-like quantities that are part of mjData and are treated as inputs by forward dynamics are mjData.mocap_pos and
-mjData.mocap_quat. These quantities are unusual in that they are meant to change at each time step (normally driven by
-a motion capture device), however this change is implemented by the user, while the simulator treats them as
-constants. In that sense they are no different from all the constants in mjModel, or the function callback pointers
-set by the user: such constants affect the computation, but are not part of the state vector of a dynamical system.
+over time and affect the callback outputs; indeed the field ``mjData.userdata`` exists mostly for that purpose. Other
+state-like quantities that are part of mjData and are treated as inputs by forward dynamics are ``mjData.mocap_pos`` and
+mjData.mocap_quat. These quantities are unusual in that they are meant to change at each time step (normally driven by a
+motion capture device), however this change is implemented by the user, while the simulator treats them as constants. In
+that sense they are no different from all the constants in mjModel, or the function callback pointers set by the user:
+such constants affect the computation, but are not part of the state vector of a dynamical system.
 
 The warm-start mechanism in the constraint solver effectively introduces another state variable. This mechanism uses
-the output of forward dynamics from the previous time step, namely the acceleration vector mjData.qacc, to estimate
+the output of forward dynamics from the previous time step, namely the acceleration vector ``mjData.qacc``, to estimate
 the current constraint forces via inverse dynamics. This estimate then initializes the optimization algorithm in the
 solver. If this algorithm runs until convergence the warm-start will affect the speed of convergence but not the final
 solution (since the underlying optimization problem is convex and does not have local minima), but in practice the
@@ -791,8 +774,8 @@ Next we turn to the controls and applied forces. The control vector in MuJoCo is
 
      u = (mjData.ctrl, mjData.qfrc_applied, mjData.xfrc_applied)
 
-These quantities specify control signals (mjData.ctrl) for the actuators defined in the model, or directly apply
-forces and torques specified in joint space (mjData.qfrc_applied) or in Cartesian space (mjData.xfrc_applied).
+These quantities specify control signals (``mjData.ctrl``) for the actuators defined in the model, or directly apply
+forces and torques specified in joint space (``mjData.qfrc_applied``) or in Cartesian space (mjData.xfrc_applied).
 
 Finally, calling mj_forward which corresponds to the abstract dynamics function ``f(t,x,u)`` computes the
 time-derivative of the state vector. The corresponding fields of mjData are
@@ -801,8 +784,8 @@ time-derivative of the state vector. The corresponding fields of mjData are
 
      dx/dt = f(t,x,u) = (1, mjData.qvel, mjData.qacc, mjData.act_dot)
 
-In the presence of quaternions (i.e. when free or ball joints are used), the position vector mjData.qpos has higher
-dimensionality than the velocity vector mjData.qvel and so this is not a simple time-derivative in the sense of
+In the presence of quaternions (i.e., when free or ball joints are used), the position vector ``mjData.qpos`` has higher
+dimensionality than the velocity vector ``mjData.qvel`` and so this is not a simple time-derivative in the sense of
 scalars, but instead takes quaternion algebra into account.
 
 To illustrate how the simulation state can be manipulated, suppose we have two mjData pointers src and dst
@@ -851,9 +834,9 @@ If the user has installed a control callback :ref:`mjcb_control` different from 
 pointer), the user callback would be expected to set some of the above fields to non-zero. Note that MuJoCo will not
 clear these controls/forces at the end of the time step. This is the responsibility of the user.
 
-Also relevant in this context is the function :ref:`mj_resetData`. It sets mjData.qpos equal to the model reference
-configuration mjModel.qpos0; mjData.mocap_pos and mjData.mocap_quat equal to the corresponding fixed body poses from
-mjModel; and all other state and control variables to 0.
+Also relevant in this context is the function :ref:`mj_resetData`. It sets ``mjData.qpos`` equal to the model reference
+configuration ``mjModel.qpos0``, ``mjData.mocap_pos`` and ``mjData.mocap_quat`` equal to the corresponding fixed body
+poses from mjModel; and all other state and control variables to 0.
 
 .. _siForward:
 
@@ -861,7 +844,7 @@ Forward dynamics
 ~~~~~~~~~~~~~~~~
 
 The goal of forward dynamics is to compute the time-derivative of the state, namely the acceleration vector
-mjData.qacc and the activation time-derivative mjData.act_dot. Along the way it computes everything else needed to
+mjData.qacc and the activation time-derivative ``mjData.act_dot``. Along the way it computes everything else needed to
 simulate the dynamics, including active contacts and other constraints, joint-space inertia and its LTDL
 decomposition, constraint forces, sensor data and so on. All these intermediate results are available in mjData and
 can be used in custom computations. As illustrated in the :ref:`simulation loop <siSimulation>` section above, the
@@ -873,37 +856,35 @@ skip arguments (mjSTAGE_NONE, 0), where the latter function is implemented as
 
 .. code-block:: C
 
-   void mj_forwardSkip(const mjModel* m, mjData* d,
-                       int skipstage, int skipsensor)
-   {
-       // position-dependent
-       if( skipstage<mjSTAGE_POS )
-       {
-           mj_fwdPosition(m, d);
-           if( !skipsensor )
-               mj_sensorPos(m, d);
-           if( mjENABLED(mjENBL_ENERGY) )
-               mj_energyPos(m, d);
-       }
-
-       // velocity-dependent
-       if( skipstage<mjSTAGE_VEL )
-       {
-           mj_fwdVelocity(m, d);
-           if( !skipsensor )
-               mj_sensorVel(m, d);
-           if( mjENABLED(mjENBL_ENERGY) )
-               mj_energyVel(m, d);
-       }
-
-       // acceleration-dependent
-       if( mjcb_control )
-           mjcb_control(m, d);
-       mj_fwdActuation(m, d);
-       mj_fwdAcceleration(m, d);
-       mj_fwdConstraint(m, d);
+   void mj_forwardSkip(const mjModel* m, mjData* d, int skipstage, int skipsensor) {
+     // position-dependent
+     if( skipstage<mjSTAGE_POS )
+     {
+       mj_fwdPosition(m, d);
        if( !skipsensor )
-           mj_sensorAcc(m, d);
+         mj_sensorPos(m, d);
+       if( mjENABLED(mjENBL_ENERGY) )
+         mj_energyPos(m, d);
+     }
+
+     // velocity-dependent
+     if( skipstage<mjSTAGE_VEL )
+     {
+       mj_fwdVelocity(m, d);
+       if( !skipsensor )
+         mj_sensorVel(m, d);
+       if( mjENABLED(mjENBL_ENERGY) )
+         mj_energyVel(m, d);
+     }
+
+     // acceleration-dependent
+     if( mjcb_control )
+       mjcb_control(m, d);
+     mj_fwdActuation(m, d);
+     mj_fwdAcceleration(m, d);
+     mj_fwdConstraint(m, d);
+     if( !skipsensor )
+       mj_sensorAcc(m, d);
    }
 
 Note that this is the same sequence of calls as in mj_step1 and mj_step2 above, except that checking of real values
@@ -951,31 +932,31 @@ inverse dynamics (with the acceleration computed at the previous time step) to w
 solver in forward dynamics.
 
 The inputs to inverse dynamics are the same as the state vector in forward dynamics as illustrated in :ref:`state and
-control <siStateControl>`, but without mjData.act and mjData.time. Assuming no callbacks that depend on user-defined
-state variables, the inputs to inverse dynamics are the following fields of mjData:
+control <siStateControl>`, but without ``mjData.act`` and ``mjData.time``. Assuming no callbacks that depend on user-
+defined state variables, the inputs to inverse dynamics are the following fields of mjData:
 
 ::
 
      (mjData.qpos, mjData.qvel, mjData.qacc, mjData.mocap_pos, mjData.mocap_quat)
 
-The main output is mjData.qfrc_inverse. This is the force that must have acted on the system in order to achieve the
-observed acceleration mjData.qacc. If forward dynamics were to be computed exactly, by running the iterative solver to
-full convergence, we would have
+The main output is ``mjData.qfrc_inverse``. This is the force that must have acted on the system in order to achieve the
+observed acceleration ``mjData.qacc``. If forward dynamics were to be computed exactly, by running the iterative solver
+to full convergence, we would have
 
 ::
 
      mjData.qfrc_inverse = mjData.qfrc_applied + Jacobian'*mjData.xfrc_applied + mjData.qfrc_actuator
 
-where mjData.qfrc_actuator is the joint-space force produced by the actuators and the Jacobian is the mapping from
-joint to Cartesian space. When the "fwdinv" flag in mjModel.opt.enableflags is set, the above identity is used to
-monitor the quality of the forward dynamics solution. In particular, the two components of mjData.solver_fwdinv are
+where ``mjData.qfrc_actuator`` is the joint-space force produced by the actuators and the Jacobian is the mapping from
+joint to Cartesian space. When the "fwdinv" flag in ``mjModel.opt.enableflags`` is set, the above identity is used to
+monitor the quality of the forward dynamics solution. In particular, the two components of ``mjData.solver_fwdinv`` are
 set to the L2 norm of the difference between the forward and inverse solutions, in terms of joint forces and
 constraint forces respectively.
 
-Similar to forward dynamics, mj_inverse internally calls :ref:`mj_inverseSkip` with skip arguments (mjSTAGE_NONE, 0).
-The skip mechanism is the same as in forward dynamics, and can be used to speed up structured sampling. The result
-mjData.qfrc_inverse is obtained by using the Recursive Newton-Euler algorithm to compute the net force acting on the
-system, and then subtracting from it all internal forces.
+Similar to forward dynamics, ``mj_inverse`` internally calls :ref:`mj_inverseSkip` with skip arguments
+``(mjSTAGE_NONE, 0)``. The skip mechanism is the same as in forward dynamics, and can be used to speed up structured
+sampling. The result ``mjData.qfrc_inverse`` is obtained by using the Recursive Newton-Euler algorithm to compute the
+net force acting on the system, and then subtracting from it all internal forces.
 
 Inverse dynamics can be used as an analytical tool when experimental data are available. This is common in robotics as
 well as biomechanics. It can also be used to compute the joint torques needed to drive the system along a given
@@ -1028,17 +1009,17 @@ management.
    // parallel section
    #pragma omp parallel
    {
-       int n = omp_get_thread_num();       // thread-private variable with thread id (0 to nthread-1)
+     int n = omp_get_thread_num();       // thread-private variable with thread id (0 to nthread-1)
 
-       // ... initialize d[n] from results in serial code
+     // ... initialize d[n] from results in serial code
 
-       // thread function
-       worker(m, d[n]);                    // shared mjModel (read-only), per-thread mjData (read-write)
+     // thread function
+     worker(m, d[n]);                    // shared mjModel (read-only), per-thread mjData (read-write)
    }
 
    // delete per-thread mjData
    for( int n=0; n<nthread; n++ )
-       mj_deleteData(d[n]);
+     mj_deleteData(d[n]);
 
 Since all top-level API functions threat mjModel as ``const``, this multi-threading scheme is safe. Each thread only
 writes to its own mjData. Therefore no further synchronization among threads is needed.
@@ -1073,7 +1054,7 @@ Model changes
 
 The MuJoCo model contained in mjModel is supposed to represent constant physical properties of the system, and in
 theory should not change after compilation. Of course in practice things are not that simple. It is often desirable to
-change the physics options in mjModel.opt, so as to experiment with different aspects of the physics or to create
+change the physics options in ``mjModel.opt``, so as to experiment with different aspects of the physics or to create
 custom computations. Indeed these options are designed in such a way that the user can make arbitrary changes to them
 between time steps.
 
@@ -1082,16 +1063,16 @@ because that may result in incorrect sizes or indexing. This rule does not hold 
 parameters such as inertias are expected to obey certain properties. On the other hand, some structural parameters
 such as object types may be possible to change, but that depends on whether any sizes or indexes depend on them.
 Arrays of type mjtByte can be changed safely, since they are binary indicators that enable and disable certain
-features. The only exception here is mjModel.tex_rgb which is texture data represented as mjtByte.
+features. The only exception here is ``mjModel.tex_rgb`` which is texture data represented as mjtByte.
 
 When changing mjModel fields that corresponds to resources uploaded to the GPU, the user must also call the
-corresponding upload function: mjr_uploadTexture, mjr_uploadMesh, mjr_uploadHField. Otherwise the data used for
+corresponding upload function: ``mjr_uploadTexture``, ``mjr_uploadMesh``, ``mjr_uploadHField``. Otherwise the data used for
 simulation and for rendering will no longer be consistent.
 
 A related consideration has to do with changing real-valued fields of mjModel that have been used by the compiler to
 compute other real-valued fields: if we make a change, we want it to propagate. That is what the function
 :ref:`mj_setConst` does: it updates all derived fields of mjModel. These are fields whose names end with "0",
-corresponding to precomputed quantities when the model is in the reference configuration mjModel.qpos0.
+corresponding to precomputed quantities when the model is in the reference configuration ``mjModel.qpos0``.
 
 Finally, if changes are made to mjModel at runtime, it may be desirable to save them back to the XML. The function
 :ref:`mj_saveLastXML` does that in a limited sense: it copies all real-valued parameters from mjModel back to the
@@ -1123,17 +1104,17 @@ essential to keep it in mind at all times. All MuJoCo utility functions that ope
 difference between row-major and column-major formats.
 
 When possible, MuJoCo exploits sparsity. This can make all the difference between O(N) and O(N^3) scaling. The inertia
-matrix mjData.qM and its LTDL factorization mjData.qLD are always represented as sparse, using a custom indexing
-format designed for matrices that correspond to tree topology. The functions :ref:`mj_factorM`, :ref:`mj_solveM`,
-:ref:`mj_solveM2` and :ref:`mj_mulM` are used for sparse factorization, substitution and matrix-vector multiplication.
-The user can also convert these matrices to dense format with the function :ref:`mj_fullM` although MuJoCo never does
-that internally.
+matrix ``mjData.qM`` and its LTDL factorization ``mjData.qLD`` are always represented as sparse, using a custom
+indexing format designed for matrices that correspond to tree topology. The functions :ref:`mj_factorM`,
+:ref:`mj_solveM`, :ref:`mj_solveM2` and :ref:`mj_mulM` are used for sparse factorization, substitution and
+matrix-vector multiplication. The user can also convert these matrices to dense format with the function
+:ref:`mj_fullM` although MuJoCo never does that internally.
 
-The constraint Jacobian matrix mjData.efc_J is represented as sparse whenever the sparse Jacobian option is enabled.
-The function :ref:`mj_isSparse` can be used to determine if sparse format is currently in use. In that case the
-transposed Jacobian mjData.efc_JT is also computed, and the inverse constraint inertia mjData.efc_AR becomes sparse.
-Sparse matrices are stored in the compressed sparse row (CSR) format. For a generic matrix A with dimensionality
-m-by-n, this format is:
+The constraint Jacobian matrix ``mjData.efc_J`` is represented as sparse whenever the sparse Jacobian option is
+enabled. The function :ref:`mj_isSparse` can be used to determine if sparse format is currently in use. In that case
+the transposed Jacobian ``mjData.efc_JT`` is also computed, and the inverse constraint inertia ``mjData.efc_AR``
+becomes sparse. Sparse matrices are stored in the compressed sparse row (CSR) format. For a generic matrix A with
+dimensionality m-by-n, this format is:
 
 ======== ====== ============================================
 Variable Size   Meaning
@@ -1155,7 +1136,7 @@ the standard convention, we set A_rowadr[r] = r*n. MuJoCo uses sparse matrices i
 To represent 3D orientations and rotations, MuJoCo uses unit quaternions - namely 4D unit vectors arranged as q = (w,
 x, y, z). Here (x, y, z) is the rotation axis unit vector scaled by sin(a/2), where a is the rotation angle in
 radians, and w = cos(a/2). Thus the quaternion corresponding to a null rotation is (1, 0, 0, 0). This is the default
-setting of all quaterions in MJCF.
+setting of all quaternions in MJCF.
 
 MuJoCo also uses 6D spatial vectors internally. These are quantities in mjData prefixed with 'c', namely cvel, cacc,
 cdot, etc. They are spatial motion and force vectors that combine a 3D rotational component followed by a 3D
@@ -1163,13 +1144,13 @@ translational component. We do not provide utility functions for working with th
 scope here. See Roy Featherstone's webpage on `Spatial Algebra <http://royfeatherstone.org/spatial/>`__. The unusual
 order (rotation before translation) is based on this material, and was apparently standard convention in the past.
 
-The data structures mjModel and mjData contain many pointers to pre-allocated buffers. The constructors of these data
-structures (mj_makeModel and mj_makeData) allocate one large buffer, namely mjModel.buffer and mjData.buffer, and then
-partition it and set all the other pointers in it. mjData also contains a stack outside this main buffer, as discussed
-below. Even if two pointers appear one after the other, say mjData.qpos and mjData.qvel, do not assume that the data
-arrays are contiguous and there is no gap between them. The constructors implement byte-alignment for each data array,
-and skip bytes when necessary. So if you want to copy mjData.qpos and mjData.qvel, the correct way to do it is the
-hard way:
+The data structures mjModel and mjData contain many pointers to preallocated buffers. The constructors of these data
+structures (mj_makeModel and mj_makeData) allocate one large buffer, namely ``mjModel.buffer`` and ``mjData.buffer``,
+and then partition it and set all the other pointers in it. mjData also contains a stack outside this main buffer, as
+discussed below. Even if two pointers appear one after the other, say ``mjData.qpos`` and ``mjData.qvel``, do not
+assume that the data arrays are contiguous and there is no gap between them. The constructors implement byte-alignment
+for each data array, and skip bytes when necessary. So if you want to copy ``mjData.qpos`` and ``mjData.qvel``, the
+correct way to do it is the hard way:
 
 .. code-block:: C
 
@@ -1180,10 +1161,10 @@ hard way:
    // DO NOT do this, there may be padding at the end of d->qpos
    mju_copy(myqposqvel, d->qpos, m->nq + m->nv);
 
-The :ref:`X Macros <tyXMacro>` defined in the optional header file mjxmacro.h can be used to automate allocation of data
-structure that match mjModel and mjData, for example when writing a MuJoCo wrapper for a scripting language. In the code
-sample :ref:`testxml.cc <saTestXML>` we use these unusual macros to compare all data arrays from two instances of
-mjModel and find the one with the largest difference. Apparently X Macros were invented in the 1960's for assembly
+The :ref:`X Macros <tyXMacro>` defined in the optional header file ``mjxmacro.h`` can be used to automate allocation of
+data structure that match mjModel and mjData, for example when writing a MuJoCo wrapper for a scripting language. In
+the code sample :ref:`testxml.cc <saTestXML>` we use these unusual macros to compare all data arrays from two instances
+of mjModel and find the one with the largest difference. Apparently X Macros were invented in the 1960's for assembly
 language, and remain a great idea.
 
 .. _siStack:
@@ -1191,23 +1172,23 @@ language, and remain a great idea.
 Internal stack
 ~~~~~~~~~~~~~~
 
-MuJoCo allocates and manages its own stack of mjtNums. mjData.stack is the pointer to the pre-allocated memory buffer.
-mjData.nstack is the maximum number of mjtNums that the stack can hold, as determined by the :at:`nstack` attribute of
-the :ref:`size <size>` element in MJCF. mjData.pstack is the first available address in the stack; this is our custom
-stack pointer.
+MuJoCo allocates and manages its own stack of mjtNums. ``mjData.stack`` is the pointer to the preallocated memory
+buffer. ``mjData.nstack`` is the maximum number of mjtNums that the stack can hold, as determined by the :at:`nstack`
+attribute of the :ref:`size <size>` element in MJCF. ``mjData.pstack`` is the first available address in the stack;
+this is our custom stack pointer.
 
 Most top-level MuJoCo functions allocate space on the stack, use it for internal computations, and then deallocate it.
 They cannot do this with the regular C stack because the allocation size is determined dynamically at runtime. And
 calling the heap memory management functions would be inefficient and result in fragmentation - thus a custom stack.
-When any MuJoCo function is called, upon return the value of mjData.pstack is the same. The only exception is the
-function :ref:`mj_resetData` and its variants: they set mjData.pstack = 0. Note that this function is called
-internally when an instability is detected in mj_step, mj_step1 and mj_step2. So if user functions take advantage of
-the custom stack (as they should), this needs to be done in-between MuJoCo calls that have the potential to reset the
-simulation.
+When any MuJoCo function is called, upon return the value of ``mjData.pstack`` is the same. The only exception is the
+function :ref:`mj_resetData` and its variants: they set ``mjData.pstack = 0``. Note that this function is called
+internally when an instability is detected in ``mj_step``, ``mj_step1`` and ``mj_step2``. So if user functions take
+advantage of the custom stack (as they should), this needs to be done in-between MuJoCo calls that have the potential
+to reset the simulation.
 
-Below is the general template for using the custom stack in user code. This assumes that mjData\* d is defined in the
-scope. If not, saving and restoring the stack pointer should be done manually instead of using the :ref:`mjMARKSTACK`
-and :ref:`mjFREESTACK` macros.
+Below is the general template for using the custom stack in user code. This assumes that ``mjData\* d`` is defined in
+the scope. If not, saving and restoring the stack pointer should be done manually instead of using the
+:ref:`mjMARKSTACK` and :ref:`mjFREESTACK` macros.
 
 .. code-block:: C
 
@@ -1289,20 +1270,20 @@ in the diagnostics section at the beginning of mjData.
 
 When the simulator encounters a situation that is not a terminal error but is nevertheless suspicious and likely to
 result in inaccurate numerical results, it triggers a warning. There are several possible warning types, indexed by
-the enum type :ref:`mjtWarning`. The array mjData.warning contains one :ref:`mjWarningStat` data structure per warning
-type, indicating how many times each warning type has been triggered since the last reset and any information about
-the warning (usually the index of the problematic model element). The counters are cleared upon reset. When a warning
-of a given type is first triggered, the warning text is also printed by mju_warning as documented in :ref:`error and
-memory <siError>` above. All this is done by the function :ref:`mj_warning` which the simulator calls internally when
-it encounters a warning. The user can also call this function directly to emulate a warning.
+the enum type :ref:`mjtWarning`. The array ``mjData.warning`` contains one :ref:`mjWarningStat` data structure per
+warning type, indicating how many times each warning type has been triggered since the last reset and any information
+about the warning (usually the index of the problematic model element). The counters are cleared upon reset. When a
+warning of a given type is first triggered, the warning text is also printed by mju_warning as documented in
+:ref:`error and memory <siError>` above. All this is done by the function :ref:`mj_warning` which the simulator calls
+internally when it encounters a warning. The user can also call this function directly to emulate a warning.
 
 When a model needs to be optimized for high-speed simulation, it is important to know where in the pipeline the CPU
 time is spent. This can in turn suggest which parts of the model to simplify or how to design the user application.
 MuJoCo provides an extensive profiling mechanism. It involves multiple timers indexed by the enum type
 :ref:`mjtTimer`. Each timer corresponds to a top-level API function, or to a component of such a function. Similar to
-warnings, timer information accumulates and is only cleared on reset. The array mjData.timer contains one
-:ref:`mjTimerStat` data structure per timer. The average duration per call for a given timer (corresponding to mj_step
-in the example below) can be computed as:
+warnings, timer information accumulates and is only cleared on reset. The array ``mjData.timer`` contains one
+:ref:`mjTimerStat` data structure per timer. The average duration per call for a given timer (corresponding to
+``mj_step`` in the example below) can be computed as:
 
 .. code-block:: C
 
@@ -1314,47 +1295,50 @@ to implement high-resolution timers in C without bringing in additional dependen
 does not need timing, and in that case there is no reason to call timing functions.
 
 One part of the simulation pipeline that needs to be monitored closely is the iterative constraint solver. The
-simplest diagnostic here is mjData.solver_iter which shows how many iterations the solver took on the last call to
-mj_step or mj_forward. Note that the solver has tolerance parameters for early termination, so this number is usually
-smaller than the maximum number of iterations allowed. The array mjData.solver contains one :ref:`mjSolverStat` data
-structure per iteration of the constraint solver, with information about the constraint state and line search.
+simplest diagnostic here is ``mjData.solver_iter`` which shows how many iterations the solver took on the last call to
+mj_step or ``mj_forward``. Note that the solver has tolerance parameters for early termination, so this number is
+usually smaller than the maximum number of iterations allowed. The array ``mjData.solver`` contains one
+:ref:`mjSolverStat` data structure per iteration of the constraint solver, with information about the constraint state
+and line search.
 
-When the option :at:`fwdinv` is enabled in mjModel.opt.enableflags, the field mjData.fwdinv is also populated. It
-contains the difference between the forward and inverse dynamics, in terms of generalized forces and constraint
+When the option :at:`fwdinv` is enabled in ``mjModel.opt.enableflags``, the field ``mjData.fwdinv`` is also populated.
+It contains the difference between the forward and inverse dynamics, in terms of generalized forces and constraint
 forces. Recall that that the inverse dynamics use analytical formulas and are always exact, thus any discrepancy is
-due to poor convergence of the iterative solver in the forward dynamics. The numbers in mjData.solver near termination
-have similar order-of-magnitude as the numbers in mjData.fwdinv, but nevertheless these are two different diagnostics.
+due to poor convergence of the iterative solver in the forward dynamics. The numbers in ``mjData.solver`` near
+termination have similar order-of-magnitude as the numbers in ``mjData.fwdinv``, but nevertheless these are two
+different diagnostics.
 
 Since MuJoCo's runtime works with compiled models, memory is preallocated when a model is compiled or loaded. Recall the
 :ref:`size <size>` element in MJCF, which has the attributes :at:`njmax`, :at:`nconmax` and :at:`nstack`. They determine
 the maximum number of scalar constraints that can be active simultaneously, the maximum number of contact points that
-can be included in mjData.contact, and the size of the internal stack. How is the user supposed to know what the
+can be included in ``mjData.contact``, and the size of the internal stack. How is the user supposed to know what the
 appropriate settings are? If there were a reliable recipe we would have implemented it in the compiler, but there isn't
 one. The theoretical worst-case, namely all geoms contacting all other geoms, calls for huge allocation which is almost
 never needed in practice. So our approach is to provide default settings in MJCF which are sufficient for most models,
 and allow the user to adjust them manually with the above attributes. If the simulator runs out of stack space at
 runtime it will trigger an error. If it runs out of space for contacts or scalar constraints, it will trigger a warning
 and omit the contacts and constraints that do not fit in the allocated buffers. When such errors or warnings are
-triggered, the user should adjust the sizes. The fields mjData.maxuse_stack, mjData.maxuse_con, mjData.maxuse_efc are
-designed to help with this adjustment. They keep track of the maximum stack allocation, number of contacts and number of
-scalar constraints respectively since the last reset. So one strategy is to make very large allocation, then monitor
-these maxuse_XXX statistics during typical simulations, and use them to reduce the allocation. Of course modern
-computers have so much memory that most users will not bother with such adjustment once they get rid of the
-out-of-memory errors and warnings, but nevertheless we provide this mechanism for the perfectionist.
+triggered, the user should adjust the sizes. The fields ``mjData.maxuse_stack``, ``mjData.maxuse_con``,
+``mjData.maxuse_efc`` are designed to help with this adjustment. They keep track of the maximum stack allocation,
+number of contacts and number of scalar constraints respectively since the last reset. So one strategy is to make very
+large allocation, then monitor these ``maxuse_XXX`` statistics during typical simulations, and use them to reduce the
+allocation. Of course modern computers have so much memory that most users will not bother with such adjustment once
+they get rid of the out-of-memory errors and warnings, but nevertheless we provide this mechanism for the
+perfectionist.
 
-The kinetic and potential energy are computed and stored in mjData.energy when the corresponding flag in
-mjModel.opt.enableflags is set. This can be used as another diagnostic. In general, simulation instability is
+The kinetic and potential energy are computed and stored in ``mjData.energy`` when the corresponding flag in
+``mjModel.opt.enableflags`` is set. This can be used as another diagnostic. In general, simulation instability is
 associated with increasing energy. In some special cases (when all unilateral constraints, actuators and dissipative
 forces are disabled) the underlying physical system is energy-conserving. In that case any temporal fluctuations in
 the total energy indicate inaccuracies in numerical integration. For such systems the Runge-Kutta integrator has much
 better performance than the default semi-implicit Euler integrator.
 
 Finally, the user can implement additional diagnostics as needed. Two examples were provided in the code samples
-testxml.cc and derivative.cc, where we computed model mismatches after save and load, and assessed the accuracy of the
-numerical derivatives respectively. Key to such diagnostics is to implement two different algorithms or simulation
-paths that compute the same quantity, and compare the results numerically. This type of sanity check is essential when
-dealing with complex dynamical systems where we do not really know what the numerical output should be; if we knew
-that, we would not be using a simulator in the first place.
+``testxml.cc`` and ``derivative.cc``, where we computed model mismatches after save and load, and assessed the accuracy
+of the numerical derivatives respectively. Key to such diagnostics is to implement two different algorithms or
+simulation paths that compute the same quantity, and compare the results numerically. This type of sanity check is
+essential when dealing with complex dynamical systems where we do not really know what the numerical output should be;
+if we knew that, we would not be using a simulator in the first place.
 
 .. _siJacobian:
 
@@ -1365,30 +1349,30 @@ The derivative of any vector function with respect to its vector argument is cal
 in multi-joint kinematics and dynamics, it refers to the derivative of some spatial quantity as a function of the
 system configuration. In that case the Jacobian is also a linear map that operates on vectors in the (co)tangent space
 to the configuration manifold - such as velocities, momenta, accelerations, forces. One caveat here is that the system
-configuration encoded in mjData.qpos has dimensionality mjModel.nq, while the tangent space has dimensionality
-mjModel.nv, and the latter is smaller when quaternion joints are present. So the size of the Jacobian matrix is
-N-by-mjModel.nv where N is the dimensionality of the spatial quantity being differentiated.
+configuration encoded in ``mjData.qpos`` has dimensionality ``mjModel.nq``, while the tangent space has dimensionality
+``mjModel.nv``, and the latter is smaller when quaternion joints are present. So the size of the Jacobian matrix is
+N-by-``mjModel.nv`` where N is the dimensionality of the spatial quantity being differentiated.
 
 MuJoCo can differentiate analytically many spatial quantities. These include tendon lengths, actuator transmission
 lengths, end-effector poses, contact and other constraint violations. In the case of tendons and actuator
-transmissions the corresponding quantities are mjData.ten_moment and mjData.actuator_moment; we call them moment arms
-but mathematically they are Jacobians. The Jacobian matrix of all scalar constraint violations is stored in
-mjData.efc_J. Note that we are talking about constraint violations rather than the constraints themselves. This is
-because constraint violations have units of length, i.e. they are spatial quantities that we can differentiate.
+transmissions the corresponding quantities are ``mjData.ten_moment`` and ``mjData.actuator_moment``; we call them
+moment arms but mathematically they are Jacobians. The Jacobian matrix of all scalar constraint violations is stored in
+``mjData.efc_J``. Note that we are talking about constraint violations rather than the constraints themselves. This is
+because constraint violations have units of length, i.e., they are spatial quantities that we can differentiate.
 Constraints are more abstract entities and it is not clear what it means to differentiate them.
 
 Beyond these automatically-computed Jacobians, we provide support functions allowing the user to compute additional
 Jacobians on demand. The main function for doing this is :ref:`mj_jac`. It is given a 3D point and a MuJoCo body to
-which this point is considered to be attached. mj_jac then computes both the translational and rotational Jacobians,
-which tell us how a spatial frame anchored at the given point will translate and rotate if we make a small change to
-the kinematic configuration. More precisely, the Jacobian maps joint velocities to end-effector velocities, while the
-transpose of the Jacobian maps end-effector forces to joint forces. There are also several other mj_jacXXX functions;
-these are convenience functions that call the main mj_jac function with different points of interest - such as a body
-center of mass, geom center etc.
+which this point is considered to be attached. ``mj_jac`` then computes both the translational and rotational
+Jacobians, which tell us how a spatial frame anchored at the given point will translate and rotate if we make a small
+change to the kinematic configuration. More precisely, the Jacobian maps joint velocities to end-effector velocities,
+while the transpose of the Jacobian maps end-effector forces to joint forces. There are also several other
+``mj_jacXXX`` functions; these are convenience functions that call the main ``mj_jac`` function with different points
+of interest - such as a body center of mass, geom center etc.
 
 The ability to compute end-effector Jacobians exactly and efficiently is a key advantage of working in joint
 coordinates. Such Jacobians are the foundation of many control schemes that map end-effector errors to actuator
-commands suitable for suppressing those errors. The computation of end-effector Jacobians in MuJoCo via the mj_jac
+commands suitable for suppressing those errors. The computation of end-effector Jacobians in MuJoCo via the ``mj_jac``
 function is essentially free in terms of CPU cost; so do not hesitate to use this function.
 
 .. _siContact:
@@ -1399,7 +1383,7 @@ Contacts
 Collision detection and solving for contact forces were explained in detail in the :doc:`computation` chapter. Here we
 further clarify contact processing from a programming perspective.
 
-The collision detection stage finds contacts between geoms, and records them in the array mjData.contact of
+The collision detection stage finds contacts between geoms, and records them in the array ``mjData.contact`` of
 :ref:`mjContact` data structures. They are sorted such that multiple contacts between the same pair of bodies are
 contiguous (note that one body can have multiple geoms attached to it), and the body pairs themselves are sorted such
 that the first body acts as the major index and the second body as the minor index. Not all detected contacts are
@@ -1408,26 +1392,26 @@ mjContact.efc_address is the address in the list of active scalar constraints. R
 :at:`gap` attribute of :ref:`geom <geom>`, as well as certain kinds of internal processing that use virtual contacts
 for intermediate computations.
 
-The list mjData.contact is generated by the position stage of both forward and inverse dynamics. This is done
+The list ``mjData.contact`` is generated by the position stage of both forward and inverse dynamics. This is done
 automatically. However the user can override the internal collision detection functions, for example to implement
 non-convex mesh collisions, or to replace some of the convex collision functions we use with geom-specific primitives
 beyond the ones provided by MuJoCo. The global 2D array :ref:`mjCOLLISIONFUNC` contains the collision function pointer
 for each pair of geom types (in the upper-left triangle). To replace them, simply set these pointers to your
 functions. The collision function type is :ref:`mjfCollision`. When user collision functions detect contacts, they
 should construct an mjvContact structure for each contact and then call the function :ref:`mj_addContact` to add that
-contact to mjData.contact. The reference documentation of mj_addContact explains which fields of mjContact must be
+contact to ``mjData.contact``. The reference documentation of mj_addContact explains which fields of mjContact must be
 filled in by custom collision functions. Note that the functions we are talking about here correspond to near-phase
 collisions, and are called only after the list of candidate geom pairs has been constructed by the internal
 broad-phase collision mechanism.
 
-After the constraint forces have been computed, the vector of forces for contact i starts at:
+After the constraint forces have been computed, the vector of forces for contact ``i`` starts at:
 
 .. code-block:: C
 
    mjtNum* contactforce = d->efc_force + d->contact[i].efc_address;
 
-and similarly for all other efc_XXX vectors. Keep in mind that the contact friction cone can be pyramidal or elliptic,
-depending on which solver is selected in mjModel.opt. The function :ref:`mj_isPyramidal`
+and similarly for all other ``efc_XXX`` vectors. Keep in mind that the contact friction cone can be pyramidal or
+elliptic, depending on which solver is selected in ``mjModel.opt``. The function :ref:`mj_isPyramidal`
 can be used to determine which friction cone type is used. For pyramidal cones, the interpretation of the contact force
 (whose address we computed above) is non-trivial, because the components are forces along redundant non-orthogonal axes
 corresponding to the edges of the pyramid. The function :ref:`mj_contactForce` can be
@@ -1439,7 +1423,7 @@ columns. Here the axes are along the rows of the matrix. Thus, given that MuJoCo
 normal axis (which is the X axis of the contact frame by our convention) is in position mjContact.frame[0-2], the Y axis
 is in [3-5] and the Z axis is in [6-8]. The reason for this arrangement is because we can have frictionless contacts
 where only the normal axis is used, so it makes sense to have its coordinates in the first 3 positions of
-mjContact.frame.
+``mjContact.frame``.
 
 .. _siCoordinate:
 
@@ -1450,43 +1434,43 @@ There are multiple coordinate frames used in MuJoCo. The top-level distinction i
 Cartesian coordinates. The mapping from the vector of joints coordinates to the Cartesian positions and orientations
 of all bodies is called forward kinematics and is the first step in the physics pipeline. The opposite mapping is
 called inverse kinematics but it is not uniquely defined and is not implemented in MuJoCo. Recall that mappings
-between the tangent spaces (i.e. joint velocities and forces to Cartesian velocities and forces) are given by the body
+between the tangent spaces (i.e., joint velocities and forces to Cartesian velocities and forces) are given by the body
 Jacobians.
 
 Here we explain further subtleties and subdivisions of the coordinate frames, and summarize the available
-transformation functions. In joint coordinates, the only complication is that the position vector mjData.qpos has
-different dimensionality than the velocity and acceleration vectors mjData.qvel and mjData.qacc due to quaternion
-joints. The function :ref:`mj_differentiatePos` "subtracts" two joint position vectors and returns a velocity vector.
-Conversely, the function :ref:`mj_integratePos` takes a position vector and a velocity vector, and returns a new
-position vector which has been displaced by the given velocity.
+transformation functions. In joint coordinates, the only complication is that the position vector ``mjData.qpos`` has
+different dimensionality than the velocity and acceleration vectors ``mjData.qvel`` and ``mjData.qacc`` due to
+quaternion joints. The function :ref:`mj_differentiatePos` "subtracts" two joint position vectors and returns a
+velocity vector. Conversely, the function :ref:`mj_integratePos` takes a position vector and a velocity vector, and
+returns a new position vector which has been displaced by the given velocity.
 
 Cartesian coordinates are more complicated because there are three different coordinate frames that we use: local,
 global, and com-based. Local coordinates are used in mjModel to represent the static offsets between a parent and a
 child body, as well as the static offsets between a body and any geoms, sites, cameras and lights attached to it.
-These static offsets are applied in addition to any joint transformations. So mjModel.body_pos, mjModel.body_quat and
-all other spatial quantities in mjModel are expressed in local coordinates. The job of forward kinematics is to
-accumulate the joint transformations and static offsets along the kinematic tree and compute all positions and
-orientations in global coordinates. The quantities in mjData that start with "x" are expressed in global coordinates.
-These are mjData.xpos, mjData.geom_xpos etc. Frame orientations are usually stored as 3-by-3 matrices (xmat), except
-for bodies whose orientation is also stored as a unit quaternion mjData.xquat. Given this body quaternion, the
-quaternions of all other objects attached to the body can be reconstructed by a quaternion multiplication. The
-function :ref:`mj_local2Global` converts from local body coordinates to global
-Cartesian coordinates.
+These static offsets are applied in addition to any joint transformations. So ``mjModel.body_pos``,
+``mjModel.body_quat`` and all other spatial quantities in mjModel are expressed in local coordinates. The job of
+forward kinematics is to accumulate the joint transformations and static offsets along the kinematic tree and compute
+all positions and orientations in global coordinates. The quantities in mjData that start with "x" are expressed in
+global coordinates. These are ``mjData.xpos``, ``mjData.geom_xpos`` etc. Frame orientations are usually stored as
+3-by-3 matrices (xmat), except for bodies whose orientation is also stored as a unit quaternion ``mjData.xquat``. Given
+this body quaternion, the quaternions of all other objects attached to the body can be reconstructed by a quaternion
+multiplication. The function :ref:`mj_local2Global` converts from local body coordinates to global Cartesian
+coordinates.
 
 :ref:`mju_negPose` and :ref:`mju_trnVecPose`. A pose is a grouping of a 3D position and a unit quaternion orientation.
 There is no separate data structure; the grouping is in terms of logic. This represents a position and orientation in
 space, or in other words a spatial frame. Note that OpenGL uses 4-by-4 matrices to represent the same information,
 except here we use a quaternion for orientation. The function mju_mulPose multiplies two poses, meaning that it
-transforms the first pose by the second pose (the order is important). mju_negPose constructs the opposite pose, while
-mju_trnVecPose transforms a 3D vector by a pose, mapping it from local coordinates to global coordinates if we think
-of the pose as a coordinate frame. If we want to manipulate only the orientation part, we can do that with the
+transforms the first pose by the second pose (the order is important). ``mju_negPose`` constructs the opposite pose,
+while ``mju_trnVecPose`` transforms a 3D vector by a pose, mapping it from local coordinates to global coordinates if
+we think of the pose as a coordinate frame. If we want to manipulate only the orientation part, we can do that with the
 analogous quaternion utility functions :ref:`mju_mulQuat`, :ref:`mju_negQuat` and :ref:`mju_rotVecQuat`.
 
 Finally, there is the com-based frame. This is used to represent 6D spatial vectors containing a 3D angular velocity
 or acceleration or torque, followed by a 3D linear velocity or acceleration or force. Note the backwards order:
-rotation followed by translation. mjData.cdof and mjData.cacc are example of such vectors; the names start with "c".
-These vectors play a key role in the multi-joint dynamics computation. Explaining this is beyond our scope here; see
-Featherstone's excellent `slides <http://royfeatherstone.org/spatial>`__ on the subject. In general, the user should
+rotation followed by translation. ``mjData.cdof`` and ``mjData.cacc`` are example of such vectors; the names start with
+"c". These vectors play a key role in the multi-joint dynamics computation. Explaining this is beyond our scope here;
+see Featherstone's excellent `slides <http://royfeatherstone.org/spatial>`__ on the subject. In general, the user should
 avoid working with such quantities directly. Instead use the functions :ref:`mj_objectVelocity`,
 :ref:`mj_objectAcceleration` and the low-level :ref:`mju_transformSpatial` to obtain linear and angular velocities,
 accelerations and forces for a given body. Still, for the interested reader, we summarize the most unusual aspect of
@@ -1569,29 +1553,28 @@ one of its derivatives.
    // ... install GLFW keyboard and mouse callbacks
 
    // run main loop, target real-time simulation and 60 fps rendering
-   while( !glfwWindowShouldClose(window) )
-   {
-       // advance interactive simulation for 1/60 sec
-       //  Assuming MuJoCo can simulate faster than real-time, which it usually can,
-       //  this loop will finish on time for the next frame to be rendered at 60 fps.
-       //  Otherwise add a cpu timer and exit this loop when it is time to render.
-       mjtNum simstart = d->time;
-       while( d->time - simstart < 1.0/60.0 )
-           mj_step(m, d);
+   while( !glfwWindowShouldClose(window) ) {
+     // advance interactive simulation for 1/60 sec
+     //  Assuming MuJoCo can simulate faster than real-time, which it usually can,
+     //  this loop will finish on time for the next frame to be rendered at 60 fps.
+     //  Otherwise add a cpu timer and exit this loop when it is time to render.
+     mjtNum simstart = d->time;
+     while( d->time - simstart < 1.0/60.0 )
+         mj_step(m, d);
 
-       // get framebuffer viewport
-       mjrRect viewport = {0, 0, 0, 0};
-       glfwGetFramebufferSize(window, &viewport.width, &viewport.height);
+     // get framebuffer viewport
+     mjrRect viewport = {0, 0, 0, 0};
+     glfwGetFramebufferSize(window, &viewport.width, &viewport.height);
 
-       // update scene and render
-       mjv_updateScene(m, d, &opt, NULL, &cam, mjCAT_ALL, &scn);
-       mjr_render(viewport, &scn, &con);
+     // update scene and render
+     mjv_updateScene(m, d, &opt, NULL, &cam, mjCAT_ALL, &scn);
+     mjr_render(viewport, &scn, &con);
 
-       // swap OpenGL buffers (blocking call due to v-sync)
-       glfwSwapBuffers(window);
+     // swap OpenGL buffers (blocking call due to v-sync)
+     glfwSwapBuffers(window);
 
-       // process pending GUI events, call GLFW callbacks
-       glfwPollEvents();
+     // process pending GUI events, call GLFW callbacks
+     glfwPollEvents();
    }
 
    // close GLFW, free visualization storage
@@ -1646,7 +1629,7 @@ mjCAMERA_FIXED
    targeting mode, it will move.
 mjCAMERA_USER
    This means that the abstract camera is ignored during an update and the low-level OpenGL cameras are not changed. It
-   is equivalent to not specifying an abstract camera at all, i.e. passing a NULL pointer to mjvCamera in the update
+   is equivalent to not specifying an abstract camera at all, i.e., passing a NULL pointer to mjvCamera in the update
    functions explained below.
 
 The low-level mjvGLCamera is what determines the actual rendering. There are two such cameras embedded in mjvScene, one
@@ -1655,9 +1638,9 @@ frame, while up corresponds to the positive Y axis. There is also a frustum in t
 average of the left and right frustum edges and then during rendering compute the actual edges from the viewport aspect
 ratio assuming 1:1 pixel aspect ratio. The distance between the two camera positions corresponds to the inter-pupilary
 distance (ipd). When the low-level camera parameters are computed automatically from an abstract camera, the ipd as well
-as vertical field of view (fovy) are taken from mjModel.vis.global.ipd/fovy for free and tracking cameras, and from the
-camera-specific mjModel.cam_ipd/fovy for cameras defined in the model. When stereoscopic mode is not enabled, as
-determined by mjvScene.stereo, the camera data for the two eyes are internally averaged during rendering.
+as vertical field of view (fovy) are taken from ``mjModel.vis.global.ipd``/``fovy`` for free and tracking cameras, and
+from the camera-specific ``mjModel.cam_ipd/fovy`` for cameras defined in the model. When stereoscopic mode is not
+enabled, as determined by mjvScene.stereo, the camera data for the two eyes are internally averaged during rendering.
 
 .. _viSelect:
 
@@ -1686,24 +1669,24 @@ Perturbations
 
 Interactive perturbations have proven very useful in exploring the model dynamics as well as probing closed-loop
 control systems. The user is free to implement any perturbation mechanism of their choice by setting
-mjData.qfrc_applied or mjData.xfrc_applied to suitable forces (in generalized and Cartesian coordinates respectively).
+``mjData.qfrc_applied`` or ``mjData.xfrc_applied`` to suitable forces (in generalized and Cartesian coordinates respectively).
 
 Prior to MuJoCo version 1.40, user code had to maintain a collection of objects in order to implement perturbations.
 All these objects are now grouped into the data structure :ref:`mjvPerturb`. Its use is illustrated in
 :ref:`simulate.cc <saSimulate>`.
-The idea is to select a MuJoCo body of interest, and provide a reference pose (i.e. a 3D position and quaternion
+The idea is to select a MuJoCo body of interest, and provide a reference pose (i.e., a 3D position and quaternion
 orientation) for that body. These are stored in mjPerturb.respos/quat. The function :ref:`mjv_movePerturb` is a mouse
 hook for controlling the reference pose with the mouse. The function :ref:`mjv_initPerturb` is used to set the
 reference pose equal to the selected body pose at the onset of perturbation, so as to avoid jumps.
 
-This perturbation object can then be used to move the selected body directly (when the simulation is paused or when
-the selected body is a mocap body), or to apply forces and torques to the body. This is done with the functions
+This perturbation object can then be used to move the selected body directly (when the simulation is paused or when the
+selected body is a mocap body), or to apply forces and torques to the body. This is done with the functions
 :ref:`mjv_applyPerturbPose` and :ref:`mjv_applyPerturbForce` respectively. The latter function writes the external
-perturbation force to mjData.xfrc_applied for the selected body. However it does not clear mjData.xfrc_applied for the
-remaining bodies, thus it is recommended to clear it in user code, in case the selected body changed and some
+perturbation force to ``mjData.xfrc_applied`` for the selected body. However it does not clear ``mjData.xfrc_applied``
+for the remaining bodies, thus it is recommended to clear it in user code, in case the selected body changed and some
 perturbation force was left over from a previous time step. If there is more than one device that can apply
-perturbations or user code needs to add perturbations from other sources, the user must implement the necessary logic
-so that only the desired perturbations are present in mjData.xfrc_applied and any old perturbations are cleared.
+perturbations or user code needs to add perturbations from other sources, the user must implement the necessary logic so
+that only the desired perturbations are present in ``mjData.xfrc_applied`` and any old perturbations are cleared.
 
 In addition to affecting the simulation, the perturbation object is recognized by the abstract visualizer and can be
 rendered. This is done by adding a visual string to denote the positional difference, and a rotating cube to denote
@@ -1728,13 +1711,13 @@ else needed for specify how rendering should be done. mjvScene also contains up 
 copied from the model, as well as a headlight which is in light position 0 when present.
 
 The above procedure is the most common approach, and it updates the entire scene at each frame. In addition, we
-provide two functions for finer control. :ref:`mjv_updateCamera` updates only the camera (i.e. maps the abstract
+provide two functions for finer control. :ref:`mjv_updateCamera` updates only the camera (i.e., maps the abstract
 mjvCamera to the low-level mjvGLCamera) but does not touch the geoms or lights. This is useful when the user is moving
 the camera rapidly but the simulation state has not changed - in that case there is no point in re-creating the lists
 of geoms and lights.
 
 More advanced rendering effects can be achieved by manipulating the list of abstract geoms. For example, the user can
-add custom geoms at the end of the list. Sometimes it is desirable to render a sequence of simulation states (i.e. a
+add custom geoms at the end of the list. Sometimes it is desirable to render a sequence of simulation states (i.e., a
 trajectory) and not just the current state. For this purpose, we have provided the function :ref:`mjv_addGeoms` which
 adds the geoms corresponding to the current simulation state to the list already in mjvScene. It does not change the
 list of lights, because lighting is additive and having too many lights will make the scene too bright. Importantly,
@@ -1809,7 +1792,7 @@ yet the user is expected to move them programmatically at each simulation step. 
 through contacts, or better yet, through soft equality constraints to regular bodies which in turn make contacts. The
 latter approach is illustrated in the MPL models available on the Forum. It provides effective dynamic filtering and
 avoids contacts involving bodies that behave as if they are infinitely heavy (which is what a fixed body is). Note
-that the time-varying positions and orientations of the mocap bodies are stored in mjData.mocap_pos/quat, as opposed
+that the time-varying positions and orientations of the mocap bodies are stored in ``mjData.mocap_pos/quat``, as opposed
 to storing them in mjModel. This is because mjModel is supposed to remain constant. The fixed mocap body pose stored
 in mjModel is only used at initialization and reset, when user code has not yet had a chance to update
 mjData.mocap_pos/quat.
@@ -1864,11 +1847,11 @@ mjrContext is specific to MuJoCo. After creation, it contains references (called
 resources that were uploaded to the GPU by mjr_makeContext. These include model-specific resources such as meshes and
 textures, as well as generic resources such as font bitmaps for the specified font scale, framebuffer objects for
 shadow mapping and offscreen rendering, and associated renderbuffers. It also contains OpenGL-related options copied
-from mjModel.vis, capabilities of the default window framebuffer that are discovered automatically, and the currently
-active buffer for rendering; see :ref:`buffers <reBuffer>` below. Note that even though MuJoCo uses fixed-function
-OpenGL, it avoids immediate mode rendering and instead uploads all resources to the GPU upfront. This makes it as
-efficient as a modern shader, and possibly more efficient, because fixed-function OpenGL is now implemented via
-internal shaders that have been written by the video driver developers and tuned extensively.
+from ``mjModel.vis``, capabilities of the default window framebuffer that are discovered automatically, and the
+currently active buffer for rendering; see :ref:`buffers <reBuffer>` below. Note that even though MuJoCo uses
+fixed-function OpenGL, it avoids immediate mode rendering and instead uploads all resources to the GPU upfront. This
+makes it as efficient as a modern shader, and possibly more efficient, because fixed-function OpenGL is now implemented
+via internal shaders that have been written by the video driver developers and tuned extensively.
 
 Most of the fields of mjrContext remain constant after the call to mjr_makeContext. The only exception is
 mjrContext.currentBuffer which changes whenever the active buffer changes. Some of the GPU resources may also change
@@ -1918,7 +1901,7 @@ code samples. All OpenGL can do is detect these properties; we do this in mjr_ma
 various window capabilities fields of mjrContext. This is why such properties are not part of the MuJoCo model; they are
 session/software-specific and not model-specific. In contrast, the offscreen framebuffer is managed entirely by OpenGL,
 and so we can create that buffer with whatever properties we want, namely with the resolution and multi-sample
-properties specified in mjModel.vis.
+properties specified in ``mjModel.vis``.
 
 The user can directly access the pixels in the two buffers. This is done with the functions :ref:`mjr_readPixels`,
 :ref:`mjr_drawPixels` and :ref:`mjr_blitBuffer`. Read/draw transfer pixels from/to the active buffer to/from the CPU.
