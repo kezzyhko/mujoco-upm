@@ -26,7 +26,6 @@ jobs:
     - name: Set environment variables
       run: |
         echo "TAG_NAME=${{ inputs.tag_name || env.GITHUB_REF_NAME }}" >> $GITHUB_ENV
-        echo "ACCESS_TOKEN=${{ steps.generate-token.outputs.token }}" >> $GITHUB_ENV
     - name: Checkout
       uses: actions/checkout@v4
       with:
@@ -35,14 +34,14 @@ jobs:
     - name: Setup user
       uses: fregante/setup-git-user@v2
     - name: Merge
+      env:
+        GITHUB_TOKEN: ${{ steps.generate-token.outputs.token }}
       run: |
         git merge ${{ env.TAG_NAME }}
         git push
         echo "MERGE_COMMIT_HASH=$(git rev-parse --verify HEAD)" >> $GITHUB_ENV
     - name: Create release
       uses: actions/create-release@v1
-      env:
-        GITHUB_TOKEN: ${{ ACCESS_TOKEN }}
       with:
         tag_name: upm-${{ env.TAG_NAME }}
         release_name: UPM - ${{ env.TAG_NAME }}
