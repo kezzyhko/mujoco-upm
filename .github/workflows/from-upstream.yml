@@ -17,7 +17,8 @@ jobs:
       with:
         persist-credentials: false
         ref: main
-  
+    - name: Setup user
+      uses: fregante/setup-git-user@v2
     - name: Sync master with upstream latest
       id: sync
       uses: aormsby/Fork-Sync-With-Upstream-action@v2.3
