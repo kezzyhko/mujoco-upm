@@ -39,9 +39,11 @@ using ::testing::NotNull;
 
 // ------------------------ test keyframes -------------------------------------
 
-static const char* const kKeyframePath = "user/testdata/keyframe.xml";
+using KeyframeTest = MujocoTest;
 
-TEST_F(MujocoTest, KeyFrameTest) {
+constexpr char kKeyframePath[] = "user/testdata/keyframe.xml";
+
+TEST_F(KeyframeTest, CheckValues) {
   const std::string xml_path = GetTestDataFilePath(kKeyframePath);
   mjModel* model = mj_loadXML(xml_path.c_str(), nullptr, nullptr, 0);
   ASSERT_THAT(model, NotNull());
@@ -59,7 +61,7 @@ TEST_F(MujocoTest, KeyFrameTest) {
   mj_deleteModel(model);
 }
 
-TEST_F(MujocoTest, ResetDataKeyframeTest) {
+TEST_F(KeyframeTest, ResetDataKeyframe) {
   const std::string xml_path = GetTestDataFilePath(kKeyframePath);
   mjModel* model = mj_loadXML(xml_path.c_str(), nullptr, nullptr, 0);
   ASSERT_THAT(model, NotNull());
@@ -89,6 +91,21 @@ TEST_F(MujocoTest, ResetDataKeyframeTest) {
 
   mj_deleteData(data);
   mj_deleteModel(model);
+}
+
+TEST_F(KeyframeTest, BadSize) {
+  static constexpr char xml[] = R"(
+  <mujoco>
+    <keyframe>
+      <key qpos="1"/>
+    </keyframe>
+  </mujoco>
+  )";
+  char error[1024];
+  size_t error_sz = 1024;
+  mjModel* model = LoadModelFromString(xml, error, error_sz);
+  EXPECT_THAT(model, ::testing::IsNull());
+  EXPECT_THAT(error, HasSubstr("invalid qpos size, expected length 0"));
 }
 
 // ------------- test relative frame sensor compilation-------------------------
@@ -565,6 +582,118 @@ TEST_F(UserDataTest, NSensorTooSmall) {
   mjModel* model = LoadModelFromString(xml, error.data(), error.size());
   ASSERT_THAT(model, IsNull());
   EXPECT_THAT(error.data(), HasSubstr("nuser_sensor"));
+}
+
+// ------------- test for auto parsing of *limited fields -------------
+
+using LimitedTest = MujocoTest;
+
+constexpr char kKeyAutoLimits[] = "user/testdata/auto_limits.xml";
+
+// check joint limit values when automatically inferred based on range
+TEST_F(LimitedTest, JointLimited) {
+  const std::string xml_path = GetTestDataFilePath(kKeyAutoLimits);
+  mjModel* model = mj_loadXML(xml_path.c_str(), nullptr, nullptr, 0);
+  ASSERT_THAT(model, NotNull());
+
+  // see `user/testdata/auto_limits.xml` for expected values
+  for (int i=0; i < model->njnt; i++) {
+    EXPECT_EQ(model->jnt_limited[i], (mjtByte)model->jnt_user[i]);
+  }
+
+  mj_deleteModel(model);
+}
+
+TEST_F(LimitedTest, ErrorIfLimitedMissingOnJoint) {
+  static constexpr char xml[] = R"(
+  <mujoco>
+    <compiler autolimits="false"/>
+    <worldbody>
+      <body>
+        <joint user="1" range="0 1"/>
+        <geom size="1"/>
+      </body>
+    </worldbody>
+  </mujoco>
+
+  )";
+  std::array<char, 1024> error;
+  mjModel* model = LoadModelFromString(xml, error.data(), error.size());
+  ASSERT_THAT(model, IsNull());
+  EXPECT_THAT(error.data(), HasSubstr("limited"));
+}
+
+TEST_F(LimitedTest, ExplicitLimitedFalseIsOk) {
+  static constexpr char xml[] = R"(
+  <mujoco>
+    <compiler autolimits="false"/>
+    <worldbody>
+      <body>
+        <joint user="1" limited="false" range="0 1"/>
+        <geom size="1"/>
+      </body>
+    </worldbody>
+  </mujoco>
+
+  )";
+  std::array<char, 1024> error;
+  mjModel* model = LoadModelFromString(xml, error.data(), error.size());
+  ASSERT_THAT(model, NotNull()) << error.data();
+
+  EXPECT_EQ(model->jnt_limited[0], 0);
+  mj_deleteModel(model);
+}
+
+TEST_F(LimitedTest, ErrorIfLimitedMissingOnTendon) {
+  static constexpr char xml[] = R"(
+  <mujoco>
+    <compiler autolimits="false"/>
+    <worldbody>
+      <body>
+        <joint type="slide"/>
+        <geom size="1"/>
+        <site name="s1"/>
+      </body>
+      <site name="s2"/>
+    </worldbody>
+    <tendon>
+      <spatial range="-1 1">
+        <site site="s1"/>
+        <site site="s2"/>
+      </spatial>
+    </tendon>
+  </mujoco>
+
+  )";
+  std::array<char, 1024> error;
+  mjModel* model = LoadModelFromString(xml, error.data(), error.size());
+  ASSERT_THAT(model, IsNull());
+  EXPECT_THAT(error.data(), HasSubstr("limited"));
+  EXPECT_THAT(error.data(), HasSubstr("tendon"));
+}
+
+TEST_F(LimitedTest, ErrorIfForceLimitedMissingOnActuator) {
+  static constexpr char xml[] = R"(
+  <mujoco>
+    <compiler autolimits="false"/>
+    <worldbody>
+      <body>
+        <joint type="slide" name="J1"/>
+        <geom size="1"/>
+      </body>
+    </worldbody>
+    <actuator>
+      <position joint="J1" forcerange="0 100"/>
+    </actuator>
+  </mujoco>
+
+  )";
+  std::array<char, 1024> error;
+  mjModel* model = LoadModelFromString(xml, error.data(), error.size());
+  ASSERT_THAT(model, IsNull());
+  EXPECT_THAT(error.data(), HasSubstr("forcelimited"));
+  EXPECT_THAT(error.data(), HasSubstr("forcerange"));
+  EXPECT_THAT(error.data(), HasSubstr("actuator"));
 }
 
 }  // namespace

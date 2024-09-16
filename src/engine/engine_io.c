@@ -15,6 +15,7 @@
 
 #include "engine/engine_io.h"
 
+#include <limits.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -151,6 +152,8 @@ void mj_defaultVisual(mjVisual* vis) {
   // global
   vis->global.fovy                = 45;
   vis->global.ipd                 = 0.068;
+  vis->global.azimuth             = 90;
+  vis->global.elevation           = -45;
   vis->global.linewidth           = 1.0;
   vis->global.glow                = 0.3;
   vis->global.offwidth            = 640;
@@ -361,6 +364,9 @@ static void mj_setPtrModel(mjModel* m) {
 // *nbuffer += SKIP(*offset) + type_size*nr*nc;
 // *offset += SKIP(*offset) + type_size*nr*nc;
 static int safeAddToBufferSize(intptr_t* offset, int* nbuffer, size_t type_size, int nr, int nc) {
+  if (type_size < 0 || nr < 0 || nc < 0) {
+    return 0;
+  }
 #if (__has_builtin(__builtin_add_overflow) && __has_builtin(__builtin_mul_overflow)) \
     || (defined(__GNUC__) && __GNUC__ >= 5)
   // supported by GCC and Clang
@@ -455,19 +461,33 @@ mjModel* mj_makeModel(int nq, int nv, int nu, int na, int nbody, int njnt,
 
 #define X(name)                                    \
   if ((m->name) < 0) {                             \
+    mju_free(m);                                   \
     mju_warning("Invalid model: negative " #name); \
-    mj_deleteModel(m);                             \
     return 0;                                      \
   }
   MJMODEL_INTS;
 #undef X
 
+  // nbody should always be positive
+  if (m->nbody == 0) {
+    mju_free(m);
+    mju_warning("Invalid model: nbody == 0");
+    return 0;
+  }
+
+  // nmocap is going to get multiplied by 4, and shouldn't overflow
+  if (m->nmocap >= INT_MAX / 4) {
+    mju_free(m);
+    mju_warning("Invalid model: nmocap too large");
+    return 0;
+  }
+
   // compute buffer size
   m->nbuffer = 0;
 #define X(type, name, nr, nc)                                                \
   if (!safeAddToBufferSize(&offset, &m->nbuffer, sizeof(type), m->nr, nc)) { \
+    mju_free(m);                                                             \
     mju_warning("Invalid model: " #name " too large.");                      \
-    mj_deleteModel(m);                                                       \
     return 0;                                                                \
   }
 
@@ -477,6 +497,7 @@ mjModel* mj_makeModel(int nq, int nv, int nu, int na, int nbody, int njnt,
   // allocate buffer
   m->buffer = mju_malloc(m->nbuffer);
   if (!m->buffer) {
+    mju_free(m);
     mju_error("Could not allocate mjModel buffer");
   }
 
@@ -831,10 +852,11 @@ static mjData* _makeData(const mjModel* m) {
 
   // compute buffer size
   d->nbuffer = 0;
+  d->buffer = d->stack = NULL;
 #define X(type, name, nr, nc)                                                \
   if (!safeAddToBufferSize(&offset, &d->nbuffer, sizeof(type), m->nr, nc)) { \
+    mju_free(d);                                                             \
     mju_warning("Invalid data: " #name " too large.");                       \
-    mj_deleteData(d);                                                        \
     return 0;                                                                \
   }
 
@@ -847,12 +869,15 @@ static mjData* _makeData(const mjModel* m) {
   // allocate buffer
   d->buffer = mju_malloc(d->nbuffer);
   if (!d->buffer) {
+    mju_free(d);
     mju_error("Could not allocate mjData buffer");
   }
 
   // allocate stack
   d->stack = (mjtNum*) mju_malloc(d->nstack * sizeof(mjtNum));
   if (!d->stack) {
+    mju_free(d->buffer);
+    mju_free(d);
     mju_error("Could not allocate mjData stack");
   }
 
@@ -864,7 +889,9 @@ static mjData* _makeData(const mjModel* m) {
 
 mjData* mj_makeData(const mjModel* m) {
   mjData* d = _makeData(m);
-  mj_resetData(m, d);
+  if (d) {
+    mj_resetData(m, d);
+  }
   return d;
 }
 
@@ -1181,7 +1208,6 @@ static int numObjects(const mjModel* m, mjtObj objtype) {
 
 // validate reference fields in a model; return null if valid, error message otherwise
 const char* mj_validateReferences(const mjModel* m) {
-
   // for each field in mjModel that refers to another field, call X with:
   //   adrarray: array containing the references
   //   nadrs:    number of elements in refarray
@@ -1228,7 +1254,7 @@ const char* mj_validateReferences(const mjModel* m) {
   X(tendon_adr,         ntendon,       nwrap        , m->tendon_num          ) \
   X(tendon_matid,       ntendon,       nmat         , 0                      ) \
   X(numeric_adr,        nnumeric,      nnumericdata , m->numeric_size        ) \
-  X(text_adr,           ntext,         ntexdata     , m->text_size           ) \
+  X(text_adr,           ntext,         ntextdata    , m->text_size           ) \
   X(tuple_adr,          ntuple,        ntupledata   , m->tuple_size          ) \
   X(name_bodyadr,       nbody,         nnames       , 0                      ) \
   X(name_jntadr,        njnt,          nnames       , 0                      ) \
@@ -1256,7 +1282,11 @@ const char* mj_validateReferences(const mjModel* m) {
     int *nums = (numarray);                                   \
     for (int i=0; i<m->nadrs; i++) {                          \
       int adrsmin = m->adrarray[i];                           \
-      int adrsmax = m->adrarray[i] + (nums ? nums[i] : 1);    \
+      int num = (nums ? nums[i] : 1);                         \
+      if (num < 0) {                                          \
+        return "Invalid model: " #numarray " is negative.";   \
+      }                                                       \
+      int adrsmax = m->adrarray[i] + num;                     \
       if (adrsmax > m->ntarget || adrsmin < -1) {             \
         return "Invalid model: " #adrarray " out of bounds."; \
       }                                                       \
@@ -1268,6 +1298,17 @@ const char* mj_validateReferences(const mjModel* m) {
 #undef MJMODEL_REFERENCES
 
   // special logic that doesn't fit in the macro:
+  for (int i=0; i<m->nbody; i++) {
+    if (i > 0 && m->body_parentid[i] >= i) {
+      return "Invalid model: bad body_parentid.";
+    }
+    if (m->body_rootid[i] > i) {
+      return "Invalid model: bad body_rootid.";
+    }
+    if (m->body_weldid[i] > i) {
+      return "Invalid model: bad body_weldid.";
+    }
+  }
   for (int i=0; i<m->njnt; i++) {
     if (m->jnt_type[i] >= 4 || m->jnt_type[i] < 0) {
       return "Invalid model: jnt_type out of bounds.";
@@ -1279,6 +1320,11 @@ const char* mj_validateReferences(const mjModel* m) {
     int jnt_dofadr = m->jnt_dofadr[i] + nVEL[m->jnt_type[i]];
     if (jnt_dofadr > m->nv || m->jnt_dofadr[i] < 0) {
       return "Invalid model: jnt_dofadr out of bounds.";
+    }
+  }
+  for (int i=0; i<m->nv; i++) {
+    if (m->dof_parentid[i] >= i) {
+      return "Invalid model: bad dof_parentid.";
     }
   }
   for (int i=0; i<m->ngeom; i++) {
@@ -1340,13 +1386,7 @@ const char* mj_validateReferences(const mjModel* m) {
         }
         break;
       case mjEQ_DISTANCE:
-        if (obj1id >= m->ngeom || obj1id < 0) {
-          return "Invalid model: eq_obj1id out of bounds.";
-        }
-        if (obj2id >= m->ngeom || obj2id < 0) {
-          return "Invalid model: eq_obj2id out of bounds.";
-        }
-        break;
+        return "distance equality constraints are no longer supported";
       case mjEQ_WELD:
       case mjEQ_CONNECT:
         if (obj1id >= m->nbody || obj1id < 0) {
