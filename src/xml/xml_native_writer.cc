@@ -618,29 +618,18 @@ void mjXWriter::OneActuator(XMLElement* elem, mjCActuator* pact, mjCDef* def) {
 
   // plugins: write config attributes
   if (pact->is_plugin) {
-    if (!pact->plugin_instance_name.empty()) {
-      WriteAttrTxt(elem, "instance", pact->plugin_instance_name);
-    } else {
-      WriteAttrTxt(elem, "plugin", pact->plugin_name);
-      const mjpPlugin* plugin = mjp_getPluginAtSlot(
-          pact->plugin_instance->plugin_slot);
-      const char* c = &pact->plugin_instance->flattened_attributes[0];
-      for (int i = 0; i < plugin->nattribute; ++i) {
-        std::string value(c);
-        if (!value.empty()) {
-          XMLElement* config_elem = InsertEnd(elem, "config");
-          WriteAttrTxt(config_elem, "key", plugin->attributes[i]);
-          WriteAttrTxt(config_elem, "value", value);
-          c += value.size();
-        }
-        ++c;
-      }
-    }
+    OnePlugin(elem, pact);
   }
 
   // non-plugins: write actuator parameters
   else {
-    WriteAttrInt(elem, "actdim", pact->actdim, def->actuator.actdim);
+    // special handling of actdim which has default value of -1
+    if (writingdefaults) {
+      WriteAttrInt(elem, "actdim", pact->actdim, def->actuator.actdim);
+    } else {
+      int default_actdim = pact->dyntype == mjDYN_NONE ? 0 : 1;
+      WriteAttrInt(elem, "actdim", pact->actdim, default_actdim);
+    }
     WriteAttrKey(elem, "dyntype", dyn_map, dyn_sz, pact->dyntype, def->actuator.dyntype);
     WriteAttrKey(elem, "gaintype", gain_map, gain_sz, pact->gaintype, def->actuator.gaintype);
     WriteAttrKey(elem, "biastype", bias_map, bias_sz, pact->biastype, def->actuator.biastype);
@@ -654,6 +643,30 @@ void mjXWriter::OneActuator(XMLElement* elem, mjCActuator* pact, mjCDef* def) {
     WriteVector(elem, "user", pact->userdata);
   } else {
     WriteVector(elem, "user", pact->userdata, def->actuator.userdata);
+  }
+}
+
+
+
+// write plugin
+void mjXWriter::OnePlugin(XMLElement* elem, mjCBase* object) {
+  if (!object->plugin_instance_name.empty()) {
+    WriteAttrTxt(elem, "instance", object->plugin_instance_name);
+  } else {
+    WriteAttrTxt(elem, "plugin", object->plugin_name);
+    const mjpPlugin* plugin = mjp_getPluginAtSlot(
+        object->plugin_instance->plugin_slot);
+    const char* c = &object->plugin_instance->flattened_attributes[0];
+    for (int i = 0; i < plugin->nattribute; ++i) {
+      std::string value(c);
+      if (!value.empty()) {
+        XMLElement* config_elem = InsertEnd(elem, "config");
+        WriteAttrTxt(config_elem, "key", plugin->attributes[i]);
+        WriteAttrTxt(config_elem, "value", value);
+        c += value.size();
+      }
+      ++c;
+    }
   }
 }
 
@@ -887,6 +900,7 @@ void mjXWriter::Visual(XMLElement* root) {
   WriteAttr(elem,    "realtime",  1,   &vis->global.realtime,   &visdef.global.realtime);
   WriteAttrInt(elem, "offwidth",       vis->global.offwidth,    visdef.global.offwidth);
   WriteAttrInt(elem, "offheight",      vis->global.offheight,   visdef.global.offheight);
+  WriteAttrKey(elem, "ellipsoidinertia", bool_map, 2, vis->global.ellipsoidinertia, visdef.global.ellipsoidinertia);
   if (!elem->FirstAttribute()) {
     section->DeleteChild(elem);
   }
@@ -1056,6 +1070,13 @@ void mjXWriter::Default(XMLElement* root, mjCDef* def) {
   OneActuator(elem, &def->actuator, par);
   if (!elem->FirstAttribute()) section->DeleteChild(elem);
 
+  // if top-level class has no members or children, delete it and return
+  if (def->parentid<0 && section->NoChildren() && def->childid.empty()) {
+    root->DeleteChild(section);
+    delete par;
+    return;
+  }
+
   // add children recursively
   for (int i=0; i<(int)def->childid.size(); i++) {
     Default(section, model->defaults[def->childid[i]]);
@@ -1135,7 +1156,6 @@ void mjXWriter::Extension(XMLElement* root) {
 // custom section
 void mjXWriter::Custom(XMLElement* root) {
   XMLElement* elem;
-  int i, j;
 
   // get sizes, skip section if empty
   int nnum = model->NumObjects(mjOBJ_NUMERIC);
@@ -1151,7 +1171,7 @@ void mjXWriter::Custom(XMLElement* root) {
   XMLElement* section = InsertEnd(root, "custom");
 
   // write all numerics
-  for (i=0; i<nnum; i++) {
+  for (int i=0; i<nnum; i++) {
     mjCNumeric* ptr = (mjCNumeric*)model->GetObject(mjOBJ_NUMERIC, i);
     elem = InsertEnd(section, "numeric");
     WriteAttrTxt(elem, "name", ptr->name);
@@ -1160,7 +1180,7 @@ void mjXWriter::Custom(XMLElement* root) {
   }
 
   // write all texts
-  for (i=0; i<ntxt; i++) {
+  for (int i=0; i<ntxt; i++) {
     mjCText* ptr = (mjCText*)model->GetObject(mjOBJ_TEXT, i);
     elem = InsertEnd(section, "text");
     WriteAttrTxt(elem, "name", ptr->name);
@@ -1168,13 +1188,13 @@ void mjXWriter::Custom(XMLElement* root) {
   }
 
   // write all tuples
-  for (i=0; i<ntup; i++) {
+  for (int i=0; i<ntup; i++) {
     mjCTuple* ptr = (mjCTuple*)model->GetObject(mjOBJ_TUPLE, i);
     elem = InsertEnd(section, "tuple");
     WriteAttrTxt(elem, "name", ptr->name);
 
     // write objects in tuple
-    for (j=0; j<(int)ptr->objtype.size(); j++) {
+    for (int j=0; j<(int)ptr->objtype.size(); j++) {
       XMLElement* obj = InsertEnd(elem, "element");
       WriteAttrTxt(obj, "objtype", mju_type2Str((int)ptr->objtype[j]));
       WriteAttrTxt(obj, "objname", ptr->objname[j].c_str());
@@ -1191,7 +1211,6 @@ void mjXWriter::Custom(XMLElement* root) {
 // asset section
 void mjXWriter::Asset(XMLElement* root) {
   XMLElement* elem;
-  int i;
 
   // get sizes
   int ntex = model->NumObjects(mjOBJ_TEXTURE);
@@ -1210,7 +1229,7 @@ void mjXWriter::Asset(XMLElement* root) {
 
   // write textures
   mjCTexture deftex(0);
-  for (i=0; i<ntex; i++) {
+  for (int i=0; i<ntex; i++) {
     // create element
     mjCTexture* ptex = (mjCTexture*)model->GetObject(mjOBJ_TEXTURE, i);
     elem = InsertEnd(section, "texture");
@@ -1260,7 +1279,7 @@ void mjXWriter::Asset(XMLElement* root) {
   }
 
   // write materials
-  for (i=0; i<nmat; i++) {
+  for (int i=0; i<nmat; i++) {
     // create element and write
     mjCMaterial* pmat = (mjCMaterial*)model->GetObject(mjOBJ_MATERIAL, i);
     elem = InsertEnd(section, "material");
@@ -1268,7 +1287,7 @@ void mjXWriter::Asset(XMLElement* root) {
   }
 
   // write meshes
-  for (i=0; i<nmesh; i++) {
+  for (int i=0; i<nmesh; i++) {
     // create element and write
     mjCMesh* pmesh = (mjCMesh*)model->GetObject(mjOBJ_MESH, i);
     elem = InsertEnd(section, "mesh");
@@ -1276,7 +1295,7 @@ void mjXWriter::Asset(XMLElement* root) {
   }
 
   // write skins
-  for (i=0; i<nskin; i++) {
+  for (int i=0; i<nskin; i++) {
     // create element and write
     mjCSkin* pskin = (mjCSkin*)model->GetObject(mjOBJ_SKIN, i);
     elem = InsertEnd(section, "skin");
@@ -1284,7 +1303,7 @@ void mjXWriter::Asset(XMLElement* root) {
   }
 
   // write hfields
-  for (i=0; i<nhfield; i++) {
+  for (int i=0; i<nhfield; i++) {
     // create element
     mjCHField* phf = (mjCHField*)model->GetObject(mjOBJ_HFIELD, i);
     elem = InsertEnd(section, "hfield");
@@ -1306,7 +1325,6 @@ void mjXWriter::Asset(XMLElement* root) {
 // recursive body writer
 void mjXWriter::Body(XMLElement* elem, mjCBody* body) {
   double unitq[4] = {1, 0, 0, 0};
-  unsigned int i;
 
   if (!body) {
     throw mjXError(0, "missing body in XML write");  // SHOULD NOT OCCUR
@@ -1316,15 +1334,20 @@ void mjXWriter::Body(XMLElement* elem, mjCBody* body) {
   if (body!=model->GetWorld()) {
     WriteAttrTxt(elem, "name", body->name);
     WriteAttrTxt(elem, "childclass", body->classname);
-    WriteAttr(elem, "pos", 3, body->locpos);
+
+    // write pos if it's not {0, 0, 0}
+    if (body->locpos[0] || body->locpos[1] || body->locpos[2]) {
+      WriteAttr(elem, "pos", 3, body->locpos);
+    }
     WriteAttr(elem, "quat", 4, body->locquat, unitq);
     if (body->mocap) {
       WriteAttrKey(elem, "mocap", bool_map, 2, 1);
     }
 
     // gravity compensation
-    WriteAttr(elem, "gravcomp", 1, &body->gravcomp);
-
+    if (body->gravcomp) {
+      WriteAttr(elem, "gravcomp", 1, &body->gravcomp);
+    }
     // userdata
     WriteVector(elem, "user", body->userdata);
 
@@ -1340,54 +1363,37 @@ void mjXWriter::Body(XMLElement* elem, mjCBody* body) {
   }
 
   // write joints
-  for (i=0; i<body->joints.size(); i++) {
+  for (int i=0; i<body->joints.size(); i++) {
     OneJoint(InsertEnd(elem, "joint"), body->joints[i], body->joints[i]->def);
   }
 
   // write geoms
-  for (i=0; i<body->geoms.size(); i++) {
+  for (int i=0; i<body->geoms.size(); i++) {
     OneGeom(InsertEnd(elem, "geom"), body->geoms[i], body->geoms[i]->def);
   }
 
   // write sites
-  for (i=0; i<body->sites.size(); i++) {
+  for (int i=0; i<body->sites.size(); i++) {
     OneSite(InsertEnd(elem, "site"), body->sites[i], body->sites[i]->def);
   }
 
   // write cameras
-  for (i=0; i<body->cameras.size(); i++) {
+  for (int i=0; i<body->cameras.size(); i++) {
     OneCamera(InsertEnd(elem, "camera"), body->cameras[i], body->cameras[i]->def);
   }
 
   // write lights
-  for (i=0; i<body->lights.size(); i++) {
+  for (int i=0; i<body->lights.size(); i++) {
     OneLight(InsertEnd(elem, "light"), body->lights[i], body->lights[i]->def);
   }
 
   // write plugin
   if (body->is_plugin) {
-    XMLElement *child = InsertEnd(elem, "plugin");
-    if (!body->plugin_instance_name.empty()) {
-      WriteAttrTxt(child, "instance", body->plugin_instance_name);
-    } else {
-      WriteAttrTxt(child, "plugin", body->plugin_name);
-      const mjpPlugin* plugin = mjp_getPluginAtSlot(
-          body->plugin_instance->plugin_slot);
-      const char* c = &body->plugin_instance->flattened_attributes[0];
-      for (int i = 0; i < plugin->nattribute; ++i) {
-        std::string value(c);
-        if (!value.empty()) {
-          WriteAttrTxt(child, std::string("plugin:") + plugin->attributes[i],
-                        value);
-          c += value.size();
-        }
-        ++c;
-      }
-    }
+    OnePlugin(elem, body);
   }
 
   // write child bodies recursively
-  for (i=0; i<body->bodies.size(); i++) {
+  for (int i=0; i<body->bodies.size(); i++) {
     Body(InsertEnd(elem, "body"), body->bodies[i]);
   }
 }
@@ -1397,7 +1403,6 @@ void mjXWriter::Body(XMLElement* elem, mjCBody* body) {
 // collision section
 void mjXWriter::Contact(XMLElement* root) {
   XMLElement* elem;
-  int i;
 
   // get number of pairs of each type
   int npair = model->NumObjects(mjOBJ_PAIR);
@@ -1412,7 +1417,7 @@ void mjXWriter::Contact(XMLElement* root) {
   XMLElement* section = InsertEnd(root, "contact");
 
   // write all geom pairs
-  for (i=0; i<npair; i++) {
+  for (int i=0; i<npair; i++) {
     // create element and write
     mjCPair* ppair = (mjCPair*)model->GetObject(mjOBJ_PAIR, i);
     elem = InsertEnd(section, "pair");
@@ -1420,7 +1425,7 @@ void mjXWriter::Contact(XMLElement* root) {
   }
 
   // write all exclude pairs
-  for (i=0; i<nexclude; i++) {
+  for (int i=0; i<nexclude; i++) {
     // create element
     mjCBodyPair* pexclude = (mjCBodyPair*)model->GetObject(mjOBJ_EXCLUDE, i);
     elem = InsertEnd(section, "exclude");

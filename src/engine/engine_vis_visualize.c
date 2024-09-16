@@ -460,16 +460,16 @@ static int bodycategory(const mjModel* m, int bodyid) {
 
 // add abstract geoms
 void mjv_addGeoms(const mjModel* m, mjData* d, const mjvOption* vopt,
-                  const mjvPerturb* pert, int catmask, mjvScene* scn) {
+    const mjvPerturb* pert, int catmask, mjvScene* scn) {
   int objtype, category;
   mjtNum sz[3], mat[9], selpos[3];
   mjtNum catenary[3*mjNCATENARY];
-  mjtNum *cur, *nxt, *xpos, *xfrc;
+  mjtNum *cur, *nxt, *xfrc;
   mjtNum vec[3], end[3], axis[3], rod, len, det, tmp[9], quat[4];
   mjtByte broken;
   mjvGeom* thisgeom;
   mjvPerturb localpert;
-  float scl = m->stat.meansize, rgba[4];
+  float scl = m->stat.meansize;
 
   // make default pert if missing
   if (!pert) {
@@ -527,8 +527,8 @@ void mjv_addGeoms(const mjModel* m, mjData* d, const mjvOption* vopt,
     for (int i = 0; i < m->nbvh; i++) {
       int isleaf = m->bvh_child[2*i]==-1 && m->bvh_child[2*i+1]==-1;
       if (scn->ngeom >= scn->maxgeom) break;
-      if (m->bvh_depth[i] != m->vis.global.treedepth) {
-        if (!isleaf || m->bvh_depth[i] > m->vis.global.treedepth) {
+      if (m->bvh_depth[i] != vopt->bvh_depth) {
+        if (!isleaf || m->bvh_depth[i] > vopt->bvh_depth) {
           continue;
         }
       }
@@ -588,35 +588,41 @@ void mjv_addGeoms(const mjModel* m, mjData* d, const mjvOption* vopt,
   // inertia
   objtype = mjOBJ_BODY;
   if (vopt->flags[mjVIS_INERTIA]) {
+    int ellipsoid = m->vis.global.ellipsoidinertia == 1;
     for (int i=1; i<m->nbody; i++) {
       // skip if mass too small or if this body is static and static bodies are masked
       if (m->body_mass[i]>mjMINVAL && (bodycategory(m, i) & catmask)) {
         START
 
-        // compute sizes of equivalent box
-        sz[0] = mju_sqrt((m->body_inertia[3*i+1] + m->body_inertia[3*i+2] -
-                          m->body_inertia[3*i+0]) *6/m->body_mass[i]) /2;
-        sz[1] = mju_sqrt((m->body_inertia[3*i+0] + m->body_inertia[3*i+2] -
-                          m->body_inertia[3*i+1]) *6/m->body_mass[i]) /2;
-        sz[2] = mju_sqrt((m->body_inertia[3*i+0] + m->body_inertia[3*i+1] -
-                          m->body_inertia[3*i+2]) *6/m->body_mass[i]) /2;
+        mjtNum Ixx = m->body_inertia[3*i+0];
+        mjtNum Iyy = m->body_inertia[3*i+1];
+        mjtNum Izz = m->body_inertia[3*i+2];
+        mjtNum mass = m->body_mass[i];
+        mjtNum scale_inertia = ellipsoid ? mju_sqrt(5) : mju_sqrt(3);
+
+        sz[0] = mju_sqrt((Iyy + Izz - Ixx) / (2 * mass)) * scale_inertia;
+        sz[1] = mju_sqrt((Ixx + Izz - Iyy) / (2 * mass)) * scale_inertia;
+        sz[2] = mju_sqrt((Ixx + Iyy - Izz) / (2 * mass)) * scale_inertia;
 
         // scale with mass if enabled
         if (vopt->flags[mjVIS_SCLINERTIA]) {
           // density = mass / volume
-          mjtNum density = m->body_mass[i] / mju_max(mjMINVAL, 8*sz[0]*sz[1]*sz[2]);
+          mjtNum scale_volume = ellipsoid ? 4.0/3.0*mjPI : 8.0;
+          mjtNum volume = scale_volume * sz[0]*sz[1]*sz[2];
+          mjtNum density = mass / mju_max(mjMINVAL, volume);
 
           // scale = root3(density)
-          mjtNum scl = mju_pow(density*0.001, 1.0/3.0);
+          mjtNum scale = mju_pow(density*0.001, 1.0/3.0);
 
-          // scale sizes, so that box with density of 1000 has same mass
-          sz[0] *= scl;
-          sz[1] *= scl;
-          sz[2] *= scl;
+          // scale sizes, so that box/ellipsoid with density of 1000 has same mass
+          sz[0] *= scale;
+          sz[1] *= scale;
+          sz[2] *= scale;
         }
 
         // construct geom
-        mjv_initGeom(thisgeom, mjGEOM_BOX, sz, d->xipos+3*i, d->ximat+9*i, m->vis.rgba.inertia);
+        mjtGeom type = ellipsoid ? mjGEOM_ELLIPSOID : mjGEOM_BOX;
+        mjv_initGeom(thisgeom, type, sz, d->xipos+3*i, d->ximat+9*i, m->vis.rgba.inertia);
 
         // glow
         if (pert->select==i) {
@@ -653,6 +659,7 @@ void mjv_addGeoms(const mjModel* m, mjData* d, const mjvOption* vopt,
                         pert->refselpos[0], pert->refselpos[1], pert->refselpos[2]);
 
       // prepare color
+      float rgba[4];
       mixcolor(rgba, m->vis.rgba.constraint,
                (pert->active & mjPERT_TRANSLATE)>0,
                (pert->active2 & mjPERT_TRANSLATE)>0);
@@ -677,6 +684,7 @@ void mjv_addGeoms(const mjModel* m, mjData* d, const mjvOption* vopt,
       START
 
       // prepare color, use inertia color
+      float rgba[4];
       mixcolor(rgba, m->vis.rgba.inertia,
                (pert->active & mjPERT_ROTATE)>0,
                (pert->active2 & mjPERT_ROTATE)>0);
@@ -1059,9 +1067,9 @@ void mjv_addGeoms(const mjModel* m, mjData* d, const mjvOption* vopt,
     }
 
     // get geom group and clamp
-    int j = mjMAX(0, mjMIN(mjNGROUP-1, m->geom_group[i]));
+    int geomgroup = mjMAX(0, mjMIN(mjNGROUP-1, m->geom_group[i]));
 
-    if (vopt->geomgroup[j]) {
+    if (vopt->geomgroup[geomgroup]) {
       START
 
       // construct geom
@@ -1116,7 +1124,7 @@ void mjv_addGeoms(const mjModel* m, mjData* d, const mjvOption* vopt,
         // re-center infinite plane
         if (m->geom_size[3*i]<=0 || m->geom_size[3*i+1]<=0) {
           // vec = headpos - geompos
-          for (j=0; j<3; j++) {
+          for (int j=0; j<3; j++) {
             vec[j] = 0.5*(scn->camera[0].pos[j] + scn->camera[1].pos[j]) - d->geom_xpos[3*i+j];
           }
 
@@ -1675,7 +1683,7 @@ void mjv_addGeoms(const mjModel* m, mjData* d, const mjvOption* vopt,
   for (int i=1; i<m->nbody; i++) {
     if (!mju_isZero(d->xfrc_applied+6*i, 6) && (category & catmask)) {
       // point of application and force
-      xpos = d->xipos+3*i;
+      mjtNum *xpos = d->xipos+3*i;
       xfrc = d->xfrc_applied+6*i;
 
       // force perturbation
@@ -2049,22 +2057,10 @@ void mjv_updateActiveSkin(const mjModel* m, mjData* d, mjvScene* scn, const mjvO
 // update entire scene
 void mjv_updateScene(const mjModel* m, mjData* d, const mjvOption* opt,
                      const mjvPerturb* pert, mjvCamera* cam, int catmask, mjvScene* scn) {
-  // clear geoms and add all categories
+  // clear geoms
   scn->ngeom = 0;
-  mjv_addGeoms(m, d, opt, pert, catmask, scn);
 
-  // add lights
-  mjv_makeLights(m, d, scn);
-
-  // update camera
-  mjv_updateCamera(m, d, cam, scn);
-
-  // update skins
-  if (opt->flags[mjVIS_SKIN]) {
-    mjv_updateActiveSkin(m, d, scn, opt);
-  }
-
-  // update plugin
+  // trigger plugin visualization hooks
   if (m->nplugin) {
     const int nslot = mjp_pluginCount();
     // iterate over plugins, call visualize if defined
@@ -2078,6 +2074,20 @@ void mjv_updateScene(const mjModel* m, mjData* d, const mjvOption* opt,
         plugin->visualize(m, d, scn, i);
       }
     }
+  }
+
+  // add all categories
+  mjv_addGeoms(m, d, opt, pert, catmask, scn);
+
+  // add lights
+  mjv_makeLights(m, d, scn);
+
+  // update camera
+  mjv_updateCamera(m, d, cam, scn);
+
+  // update skins
+  if (opt->flags[mjVIS_SKIN]) {
+    mjv_updateActiveSkin(m, d, scn, opt);
   }
 }
 

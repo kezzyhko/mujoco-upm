@@ -5,20 +5,20 @@ Types
 MuJoCo defines a large number of types:
 
 - Two :ref:`primitive types<tyPrimitive>`.
-- C enums used to define categorical values. These can be classified according to their use in:
+- :ref:`C enum types<tyEnums>` used to define categorical values. These can be classified as:
 
-  - :ref:`mjModel<tyModelEnums>`.
-  - :ref:`mjData<tyDataEnums>`.
-  - Abstract :ref:`visualization<tyVisEnums>`.
-  - The :ref:`openGL renderer<tyRenderEnums>`.
-  - The :ref:`mjUI<tyUIEnums>` user interface package.
+  - Enums used in :ref:`mjModel<tyModelEnums>`.
+  - Enums used in :ref:`mjData<tyDataEnums>`.
+  - Abstract :ref:`visualization enums<tyVisEnums>`.
+  - Enums used by the :ref:`openGL renderer<tyRenderEnums>`.
+  - Enums used by the :ref:`mjUI<tyUIEnums>` user interface package.
 
   Note that the API does not use these enum types directly. Instead it uses ints, and the documentation/comments state
   that certain ints correspond to certain enum types. This is because we want the API to be compiler-independent, and
   the C standard does not dictate how many bytes must be used to represent an enum type. Nevertheless, for improved
   readiblity, we recommend using these types when calling API functions which take them as arguments.
 
-- C struct types. These can be classified as:
+- :ref:`C struct types<tyStructure>`. These can be classified as:
 
   - :ref:`Main struct types<tyMainStructure>`. These are :ref:`mjModel`, :ref:`mjOption` and :ref:`mjData`.
   - :ref:`Auxillary struct types<tyAuxStructure>`, also used by the engine.
@@ -26,20 +26,23 @@ MuJoCo defines a large number of types:
   - Structs for :ref:`abstract visualization<tyVisStructure>`.
   - Structs used by the :ref:`openGL renderer<tyRenderStructure>`.
   - Structs used by the :ref:`UI framework<tyUIStructure>`.
+  - Structs used by :ref:`engine plugins<tyPluginStructure>`.
 
 - Several :ref:`tyFunction` for user-defined callbacks.
+
 
 .. _tyPrimitive:
 
 Primitive types
-^^^^^^^^^^^^^^^
+---------------
 
 The two types below are defined in `mjtnum.h <https://github.com/deepmind/mujoco/blob/main/include/mujoco/mjtnum.h>`_.
+
 
 .. _mjtNum:
 
 mjtNum
-~~~~~~
+^^^^^^
 
 This is the floating-point type used throughout the simulator. If the symbol ``mjUSEDOUBLE`` is defined in
 ``mjmodel.h``, this type is defined as ``double``, otherwise it is defined as ``float``. Currently only the
@@ -65,7 +68,7 @@ changed by the user.
 .. _mjtByte:
 
 mjtByte
-~~~~~~~
+^^^^^^^
 
 Byte type used to represent boolean variables.
 
@@ -74,11 +77,16 @@ Byte type used to represent boolean variables.
    typedef unsigned char mjtByte;
 
 
+.. _tyEnums:
+
+Enum types
+----------
+
 
 .. _tyModelEnums:
 
-Model enums
-^^^^^^^^^^^
+Model
+^^^^^
 
 The enums below are defined in `mjmodel.h <https://github.com/deepmind/mujoco/blob/main/include/mujoco/mjmodel.h>`_.
 
@@ -327,10 +335,10 @@ These are the possible sensor data types, used in ``mjData.sensor_datatype``.
 
 .. _tyDataEnums:
 
-Data enums
-^^^^^^^^^^
+Data
+^^^^
 
-The enums below are defined in `mjmdata.h <https://github.com/deepmind/mujoco/blob/main/include/mujoco/mjmdata.h>`_.
+The enums below are defined in `mjdata.h <https://github.com/deepmind/mujoco/blob/main/include/mujoco/mjdata.h>`_.
 
 
 .. _mjtWarning:
@@ -358,8 +366,8 @@ Timer types. The number of timer types is given by ``mjNTIMER`` which is also th
 
 .. _tyVisEnums:
 
-Visualization enums
-^^^^^^^^^^^^^^^^^^^
+Visualization
+^^^^^^^^^^^^^
 
 The enums below are defined in `mjvisualize.h <https://github.com/deepmind/mujoco/blob/main/include/mujoco/mjvisualize.h>`_.
 
@@ -462,8 +470,8 @@ These are the possible stereo rendering types. They are used in ``mjvScene.stere
 
 .. _tyRenderEnums:
 
-Rendering enums
-^^^^^^^^^^^^^^^
+Rendering
+^^^^^^^^^
 
 The enums below are defined in `mjrender.h <https://github.com/deepmind/mujoco/blob/main/include/mujoco/mjrender.h>`_.
 
@@ -512,8 +520,8 @@ These are the possible font types.
 
 .. _tyUIEnums:
 
-User Interface enums
-^^^^^^^^^^^^^^^^^^^^
+User Interface
+^^^^^^^^^^^^^^
 
 The enums below are defined in `mjui.h <https://github.com/deepmind/mujoco/blob/main/include/mujoco/mjui.h>`_.
 
@@ -548,11 +556,37 @@ Item types used in the UI framework.
 .. mujoco-include:: mjtItem
 
 
+.. _tyPluginEnums:
+
+Plugins
+^^^^^^^
+
+The enums below are defined in `mjplugin.h <https://github.com/deepmind/mujoco/blob/main/include/mujoco/mjplugin.h>`_.
+See :ref:`exPlugin` for details.
+
+
+.. _mjtPluginCapabilityBit:
+
+mjtPluginCapabilityBit
+~~~~~~~~~~~~~~~~~~~~~~
+
+Capabilities declared by an engine plugin.
+
+.. mujoco-include:: mjtPluginCapabilityBit
+
+
+
+.. _tyStructure:
+
+Struct types
+------------
+
 
 .. _tyMainStructure:
 
-Main structs
-^^^^^^^^^^^^
+Main
+^^^^
+
 The three central struct types for physics simulation are :ref:`mjModel`, :ref:`mjOption` (embedded in :ref:`mjModel`)
 and :ref:`mjData`. An introductory discussion of these strucures can be found in the Overview under :ref:`Separation of
 model and data<Features>`.
@@ -563,9 +597,11 @@ model and data<Features>`.
 mjModel
 ~~~~~~~
 
-This is the main data structure holding the MuJoCo model. It is treated as constant by the simulator.
+This is the main data structure holding the MuJoCo model. It is treated as constant by the simulator. Some specific
+details regarding datastructures in :ref:`mjModel` can be found below in :ref:`tyNotes`.
 
 .. mujoco-include:: mjModel
+
 
 
 .. _mjOption:
@@ -593,8 +629,9 @@ modifiable inputs and write their outputs.
 
 .. _tyAuxStructure:
 
-Auxillary structs
-^^^^^^^^^^^^^^^^^
+Auxillary
+^^^^^^^^^
+
 These struct types are used in the engine and their names are prefixed with ``mj``. :ref:`mjVisual`
 and :ref:`mjStatistic` are embedded in :ref:`mjModel`, :ref:`mjContact` is embedded in :ref:`mjData`, and :ref:`mjVFS`
 is a library-level struct used for loading assets.
@@ -658,8 +695,9 @@ Options for configuring the automatic :ref:`actuator length-range computation<CL
 
 .. _tyStatStructure:
 
-Sim statistics structs
-^^^^^^^^^^^^^^^^^^^^^^
+Sim statistics
+^^^^^^^^^^^^^^
+
 These structs are all embedded in :ref:`mjData`, and collect simulation-related statistics.
 
 
@@ -700,8 +738,9 @@ of solver iterations is given by ``mjData.solver_iter``.
 
 .. _tyVisStructure:
 
-Visualisation structs
-^^^^^^^^^^^^^^^^^^^^^
+Visualisation
+^^^^^^^^^^^^^
+
 The names of these struct types are prefixed with ``mjv``.
 
 .. _mjvPerturb:
@@ -775,6 +814,17 @@ This structure contains everything needed to render the 3D scene in OpenGL.
 .. mujoco-include:: mjvScene
 
 
+.. _mjvSceneState:
+
+mjvSceneState
+~~~~~~~~~~~~~
+
+This structure contains the portions of :ref:`mjModel` and :ref:`mjData` that are required for
+various ``mjv_*`` functions.
+
+.. mujoco-include:: mjvScene
+
+
 .. _mjvFigure:
 
 mjvFigure
@@ -789,8 +839,9 @@ data structure as an argument.
 
 .. _tyRenderStructure:
 
-Rendering structs
-^^^^^^^^^^^^^^^^^
+Rendering
+^^^^^^^^^
+
 The names of these struct types are prefixed with ``mjr``.
 
 .. _mjrRect:
@@ -815,9 +866,11 @@ This structure contains the custom OpenGL rendering context, with the ids of all
 
 .. _tyUIStructure:
 
-User Interface structs
-^^^^^^^^^^^^^^^^^^^^^^
-The names of these struct types are prefixed with ``mjui``.
+User Interface
+^^^^^^^^^^^^^^
+
+The names of these struct types are prefixed with ``mjui``, except for the main :ref:`mjUI` struct itself.
+
 
 .. _mjuiState:
 
@@ -869,16 +922,6 @@ This structure defines one section of the UI.
 .. mujoco-include:: mjuiSection
 
 
-.. _mjUI:
-
-mjUI
-~~~~
-
-This structure defines the entire UI.
-
-.. mujoco-include:: mjUI
-
-
 .. _mjuiDef:
 
 mjuiDef
@@ -889,16 +932,53 @@ This structure defines one entry in the definition table used for simplified UI 
 .. mujoco-include:: mjuiDef
 
 
+.. _mjUI:
+
+mjUI
+~~~~
+
+This structure defines the entire UI.
+
+.. mujoco-include:: mjUI
+
+
+.. _tyPluginStructure:
+
+Plugins
+^^^^^^^
+
+The names of these struct types are prefixed with ``mjp``. See :ref:`exPlugin` for more details.
+
+
+.. _mjpPlugin:
+
+mjpPlugin
+~~~~~~~~~
+
+This structure contains the definition of a single engine plugin. It mostly contains a set of callbacks, which are
+triggered by the compiler and the engine during various phases of the computation pipeline.
+
+.. mujoco-include:: mjpPlugin
+
+
 
 .. _tyFunction:
 
 Function types
-^^^^^^^^^^^^^^
+--------------
 
 MuJoCo callbacks have corresponding function types. They are defined in `mjdata.h
 <https://github.com/deepmind/mujoco/blob/main/include/mujoco/mjdata.h>`_ and in `mjui.h
 <https://github.com/deepmind/mujoco/blob/main/include/mujoco/mjui.h>`_. The actual callback functions are documented
 in the :doc:`globals<APIglobals>` page.
+
+
+.. _tyPhysicsCallbacks:
+
+Physics Callbacks
+^^^^^^^^^^^^^^^^^
+
+These function types are used by :ref:`physics callbacks<glPhysics>`.
 
 
 .. _mjfGeneric:
@@ -975,6 +1055,13 @@ mjfCollision
 This is the function type of the callbacks in the collision table :ref:`mjCOLLISIONFUNC`.
 
 
+.. _tyUICallbacks:
+
+UI Callbacks
+^^^^^^^^^^^^
+
+These function types are used by the UI framework.
+
 .. _mjfItemEnable:
 
 mjfItemEnable
@@ -986,3 +1073,64 @@ mjfItemEnable
 
 This is the function type of the predicate function used by the UI framework to determine if each item is enabled or
 disabled.
+
+
+.. _tyNotes:
+
+Notes
+-----
+
+This section contains miscellaneous notes regarding data-structure conventions in MuJoCo struct types.
+
+.. _tyNotesConvex:
+
+Convex hulls
+^^^^^^^^^^^^
+
+The convex hull descriptors are stored in :ref:`mjModel`:
+
+.. code-block:: C
+
+   int*      mesh_graphadr;     // graph data address; -1: no graph      (nmesh x 1)
+   int*      mesh_graph;        // convex graph data                     (nmeshgraph x 1)
+
+If mesh ``N`` has a convex hull stored in :ref:`mjModel` (which is optional), then ``m->mesh_graphadr[N]`` is the offset
+of mesh ``N``'s convex hull data in ``m->mesh_graph``. The convex hull data for each mesh is a record with the following
+format:
+
+.. code-block:: C
+
+   int numvert;
+   int numface;
+   int vert_edgeadr[numvert];
+   int vert_globalid[numvert];
+   int edge_localid[numvert+3*numface];
+   int face_globalid[3*numface];
+
+Note that the convex hull contains a subset of the vertices of the full mesh. We use the nomenclature ``globalid`` to
+refer to vertex indices in the full mesh, and ``localid`` to refer to vertex indices in the convex hull. The meaning of
+the fields is as follows:
+
+``numvert``
+   Number of vertices in the convex hull.
+
+``numface``
+   Number of faces in the convex hull.
+
+``vert_edgeadr[numvert]``
+   For each vertex in the convex hull, this is the offset of the edge record for that vertex in edge_localid.
+
+``vert_globalid[numvert]``
+   For each vertex in the convex hull, this is the corresponding vertex index in the full mesh
+
+``edge_localid[numvert+3*numface]``
+   This contains a sequence of edge records, one for each vertex in the convex hull. Each edge record is an array of
+   vertex indices (in localid format) terminated with -1. For example, say the record for vertex 7 is: 3, 4, 5, 9, -1.
+   This means that vertex 7 belongs to 4 edges, and the other ends of these edges are vertices 3, 4, 5, 9. In this way
+   every edge is represented twice, in the edge records of its two vertices. Note that for a closed triangular mesh
+   (such as the convex hulls used here), the number of edges is ``3*numface/2``. Thus when each edge is represented
+   twice, we have ``3*numface edges``. And since we are using the separator -1 at the end of each edge record (one
+   separator per vertex), the length of ``edge_localid`` is ``numvert+3*numface``.
+
+``face_globalid[3*numface]``
+   For each face of the convex hull, this contains the indices of the three vertices in the full mesh

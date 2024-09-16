@@ -20,6 +20,33 @@
 #include <mujoco/mjvisualize.h>
 
 
+//---------------------------------- Resource Provider ---------------------------------------------
+
+#define mjVFS_PREFIX    "vfs://"  // prefix for VFS providers
+
+// callback for opeing a resource, returns zero on failure
+typedef int (*mjfOpenResource)(mjResource* resource);
+
+// callback for reading a resource
+// return number of bytes stored in buffer, return -1 if error
+typedef int (*mjfReadResource)(mjResource* resource, const void** buffer);
+
+// callback for closing a resource (responsible for freeing any allocated memory)
+typedef void (*mjfCloseResource)(mjResource* resource);
+
+// struct describing a single resource provider
+struct mjpResourceProvider_ {
+  const char* prefix;          // prefix for match against a resource name
+  mjfOpenResource open;        // opening callback
+  mjfReadResource read;        // reading callback
+  mjfCloseResource close;      // closing callback
+  void* data;                  // opaque data pointer (resource invariant)
+};
+typedef struct mjpResourceProvider_ mjpResourceProvider;
+
+
+//---------------------------------- Plugins -------------------------------------------------------
+
 typedef enum mjtPluginCapabilityBit_ {
   mjPLUGIN_ACTUATOR = 1<<0,
   mjPLUGIN_SENSOR   = 1<<1,
@@ -66,36 +93,35 @@ typedef struct mjpPlugin_ mjpPlugin;
 
 #if defined(__has_attribute)
 
-#if __has_attribute(constructor)
-#define mjPLUGIN_DYNAMIC_LIBRARY_INIT \
-  __attribute__((constructor)) static void _mjplugin_init(void)
-#endif
+  #if __has_attribute(constructor)
+    #define mjPLUGIN_LIB_INIT __attribute__((constructor)) static void _mjplugin_init(void)
+  #endif  // __has_attribute(constructor)
 
 #elif defined(_MSC_VER)
 
-#ifndef mjDLLMAIN
-#define mjDLLMAIN DllMain
-#endif
+  #ifndef mjDLLMAIN
+    #define mjDLLMAIN DllMain
+  #endif
 
-#if !defined(mjEXTERNC)
-#if defined(__cplusplus)
-#define mjEXTERNC extern "C"
-#else
-#define mjEXTERNC
-#endif  // defined(__cplusplus)
-#endif  // !defined(mjEXTERNC)
+  #if !defined(mjEXTERNC)
+    #if defined(__cplusplus)
+      #define mjEXTERNC extern "C"
+    #else
+      #define mjEXTERNC
+    #endif  // defined(__cplusplus)
+  #endif  // !defined(mjEXTERNC)
 
-// NOLINTBEGIN(runtime/int)
-#define mjPLUGIN_DYNAMIC_LIBRARY_INIT                                                     \
-  static void _mjplugin_dllmain(void);                                                    \
-  mjEXTERNC int __stdcall mjDLLMAIN(void* hinst, unsigned long reason, void* reserved) {  \
-    if (reason == 1) {                                                                    \
-      _mjplugin_dllmain();                                                                \
-    }                                                                                     \
-    return 1;                                                                             \
-  }                                                                                       \
-  static void _mjplugin_dllmain(void)
-// NOLINTEND(runtime/int)
+  // NOLINTBEGIN(runtime/int)
+  #define mjPLUGIN_LIB_INIT                                                     \
+    static void _mjplugin_dllmain(void);                                                    \
+    mjEXTERNC int __stdcall mjDLLMAIN(void* hinst, unsigned long reason, void* reserved) {  \
+      if (reason == 1) {                                                                    \
+        _mjplugin_dllmain();                                                                \
+      }                                                                                     \
+      return 1;                                                                             \
+    }                                                                                       \
+    static void _mjplugin_dllmain(void)
+  // NOLINTEND(runtime/int)
 
 #endif  // defined(_MSC_VER)
 

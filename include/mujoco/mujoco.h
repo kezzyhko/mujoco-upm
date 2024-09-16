@@ -24,7 +24,7 @@ extern "C" {
 #endif
 
 // header version; should match the library version as returned by mj_version()
-#define mjVERSION_HEADER 233
+#define mjVERSION_HEADER 234
 
 // needed to define size_t, fabs and log10
 #include <stdlib.h>
@@ -114,13 +114,11 @@ MJAPI void mj_deleteVFS(mjVFS* vfs);
 // Parse XML file in MJCF or URDF format, compile it, return low-level model.
 // If vfs is not NULL, look up files in vfs before reading from disk.
 // If error is not NULL, it must have size error_sz.
-MJAPI mjModel* mj_loadXML(const char* filename, const mjVFS* vfs,
-                          char* error, int error_sz);
+MJAPI mjModel* mj_loadXML(const char* filename, const mjVFS* vfs, char* error, int error_sz);
 
 // Update XML data structures with info from low-level model, save as MJCF.
 // If error is not NULL, it must have size error_sz.
-MJAPI int mj_saveLastXML(const char* filename, const mjModel* m,
-                         char* error, int error_sz);
+MJAPI int mj_saveLastXML(const char* filename, const mjModel* m, char* error, int error_sz);
 
 // Free last XML model if loaded. Called internally at each load.
 MJAPI void mj_freeLastXML(void);
@@ -548,9 +546,19 @@ MJAPI void mjv_alignToCamera(mjtNum res[3], const mjtNum vec[3], const mjtNum fo
 MJAPI void mjv_moveCamera(const mjModel* m, int action, mjtNum reldx, mjtNum reldy,
                           const mjvScene* scn, mjvCamera* cam);
 
+// Move camera with mouse given a scene state; action is mjtMouse.
+MJAPI void mjv_moveCameraFromState(const mjvSceneState* scnstate, int action,
+                                   mjtNum reldx, mjtNum reldy,
+                                   const mjvScene* scn, mjvCamera* cam);
+
 // Move perturb object with mouse; action is mjtMouse.
 MJAPI void mjv_movePerturb(const mjModel* m, const mjData* d, int action, mjtNum reldx,
                            mjtNum reldy, const mjvScene* scn, mjvPerturb* pert);
+
+// Move perturb object with mouse given a scene state; action is mjtMouse.
+MJAPI void mjv_movePerturbFromState(const mjvSceneState* scnstate, int action,
+                                    mjtNum reldx, mjtNum reldy,
+                                    const mjvScene* scn, mjvPerturb* pert);
 
 // Move model with mouse; action is mjtMouse.
 MJAPI void mjv_moveModel(const mjModel* m, int action, mjtNum reldx, mjtNum reldy,
@@ -608,6 +616,24 @@ MJAPI void mjv_freeScene(mjvScene* scn);
 MJAPI void mjv_updateScene(const mjModel* m, mjData* d, const mjvOption* opt,
                            const mjvPerturb* pert, mjvCamera* cam, int catmask, mjvScene* scn);
 
+// Update entire scene from a scene state, return the number of new mjWARN_VGEOMFULL warnings.
+MJAPI int mjv_updateSceneFromState(const mjvSceneState* scnstate, const mjvOption* opt,
+                                   const mjvPerturb* pert, mjvCamera* cam, int catmask,
+                                   mjvScene* scn);
+
+// Set default scene state.
+MJAPI void mjv_defaultSceneState(mjvSceneState* scnstate);
+
+// Allocate resources and initialize a scene state object.
+MJAPI void mjv_makeSceneState(const mjModel* m, const mjData* d,
+                              mjvSceneState* scnstate, int maxgeom);
+
+// Free scene state.
+MJAPI void mjv_freeSceneState(mjvSceneState* scnstate);
+
+// Update a scene state from model and data.
+MJAPI void mjv_updateSceneState(const mjModel* m, mjData* d, mjvSceneState* scnstate);
+
 // Add geoms from selected categories.
 MJAPI void mjv_addGeoms(const mjModel* m, mjData* d, const mjvOption* opt,
                         const mjvPerturb* pert, int catmask, mjvScene* scn);
@@ -638,6 +664,9 @@ MJAPI void mjr_addAux(int index, int width, int height, int samples, mjrContext*
 
 // Free resources in custom OpenGL context, set to default.
 MJAPI void mjr_freeContext(mjrContext* con);
+
+// Resize offscreen buffers.
+MJAPI void mjr_resizeOffscreen(int width, int height, mjrContext* con);
 
 // Upload texture to GPU, overwriting previous upload if any.
 MJAPI void mjr_uploadTexture(const mjModel* m, const mjrContext* con, int texid);
@@ -786,8 +815,8 @@ MJAPI void mj_deactivate(void);
 
 //---------------------------------- Standard math -------------------------------------------------
 
-#define mjMAX(a,b) (((a) > (b)) ? (a) : (b))
-#define mjMIN(a,b) (((a) < (b)) ? (a) : (b))
+#define mjMAX(a, b) (((a) > (b)) ? (a) : (b))
+#define mjMIN(a, b) (((a) < (b)) ? (a) : (b))
 
 #ifdef mjUSEDOUBLE
   #define mju_sqrt    sqrt
@@ -1193,6 +1222,25 @@ MJAPI const mjpPlugin* mjp_getPlugin(const char* name, int* slot);
 
 // Look up a plugin by the registered slot number that was returned by mjp_registerPlugin.
 MJAPI const mjpPlugin* mjp_getPluginAtSlot(int slot);
+
+// Set default resource provider definition.
+MJAPI void mjp_defaultResourceProvider(mjpResourceProvider* provider);
+
+// Globally register a resource provider in a thread-safe manner. The provider must have a prefix
+// that is not a sub-prefix or super-prefix of any current registered providers.  This function
+// returns a slot number > 0 on success.
+MJAPI int mjp_registerResourceProvider(const mjpResourceProvider* provider);
+
+// Return the number of globally registered resource providers.
+MJAPI int mjp_resourceProviderCount();
+
+// Return the resource provider with the prefix that matches against the resource name.
+// If no match, return NULL.
+MJAPI const mjpResourceProvider* mjp_getResourceProvider(const char* resource_name);
+
+// Look up a resource provider by slot number returned by mjp_registerResourceProvider.
+// If invalid slot number, return NULL.
+MJAPI const mjpResourceProvider* mjp_getResourceProviderAtSlot(int slot);
 
 
 #if defined(__cplusplus)

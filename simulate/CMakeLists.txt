@@ -29,7 +29,7 @@ set(MUJOCO_DEP_VERSION_lodepng
 
 project(
   mujoco_simulate
-  VERSION 2.3.3
+  VERSION 2.3.4
   DESCRIPTION "MuJoCo simulate binaries"
   HOMEPAGE_URL "https://mujoco.org"
 )
@@ -107,7 +107,7 @@ target_sources(
   PUBLIC glfw_adapter.h glfw_dispatch.h platform_ui_adapter.h
   PRIVATE glfw_adapter.cc glfw_dispatch.cc platform_ui_adapter.cc
 )
-target_compile_options(platform_ui_adapter PUBLIC ${MUJOCO_SIMULATE_COMPILE_OPTIONS})
+target_compile_options(platform_ui_adapter PRIVATE ${MUJOCO_SIMULATE_COMPILE_OPTIONS})
 if(APPLE)
   target_sources(platform_ui_adapter PUBLIC glfw_corevideo.h PRIVATE glfw_corevideo.mm)
   target_link_libraries(platform_ui_adapter PUBLIC "-framework CoreVideo")
@@ -132,7 +132,7 @@ target_sources(
   PRIVATE simulate.cc array_safety.h
 )
 target_include_directories(libsimulate PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
-target_compile_options(libsimulate PUBLIC ${MUJOCO_SIMULATE_COMPILE_OPTIONS})
+target_compile_options(libsimulate PRIVATE ${MUJOCO_SIMULATE_COMPILE_OPTIONS})
 target_link_libraries(libsimulate PUBLIC lodepng mujoco::platform_ui_adapter mujoco::mujoco)
 target_link_options(libsimulate PRIVATE ${MUJOCO_SIMULATE_LINK_OPTIONS})
 

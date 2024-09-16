@@ -2,6 +2,57 @@
 Changelog
 =========
 
+Version 2.3.4 (April 20, 2023)
+------------------------------
+
+General
+^^^^^^^
+
+1. Removed the "global" setting of the :ref:`compiler/coordinate<compiler-coordinate>` attribute. This rarely-used
+   setting complicates the compiler logic and is blocking future improvements. In order to convert older models which
+   used this option, load and save them in MuJoCo 2.3.3 or older.
+
+.. image:: images/changelog/ellipsoidinertia.gif
+   :align: right
+   :width: 240px
+
+2. Added :ref:`visual-global<visual-global>` flag :ref:`ellipsoidinertia<visual-global-ellipsoidinertia>` to visualize
+   equivalent body inertias with ellipsoids instead of the default boxes.
+#. Added midphase and broadphase collision statistics to :ref:`mjData`.
+#. Added documentation for :ref:`engine plugins<exPlugin>`.
+#. Added struct information to the ``introspect`` module.
+#. Added a new extension mechanism called "resource provider" . This extensible mechanism allows MuJoCo
+   to read assets from data sources other than the local OS filesystem or
+   the :ref:`Virtual file system<Virtualfilesystem>`.
+
+Python bindings
+^^^^^^^^^^^^^^^
+
+7. Offscreen rendering on macOS is no longer restricted to the main thread. This is achieved by using the low-level
+   Core OpenGL (CGL) API to create the OpenGL context, rather than going via GLFW which relies on Cocoa's NSOpenGL.
+   The resulting context is not tied to a Cocoa window, and is therefore not tied to the main thread.
+#. Fixed a race condition in ``viewer.launch_passive`` and  ``viewer.launch_repl``. These functions could previously
+   return before an internal call to ``mj_forward``. This allows user code to continue and potentially modify physics
+   state concurrently with the internal ``mj_forward``, resulting in e.g.
+   `MuJoCo stack overflow error <https://github.com/deepmind/mujoco/issues/783>`_
+   or `segmentation fault <https://github.com/deepmind/mujoco/issues/790>`_.
+#. The ``viewer.launch_passive`` function now returns a handle which can be used to interact with the viewer. The
+   passive viewer now also requires an explicit call to ``sync`` on its handle to pick up any update to the physics
+   state. This is to avoid race conditions that can result in visual artifacts. See :ref:`documentation<PyViewer>` for
+   details.
+#. The ``viewer.launch_repl`` function has been removed since its functionality is superceded by ``launch_passive``.
+#. Added a small number of missing struct fields discovered through the new ``introspect`` metadata.
+
+Bug fixes
+^^^^^^^^^
+
+12. Fixed bug in the handling of ellipsoid-based fluid model forces in the new implicitfast integrator.
+#.  Removed spurious whole-arena copying in `mj_copyData`, which can considerably
+    `slow down <https://github.com/deepmind/mujoco/issues/568>`_ the copying operation.
+#.  Make ``shellinertia`` ignore ``exactmeshinertia``, which is only used for legacy volume computations
+    (`#759 <https://github.com/deepmind/mujoco/issues/759>`_).
+
+
 Version 2.3.3 (March 20, 2023)
 ------------------------------
 
@@ -60,7 +111,7 @@ Python bindings
 #.  Added ``viewer.launch_passive`` which launches the interactive viewer in a passive, non-blocking mode. Calls to
     ``launch_passive`` return immediately, allowing user code to continue execution, with the viewer automatically
     reflecting any changes to the physics state. (Note that this functionality is currently in experimental/beta stage,
-    and is not yet described in our :ref:`viewer  documentation<PyViewer>`.)
+    and is not yet described in our :ref:`viewer documentation<PyViewer>`.)
 #.  Added the ``mjpython`` launcher for macOS, which is required for ``viewer.launch_passive`` to function there.
 #.  Removed ``efc_`` fields from joint indexers. Since the introduction of arena memory, these fields now have dynamic
     sizes that change between time steps depending on the number of active constraints, breaking strict correspondence
@@ -152,7 +203,7 @@ General
    between the two values, the force is 0. If length is outside this range, the force behaves like a regular spring, with
    the spring resting length corresponding to the nearest :at:`springlength` value. This can be used to create tendons
    whose limits are enforced by springs rather than constraints, which are cheaper and easier to analyse. See
-   `tendon_springlength.xml <https://github.com/deepmind/mujoco/tree/main/test/engine/testdata/tendon_springlength.xml>`_
+   `tendon_springlength.xml <https://github.com/deepmind/mujoco/blob/main/test/engine/testdata/tendon_springlength.xml>`_
    example model.
 
    .. attention::
@@ -166,7 +217,7 @@ General
 #. Removed the requirement that stateless actuators come before stateful actuators.
 #. Added :ref:`mju_fill`, :ref:`mju_symmetrize` and :ref:`mju_eye` utility functions.
 #. Added :at:`gravcomp` attribute to :ref:`body<body>`, implementing gravity compensation and buoyancy.
-   See `balloons.xml <https://github.com/deepmind/mujoco/tree/main/model/balloons/balloons.xml>`_ example model.
+   See `balloons.xml <https://github.com/deepmind/mujoco/blob/main/model/balloons/balloons.xml>`_ example model.
 #. Renamed the ``cable`` plugin library to ``elasticity``.
 #. Added :at:`actdim` attribute to :ref:`general actuators<actuator-general>`. Values greater than 1 are only allowed
    for dyntype :at-val:`user`, as native activation dynamics are all scalar. Added example test implementing 2nd-order
@@ -174,14 +225,14 @@ General
    `engine_forward_test.cc <https://github.com/deepmind/mujoco/blob/main/test/engine/engine_forward_test.cc>`_.
 #. Improved particle :ref:`composite<body-composite>` type, which now permits a user-specified geometry and multiple
    joints. See the two new examples:
-   `particle_free.xml <https://github.com/deepmind/mujoco/tree/main/model/composite/particle_free.xml>`_ and
-   `particle_free2d.xml <https://github.com/deepmind/mujoco/tree/main/model/composite/particle_free2d.xml>`_.
+   `particle_free.xml <https://github.com/deepmind/mujoco/blob/main/model/composite/particle_free.xml>`_ and
+   `particle_free2d.xml <https://github.com/deepmind/mujoco/blob/main/model/composite/particle_free2d.xml>`_.
 #. Performance improvements for non-AVX configurations:
 
    - 14% faster ``mj_solveLD`` using `restrict <https://en.wikipedia.org/wiki/Restrict>`_. See `engine_core_smooth_benchmark_test
-     <https://github.com/deepmind/mujoco/tree/main/test/benchmark/engine_core_smooth_benchmark_test.cc>`_.
+     <https://github.com/deepmind/mujoco/blob/main/test/benchmark/engine_core_smooth_benchmark_test.cc>`_.
    - 50% faster ``mju_dotSparse`` using manual loop unroll. See `engine_util_sparse_benchmark_test
-     <https://github.com/deepmind/mujoco/tree/main/test/benchmark/engine_util_sparse_benchmark_test.cc>`_.
+     <https://github.com/deepmind/mujoco/blob/main/test/benchmark/engine_util_sparse_benchmark_test.cc>`_.
 #. Added new :at:`solid` passive force plugin:
 
    .. youtube:: AGcTGHbbze4
@@ -290,11 +341,11 @@ General
 
    - Twist and bending stiffness can be set separately with the parameters :at:`twist` and :at:`bend`.
    - The stress-free configuration can be set to be the initial one or flat with the flag :at:`flat`.
-   - New `cable.xml <https://github.com/deepmind/mujoco/tree/main/model/plugin/cable.xml>`_ example showing the
+   - New `cable.xml <https://github.com/deepmind/mujoco/blob/main/model/plugin/cable.xml>`_ example showing the
      formation of plectoneme.
-   - New `coil.xml <https://github.com/deepmind/mujoco/tree/main/model/plugin/coil.xml>`_  example showing a curved
+   - New `coil.xml <https://github.com/deepmind/mujoco/blob/main/model/plugin/coil.xml>`_  example showing a curved
      equilibrium configuration.
-   - New `belt.xml <https://github.com/deepmind/mujoco/tree/main/model/plugin/belt.xml>`_  example showing interaction
+   - New `belt.xml <https://github.com/deepmind/mujoco/blob/main/model/plugin/belt.xml>`_  example showing interaction
      between twist and anisotropy.
    - Added test using cantilever exact solution.
 
@@ -336,7 +387,7 @@ General
 #. Increased ``mjNEQDATA``, the row length of equality constraint parameters in ``mjModel.eq_data``, from 7 to 11.
 #. Added visualisation of anchor points for both :el:`connect` and :el:`weld` constraints (activated by the 'N' key in
    ``simulate``).
-#. Added `weld.xml <https://github.com/deepmind/mujoco/tree/main/test/engine/testdata/weld.xml>`_ showing different
+#. Added `weld.xml <https://github.com/deepmind/mujoco/blob/main/test/engine/testdata/weld.xml>`_ showing different
    uses of new weld attributes.
 
    .. youtube:: s-0JHanqV1A
@@ -345,7 +396,7 @@ General
 
 #. Cartesian 6D end-effector control is now possible by adding a reference site to actuators with :at:`site`
    transmission. See description of new :at:`refsite` attribute in the :ref:`actuator<actuator-general>` documentation
-   and `refsite.xml <https://github.com/deepmind/mujoco/tree/main/test/engine/testdata/refsite.xml>`_ example model.
+   and `refsite.xml <https://github.com/deepmind/mujoco/blob/main/test/engine/testdata/refsite.xml>`_ example model.
 
 #. Added :at:`autolimits` compiler option. If ``true``, joint and tendon :at:`limited` attributes and actuator
    :at:`ctrllimited`, :at:`forcelimited` and :at:`actlimited` attributes will automatically be set to ``true`` if the
@@ -371,7 +422,7 @@ General
       :height: 150px
 
 #. Added catenary visualisation for hanging tendons. The model seen in the video can be found
-   `here <https://github.com/deepmind/mujoco/tree/main/test/engine/testdata/catenary.xml>`_.
+   `here <https://github.com/deepmind/mujoco/blob/main/test/engine/testdata/catenary.xml>`_.
 #. Added ``azimuth`` and ``elevation`` attributes to :ref:`visual/global<visual-global>`, defining the initial
    orientation of the free camera at model load time.
 #. Added ``mjv_defaultFreeCamera`` which sets the default free camera, respecting the above attributes.
@@ -700,7 +751,7 @@ API changes
 #. Added ``mj_versionString``, which returns human-readable string that represents the version of the MuJoCo binary.
 #. Converted leading underscores to trailing underscores in private instances of API struct definitions, to conform to
    reserved identifier directive, see
-   `C standard: Section 7.1.3 <http://www.open-std.org/jtc1/sc22/wg14/www/docs/n1570.pdf>`__.
+   `C standard: Section 7.1.3 <https://www.open-std.org/jtc1/sc22/wg14/www/docs/n1570.pdf>`__.
 
    .. attention::
       This is a minor breaking change. Code which references private instances will break. To fix, replace leading
@@ -811,7 +862,7 @@ General
 #. Fixed: The array of sensors in ``mjCModel`` was not cleared.
 #. Cleaned up cross-platform code (internal changes, not visible via the API).
 #. Fixed a bug in parsing of XML ``texcoord`` data (related to number of vertices).
-#. Fixed a bug in `simulate.cc <https://github.com/deepmind/mujoco/blob/main/sample/simulate.cc>`_ related to ``nkey``
+#. Fixed a bug in `simulate.cc <https://github.com/deepmind/mujoco/blob/main/simulate/simulate.cc>`_ related to ``nkey``
    (the number of keyframes).
 #. Accelerated collision detection in the presence of large numbers of non-colliding geoms (with ``contype==0 and
    conaffinity==0``).

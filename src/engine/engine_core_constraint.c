@@ -32,6 +32,13 @@
 #include "engine/engine_util_sparse.h"
 #include "engine/engine_util_spatial.h"
 
+#ifdef mjUSEPLATFORMSIMD
+  #if defined(__AVX__) && defined(mjUSEDOUBLE)
+    #define mjUSEAVX
+  #endif  // defined(__AVX__) && defined(mjUSEDOUBLE)
+#endif  // mjUSEPLATFORMSIMD
+
+
 //-------------------------- utility functions -----------------------------------------------------
 
 // internal function for clearing arena pointers for efc_ arrays in mjData
@@ -1630,10 +1637,10 @@ void mj_makeConstraint(const mjModel* m, mjData* d) {
 
     // check that nnzJ was computed correctly
     if (d->nefc > 0) {
-      int nnz = d->efc_J_rownnz[d->nefc - 1] + d->efc_J_rowadr[d->nefc - 1];
-      if (d->nnzJ != nnz) {
+      int nnzJ = d->efc_J_rownnz[d->nefc - 1] + d->efc_J_rowadr[d->nefc - 1];
+      if (d->nnzJ != nnzJ) {
         mju_error("constraint Jacobian mis-allocation: found nnzJ=%d but allocated %d",
-                  nnz, d->nnzJ);
+                  nnzJ, d->nnzJ);
       }
     }
   } else if (d->nefc > nefc_allocated) {
@@ -1657,9 +1664,17 @@ void mj_makeConstraint(const mjModel* m, mjData* d) {
                         d->efc_JT_rownnz, d->efc_JT_rowadr, d->efc_JT_colind,
                         d->efc_J_rownnz, d->efc_J_rowadr, d->efc_J_colind);
 
-    // supernodes of J
+
+#ifdef mjUSEAVX
+    // compute supernodes of J; used by mju_mulMatVecSparse_avx
     mju_superSparse(d->nefc, d->efc_J_rowsuper,
                     d->efc_J_rownnz, d->efc_J_rowadr, d->efc_J_colind);
+#else
+  #ifdef MEMORY_SANITIZER
+    // tell msan to treat the entire J rowsuper as uninitialized
+    __msan_allocated_memory(d->efc_J_rowsuper, d->nefc);
+  #endif // MEMORY_SANITIZER
+#endif // mjUSEAVX
 
     // supernodes of JT
     mju_superSparse(m->nv, d->efc_JT_rowsuper,
@@ -1786,15 +1801,15 @@ void mj_projectConstraint(const mjModel* m, mjData* d) {
     // construct supernodes
     mju_superSparse(nefc, rowsuper, rownnz, rowadr, colind);
 
-    // AR = JM2 * JM2', uncompressed layout
+    // AR = JM2 * JM2'
+    mju_sqrMatTDSparseInit(d->efc_AR_rownnz, d->efc_AR_rowadr, JM2T, JM2,
+                           nv, nefc, rownnzT, rowadrT, colindT, rownnz,
+                           rowadr, colind, rowsuper, d);
+
     mju_sqrMatTDSparse(d->efc_AR, JM2T, JM2, NULL, nv, nefc,
                        d->efc_AR_rownnz, d->efc_AR_rowadr, d->efc_AR_colind,
                        rownnzT, rowadrT, colindT, NULL,
                        rownnz, rowadr, colind, rowsuper, d);
-
-    // compress layout of AR
-    mju_compressSparse(d->efc_AR, nefc, nefc,
-                       d->efc_AR_rownnz, d->efc_AR_rowadr, d->efc_AR_colind);
 
     // add R to diagonal of AR
     for (int i=0; i<nefc; i++) {

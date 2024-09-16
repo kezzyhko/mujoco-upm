@@ -113,8 +113,8 @@ static const char* MJCF[nMJCF][mjXATTRNUM] = {
 
     {"visual", "*", "0"},
     {"<"},
-        {"global", "?", "9", "fovy", "ipd", "azimuth", "elevation", "linewidth", "glow", "offwidth",
-            "offheight", "realtime"},
+        {"global", "?", "10", "fovy", "ipd", "azimuth", "elevation", "linewidth", "glow", "offwidth",
+            "offheight", "realtime", "ellipsoidinertia"},
         {"quality", "?", "5", "shadowsize", "offsamples", "numslices", "numstacks",
             "numquads"},
         {"headlight", "?", "4", "ambient", "diffuse", "specular", "active"},
@@ -695,10 +695,9 @@ const mjMap tkind_map[2] = {
 
 // mesh type
 const mjMap  meshtype_map[2] = {
-    {"false", mjVOLUME_MESH},
-    {"true",  mjSHELL_MESH},
-  };
-
+  {"false", mjVOLUME_MESH},
+  {"true",  mjSHELL_MESH},
+};
 
 
 //---------------------------------- class mjXReader implementation --------------------------------
@@ -730,8 +729,6 @@ void mjXReader::PrintSchema(std::stringstream& str, bool html, bool pad) {
 // main entry point for XML parser
 //  mjCModel is allocated here; caller is responsible for deallocation
 void mjXReader::Parse(XMLElement* root) {
-  XMLElement *section;
-
   // check schema
   if (!schema.GetError().empty()) {
     throw mjXError(0, "XML Schema Construction Error: %s\n",
@@ -757,86 +754,86 @@ void mjXReader::Parse(XMLElement* root) {
 
   //------------------- parse MuJoCo sections embedded in all XML formats
 
-  for (section = root->FirstChildElement("compiler"); section;
+  for (XMLElement* section = root->FirstChildElement("compiler"); section;
        section = section->NextSiblingElement("compiler")) {
     Compiler(section, model);
   }
 
-  for (section = root->FirstChildElement("option"); section;
+  for (XMLElement* section = root->FirstChildElement("option"); section;
        section = section->NextSiblingElement("option")) {
     Option(section, &model->option);
   }
 
-  for (section = root->FirstChildElement("size"); section;
+  for (XMLElement* section = root->FirstChildElement("size"); section;
        section = section->NextSiblingElement("size")) {
     Size(section, model);
   }
 
   //------------------ parse MJCF-specific sections
 
-  for (section = root->FirstChildElement("visual"); section;
+  for (XMLElement* section = root->FirstChildElement("visual"); section;
        section = section->NextSiblingElement("visual")) {
     Visual(section);
   }
 
-  for (section = root->FirstChildElement("statistic"); section;
+  for (XMLElement* section = root->FirstChildElement("statistic"); section;
        section = section->NextSiblingElement("statistic")) {
     Statistic(section);
   }
 
   readingdefaults = true;
-  for (section = root->FirstChildElement("default"); section;
+  for (XMLElement* section = root->FirstChildElement("default"); section;
        section = section->NextSiblingElement("default")) {
     Default(section, -1);
   }
   readingdefaults = false;
 
-  for (section = root->FirstChildElement("extension"); section;
+  for (XMLElement* section = root->FirstChildElement("extension"); section;
        section = section->NextSiblingElement("extension")) {
     Extension(section);
   }
 
-  for (section = root->FirstChildElement("custom"); section;
+  for (XMLElement* section = root->FirstChildElement("custom"); section;
        section = section->NextSiblingElement("custom")) {
     Custom(section);
   }
 
-  for (section = root->FirstChildElement("asset"); section;
+  for (XMLElement* section = root->FirstChildElement("asset"); section;
        section = section->NextSiblingElement("asset")) {
     Asset(section);
   }
 
-  for (section = root->FirstChildElement("worldbody"); section;
+  for (XMLElement* section = root->FirstChildElement("worldbody"); section;
        section = section->NextSiblingElement("worldbody")) {
     Body(section, model->GetWorld());
   }
 
-  for (section = root->FirstChildElement("contact"); section;
+  for (XMLElement* section = root->FirstChildElement("contact"); section;
        section = section->NextSiblingElement("contact")) {
     Contact(section);
   }
 
-  for (section = root->FirstChildElement("equality"); section;
+  for (XMLElement* section = root->FirstChildElement("equality"); section;
        section = section->NextSiblingElement("equality")) {
     Equality(section);
   }
 
-  for (section = root->FirstChildElement("tendon"); section;
+  for (XMLElement* section = root->FirstChildElement("tendon"); section;
        section = section->NextSiblingElement("tendon")) {
     Tendon(section);
   }
 
-  for (section = root->FirstChildElement("actuator"); section;
+  for (XMLElement* section = root->FirstChildElement("actuator"); section;
        section = section->NextSiblingElement("actuator")) {
     Actuator(section);
   }
 
-  for (section = root->FirstChildElement("sensor"); section;
+  for (XMLElement* section = root->FirstChildElement("sensor"); section;
        section = section->NextSiblingElement("sensor")) {
     Sensor(section);
   }
 
-  for (section = root->FirstChildElement("keyframe"); section;
+  for (XMLElement* section = root->FirstChildElement("keyframe"); section;
        section = section->NextSiblingElement("keyframe")) {
     Keyframe(section);
   }
@@ -866,7 +863,10 @@ void mjXReader::Compiler(XMLElement* section, mjCModel* mod) {
     mod->fitaabb = (n==1);
   }
   if (MapValue(section, "coordinate", &n, coordinate_map, 2)) {
-    mod->global = (n==1);
+    if (n==1) {
+      throw mjXError(section, "global coordinates no longer supported. To convert existing models, "
+                              "load and save them in MuJoCo 2.3.3 or older");
+    }
   }
   if (MapValue(section, "angle", &n, angle_map, 2)) {
     mod->degree = (n==1);
@@ -1605,7 +1605,6 @@ void mjXReader::OneTendon(XMLElement* elem, mjCTendon* pten) {
 
 // actuator element parser
 void mjXReader::OneActuator(XMLElement* elem, mjCActuator* pact) {
-  int n;
   string text, type;
   double diameter;
 
@@ -1672,6 +1671,7 @@ void mjXReader::OneActuator(XMLElement* elem, mjCActuator* pact) {
   // explicit attributes
   if (type=="general") {
     // explicit attributes
+    int n;
     if (MapValue(elem, "dyntype", &n, dyn_map, dyn_sz)) {
       pact->dyntype = (mjtDyn)n;
     }
@@ -1811,7 +1811,7 @@ void mjXReader::OneActuator(XMLElement* elem, mjCActuator* pact) {
     ReadAttr(elem, "fvmax", 1, pact->gainprm+8, text);
 
     // biasprm = gainprm
-    for (n=0; n<9; n++) {
+    for (int n=0; n<9; n++) {
       pact->biasprm[n] = pact->gainprm[n];
     }
 
@@ -1841,15 +1841,7 @@ void mjXReader::OneActuator(XMLElement* elem, mjCActuator* pact) {
   }
 
   else if (type == "plugin") {
-    pact->is_plugin = true;
-    ReadAttrTxt(elem, "plugin", pact->plugin_name);
-    ReadAttrTxt(elem, "instance", pact->plugin_instance_name);
-    if (pact->plugin_instance_name.empty()) {
-      pact->plugin_instance = model->AddPlugin();
-    } else {
-      model->hasImplicitPluginElem = true;
-    }
-    ReadPluginConfigs(elem, pact->plugin_instance);
+    OnePlugin(elem, pact);
   }
 
   else {          // SHOULD NOT OCCUR
@@ -2083,6 +2075,20 @@ void mjXReader::OneComposite(XMLElement* elem, mjCBody* pbody, mjCDef* def) {
   if (!res) {
     throw mjXError(elem, error);
   }
+}
+
+
+
+void mjXReader::OnePlugin(XMLElement* elem, mjCBase* object) {
+  object->is_plugin = true;
+  ReadAttrTxt(elem, "plugin", object->plugin_name);
+  ReadAttrTxt(elem, "instance", object->plugin_instance_name);
+  if (object->plugin_instance_name.empty()) {
+    object->plugin_instance = model->AddPlugin();
+  } else {
+    model->hasImplicitPluginElem = true;
+  }
+  ReadPluginConfigs(elem, object->plugin_instance);
 }
 
 
@@ -2370,10 +2376,15 @@ void mjXReader::Visual(XMLElement* section) {
       ReadAttr(elem,    "glow",      1, &vis->global.glow,      text);
       ReadAttrInt(elem, "offwidth",     &vis->global.offwidth);
       ReadAttrInt(elem, "offheight",    &vis->global.offheight);
-      if (ReadAttr(elem, "realtime", 1, &vis->global.realtime, text))
+      if (ReadAttr(elem, "realtime", 1, &vis->global.realtime, text)) {
         if (vis->global.realtime<=0) {
           throw mjXError(elem, "realtime must be greater than 0");
         }
+      }
+      int ellipsoidinertia;
+      if (MapValue(elem, "ellipsoidinertia", &ellipsoidinertia, bool_map, 2)) {
+        vis->global.ellipsoidinertia = (ellipsoidinertia==1);
+      }
     }
 
     // quality sub-element
@@ -2694,15 +2705,7 @@ void mjXReader::Body(XMLElement* section, mjCBody* pbody) {
 
     // plugin sub-element
     else if (name == "plugin") {
-      pbody->is_plugin = true;
-      ReadAttrTxt(elem, "plugin", pbody->plugin_name);
-      ReadAttrTxt(elem, "instance", pbody->plugin_instance_name);
-      if (pbody->plugin_instance_name.empty()) {
-        pbody->plugin_instance = model->AddPlugin();
-      } else {
-        model->hasImplicitPluginElem = true;
-      }
-      ReadPluginConfigs(elem, pbody->plugin_instance);
+      OnePlugin(elem, pbody);
     }
 
     // composite sub-element

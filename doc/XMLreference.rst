@@ -191,11 +191,11 @@ any effect. The settings here are global and apply to the entire model.
 
 .. _compiler-coordinate:
 
-:at:`coordinate`: :at-val:`[local, global], "local" for MJCF, always "local" for URDF`
-   This attribute specifies whether the frame positions and orientations in the MJCF model are expressed in local or
-   global coordinates; recall :ref:`Coordinate frames <CFrame>`. The compiler converts global into local
-   coordinates, and mjModel always uses local coordinates. For URDF models the parser sets this attribute to "local"
-   internally, regardless of the XML setting.
+:at:`coordinate`: :at-val:`[local, global], "local"`
+   In previous versions, this attribute could be used to specify whether frame positions and orientations are expressed
+   in local or global coordinates, but the "global" option has since been removed, and will cause an error to be
+   generated. In order to convert older models which used the "global" option, load and save them in MuJoCo 2.3.3 or
+   older.
 
 .. _compiler-angle:
 
@@ -491,7 +491,7 @@ adjust it properly through the XML.
    damping in the joints implicitly – which improves stability and accuracy. It does not presently do this with body
    viscosity. Therefore, if the goal is merely to create a damped simulation (as opposed to modeling the specific
    effects of viscosity), we recommend using joint damping rather than body viscosity, or switching to the
-   :at:`implicit` integrator.
+   :at:`implicit` or :at:`implicitfast` integrators.
 
 .. _option-o_margin:
 
@@ -511,10 +511,11 @@ adjust it properly through the XML.
 
 .. _option-integrator:
 
-:at:`integrator`: :at-val:`[Euler, RK4, implicit], "Euler"`
+:at:`integrator`: :at-val:`[Euler, RK4, implicit, implicitfast], "Euler"`
    This attribute selects the numerical :ref:`integrator <geIntegration>` to be used. Currently the available
-   integrators are the semi-implicit Euler method, the fixed-step 4-th order Runge Kutta method, and
-   the Implicit-in-velocity Euler method.
+   integrators are the semi-implicit Euler method, the fixed-step 4-th order Runge Kutta method, the
+   Implicit-in-velocity Euler method, and :at:`implicitfast`, which drops the Coriolis and centrifugal terms. See
+   :ref:`Numerical Integration<geIntegration>` for more details.
 
 .. _option-collision:
 
@@ -897,6 +898,12 @@ is effectively a miscellaneous subsection.
 
 :at:`offheight`: :at-val:`int, "480"`
    This attribute specifies the height in pixels of the OpenGL off-screen rendering buffer.
+
+.. _visual-global-ellipsoidinertia:
+
+:at:`ellipsoidinertia`: :at-val:`[false, true], "false"`
+   This attribute specifies how the equivalent inertia is visualized. "false":
+   use box, "true": use ellipsoid.
 
 
 .. _visual-quality:
@@ -2164,7 +2171,7 @@ chapter.
 .. _asset-texture-gridlayout:
 
 :at:`gridlayout`: :at-val:`string, "............"`
-   .. figure:: images/modeling/skybox.png
+   .. figure:: images/XMLreference/skybox.png
       :width: 250px
       :align: right
 
@@ -2350,7 +2357,7 @@ also known as terrain map, is a 2D matrix of elevation data. The data can be spe
 .. _asset-hfield-size:
 
 :at:`size`: :at-val:`real(4), required`
-   .. figure:: images/modeling/peaks.png
+   .. figure:: images/XMLreference/peaks.png
       :width: 350px
       :align: right
 
@@ -2833,23 +2840,7 @@ defined. Its body name is automatically defined as "world".
 .. _body-pos:
 
 :at:`pos`: :at-val:`real(3), optional`
-   The 3D position of the body frame, in local or global coordinates as determined by the coordinate attribute of
-   :ref:`compiler <compiler>`. Recall the earlier discussion of local and global coordinates in :ref:`Coordinate frames
-   <CFrame>`. In local coordinates, if the body position is left undefined it defaults to (0,0,0). In global
-   coordinates, an undefined body position is inferred by the compiler through the following steps:
-
-   #. If the inertial frame is not defined via the :ref:`inertial <body-inertial>` element, it is inferred from the
-      geoms attached to the body. If there are no geoms, the inertial frame remains undefined. This step is applied in
-      both local and global coordinates.
-   #. If both the body frame and the inertial frame are undefined, a compile error is generated.
-   #. If one of these two frames is defined and the other is not, the defined one is copied into the undefined one. At
-      this point both frames are defined, in global coordinates.
-   #. The inertial frame as well as all elements defined in the body are converted to local coordinates, relative to the
-      body frame.
-
-   Note that whether a frame is defined or not depends on its pos attribute, which is in the special undefined state by
-   default. Orientation cannot be used to make this determination because it has an internal default (the unit
-   quaternion).
+   The 3D position of the body frame, in the parent coordinate frame. If undefined it defaults to (0,0,0).
 
 .. _body-quat:
 
@@ -2862,12 +2853,7 @@ defined. Its body name is automatically defined as "world".
 .. _body-euler:
 
 :at:`quat`, :at:`axisangle`, :at:`xyaxes`, :at:`zaxis`, :at:`euler`
-   See :ref:`COrientation`. Similar to position, the orientation specified here is
-   interpreted in either local or global coordinates as determined by the coordinate attribute of
-   :ref:`compiler <compiler>`. Unlike position which is required in local coordinates, the orientation defaults to the
-   unit quaternion, thus specifying it is optional even in local coordinates. If the body frame was copied from the body
-   inertial frame per the above rules, the copy operation applies to both position and orientation, and the setting of
-   the orientation-related attributes is ignored.
+   See :ref:`COrientation`.
 
 .. _body-gravcomp:
 
@@ -2881,6 +2867,24 @@ defined. Its body name is automatically defined as "world".
 
 :at:`user`: :at-val:`real(nbody_user), "0 0 ..."`
    See :ref:`CUser`.
+
+
+.. _body-plugin:
+
+:el-prefix:`body/` |-| **plugin** (?)
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+Associate this body with an :ref:`engine plugin<exPlugin>`. Either :at:`plugin` or :at:`instance` are required.
+
+.. _body-plugin-plugin:
+
+:at:`plugin`: :at-val:`string, optional`
+   Plugin identifier, used for implicit plugin instantiation.
+
+.. _body-plugin-instance:
+
+:at:`instance`: :at-val:`string, optional`
+   Instance name, used for explicit plugin instantiation.
 
 
 .. _body-inertial:
@@ -2997,8 +3001,7 @@ unit quaternions.
 .. _body-joint-pos:
 
 :at:`pos`: :at-val:`real(3), "0 0 0"`
-   Position of the joint, specified in local or global coordinates as determined by the coordinate attribute of
-   :ref:`compiler <compiler>`. For free joints this attribute is ignored.
+   Position of the joint, specified in the frame of the parent body. For free joints this attribute is ignored.
 
 .. _body-joint-axis:
 
@@ -3399,19 +3402,26 @@ helps clarify the role of bodies and geoms in MuJoCo.
 .. _body-geom-fromto:
 
 :at:`fromto`: :at-val:`real(6), optional`
-   This attribute can only be used with capsule, cylinder, ellipsoid and box geoms. It provides an alternative
+   .. figure:: images/XMLreference/fromto.png
+      :width: 350px
+      :align: right
+
+   This attribute can only be used with capsule, box, cylinder and ellipsoid geoms. It provides an alternative
    specification of the geom length as well as the frame position and orientation. The six numbers are the 3D
    coordinates of one point followed by the 3D coordinates of another point. The elongated part of the geom connects
-   these two points, with the +Z axis of the geom's frame oriented from the first towards the second point. The frame
-   orientation is obtained with the same procedure as the zaxis attribute described in :ref:`Frame orientations
-   <COrientation>`. The frame position is in the middle between the two points. If this attribute is specified, the
-   remaining position and orientation-related attributes are ignored.
+   these two points, with the +Z axis of the geom's frame oriented from the first towards the second point, while in the
+   perpendicular direction, the geom sizes are both equal to the first value of the :at:`size` attribute. The frame
+   orientation is obtained with the same procedure as the :at:`zaxis` attribute described in :ref:`Frame orientations
+   <COrientation>`. The frame position is in the middle between the end points. If this attribute is specified, the
+   remaining position and orientation-related attributes are ignored. The image on the right demonstrates use of
+   :at:`fromto` with the four supported geoms, using identical Z values. The model is `here <_static/fromto.xml>`__.
+   Note that the :at:`fromto` semantics of *capsule* are unique: the two end points specify the segement around which
+   the radius defines the capsule surface.
 
 .. _body-geom-pos:
 
 :at:`pos`: :at-val:`real(3), "0 0 0"`
-   Position of the geom frame, in local or global coordinates as determined by the coordinate attribute of
-   :ref:`compiler <compiler>`.
+   Position of the geom, specified in the frame of the parent body.
 
 .. _body-geom-quat:
 
@@ -4208,6 +4218,23 @@ handle where the composite object is attached. For other composite types this su
    attribute can have only one number, in which case the second number is automatically set to 0.
 
 
+.. _composite-plugin:
+
+:el-prefix:`composite/` |-| **plugin** (?)
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+Associate this composite with an :ref:`engine plugin<exPlugin>`. Either :at:`plugin` or :at:`instance` are required.
+
+.. _composite-plugin-plugin:
+
+:at:`plugin`: :at-val:`string, optional`
+   Plugin identifier, used for implicit plugin instantiation.
+
+.. _composite-plugin-instance:
+
+:at:`instance`: :at-val:`string, optional`
+   Instance name, used for explicit plugin instantiation.
+
 .. _contact:
 
 **contact** (*)
@@ -4375,9 +4402,8 @@ geoms volumes of either body. This constraint can be used to define ball joints 
    kinematics; the constraint solver pushes these points towards each other. In the MJCF model however only one point is
    given. We assume that the equality constraint is exactly satisfied in the configuration in which the model is defined
    (this applies to all other constraint types as well). The compiler uses the single anchor specified in the MJCF model
-   to compute the two body-relative anchor points in mjModel. If the MJCF model is in global coordinates, as determined
-   by the coordinate attribute of :ref:`compiler <compiler>`, the anchor is specified in global coordinates. Otherwise
-   the anchor is specified relative to the local coordinate frame of the *first* body.
+   to compute the two body-relative anchor points in mjModel. Specified relative to the local coordinate frame of
+   the *first* body.
 
 
 .. _equality-weld:
@@ -4544,7 +4570,7 @@ can also represent different forms of mechanical coupling.
 :el-prefix:`tendon/` |-| **spatial** (*)
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-.. figure:: images/modeling/tendon.png
+.. figure:: images/XMLreference/tendon.png
    :width: 400px
    :align: right
 
@@ -5676,6 +5702,65 @@ This element has a subset of the common attributes and two custom attributes.
    to the target body.
 
 
+.. _actuator-plugin:
+
+:el-prefix:`actuator/` |-| **plugin** (?)
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+Associate this actuator with an :ref:`engine plugin<exPlugin>`. Either :at:`plugin` or :at:`instance` are required.
+
+.. _actuator-plugin-plugin:
+
+:at:`plugin`: :at-val:`string, optional`
+   Plugin identifier, used for implicit plugin instantiation.
+
+.. _actuator-plugin-instance:
+
+:at:`instance`: :at-val:`string, optional`
+   Instance name, used for explicit plugin instantiation.
+
+.. _actuator-plugin-name:
+
+.. _actuator-plugin-class:
+
+.. _actuator-plugin-group:
+
+.. _actuator-plugin-ctrllimited:
+
+.. _actuator-plugin-forcelimited:
+
+.. _actuator-plugin-ctrlrange:
+
+.. _actuator-plugin-forcerange:
+
+.. _actuator-plugin-lengthrange:
+
+.. _actuator-plugin-gear:
+
+.. _actuator-plugin-cranklength:
+
+.. _actuator-plugin-joint:
+
+.. _actuator-plugin-jointinparent:
+
+.. _actuator-plugin-site:
+
+.. _actuator-plugin-tendon:
+
+.. _actuator-plugin-cranksite:
+
+.. _actuator-plugin-slidersite:
+
+.. _actuator-plugin-user:
+
+.. |actuator/plugin attrib list| replace:: :at:`name`, :at:`class`, :at:`group`, :at:`ctrllimited`, :at:`forcelimited`
+   :at:`ctrlrange`, :at:`forcerange`, :at:`lengthrange`, :at:`gear`, :at:`cranklength`, :at:`joint`, :at:`jointinparent`
+   :at:`site`, :at:`tendon`, :at:`cranksite`, :at:`slidersite`, :at:`user`
+
+|actuator/plugin attrib list|
+   Same as in actuator/ :ref:`general <actuator-general>`.
+
+
 .. _sensor:
 
 **sensor** (*)
@@ -6781,6 +6866,44 @@ bodies whose center of mass is of interest.
    Number of scalar outputs of this sensor.
 
 
+.. _sensor-plugin:
+
+:el-prefix:`sensor/` |-| **plugin** (?)
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+Ascociate this sensor with an :ref:`engine plugin<exPlugin>`. Either :at:`plugin` or :at:`instance` are required.
+
+.. _sensor-plugin-plugin:
+
+:at:`plugin`: :at-val:`string, optional`
+   Plugin identifier, used for implicit plugin instantiation.
+
+.. _sensor-plugin-instance:
+
+:at:`instance`: :at-val:`string, optional`
+   Instance name, used for explicit plugin instantiation.
+
+.. _sensor-plugin-name:
+
+.. _sensor-plugin-cutoff:
+
+.. _sensor-plugin-objtype:
+
+.. _sensor-plugin-objname:
+
+.. _sensor-plugin-reftype:
+
+.. _sensor-plugin-refname:
+
+.. _sensor-plugin-user:
+
+.. |sensor/plugin attrib list| replace:: :at:`name`, :at:`cutoff`, :at:`objtype`, :at:`objname`, :at:`reftype`
+   :at:`refname`, :at:`user`
+
+|sensor/plugin attrib list|
+   See :ref:`CSensor`.
+
+
 .. _keyframe:
 
 **keyframe** (*)
@@ -6843,3 +6966,64 @@ This element sets the data for one of the keyframes. They are set in the order i
 
 :at:`mquat`: :at-val:`real(4*mjModel.nmocap), default = mjModel.body_quat`
    Vector of mocap body quaternions, copied into mjData.mocap_quat when the simulation state is set to this keyframe.
+
+.. _extension:
+
+**extension** (*)
+~~~~~~~~~~~~~~~~~
+
+This is a grouping element for MuJoCo extensions. Extensions allow the user to extend MuJoCo's capabilities with custom
+code and are described in detail in the Programming chapter's :ref:`exExtension` page. Currently, the only available
+extension type are :ref:`exPlugin`.
+
+.. _extension-plugin:
+
+:el-prefix:`extension/` |-| **plugin** (*)
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+This element specifies that an engine plugin is required in order to simulate this model.
+See :ref:`exPlugin` for more details.
+
+.. _extension-plugin-plugin:
+
+:at:`plugin`: :at-val:`string, required`
+   Identifier of the plugin.
+
+.. _plugin-instance:
+
+:el-prefix:`plugin/` |-| **instance** (*)
+'''''''''''''''''''''''''''''''''''''''''
+
+Declares a plugin instance. Explicit instances declaration is required when multiple elements are backed by the same
+plugin, or when global plugin configuration is desired. See plugin :ref:`declaration<exDeclaration>` and
+:ref:`configuration<exConfiguration>` for more details.
+
+.. _plugin-instance-name:
+
+:at:`name`: :at-val:`string, required`
+   Name of the plugin instance.
+
+.. _plugin-config:
+
+.. _instance-config:
+
+:el-prefix:`instance/` |-| **config** (*)
+"""""""""""""""""""""""""""""""""""""""""
+
+Configuration of a plugin instance. When implicitly declaring a plugin under a model element, configuration is
+performed with identical semantics using :el:`element/plugin/config`. The elements which currently support plugins are
+:el:`body`, :el:`composite`, :el:`actuator` and :el:`sensor`.
+
+.. _plugin-config-key:
+
+.. _instance-config-key:
+
+:at:`key`: :at-val:`string, optional`
+   Key used for plugin configuration.
+
+.. _plugin-config-value:
+
+.. _instance-config-value:
+
+:at:`value`: :at-val:`string, optional`
+   Value associated with key.

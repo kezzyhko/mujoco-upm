@@ -18,22 +18,15 @@
 #include <unistd.h>
 #endif
 
-#include <algorithm>
 #include <array>
 #include <clocale>
-#include <cstddef>
 #include <cstdio>
-#include <cstdlib>
-#include <cstring>
 #include <filesystem>
-#include <memory>
-#include <sstream>
 #include <string>
 #include <vector>
 
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
-#include <absl/container/flat_hash_set.h>
 #include <absl/strings/match.h>
 #include <mujoco/mjmodel.h>
 #include <mujoco/mjtnum.h>
@@ -51,6 +44,15 @@ using ::testing::Not;
 using ::testing::NotNull;
 
 using XMLWriterTest = MujocoTest;
+
+TEST_F(XMLWriterTest, EmptyModel) {
+  static constexpr char xml[] = "<mujoco/>";
+  mjModel* model = LoadModelFromString(xml);
+  ASSERT_THAT(model, NotNull());
+  std::string saved_xml = SaveAndReadXml(model);
+  EXPECT_THAT(saved_xml, Not(HasSubstr("default")));
+  mj_deleteModel(model);
+}
 
 TEST_F(XMLWriterTest, SavesMemory) {
   {
@@ -579,8 +581,8 @@ TEST_F(XMLWriterTest, WritesGravComp) {
   static constexpr char xml[] = R"(
   <mujoco>
     <worldbody>
-      <body gravcomp=".25">
-      </body>
+      <body gravcomp=".25"/>
+      <body/>
     </worldbody>
   </mujoco>
   )";
@@ -588,6 +590,24 @@ TEST_F(XMLWriterTest, WritesGravComp) {
   ASSERT_THAT(model, NotNull());
   std::string saved_xml = SaveAndReadXml(model);
   EXPECT_THAT(saved_xml, HasSubstr("gravcomp=\"0.25\""));
+  EXPECT_THAT(saved_xml, Not(HasSubstr("gravcomp=\"0\"")));
+  mj_deleteModel(model);
+}
+
+TEST_F(XMLWriterTest, WritesBodyPos) {
+  static constexpr char xml[] = R"(
+  <mujoco>
+    <worldbody>
+      <body pos="1 2 3"/>
+      <body pos="0 0 0"/>
+    </worldbody>
+  </mujoco>
+  )";
+  mjModel* model = LoadModelFromString(xml);
+  ASSERT_THAT(model, NotNull());
+  std::string saved_xml = SaveAndReadXml(model);
+  EXPECT_THAT(saved_xml, HasSubstr("pos=\"1 2 3\""));
+  EXPECT_THAT(saved_xml, Not(HasSubstr("pos=\"0 0 0\"")));
   mj_deleteModel(model);
 }
 
@@ -824,6 +844,8 @@ TEST_F(XMLWriterTest, Actdim) {
     </worldbody>
     <actuator>
       <general joint="hinge" dyntype="user" actdim="2"/>
+      <general joint="hinge" dyntype="filter" dynprm="1"/>
+      <motor joint="hinge"/>
     </actuator>
   </mujoco>
   )";
@@ -831,6 +853,8 @@ TEST_F(XMLWriterTest, Actdim) {
   ASSERT_THAT(model, NotNull());
   std::string saved_xml = SaveAndReadXml(model);
   EXPECT_THAT(saved_xml, HasSubstr("actdim=\"2\""));
+  EXPECT_THAT(saved_xml, Not(HasSubstr("actdim=\"1\"")));
+  EXPECT_THAT(saved_xml, Not(HasSubstr("actdim=\"0\"")));
   mj_deleteModel(model);
 }
 

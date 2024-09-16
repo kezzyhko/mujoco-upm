@@ -29,7 +29,7 @@
 #include "cc/array_safety.h"
 #include "engine/engine_core_smooth.h"
 #include "engine/engine_crossplatform.h"
-#include "engine/engine_file.h"
+#include "engine/engine_resource.h"
 #include "engine/engine_io.h"
 #include "engine/engine_macro.h"
 #include "engine/engine_passive.h"
@@ -38,7 +38,6 @@
 #include "engine/engine_util_misc.h"
 #include "engine/engine_util_solve.h"
 #include "engine/engine_util_spatial.h"
-#include "engine/engine_vfs.h"
 #include "user/user_model.h"
 #include "user/user_util.h"
 
@@ -263,6 +262,172 @@ const char* mjCAlternative::Set(double* quat, double* inertia,
 
 
 
+//------------------------- class mjCTree implementation -------------------------------------------
+
+// constructor
+mjCBoundingVolumeHierarchy::mjCBoundingVolumeHierarchy() {
+  nbvh = 0;
+  mjuu_setvec(ipos_, 0, 0, 0);
+  mjuu_setvec(iquat_, 1, 0, 0, 0);
+}
+
+
+// assign position and orientation
+void mjCBoundingVolumeHierarchy::Set(mjtNum ipos_element[3], mjtNum iquat_element[4]) {
+  mjuu_copyvec(ipos_, ipos_element, 3);
+  mjuu_copyvec(iquat_, iquat_element, 4);
+}
+
+
+// compute bounding volume hierarchy
+int mjCBoundingVolumeHierarchy::MakeBVH(std::vector<mjCGeom *>& elements, int lev) {
+  int nelements = elements.size();
+  mjtNum AABB[6] = {mjMAXVAL, mjMAXVAL, mjMAXVAL, -mjMAXVAL, -mjMAXVAL, -mjMAXVAL};
+
+  // inverse transformation
+  mjtNum qinv[4] = {iquat_[0], -iquat_[1], -iquat_[2], -iquat_[3]};
+
+  for (int i=0; i<nelements; i++) {
+    // skip visual objects
+    if (elements[i]->conaffinity==0 && elements[i]->contype==0) {
+      continue;
+    }
+
+    // transform aabb representation
+    mjtNum aabb[6] = {elements[i]->aabb[0] - elements[i]->aabb[3],
+                      elements[i]->aabb[1] - elements[i]->aabb[4],
+                      elements[i]->aabb[2] - elements[i]->aabb[5],
+                      elements[i]->aabb[0] + elements[i]->aabb[3],
+                      elements[i]->aabb[1] + elements[i]->aabb[4],
+                      elements[i]->aabb[2] + elements[i]->aabb[5]};
+
+    // update node AABB
+    for (int v=0; v<8; v++) {
+      mjtNum vert[3], box[3];
+      vert[0] = (v&1 ? aabb[3] : aabb[0]);
+      vert[1] = (v&2 ? aabb[4] : aabb[1]);
+      vert[2] = (v&4 ? aabb[5] : aabb[2]);
+
+      // rotate to the body inertial frame
+      mju_rotVecQuat(box, vert, elements[i]->quat);
+      box[0] += elements[i]->pos[0] - ipos_[0];
+      box[1] += elements[i]->pos[1] - ipos_[1];
+      box[2] += elements[i]->pos[2] - ipos_[2];
+      mju_rotVecQuat(vert, box, qinv);
+      AABB[0] = mjMIN(AABB[0], vert[0]);
+      AABB[1] = mjMIN(AABB[1], vert[1]);
+      AABB[2] = mjMIN(AABB[2], vert[2]);
+      AABB[3] = mjMAX(AABB[3], vert[0]);
+      AABB[4] = mjMAX(AABB[4], vert[1]);
+      AABB[5] = mjMAX(AABB[5], vert[2]);
+    }
+  }
+
+  // store current index
+  int index = nbvh++;
+  child.push_back(-1);
+  child.push_back(-1);
+  nodeid.push_back(-1);
+  level.push_back(lev);
+
+  // transform representation
+  mjtNum center[] = {(AABB[3] + AABB[0]) / 2, (AABB[4] + AABB[1]) / 2,
+                  (AABB[5] + AABB[2]) / 2};
+  mjtNum size[] = {(AABB[3] - AABB[0]) / 2, (AABB[4] - AABB[1]) / 2,
+                   (AABB[5] - AABB[2]) / 2};
+
+  // store bounding box of the current node
+  for (int i=0; i<3; i++) {
+    bvh.push_back(center[i]);
+  }
+  for (int i=0; i<3; i++) {
+    bvh.push_back(size[i]);
+  }
+
+  // leaf node, return
+  if (nelements==1) {
+    for (int i=0; i<2; i++) {
+      child[2*index+i] = -1;
+    }
+    nodeid[index] = elements[0]->id;
+    return index;
+  }
+
+  // find longest axis for splitting the bounding box
+  mjtNum edges[3] = { AABB[3]-AABB[0], AABB[4]-AABB[1], AABB[5]-AABB[2] };
+  int axis = edges[0] > edges[1] ? 0 : 1;
+  axis = edges[axis] > edges[2] ? axis : 2;
+
+  // find median along the axis
+  std::vector<mjtNum> pos(nelements);
+
+  for (int i=0; i<nelements; i++) {
+    // get position in the body inertial frame
+    mjtNum vert[3] = {elements[i]->pos[0] - ipos_[0],
+                      elements[i]->pos[1] - ipos_[1],
+                      elements[i]->pos[2] - ipos_[2]};
+    mjtNum lpos[3];
+    mju_rotVecQuat(lpos, vert, qinv);
+    pos[i] = lpos[axis];
+  }
+
+  auto m = pos.size()/2;
+  std::nth_element(pos.begin(), pos.begin() + m, pos.end());
+  mjtNum threshold = pos[m];
+
+  // split using median
+  std::vector<mjCGeom *> left;
+  std::vector<mjCGeom *> right;
+  int skipped = 0;
+
+  for (int i=0; i<nelements; i++) {
+    // get position in the body inertial frame
+    mjtNum vert[3] = {elements[i]->pos[0] - ipos_[0],
+                      elements[i]->pos[1] - ipos_[1],
+                      elements[i]->pos[2] - ipos_[2]};
+    mjtNum lpos[3];
+    mju_rotVecQuat(lpos, vert, qinv);
+
+    // skip visual objects
+    if (elements[i]->conaffinity==0 && elements[i]->contype==0) {
+      skipped++;
+      continue;
+    }
+    if (lpos[axis] < threshold) {
+      left.push_back(elements[i]);
+    } else if (lpos[axis] > threshold) {
+      right.push_back(elements[i]);
+    } else {
+      if (left.size() < right.size()) left.push_back(elements[i]);
+      else right.push_back(elements[i]);
+    }
+  }
+
+  // recursive calls
+  if (!left.empty()) {
+    child[2*index+0] = MakeBVH(left, lev+1);
+  }
+
+  if (!right.empty()) {
+    child[2*index+1] = MakeBVH(right, lev+1);
+  }
+
+  // SHOULD NOT OCCUR
+  if (left.size()+right.size()+skipped != nelements) {
+    mju_error("some elements were lost, body=%s parent=%d children=%lu",
+              name_.c_str(), nelements, left.size()+right.size()+skipped);
+  }
+
+  if (child[2*index+0]==-1 && child[2*index+1]==-1 && !skipped) {
+    mju_error("this should have been a leaf, body=%s nelements=%d",
+              name_.c_str(), nelements);
+  }
+
+  return index;
+}
+
+
+
 //------------------------- class mjCDef implementation --------------------------------------------
 
 // constructor
@@ -331,7 +496,6 @@ mjCBody::mjCBody(mjCModel* _model) {
   subtreedofs = 0;
   gravcomp = 0;
   userdata.clear();
-  nbvh = 0;
 
   // plugin variables
   is_plugin = false;
@@ -346,25 +510,19 @@ mjCBody::mjCBody(mjCModel* _model) {
   sites.clear();
   cameras.clear();
   lights.clear();
-  bvh.clear();
-  child.clear();
-  nodeid.clear();
-  level.clear();
 }
 
 
 
 // destructor
 mjCBody::~mjCBody() {
-  unsigned int i;
-
   // delete objects allocated here
-  for (i=0; i<bodies.size(); i++) delete bodies[i];
-  for (i=0; i<geoms.size(); i++) delete geoms[i];
-  for (i=0; i<joints.size(); i++) delete joints[i];
-  for (i=0; i<sites.size(); i++) delete sites[i];
-  for (i=0; i<cameras.size(); i++) delete cameras[i];
-  for (i=0; i<lights.size(); i++) delete lights[i];
+  for (int i=0; i<bodies.size(); i++) delete bodies[i];
+  for (int i=0; i<geoms.size(); i++) delete geoms[i];
+  for (int i=0; i<joints.size(); i++) delete joints[i];
+  for (int i=0; i<sites.size(); i++) delete sites[i];
+  for (int i=0; i<cameras.size(); i++) delete cameras[i];
+  for (int i=0; i<lights.size(); i++) delete lights[i];
 
   bodies.clear();
   geoms.clear();
@@ -576,14 +734,14 @@ mjCBase* mjCBody::FindObject(mjtObj type, string _name, bool recursive) {
 
 // compute geom inertial frame: ipos, iquat, mass, inertia
 void mjCBody::GeomFrame(void) {
-  int i, sz;
+  int sz;
   double com[3] = {0, 0, 0};
   double toti[6] = {0, 0, 0, 0, 0, 0};
   vector<mjCGeom*> sel;
 
   // select geoms based on group
   sel.clear();
-  for (i=0; i<geoms.size(); i++) {
+  for (int i=0; i<geoms.size(); i++) {
     if (geoms[i]->group>=model->inertiagrouprange[0] &&
         geoms[i]->group<=model->inertiagrouprange[1]) {
       sel.push_back(geoms[i]);
@@ -603,7 +761,7 @@ void mjCBody::GeomFrame(void) {
   else if (sz>1) {
     // compute total mass and center of mass
     mass = 0;
-    for (i=0; i<sz; i++) {
+    for (int i=0; i<sz; i++) {
       mass += sel[i]->mass;
       com[0] += sel[i]->mass * sel[i]->pos[0];
       com[1] += sel[i]->mass * sel[i]->pos[1];
@@ -621,7 +779,7 @@ void mjCBody::GeomFrame(void) {
     ipos[2] = com[2]/mass;
 
     // add geom inertias
-    for (i=0; i<sz; i++) {
+    for (int i=0; i<sz; i++) {
       double inert0[6], inert1[6];
       double dpos[3] = {
         sel[i]->pos[0] - ipos[0],
@@ -651,17 +809,8 @@ void mjCBody::GeomFrame(void) {
 // setup child local frame: pos
 void mjCBody::MakeLocal(double* _locpos, double* _locquat,
                         const double* _pos, const double* _quat) {
-  // global: transform to local
-  if (model->global) {
-    mjuu_localpos(_locpos, _pos, pos, quat);
-    mjuu_localquat(_locquat, _quat, quat);
-  }
-
-  // local: copy
-  else {
-    mjuu_copyvec(_locpos, _pos, 3);
-    mjuu_copyvec(_locquat, _quat, 4);
-  }
+  mjuu_copyvec(_locpos, _pos, 3);
+  mjuu_copyvec(_locquat, _quat, 4);
 }
 
 // set explicitinertial to true
@@ -670,158 +819,8 @@ void mjCBody::MakeInertialExplicit() {
 }
 
 
-// compute bounding volume hierarchy
-int mjCBody::MakeBVH(std::vector<mjCGeom *>& elements, int lev) {
-  int nelements = elements.size();
-  mjtNum AABB[6] = {mjMAXVAL, mjMAXVAL, mjMAXVAL, -mjMAXVAL, -mjMAXVAL, -mjMAXVAL};
-
-  // inverse transformation
-  mjtNum qinv[4] = {iquat[0], -iquat[1], -iquat[2], -iquat[3]};
-
-  for (int i=0; i<nelements; i++) {
-    // skip visual objects
-    if (elements[i]->conaffinity==0 && elements[i]->contype==0) {
-      continue;
-    }
-
-    // transform aabb representation
-    mjtNum aabb[6] = {elements[i]->aabb[0] - elements[i]->aabb[3],
-                      elements[i]->aabb[1] - elements[i]->aabb[4],
-                      elements[i]->aabb[2] - elements[i]->aabb[5],
-                      elements[i]->aabb[0] + elements[i]->aabb[3],
-                      elements[i]->aabb[1] + elements[i]->aabb[4],
-                      elements[i]->aabb[2] + elements[i]->aabb[5]};
-
-    // update node AABB
-    for (int v=0; v<8; v++) {
-      mjtNum vert[3], box[3];
-      vert[0] = (v&1 ? aabb[3] : aabb[0]);
-      vert[1] = (v&2 ? aabb[4] : aabb[1]);
-      vert[2] = (v&4 ? aabb[5] : aabb[2]);
-
-      // rotate to the body inertial frame
-      mju_rotVecQuat(box, vert, elements[i]->quat);
-      box[0] += elements[i]->pos[0] - ipos[0];
-      box[1] += elements[i]->pos[1] - ipos[1];
-      box[2] += elements[i]->pos[2] - ipos[2];
-      mju_rotVecQuat(vert, box, qinv);
-      AABB[0] = mjMIN(AABB[0], vert[0]);
-      AABB[1] = mjMIN(AABB[1], vert[1]);
-      AABB[2] = mjMIN(AABB[2], vert[2]);
-      AABB[3] = mjMAX(AABB[3], vert[0]);
-      AABB[4] = mjMAX(AABB[4], vert[1]);
-      AABB[5] = mjMAX(AABB[5], vert[2]);
-    }
-  }
-
-  // store current index
-  int index = nbvh++;
-  child.push_back(-1);
-  child.push_back(-1);
-  nodeid.push_back(-1);
-  level.push_back(lev);
-
-  // transform representation
-  mjtNum center[] = {(AABB[3] + AABB[0]) / 2, (AABB[4] + AABB[1]) / 2,
-                  (AABB[5] + AABB[2]) / 2};
-  mjtNum size[] = {(AABB[3] - AABB[0]) / 2, (AABB[4] - AABB[1]) / 2,
-                   (AABB[5] - AABB[2]) / 2};
-
-  // store bounding box of the current node
-  for (int i=0; i<3; i++) {
-    bvh.push_back(center[i]);
-  }
-  for (int i=0; i<3; i++) {
-    bvh.push_back(size[i]);
-  }
-
-  // leaf node, return
-  if (nelements==1) {
-    for (int i=0; i<2; i++) {
-      child[2*index+i] = -1;
-    }
-    nodeid[index] = elements[0]->id;
-    return index;
-  }
-
-  // find longest axis for splitting the bounding box
-  mjtNum edges[3] = { AABB[3]-AABB[0], AABB[4]-AABB[1], AABB[5]-AABB[2] };
-  int axis = edges[0] > edges[1] ? 0 : 1;
-  axis = edges[axis] > edges[2] ? axis : 2;
-
-  // find median along the axis
-  std::vector<mjtNum> pos(nelements);
-
-  for (int i=0; i<nelements; i++) {
-    // get position in the body inertial frame
-    mjtNum vert[3] = {elements[i]->pos[0] - ipos[0],
-                      elements[i]->pos[1] - ipos[1],
-                      elements[i]->pos[2] - ipos[2]};
-    mjtNum lpos[3];
-    mju_rotVecQuat(lpos, vert, qinv);
-    pos[i] = lpos[axis];
-  }
-
-  auto m = pos.size()/2;
-  std::nth_element(pos.begin(), pos.begin() + m, pos.end());
-  mjtNum threshold = pos[m];
-
-  // split using median
-  std::vector<mjCGeom *> left;
-  std::vector<mjCGeom *> right;
-  int skipped = 0;
-
-  for (int i=0; i<nelements; i++) {
-    // get position in the body inertial frame
-    mjtNum vert[3] = {elements[i]->pos[0] - ipos[0],
-                      elements[i]->pos[1] - ipos[1],
-                      elements[i]->pos[2] - ipos[2]};
-    mjtNum lpos[3];
-    mju_rotVecQuat(lpos, vert, qinv);
-
-    // skip visual objects
-    if (elements[i]->conaffinity==0 && elements[i]->contype==0) {
-      skipped++;
-      continue;
-    }
-    if (lpos[axis] < threshold) {
-      left.push_back(elements[i]);
-    } else if (lpos[axis] > threshold) {
-      right.push_back(elements[i]);
-    } else {
-      if (left.size() < right.size()) left.push_back(elements[i]);
-      else right.push_back(elements[i]);
-    }
-  }
-
-  // recursive calls
-  if (!left.empty()) {
-    child[2*index+0] = MakeBVH(left, lev+1);
-  }
-
-  if (!right.empty()) {
-    child[2*index+1] = MakeBVH(right, lev+1);
-  }
-
-  // SHOULD NOT OCCUR
-  if (left.size()+right.size()+skipped != nelements) {
-    throw mjCError(this, "some elements were lost, body=%s parent=%d children=%d",
-                   name.c_str(), nelements, left.size()+right.size()+skipped);
-  }
-
-  if (child[2*index+0]==-1 && child[2*index+1]==-1 && !skipped) {
-    throw mjCError(this, "this should have been a leaf, body=%s nelements=%d",
-                   name.c_str(), nelements);
-  }
-
-  return index;
-}
-
-
 // compiler
 void mjCBody::Compile(void) {
-  unsigned int i;
-
   // resize userdata
   if (userdata.size() > model->nuser_body) {
     throw mjCError(this, "user has more values than nuser_body in body '%s' (id = %d)",
@@ -829,9 +828,9 @@ void mjCBody::Compile(void) {
   }
   userdata.resize(model->nuser_body);
 
-  // pos defaults to (0,0,0) in local coordinates
-  if (!mjuu_defined(pos[0]) && !model->global) {
-    mjuu_setvec(pos, 0, 0, 0);
+  // pos defaults to (0,0,0)
+  if (!mjuu_defined(pos[0])) {
+     mjuu_setvec(pos, 0, 0, 0);
   }
 
   // normalize user-defined quaternions
@@ -839,7 +838,7 @@ void mjCBody::Compile(void) {
   mjuu_normvec(iquat, 4);
 
   // set parentid and weldid of children
-  for (i=0; i<bodies.size(); i++) {
+  for (int i=0; i<bodies.size(); i++) {
     bodies[i]->parentid = id;
     bodies[i]->weldid = (!bodies[i]->joints.empty() ? bodies[i]->id : weldid);
   }
@@ -857,7 +856,7 @@ void mjCBody::Compile(void) {
   }
 
   // compile all geoms, phase 1
-  for (i=0; i<geoms.size(); i++) {
+  for (int i=0; i<geoms.size(); i++) {
     geoms[i]->inferinertia = id>0 &&
       (!explicitinertial || model->inertiafromgeom == mjINERTIAFROMGEOM_TRUE) &&
       geoms[i]->group >= model->inertiagrouprange[0] &&
@@ -924,18 +923,19 @@ void mjCBody::Compile(void) {
   }
 
   // make local frames of geoms
-  for (i=0; i<geoms.size(); i++) {
+  for (int i=0; i<geoms.size(); i++) {
     MakeLocal(geoms[i]->locpos, geoms[i]->locquat, geoms[i]->pos, geoms[i]->quat);
   }
 
   // compute bounding volume hierarchy
   if (!geoms.empty()) {
-    MakeBVH(geoms, 0);
+    tree.Set(ipos, iquat);
+    tree.MakeBVH(geoms);
   }
 
   // compile all joints, count dofs
   dofnum = 0;
-  for (i=0; i<joints.size(); i++) {
+  for (int i=0; i<joints.size(); i++) {
     dofnum += joints[i]->Compile();
   }
 
@@ -946,7 +946,7 @@ void mjCBody::Compile(void) {
 
   // check for rotation dof after ball joint
   bool hasball = false;
-  for (i=0; i<joints.size(); i++) {
+  for (int i=0; i<joints.size(); i++) {
     if ((joints[i]->type==mjJNT_BALL || joints[i]->type==mjJNT_HINGE) && hasball) {
       throw mjCError(this, "ball followed by rotation in body '%s'", name.c_str());
     }
@@ -962,13 +962,13 @@ void mjCBody::Compile(void) {
     }
 
   // compile all sites
-  for (i=0; i<sites.size(); i++) sites[i]->Compile();
+  for (int i=0; i<sites.size(); i++) sites[i]->Compile();
 
   // compile all cameras
-  for (i=0; i<cameras.size(); i++) cameras[i]->Compile();
+  for (int i=0; i<cameras.size(); i++) cameras[i]->Compile();
 
   // compile all lights
-  for (i=0; i<lights.size(); i++) lights[i]->Compile();
+  for (int i=0; i<lights.size(); i++) lights[i]->Compile();
 
   // plugin
   if (is_plugin) {
@@ -1116,12 +1116,8 @@ int mjCJoint::Compile(void) {
     mjuu_zerovec(locpos, 3);
   }
 
-  // compute local axis relative to specified body
-  if (model->global) {
-    mjuu_localaxis(locaxis, axis, body->quat);
-  } else {
-    mjuu_copyvec(locaxis, axis, 3);
-  }
+  // copy axis to local
+  mjuu_copyvec(locaxis, axis, 3);
 
   // convert reference angles to radians for hinge joints
   if (type==mjJNT_HINGE && model->degree) {
@@ -1218,7 +1214,7 @@ double mjCGeom::GetVolume(void) {
     }
 
     mjCMesh* pmesh = model->meshes[meshid];
-    if (model->exactmeshinertia) {
+    if (model->exactmeshinertia || typeinertia==mjSHELL_MESH) {
       return pmesh->GetVolumeRef(typeinertia);
     } else {
       return pmesh->boxsz_volume[0]*pmesh->boxsz_volume[1]*pmesh->boxsz_volume[2]*8;
@@ -1934,14 +1930,8 @@ void mjCLight::Compile(void) {
   // ask parent body to compute our local pos and quat relative to itself
   body->MakeLocal(locpos, locquat, pos, quat);
 
-  // copy/convert dir to local frame
-  if (model->global) {
-    double mat[9], q[4] = {locquat[0], -locquat[1], -locquat[2], -locquat[3]};
-    mjuu_quat2mat(mat, q);
-    mjuu_mulvecmat(locdir, dir, mat);
-  } else {
-    mjuu_copyvec(locdir, dir, 3);
-  }
+  // copy dir to local frame
+  mjuu_copyvec(locdir, dir, 3);
 
   // get targetbodyid
   if (!targetbody.empty()) {
@@ -1988,33 +1978,27 @@ mjCHField::~mjCHField() {
 
 
 // load elevation data from custom format
-void mjCHField::LoadCustom(string filename, const mjVFS* vfs) {
+void mjCHField::LoadCustom(string filename, int default_provider) {
   // get file data in buffer
-  void* buffer = 0;
-  int buffer_sz = 0, flag_existing = 0;
-  if (vfs) {
-    int id = mj_findFileVFS(vfs, filename.c_str());
-    if (id>=0) {
-      buffer = vfs->filedata[id];
-      buffer_sz = vfs->filesize[id];
-      flag_existing = 1;
+  const void* buffer = 0;
+  mjResource* resource = nullptr;
+
+  if((resource = mju_openResource(filename.c_str(), default_provider)) == nullptr) {
+    // default to OS filesystem
+    if (!default_provider || (resource = mju_openResource(filename.c_str(), 0)) == nullptr) {
+      throw mjCError(this, "could not open hfield file '%s'", filename.c_str());
     }
   }
 
-  // if not found in vfs, read from file
-  if (!buffer) {
-    buffer = mju_fileToMemory(filename.c_str(), &buffer_sz);
-  }
+  int buffer_sz = mju_readResource(resource, &buffer);
 
   // still not found
-  if (!buffer || !buffer_sz) {
+  if (!buffer || buffer_sz < 1) {
     throw mjCError(this, "could not open hfield file '%s'", filename.c_str());
   }
 
   if (buffer_sz < 2*sizeof(int)) {
-    if (!flag_existing) {
-      mju_free(buffer);
-    }
+    mju_closeResource(resource);
     throw mjCError(this, "hfield missing header '%s'", filename.c_str());
   }
 
@@ -2025,76 +2009,69 @@ void mjCHField::LoadCustom(string filename, const mjVFS* vfs) {
 
   // check dimensions
   if (nrow<1 || ncol<1) {
-    if (!flag_existing) {
-      mju_free(buffer);
-    }
-
+    mju_closeResource(resource);
     throw mjCError(this, "non-positive hfield dimensions in file '%s'", filename.c_str());
   }
 
   // check buffer size
   if (buffer_sz != nrow*ncol*sizeof(float)+8) {
-    if (!flag_existing) {
-      mju_free(buffer);
-    }
-
+    mju_closeResource(resource);
     throw mjCError(this, "unexpected file size in file '%s'", filename.c_str());
   }
 
   // allocate
   data = (float*) mju_malloc(nrow*ncol*sizeof(float));
   if (!data) {
-    if (!flag_existing) {
-      mju_free(buffer);
-    }
-
+    mju_closeResource(resource);
     throw mjCError(this, "could not allocate buffers in hfield");
   }
 
   // copy data
   memcpy(data, (void*)(pint+2), nrow*ncol*sizeof(float));
 
-  // free buffer if allocated here
-  if (!flag_existing) {
-    mju_free(buffer);
-  }
+  // close file
+  mju_closeResource(resource);
 }
 
 
 
 // load elevation data from PNG format
-void mjCHField::LoadPNG(string filename, const mjVFS* vfs) {
+void mjCHField::LoadPNG(string filename, int default_provider) {
   // determine data source
-  const unsigned char* inbuffer = 0;
-  size_t inbuffer_sz = 0;
-  if (vfs) {
-    int id = mj_findFileVFS(vfs, filename.c_str());
-    if (id>=0) {
-      inbuffer = (const unsigned char*)vfs->filedata[id];
-      inbuffer_sz = (size_t)vfs->filesize[id];
-    }
+  const void* inbuffer = 0;
+  mjResource* resource = nullptr;
+
+  if((resource = mju_openResource(filename.c_str(), default_provider)) == nullptr) {
+    throw mjCError(this, "could not open PNG file '%s'", filename.c_str());
+  }
+
+  int inbuffer_sz = mju_readResource(resource, &inbuffer);
+
+  // still not found
+  if (!inbuffer || inbuffer_sz < 1) {
+    mju_closeResource(resource);
+    throw mjCError(this, "could not open PNG file '%s'", filename.c_str());
   }
 
   // load PNG from file or memory
   unsigned int w, h, err;
   std::vector<unsigned char> image;
-  if (inbuffer_sz) {
-    err = lodepng::decode(image, w, h, inbuffer, inbuffer_sz, LCT_GREY, 8);
-  } else {
-    err = lodepng::decode(image, w, h, filename, LCT_GREY, 8);
-  }
+  err = lodepng::decode(image, w, h, (const unsigned char*) inbuffer, inbuffer_sz, LCT_GREY, 8);
 
   // check
   if (err) {
+    mju_closeResource(resource);
     throw mjCError(this, "PNG load error '%s' in hfield id = %d", lodepng_error_text(err), id);
   }
   if (!w || !h) {
+    mju_closeResource(resource);
     throw mjCError(this, "Zero dimension in PNG hfield '%s' (id = %d)", name.c_str(), id);
   }
 
   // allocate
   data = (float*) mju_malloc(w*h*sizeof(float));
   if (!data) {
+    mju_closeResource(resource);
     throw mjCError(this, "could not allocate buffers in hfield");
   }
 
@@ -2106,12 +2083,13 @@ void mjCHField::LoadPNG(string filename, const mjVFS* vfs) {
       data[c+(nrow-1-r)*ncol] = (float)image[c+r*ncol];
     }
   image.clear();
+  mju_closeResource(resource);
 }
 
 
 
 // compiler
-void mjCHField::Compile(const mjVFS* vfs) {
+void mjCHField::Compile(int default_provider) {
   // check size parameters
   for (int i=0; i<4; i++)
     if (size[i]<=0)
@@ -2137,9 +2115,9 @@ void mjCHField::Compile(const mjVFS* vfs) {
     // load depending on format
     string ext = mjuu_getext(filename);
     if (!strcasecmp(ext.c_str(), ".png")) {
-      LoadPNG(filename, vfs);
+      LoadPNG(filename, default_provider);
     } else {
-      LoadCustom(filename, vfs);
+      LoadCustom(filename, default_provider);
     }
   }
 
@@ -2217,11 +2195,10 @@ mjCTexture::~mjCTexture() {
 // insert random dots
 static void randomdot(unsigned char* rgb, const double* markrgb,
                       int width, int height, double probability) {
-  int r, c, j;
-  for (r=0; r<height; r++) {
-    for (c=0; c<width; c++) {
+  for (int r=0; r<height; r++) {
+    for (int c=0; c<width; c++) {
       if (rand()<probability*RAND_MAX) {
-        for (j=0; j<3; j++) {
+        for (int j=0; j<3; j++) {
           rgb[3*(r*width+c)+j] = (mjtByte)(255*markrgb[j]);
         }
       }
@@ -2251,25 +2228,23 @@ static void interp(unsigned char* rgb, const double* rgb1, const double* rgb2, d
 // make checker pattern for one side
 static void checker(unsigned char* rgb, const unsigned char* RGB1, const unsigned char* RGB2,
                     int width, int height) {
-  int r, c;
-
-  for (r=0; r<height/2; r++) {
-    for (c=0; c<width/2; c++) {
+  for (int r=0; r<height/2; r++) {
+    for (int c=0; c<width/2; c++) {
       memcpy(rgb+3*(r*width+c), RGB1, 3);
     }
   }
-  for (r=height/2; r<height; r++) {
-    for (c=width/2; c<width; c++) {
+  for (int r=height/2; r<height; r++) {
+    for (int c=width/2; c<width; c++) {
       memcpy(rgb+3*(r*width+c), RGB1, 3);
     }
   }
-  for (r=0; r<height/2; r++) {
-    for (c=width/2; c<width; c++) {
+  for (int r=0; r<height/2; r++) {
+    for (int c=width/2; c<width; c++) {
       memcpy(rgb+3*(r*width+c), RGB2, 3);
     }
   }
-  for (r=height/2; r<height; r++) {
-    for (c=0; c<width/2; c++) {
+  for (int r=height/2; r<height; r++) {
+    for (int c=0; c<width/2; c++) {
       memcpy(rgb+3*(r*width+c), RGB2, 3);
     }
   }
@@ -2280,10 +2255,8 @@ static void checker(unsigned char* rgb, const unsigned char* RGB1, const unsigne
 // make builtin: 2D
 void mjCTexture::Builtin2D(void) {
   unsigned char RGB1[3], RGB2[3], RGBm[3];
-  int r, c, j;
-
   // convert fixed colors
-  for (j=0; j<3; j++) {
+  for (int j=0; j<3; j++) {
     RGB1[j] = (mjtByte)(255*rgb1[j]);
     RGB2[j] = (mjtByte)(255*rgb2[j]);
     RGBm[j] = (mjtByte)(255*markrgb[j]);
@@ -2293,8 +2266,8 @@ void mjCTexture::Builtin2D(void) {
 
   // gradient
   if (builtin==mjBUILTIN_GRADIENT) {
-    for (r=0; r<height; r++) {
-      for (c=0; c<width; c++) {
+    for (int r=0; r<height; r++) {
+      for (int c=0; c<width; c++) {
         // compute normalized coordinates and radius
         double x = 2*c/((double)(width-1)) - 1;
         double y = 1 - 2*r/((double)(height-1));
@@ -2313,8 +2286,8 @@ void mjCTexture::Builtin2D(void) {
 
   // flat
   else if (builtin==mjBUILTIN_FLAT) {
-    for (r=0; r<height; r++) {
-      for (c=0; c<width; c++) {
+    for (int r=0; r<height; r++) {
+      for (int c=0; c<width; c++) {
         memcpy(rgb+3*(r*width+c), RGB1, 3);
       }
     }
@@ -2324,11 +2297,11 @@ void mjCTexture::Builtin2D(void) {
 
   // edge
   if (mark==mjMARK_EDGE) {
-    for (r=0; r<height; r++) {
+    for (int r=0; r<height; r++) {
       memcpy(rgb+3*(r*width+0), RGBm, 3);
       memcpy(rgb+3*(r*width+width-1), RGBm, 3);
     }
-    for (c=0; c<width; c++) {
+    for (int c=0; c<width; c++) {
       memcpy(rgb+3*(0*width+c), RGBm, 3);
       memcpy(rgb+3*((height-1)*width+c), RGBm, 3);
     }
@@ -2336,10 +2309,10 @@ void mjCTexture::Builtin2D(void) {
 
   // cross
   else if (mark==mjMARK_CROSS) {
-    for (r=0; r<height; r++) {
+    for (int r=0; r<height; r++) {
       memcpy(rgb+3*(r*width+width/2), RGBm, 3);
     }
-    for (c=0; c<width; c++) {
+    for (int c=0; c<width; c++) {
       memcpy(rgb+3*(height/2*width+c), RGBm, 3);
     }
   }
@@ -2355,10 +2328,9 @@ void mjCTexture::Builtin2D(void) {
 // make builtin: Cube
 void mjCTexture::BuiltinCube(void) {
   unsigned char RGB1[3], RGB2[3], RGBm[3], RGBi[3];
-  int r, c, j;
 
   // convert fixed colors
-  for (j=0; j<3; j++) {
+  for (int j=0; j<3; j++) {
     RGB1[j] = (mjtByte)(255*rgb1[j]);
     RGB2[j] = (mjtByte)(255*rgb2[j]);
     RGBm[j] = (mjtByte)(255*markrgb[j]);
@@ -2368,8 +2340,8 @@ void mjCTexture::BuiltinCube(void) {
 
   // gradient
   if (builtin==mjBUILTIN_GRADIENT) {
-    for (r=0; r<width; r++) {
-      for (c=0; c<width; c++) {
+    for (int r=0; r<width; r++) {
+      for (int c=0; c<width; c++) {
         // compute normalized pixel coordinates
         double x = 2*c/((double)(width-1)) - 1;
         double y = 1 - 2*r/((double)(width-1));
@@ -2404,8 +2376,8 @@ void mjCTexture::BuiltinCube(void) {
 
   // flat
   else if (builtin==mjBUILTIN_FLAT) {
-    for (r=0; r<width; r++) {
-      for (c=0; c<width; c++) {
+    for (int r=0; r<width; r++) {
+      for (int c=0; c<width; c++) {
         // set sides and up
         memcpy(rgb+0*3*width*width+3*(r*width+c), RGB1, 3);
         memcpy(rgb+1*3*width*width+3*(r*width+c), RGB1, 3);
@@ -2423,12 +2395,12 @@ void mjCTexture::BuiltinCube(void) {
 
   // edge
   if (mark==mjMARK_EDGE) {
-    for (j=0; j<6; j++) {
-      for (r=0; r<width; r++) {
+    for (int j=0; j<6; j++) {
+      for (int r=0; r<width; r++) {
         memcpy(rgb+j*3*width*width+3*(r*width+0), RGBm, 3);
         memcpy(rgb+j*3*width*width+3*(r*width+width-1), RGBm, 3);
       }
-      for (c=0; c<width; c++) {
+      for (int c=0; c<width; c++) {
         memcpy(rgb+j*3*width*width+3*(0*width+c), RGBm, 3);
         memcpy(rgb+j*3*width*width+3*((width-1)*width+c), RGBm, 3);
       }
@@ -2437,11 +2409,11 @@ void mjCTexture::BuiltinCube(void) {
 
   // cross
   else if (mark==mjMARK_CROSS) {
-    for (j=0; j<6; j++) {
-      for (r=0; r<width; r++) {
+    for (int j=0; j<6; j++) {
+      for (int r=0; r<width; r++) {
         memcpy(rgb+j*3*width*width+3*(r*width+width/2), RGBm, 3);
       }
-      for (c=0; c<width; c++) {
+      for (int c=0; c<width; c++) {
         memcpy(rgb+j*3*width*width+3*(width/2*width+c), RGBm, 3);
       }
     }
@@ -2456,27 +2428,27 @@ void mjCTexture::BuiltinCube(void) {
 
 
 // load PNG file
-void mjCTexture::LoadPNG(string filename, const mjVFS* vfs,
+void mjCTexture::LoadPNG(string filename, int default_provider,
                          std::vector<unsigned char>& image,
                          unsigned int& w, unsigned int& h) {
-  // determine data source
-  const unsigned char* inbuffer = 0;
-  size_t inbuffer_sz = 0;
-  if (vfs) {
-    int id = mj_findFileVFS(vfs, filename.c_str());
-    if (id>=0) {
-      inbuffer = (const unsigned char*)vfs->filedata[id];
-      inbuffer_sz = (size_t)vfs->filesize[id];
-    }
+  const void* inbuffer = 0;
+  mjResource* resource = nullptr;
+
+  if((resource = mju_openResource(filename.c_str(), default_provider)) == nullptr) {
+    throw mjCError(this, "could not open PNG file '%s'", filename.c_str());
+  }
+
+  int inbuffer_sz = mju_readResource(resource, &inbuffer);
+
+  // still not found
+  if (!inbuffer || inbuffer_sz < 1) {
+    mju_closeResource(resource);
+    throw mjCError(this, "could not open PNG file '%s'", filename.c_str());
   }
 
   // load PNG from file or memory
-  unsigned int err;
-  if (inbuffer_sz) {
-    err = lodepng::decode(image, w, h, inbuffer, inbuffer_sz, LCT_RGB, 8);
-  } else {
-    err = lodepng::decode(image, w, h, filename, LCT_RGB, 8);
-  }
+  unsigned int err = lodepng::decode(image, w, h, (const unsigned char*) inbuffer, inbuffer_sz, LCT_RGB, 8);
+  mju_closeResource(resource);
 
   // check
   if (err) {
@@ -2491,28 +2463,24 @@ void mjCTexture::LoadPNG(string filename, const mjVFS* vfs,
 
 
 // load custom file
-void mjCTexture::LoadCustom(string filename, const mjVFS* vfs,
+void mjCTexture::LoadCustom(string filename, int default_provider,
                             std::vector<unsigned char>& image,
                             unsigned int& w, unsigned int& h) {
-  // get file data in buffer
-  void* buffer = 0;
-  int buffer_sz = 0, flag_existing = 0;
-  if (vfs) {
-    int id = mj_findFileVFS(vfs, filename.c_str());
-    if (id>=0) {
-      buffer = vfs->filedata[id];
-      buffer_sz = vfs->filesize[id];
-      flag_existing = 1;
+  const void* buffer = 0;
+  mjResource* resource = nullptr;
+
+  if((resource = mju_openResource(filename.c_str(), default_provider)) == nullptr) {
+    // default to OS filesystem
+    if (!default_provider || (resource = mju_openResource(filename.c_str(), 0)) == nullptr) {
+      throw mjCError(this, "could not open texture file '%s'", filename.c_str());
     }
   }
 
-  // if not found in vfs, read from file
-  if (!buffer) {
-    buffer = mju_fileToMemory(filename.c_str(), &buffer_sz);
-  }
+  int buffer_sz = mju_readResource(resource, &buffer);
 
   // still not found
-  if (!buffer || !buffer_sz) {
+  if (!buffer || buffer_sz < 0) {
+    mju_closeResource(resource);
     throw mjCError(this, "could not open texture file '%s'", filename.c_str());
   }
 
@@ -2523,20 +2491,14 @@ void mjCTexture::LoadCustom(string filename, const mjVFS* vfs,
 
   // check dimensions
   if (w<1 || h<1) {
-    if (!flag_existing) {
-      mju_free(buffer);
-    }
-
+    mju_closeResource(resource);
     throw mjCError(this, "Non-PNG texture, assuming custom binary file format,\n"
                          "non-positive texture dimensions in file '%s'", filename.c_str());
   }
 
   // check buffer size
   if (buffer_sz != 2*sizeof(int) + w*h*3*sizeof(char)) {
-    if (!flag_existing) {
-      mju_free(buffer);
-    }
-
+    mju_closeResource(resource);
     throw mjCError(this, "Non-PNG texture, assuming custom binary file format,\n"
                          "unexpected file size in file '%s'", filename.c_str());
   }
@@ -2545,24 +2507,21 @@ void mjCTexture::LoadCustom(string filename, const mjVFS* vfs,
   image.resize(w*h*3);
   memcpy(image.data(), (void*)(pint+2), w*h*3*sizeof(char));
 
-  // free buffer if allocated here
-  if (!flag_existing) {
-    mju_free(buffer);
-  }
+  mju_closeResource(resource);
 }
 
 
 
 // load from PNG or custom file, flip if specified
-void mjCTexture::LoadFlip(string filename, const mjVFS* vfs,
+void mjCTexture::LoadFlip(string filename, int default_provider,
                           std::vector<unsigned char>& image,
                           unsigned int& w, unsigned int& h) {
   // dispatch to PNG or Custom loaded
   string ext = mjuu_getext(filename);
   if (!strcasecmp(ext.c_str(), ".png")) {
-    LoadPNG(filename, vfs, image, w, h);
+    LoadPNG(filename, default_provider, image, w, h);
   } else {
-    LoadCustom(filename, vfs, image, w, h);
+    LoadCustom(filename, default_provider, image, w, h);
   }
 
   // horizontal flip
@@ -2613,11 +2572,11 @@ void mjCTexture::LoadFlip(string filename, const mjVFS* vfs,
 
 
 // load 2D
-void mjCTexture::Load2D(string filename, const mjVFS* vfs) {
+void mjCTexture::Load2D(string filename, int default_provider) {
   // load PNG or custom
   unsigned int w, h;
   std::vector<unsigned char> image;
-  LoadFlip(filename, vfs, image, w, h);
+  LoadFlip(filename, default_provider, image, w, h);
 
   // assign size
   width = w;
@@ -2636,9 +2595,7 @@ void mjCTexture::Load2D(string filename, const mjVFS* vfs) {
 
 
 // load cube or skybox from single file (repeated or grid)
-void mjCTexture::LoadCubeSingle(string filename, const mjVFS* vfs) {
-  int i, j, k, s;
-
+void mjCTexture::LoadCubeSingle(string filename, int default_provider) {
   // check gridsize
   if (gridsize[0]<1 || gridsize[1]<1 || gridsize[0]*gridsize[1]>12) {
     throw mjCError(this,
@@ -2649,7 +2606,7 @@ void mjCTexture::LoadCubeSingle(string filename, const mjVFS* vfs) {
   // load PNG or custom
   unsigned int w, h;
   std::vector<unsigned char> image;
-  LoadFlip(filename, vfs, image, w, h);
+  LoadFlip(filename, default_provider, image, w, h);
 
   // check gridsize for compatibility
   if (w/gridsize[1]!=h/gridsize[0] || (w%gridsize[1]) || (h%gridsize[0])) {
@@ -2685,9 +2642,9 @@ void mjCTexture::LoadCubeSingle(string filename, const mjVFS* vfs) {
     int loaded[6] = {0, 0, 0, 0, 0, 0};
 
     // process grid
-    for (k=0; k<gridsize[0]*gridsize[1]; k++) {
+    for (int k=0; k<gridsize[0]*gridsize[1]; k++) {
       // decode face symbol
-      i = -1;
+      int i = -1;
       if (gridlayout[k]=='R') {
         i = 0;
       } else if (gridlayout[k]=='L') {
@@ -2709,7 +2666,7 @@ void mjCTexture::LoadCubeSingle(string filename, const mjVFS* vfs) {
         // extract sub-image
         int rstart = width*(k/gridsize[1]);
         int cstart = width*(k%gridsize[1]);
-        for (j=0; j<width; j++) {
+        for (int j=0; j<width; j++) {
           memcpy(rgb+i*3*width*width+j*3*width, image.data()+(j+rstart)*3*w+3*cstart, 3*width);
         }
 
@@ -2719,11 +2676,11 @@ void mjCTexture::LoadCubeSingle(string filename, const mjVFS* vfs) {
     }
 
     // set undefined faces to rgb1
-    for (i=0; i<6; i++) {
+    for (int i=0; i<6; i++) {
       if (!loaded[i]) {
-        for (k=0; k<width; k++) {
-          for (s=0; s<width; s++) {
-            for (j=0; j<3; j++) {
+        for (int k=0; k<width; k++) {
+          for (int s=0; s<width; s++) {
+            for (int j=0; j<3; j++) {
               rgb[i*3*width*width + 3*(k*width+s) + j] = (mjtByte)(255*rgb1[j]);
             }
           }
@@ -2738,14 +2695,12 @@ void mjCTexture::LoadCubeSingle(string filename, const mjVFS* vfs) {
 
 
 // load cube or skybox from separate file
-void mjCTexture::LoadCubeSeparate(const mjVFS* vfs) {
-  int i, j, k, s;
-
+void mjCTexture::LoadCubeSeparate(int default_provider) {
   // keep track of which faces were defined
   int loaded[6] = {0, 0, 0, 0, 0, 0};
 
   // process nonempty files
-  for (i=0; i<6; i++) {
+  for (int i=0; i<6; i++) {
     if (!cubefiles[i].empty()) {
       // remove path from file if necessary
       if (model->strippath) {
@@ -2758,7 +2713,7 @@ void mjCTexture::LoadCubeSeparate(const mjVFS* vfs) {
       // load PNG or custom
       unsigned int w, h;
       std::vector<unsigned char> image;
-      LoadFlip(filename, vfs, image, w, h);
+      LoadFlip(filename, default_provider, image, w, h);
 
       // PNG must be square
       if (w!=h) {
@@ -2796,11 +2751,11 @@ void mjCTexture::LoadCubeSeparate(const mjVFS* vfs) {
   }
 
   // set undefined faces to rgb1
-  for (i=0; i<6; i++) {
+  for (int i=0; i<6; i++) {
     if (!loaded[i]) {
-      for (k=0; k<width; k++) {
-        for (s=0; s<width; s++) {
-          for (j=0; j<3; j++) {
+      for (int k=0; k<width; k++) {
+        for (int s=0; s<width; s++) {
+          for (int j=0; j<3; j++) {
             rgb[i*3*width*width + 3*(k*width+s) + j] = (mjtByte)(255*rgb1[j]);
           }
         }
@@ -2812,7 +2767,7 @@ void mjCTexture::LoadCubeSeparate(const mjVFS* vfs) {
 
 
 // compiler
-void mjCTexture::Compile(const mjVFS* vfs) {
+void mjCTexture::Compile(int default_provider) {
   // builtin
   if (builtin!=mjBUILTIN_NONE) {
     // check size
@@ -2855,9 +2810,9 @@ void mjCTexture::Compile(const mjVFS* vfs) {
 
     // dispatch
     if (type==mjTEXTURE_2D) {
-      Load2D(filename, vfs);
+      Load2D(filename, default_provider);
     } else {
-      LoadCubeSingle(filename, vfs);
+      LoadCubeSingle(filename, default_provider);
     }
   }
 
@@ -2885,7 +2840,7 @@ void mjCTexture::Compile(const mjVFS* vfs) {
     }
 
     // only cube and skybox
-    LoadCubeSeparate(vfs);
+    LoadCubeSeparate(default_provider);
   }
 
   // make sure someone allocated data; SHOULD NOT OCCUR
@@ -4419,12 +4374,11 @@ mjCKey::~mjCKey() {
 
 // compiler
 void mjCKey::Compile(const mjModel* m) {
-  int i;
 
   // qpos: allocate or check size
   if (qpos.empty()) {
     qpos.resize(m->nq);
-    for (i=0; i<m->nq; i++) {
+    for (int i=0; i<m->nq; i++) {
       qpos[i] = (double)m->qpos0[i];
     }
   } else if (qpos.size()!=m->nq) {
@@ -4434,7 +4388,7 @@ void mjCKey::Compile(const mjModel* m) {
   // qvel: allocate or check size
   if (qvel.empty()) {
     qvel.resize(m->nv);
-    for (i=0; i<m->nv; i++) {
+    for (int i=0; i<m->nv; i++) {
       qvel[i] = 0;
     }
   } else if (qvel.size()!=m->nv) {
@@ -4444,7 +4398,7 @@ void mjCKey::Compile(const mjModel* m) {
   // act: allocate or check size
   if (act.empty()) {
     act.resize(m->na);
-    for (i=0; i<m->na; i++) {
+    for (int i=0; i<m->na; i++) {
       act[i] = 0;
     }
   } else if (act.size()!=m->na) {
@@ -4455,7 +4409,7 @@ void mjCKey::Compile(const mjModel* m) {
   if (mpos.empty()) {
     mpos.resize(3*m->nmocap);
     if (m->nmocap) {
-      for (i=0; i<m->nbody; i++) {
+      for (int i=0; i<m->nbody; i++) {
         if (m->body_mocapid[i]>=0) {
           int mocapid = m->body_mocapid[i];
           mpos[3*mocapid]   = m->body_pos[3*i];
@@ -4472,7 +4426,7 @@ void mjCKey::Compile(const mjModel* m) {
   if (mquat.empty()) {
     mquat.resize(4*m->nmocap);
     if (m->nmocap) {
-      for (i=0; i<m->nbody; i++) {
+      for (int i=0; i<m->nbody; i++) {
         if (m->body_mocapid[i]>=0) {
           int mocapid = m->body_mocapid[i];
           mquat[4*mocapid]   = m->body_quat[4*i];
@@ -4489,7 +4443,7 @@ void mjCKey::Compile(const mjModel* m) {
   // ctrl: allocate or check size
   if (ctrl.empty()) {
     ctrl.resize(m->nu);
-    for (i=0; i<m->nu; i++) {
+    for (int i=0; i<m->nu; i++) {
       ctrl[i] = 0;
     }
   } else if (ctrl.size()!=m->nu) {

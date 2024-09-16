@@ -369,6 +369,12 @@ void mj_collision(const mjModel* m, mjData* d) {
   // reset the size of the contact array
   d->ncon = 0;
 
+  // reset diagnostics
+  d->nbodypair_broad = 0;
+  d->nbodypair_narrow = 0;
+  d->ngeompair_mid = 0;
+  d->ngeompair_narrow = 0;
+
   // reset the visualization flags
   memset(d->bvh_active, 0, m->nbvh);
 
@@ -380,8 +386,13 @@ void mj_collision(const mjModel* m, mjData* d) {
 
   // predefined only; ignore exclude
   if (m->opt.collision==mjCOL_PAIR) {
+    d->nbodypair_broad = npair;
     for (pairadr=0; pairadr<npair; pairadr++) {
+      int ngeompair_narrow_before = d->ngeompair_narrow;
+      int ngeompair_mid_before = d->ngeompair_mid;
       mj_collideGeoms(m, d, pairadr, -1, 0, 0);
+      if (d->ngeompair_narrow > ngeompair_narrow_before) d->nbodypair_narrow++;
+      if (d->ngeompair_mid > ngeompair_mid_before) d->nbodypair_broad++;
     }
   }
 
@@ -434,6 +445,9 @@ void mj_collision(const mjModel* m, mjData* d) {
         }
       }
 
+      int ngeompair_narrow_before = d->ngeompair_narrow;
+      int ngeompair_mid_before = d->ngeompair_mid;
+
       // test all geom pairs within this body pair
       if (m->body_geomnum[b1] && m->body_geomnum[b2]) {
         if (!mjDISABLED(mjDSBL_MIDPHASE) && m->body_geomnum[b1]*m->body_geomnum[b2]>1) {
@@ -451,6 +465,8 @@ void mj_collision(const mjModel* m, mjData* d) {
           }
         }
       }
+      if (d->ngeompair_narrow > ngeompair_narrow_before) d->nbodypair_narrow++;
+      if (d->ngeompair_mid > ngeompair_mid_before) d->nbodypair_broad++;
     }
 
     // finish merging predefined pairs
@@ -632,7 +648,7 @@ static int can_collide(const mjModel* m, int b) {
 
 // broadphase collision detector
 int mj_broadphase(const mjModel* m, mjData* d, int* pair, int maxpair) {
-  int i, j, b1, b2, toremove, cnt, npair = 0, nbody = m->nbody, ngeom = m->ngeom;
+  int b1, b2, toremove, cnt, npair = 0, nbody = m->nbody, ngeom = m->ngeom;
   mjtNum cov[9], cen[3], dif[3], eigval[3], frame[9], quat[4];
   mjtBroadphase *sortbuf, *activebuf;
   mjtNum *aabb;
@@ -664,7 +680,7 @@ int mj_broadphase(const mjModel* m, mjData* d, int* pair, int maxpair) {
   // find center of non-world geoms; return if none
   cnt = 0;
   mju_zero3(cen);
-  for (i=0; i<ngeom; i++) {
+  for (int i=0; i<ngeom; i++) {
     if (m->geom_bodyid[i]) {
       mju_addTo3(cen, d->geom_xpos+3*i);
       cnt++;
@@ -673,14 +689,14 @@ int mj_broadphase(const mjModel* m, mjData* d, int* pair, int maxpair) {
   if (cnt==0) {
     return npair;
   } else {
-    for (i=0; i<3; i++) {
+    for (int i=0; i<3; i++) {
       cen[i] /= cnt;
     }
   }
 
   // compute covariance
   mju_zero(cov, 9);
-  for (i=0; i<ngeom; i++) {
+  for (int i=0; i<ngeom; i++) {
     if (m->geom_bodyid[i]) {
       mju_sub3(dif, d->geom_xpos+3*i, cen);
       mjtNum D00 = dif[0]*dif[0];
@@ -700,7 +716,7 @@ int mj_broadphase(const mjModel* m, mjData* d, int* pair, int maxpair) {
       cov[8] += D22;
     }
   }
-  for (i=0; i<9; i++) {
+  for (int i=0; i<9; i++) {
     cov[i] /= cnt;
   }
 
@@ -713,7 +729,7 @@ int mj_broadphase(const mjModel* m, mjData* d, int* pair, int maxpair) {
 
   // construct body AABB for the aligned frame, count collidable
   int bufcnt = 0;
-  for (i=1; i<nbody; i++) {
+  for (int i=1; i<nbody; i++) {
     makeAABB(m, d, aabb+6*i, i, frame);
 
     if (can_collide(m, i)) {
@@ -727,29 +743,29 @@ int mj_broadphase(const mjModel* m, mjData* d, int* pair, int maxpair) {
   }
 
   // allocate sort buffer
-  i = sizeof(mjtBroadphase)/sizeof(mjtNum);
-  j = sizeof(mjtBroadphase)%sizeof(mjtNum);
-  sortbuf = (mjtBroadphase*)mj_stackAlloc(d, 2*bufcnt*(i + (j ? 1 : 0)));
-  activebuf = (mjtBroadphase*)mj_stackAlloc(d, 2*bufcnt*(i + (j ? 1 : 0)));
+  int quot = sizeof(mjtBroadphase)/sizeof(mjtNum);
+  int rem = sizeof(mjtBroadphase)%sizeof(mjtNum);
+  sortbuf = (mjtBroadphase*)mj_stackAlloc(d, 2*bufcnt*(quot + (rem ? 1 : 0)));
+  activebuf = (mjtBroadphase*)mj_stackAlloc(d, 2*bufcnt*(quot + (rem ? 1 : 0)));
 
   // init sortbuf with axis0
-  j = 0;
-  for (i=1; i<nbody; i++) {
+  int k = 0;
+  for (int i=1; i<nbody; i++) {
     // cannot colide
     if (!can_collide(m, i)) {
       continue;
     }
 
     // init
-    sortbuf[2*j].body_ismax = i;
-    sortbuf[2*j].value = (float)aabb[6*i];
-    sortbuf[2*j+1].body_ismax = i + 0x10000;
-    sortbuf[2*j+1].value = (float)aabb[6*i+1];
-    j++;
+    sortbuf[2*k].body_ismax = i;
+    sortbuf[2*k].value = (float)aabb[6*i];
+    sortbuf[2*k+1].body_ismax = i + 0x10000;
+    sortbuf[2*k+1].value = (float)aabb[6*i+1];
+    k++;
   }
 
   // sanity check; SHOULD NOT OCCUR
-  if (j!=bufcnt) {
+  if (k!=bufcnt) {
     mju_error("Internal error in broadphase: unexpected bufcnt");
   }
 
@@ -758,10 +774,10 @@ int mj_broadphase(const mjModel* m, mjData* d, int* pair, int maxpair) {
 
   // sweep and prune
   cnt = 0;    // size of active list
-  for (i=0; i<2*bufcnt; i++) {
+  for (int i=0; i<2*bufcnt; i++) {
     // min value: collide with all in list, add
     if (!(sortbuf[i].body_ismax & 0x10000)) {
-      for (j=0; j<cnt; j++) {
+      for (int j=0; j<cnt; j++) {
         // get body ids: no need to mask ismax because activebuf entries never have the ismax bit,
         // and sortbuf[i].body_ismax is tested above
         b1 = activebuf[j].body_ismax;
@@ -797,7 +813,7 @@ int mj_broadphase(const mjModel* m, mjData* d, int* pair, int maxpair) {
     // max value: remove corresponding min value from list
     else {
       toremove = sortbuf[i].body_ismax & 0xFFFF;
-      for (j=0; j<cnt; j++) {
+      for (int j=0; j<cnt; j++) {
         if (activebuf[j].body_ismax==toremove) {
           if (j<cnt-1) {
             memmove(activebuf+j, activebuf+j+1, sizeof(mjtBroadphase)*(cnt-1-j));
@@ -828,7 +844,7 @@ endbroad:
 // test two geoms for collision, apply filters, add to contact list
 //  flg_user disables filters and uses usermargin
 void mj_collideGeoms(const mjModel* m, mjData* d, int g1, int g2, int flg_user, mjtNum usermargin) {
-  int i, num, type1, type2, condim;
+  int num, type1, type2, condim;
   mjtNum margin, gap, mix, friction[5], solref[mjNREF], solimp[mjNIMP];
   mjContact con[mjMAXCONPAIR];
   int ipair = (g2<0 ? g1 : -1);
@@ -841,7 +857,7 @@ void mj_collideGeoms(const mjModel* m, mjData* d, int g1, int g2, int flg_user, 
 
   // order geoms by type
   if (m->geom_type[g1] > m->geom_type[g2]) {
-    i = g1;
+    int i = g1;
     g1 = g2;
     g2 = i;
   }
@@ -905,6 +921,9 @@ void mj_collideGeoms(const mjModel* m, mjData* d, int g1, int g2, int flg_user, 
     return;
   }
 
+  // increment counter of expected collisions
+  d->ngeompair_mid++;
+
   // call collision detector to generate contacts
   num = mjCOLLISIONFUNC[type1][type2](m, d, con, g1, g2, margin);
 
@@ -912,6 +931,9 @@ void mj_collideGeoms(const mjModel* m, mjData* d, int g1, int g2, int flg_user, 
   if (!num) {
     return;
   }
+
+  // increment counter of actual collisions
+  d->ngeompair_narrow++;
 
   // check number of contacts, SHOULD NOT OCCUR
   if (num>mjMAXCONPAIR) {
@@ -921,14 +943,13 @@ void mj_collideGeoms(const mjModel* m, mjData* d, int g1, int g2, int flg_user, 
   // remove repeated contacts in box-box
   if (type1==mjGEOM_BOX && type2==mjGEOM_BOX) {
     // use dim field to mark: -1: bad, 0: good
-    for (i=0; i<num; i++) {
+    for (int i=0; i<num; i++) {
       con[i].dim = 0;
     }
 
     // find bad
-    int j;
-    for (i=0; i<num-1; i++) {
-      for (j=i+1; j<num; j++) {
+    for (int i=0; i<num-1; i++) {
+      for (int j=i+1; j<num; j++) {
         if (con[i].pos[0]==con[j].pos[0] &&
             con[i].pos[1]==con[j].pos[1] &&
             con[i].pos[2]==con[j].pos[2]) {
@@ -939,8 +960,8 @@ void mj_collideGeoms(const mjModel* m, mjData* d, int g1, int g2, int flg_user, 
     }
 
     // consolidate good
-    i = 0;
-    for (j=0; j<num; j++) {
+    int i = 0;
+    for (int j=0; j<num; j++) {
       if (con[j].dim==0) {
         // different: copy
         if (i<j) {
@@ -963,7 +984,7 @@ void mj_collideGeoms(const mjModel* m, mjData* d, int g1, int g2, int flg_user, 
       int gp = (m->geom_priority[g1]>m->geom_priority[g2] ? g1 : g2);
 
       // friction
-      for (i=0; i<3; i++) {
+      for (int i=0; i<3; i++) {
         friction[2*i] = m->geom_friction[3*gp+i];
       }
 
@@ -977,7 +998,7 @@ void mj_collideGeoms(const mjModel* m, mjData* d, int g1, int g2, int flg_user, 
     // same priority
     else {
       // friction: max
-      for (i=0; i<3; i++) {
+      for (int i=0; i<3; i++) {
         friction[2*i] = mju_max(m->geom_friction[3*g1+i], m->geom_friction[3*g2+i]);
       }
 
@@ -994,14 +1015,14 @@ void mj_collideGeoms(const mjModel* m, mjData* d, int g1, int g2, int flg_user, 
 
       // reference standard: mix
       if (m->geom_solref[mjNREF*g1]>0 && m->geom_solref[mjNREF*g2]>0) {
-        for (i=0; i<mjNREF; i++) {
+        for (int i=0; i<mjNREF; i++) {
           solref[i] = mix*m->geom_solref[mjNREF*g1+i] + (1-mix)*m->geom_solref[mjNREF*g2+i];
         }
       }
 
       // reference direct: min
       else {
-        for (i=0; i<mjNREF; i++) {
+        for (int i=0; i<mjNREF; i++) {
           solref[i] = mju_min(m->geom_solref[mjNREF*g1+i], m->geom_solref[mjNREF*g2+i]);
         }
       }
@@ -1019,7 +1040,7 @@ void mj_collideGeoms(const mjModel* m, mjData* d, int g1, int g2, int flg_user, 
   // set friction, solref, solimp: pair
   else {
     // friction
-    for (i=0; i<5; i++) {
+    for (int i=0; i<5; i++) {
       friction[i] = m->pair_friction[5*ipair+i];
     }
 
@@ -1031,12 +1052,12 @@ void mj_collideGeoms(const mjModel* m, mjData* d, int g1, int g2, int flg_user, 
   }
 
   // clamp friction to mjMINMU
-  for (i=0; i<5; i++) {
+  for (int i=0; i<5; i++) {
     friction[i] = mju_max(mjMINMU, friction[i]);
   }
 
   // add contact returned by collision detector
-  for (i=0; i<num; i++) {
+  for (int i=0; i<num; i++) {
     // set contact data
     if (condim > 6 || condim < 1) {  // SHOULD NOT OCCUR
       mju_error("Invalid condim value: %d", i);

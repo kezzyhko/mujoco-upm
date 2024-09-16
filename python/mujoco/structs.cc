@@ -23,10 +23,8 @@
 #include <ios>
 #include <iostream>
 #include <memory>
-#include <numeric>
 #include <optional>
 #include <sstream>
-#include <stdexcept>
 #include <string>
 #include <string_view>
 #include <type_traits>
@@ -428,8 +426,8 @@ MjModelWrapper MjModelWrapper::LoadXML(
 
 namespace {
 // A byte at the start of serialized mjModel structs, which can be incremented
-//  when we change the serialization logic to reject pickles from an
-// unsupported future version.
+// when we change the serialization logic to reject pickles from an unsupported
+// future version.
 constexpr static char kSerializationVersion = 1;
 
 void CheckInput(const std::istream& input, std::string class_name) {
@@ -1307,7 +1305,7 @@ PYBIND11_MODULE(_structs, m) {
   X(realtime);
   X(offwidth);
   X(offheight);
-  X(treedepth);
+  X(ellipsoidinertia);
 #undef X
 
   py::class_<raw::MjVisualQuality> mjVisualQuality(mjVisual, "Quality");
@@ -2135,6 +2133,7 @@ This is useful for example when the MJB is not available as a file on disk.)"));
       })
   X(label);
   X(frame);
+  X(bvh_depth);
 #undef X
 
 #define X(var) DefinePyArray(mjvOption, #var, &MjvOptionWrapper::var)
@@ -2166,6 +2165,7 @@ This is useful for example when the MJB is not available as a file on disk.)"));
       })
   X(maxgeom);
   X(ngeom);
+  X(nskin);
   X(nlight);
   X(enabletransform);
   X(scale);
@@ -2227,6 +2227,7 @@ This is useful for example when the MJB is not available as a file on disk.)"));
   X(textrgb);
   X(linergb);
   X(range);
+  X(highlight);
   X(linepnt);
   X(linedata);
   X(xaxispixel);

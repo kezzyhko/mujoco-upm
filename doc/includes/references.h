@@ -119,10 +119,18 @@ struct mjData_ {
   // diagnostics
   mjWarningStat warning[mjNWARNING];  // warning statistics
   mjTimerStat   timer[mjNTIMER];      // timer statistics
-  mjSolverStat  solver[mjNSOLVER];    // solver statistics per iteration
-  int     solver_iter;       // number of solver iterations
-  int     solver_nnz;        // number of non-zeros in Hessian or efc_AR
-  mjtNum  solver_fwdinv[2];  // forward-inverse comparison: qfrc, efc
+
+  // solver statistics
+  mjSolverStat  solver[mjNSOLVER];  // solver statistics per iteration
+  int     solver_iter;              // number of solver iterations
+  int     solver_nnz;               // number of non-zeros in Hessian or efc_AR
+  mjtNum  solver_fwdinv[2];         // forward-inverse comparison: qfrc, efc
+
+  // collision statistics
+  int     nbodypair_broad;   // number of body pairs in collision according to the broad-phase
+  int     nbodypair_narrow;  // number of body pairs actually in collision in the narrow-phase
+  int     ngeompair_mid;     // number of geom pairs in collision according to the mid-phase
+  int     ngeompair_narrow;  // number of geom pairs actually in collision in the narrow-phase
 
   // variable sizes
   int     ne;                // number of equality constraints
@@ -501,12 +509,12 @@ typedef enum mjtConstraint_ {     // type of constraint
   mjCNSTR_CONTACT_PYRAMIDAL,      // frictional contact, pyramidal friction cone
   mjCNSTR_CONTACT_ELLIPTIC        // frictional contact, elliptic friction cone
 } mjtConstraint;
-typedef enum mjtConstraintState_ { // constraint state
-  mjCNSTRSTATE_SATISFIED = 0,     // constraint satisfied, zero cost (limit, contact)
-  mjCNSTRSTATE_QUADRATIC,         // quadratic cost (equality, friction, limit, contact)
-  mjCNSTRSTATE_LINEARNEG,         // linear cost, negative side (friction)
-  mjCNSTRSTATE_LINEARPOS,         // linear cost, positive side (friction)
-  mjCNSTRSTATE_CONE               // squared distance to cone cost (elliptic contact)
+typedef enum mjtConstraintState_ {  // constraint state
+  mjCNSTRSTATE_SATISFIED = 0,       // constraint satisfied, zero cost (limit, contact)
+  mjCNSTRSTATE_QUADRATIC,           // quadratic cost (equality, friction, limit, contact)
+  mjCNSTRSTATE_LINEARNEG,           // linear cost, negative side (friction)
+  mjCNSTRSTATE_LINEARPOS,           // linear cost, positive side (friction)
+  mjCNSTRSTATE_CONE                 // squared distance to cone cost (elliptic contact)
 } mjtConstraintState;
 typedef enum mjtSensor_ {         // type of sensor
   // common robotic sensors, attached to a site
@@ -599,13 +607,25 @@ struct mjLROpt_ {                 // options for mj_setLengthRange()
   mjtNum tolrange;                // convergence tolerance (relative to range)
 };
 typedef struct mjLROpt_ mjLROpt;
-struct mjVFS_ {                   // virtual file system for loading from memory
-  int   nfile;                    // number of files present
+struct mjVFS_ {                            // virtual file system for loading from memory
+  int   nfile;                             // number of files present
   char  filename[mjMAXVFS][mjMAXVFSNAME];  // file name without path
-  int   filesize[mjMAXVFS];       // file size in bytes
-  void* filedata[mjMAXVFS];       // buffer with file data
+  int   filesize[mjMAXVFS];                // file size in bytes
+  void* filedata[mjMAXVFS];                // buffer with file data
 };
 typedef struct mjVFS_ mjVFS;
+struct mjResource_ {
+  char* name;                     // name of resource (filename, etc)
+  void* data;                     // opaque data pointer
+  const void* provider_data;      // opaque resource provider data
+
+  // reading callback from resource provider
+  int (*read)(struct mjResource_* resource, const void** buffer);
+
+  // closing callback from resource provider
+  void (*close)(struct mjResource_* resource);
+};
+typedef struct mjResource_ mjResource;
 struct mjOption_ {                // physics options
   // timing parameters
   mjtNum timestep;                // timestep
@@ -653,7 +673,7 @@ struct mjVisual_ {                // visualization options
     float realtime;               // initial real-time factor (1: real time)
     int offwidth;                 // width of offscreen buffer
     int offheight;                // height of offscreen buffer
-    int treedepth;                // depth of the bounding volume hierarchy
+    int ellipsoidinertia;         // geom for inertia visualization (0: box, 1: ellipsoid)
   } global;
 
   struct {                        // rendering quality
@@ -851,14 +871,14 @@ struct mjModel_ {
   mjtNum*   body_invweight0;      // mean inv inert in qpos0 (trn, rot)       (nbody x 2)
   mjtNum*   body_gravcomp;        // antigravity force, units of body weight  (nbody x 1)
   mjtNum*   body_user;            // user data                                (nbody x nuser_body)
-  int*      body_plugin;          // plugin instance id (-1 if not in use)    (nbody x 1)
+  int*      body_plugin;          // plugin instance id; -1: not in use       (nbody x 1)
   int*      body_bvhadr;          // address of bvh root                      (nbody x 1)
   int*      body_bvhnum;          // number of bounding volumes               (nbody x 1)
 
   // bounding volume hierarchy
   int*      bvh_depth;            // depth in the bounding volume hierarchy   (nbvh x 1)
   int*      bvh_child;            // left and right children in tree          (nbvh x 2)
-  int*      bvh_geomid;           // geom id of the node (non-leaf: -1)       (nbvh x 1)
+  int*      bvh_geomid;           // geom id of the node; -1: non-leaf        (nbvh x 1)
   mjtNum*   bvh_aabb;             // bounding box of node (center, size)      (nbvh x 6)
 
   // joints
@@ -897,8 +917,8 @@ struct mjModel_ {
   int*      geom_conaffinity;     // geom contact affinity                    (ngeom x 1)
   int*      geom_condim;          // contact dimensionality (1, 3, 4, 6)      (ngeom x 1)
   int*      geom_bodyid;          // id of geom's body                        (ngeom x 1)
-  int*      geom_dataid;          // id of geom's mesh/hfield (-1: none)      (ngeom x 1)
-  int*      geom_matid;           // material id for rendering                (ngeom x 1)
+  int*      geom_dataid;          // id of geom's mesh/hfield; -1: none       (ngeom x 1)
+  int*      geom_matid;           // material id for rendering; -1: none      (ngeom x 1)
   int*      geom_group;           // group for visibility                     (ngeom x 1)
   int*      geom_priority;        // geom contact priority                    (ngeom x 1)
   mjtByte*  geom_sameframe;       // same as body frame (1) or iframe (2)     (ngeom x 1)
@@ -920,7 +940,7 @@ struct mjModel_ {
   // sites
   int*      site_type;            // geom type for rendering (mjtGeom)        (nsite x 1)
   int*      site_bodyid;          // id of site's body                        (nsite x 1)
-  int*      site_matid;           // material id for rendering                (nsite x 1)
+  int*      site_matid;           // material id for rendering; -1: none      (nsite x 1)
   int*      site_group;           // group for visibility                     (nsite x 1)
   mjtByte*  site_sameframe;       // same as body frame (1) or iframe (2)     (nsite x 1)
   mjtNum*   site_size;            // geom size for rendering                  (nsite x 3)
@@ -1030,7 +1050,7 @@ struct mjModel_ {
   int*      pair_dim;             // contact dimensionality                   (npair x 1)
   int*      pair_geom1;           // id of geom1                              (npair x 1)
   int*      pair_geom2;           // id of geom2                              (npair x 1)
-  int*      pair_signature;       // (body1+1)<<16 + body2+1                  (npair x 1)
+  int*      pair_signature;       // (body1+1) << 16 + body2+1                (npair x 1)
   mjtNum*   pair_solref;          // constraint solver reference: contact     (npair x mjNREF)
   mjtNum*   pair_solimp;          // constraint solver impedance: contact     (npair x mjNIMP)
   mjtNum*   pair_margin;          // detect contact if dist<margin            (npair x 1)
@@ -1038,7 +1058,7 @@ struct mjModel_ {
   mjtNum*   pair_friction;        // tangent1, 2, spin, roll1, 2              (npair x 5)
 
   // excluded body pairs for collision detection
-  int*      exclude_signature;    // (body1+1)<<16 + body2+1                  (nexclude x 1)
+  int*      exclude_signature;    // (body1+1) << 16 + body2+1                (nexclude x 1)
 
   // equality constraints
   int*      eq_type;              // constraint type (mjtEq)                  (neq x 1)
@@ -1177,6 +1197,14 @@ struct mjModel_ {
   int*      names_map;            // internal hash map of names               (nnames_map x 1)
 };
 typedef struct mjModel_ mjModel;
+struct mjpResourceProvider_ {
+  const char* prefix;          // prefix for match against a resource name
+  mjfOpenResource open;        // opening callback
+  mjfReadResource read;        // reading callback
+  mjfCloseResource close;      // closing callback
+  void* data;                  // opaque data pointer (resource invariant)
+};
+typedef struct mjpResourceProvider_ mjpResourceProvider;
 typedef enum mjtPluginCapabilityBit_ {
   mjPLUGIN_ACTUATOR = 1<<0,
   mjPLUGIN_SENSOR   = 1<<1,
@@ -1225,11 +1253,11 @@ typedef enum mjtGridPos_ {        // grid position for overlay
   mjGRID_BOTTOMLEFT,              // bottom left
   mjGRID_BOTTOMRIGHT              // bottom right
 } mjtGridPos;
-typedef enum mjtFramebuffer_ {      // OpenGL framebuffer option
+typedef enum mjtFramebuffer_ {    // OpenGL framebuffer option
   mjFB_WINDOW         = 0,        // default/window buffer
   mjFB_OFFSCREEN                  // offscreen buffer
 } mjtFramebuffer;
-typedef enum mjtFontScale_ {        // font scale, used at context creation
+typedef enum mjtFontScale_ {      // font scale, used at context creation
   mjFONTSCALE_50      = 50,       // 50% scale, suitable for low-res rendering
   mjFONTSCALE_100     = 100,      // normal scale, suitable in the absence of DPI scaling
   mjFONTSCALE_150     = 150,      // 150% scale
@@ -1458,9 +1486,9 @@ struct mjuiItemSingle_ {          // check and button-related
 };
 
 
-struct mjuiItemMulti_ {           // static, radio and select-related
-  int nelem;                      // number of elements in group
-  char name[mjMAXUIMULTI][mjMAXUINAME]; // element names
+struct mjuiItemMulti_ {                  // static, radio and select-related
+  int nelem;                             // number of elements in group
+  char name[mjMAXUIMULTI][mjMAXUINAME];  // element names
 };
 
 
@@ -1487,10 +1515,10 @@ struct mjuiItem_ {                // UI item
 
   // type-specific properties
   union {
-    struct mjuiItemSingle_ single; // check and button
-    struct mjuiItemMulti_ multi;   // static, radio and select
-    struct mjuiItemSlider_ slider; // slider
-    struct mjuiItemEdit_ edit;     // edit
+    struct mjuiItemSingle_ single;  // check and button
+    struct mjuiItemMulti_ multi;    // static, radio and select
+    struct mjuiItemSlider_ slider;  // slider
+    struct mjuiItemEdit_ edit;      // edit
   };
 
   // internal
@@ -1626,7 +1654,7 @@ typedef enum mjtVisFlag_ {        // flags enabling model element visualization
   mjVIS_PERTOBJ,                  // perturbation object
   mjVIS_CONTACTPOINT,             // contact points
   mjVIS_CONTACTFORCE,             // contact force
-  mjVIS_CONTACTSPLIT,             // split contact force into normal and tanget
+  mjVIS_CONTACTSPLIT,             // split contact force into normal and tangent
   mjVIS_TRANSPARENT,              // make dynamic geoms more transparent
   mjVIS_AUTOCONNECT,              // auto connect joints and body coms
   mjVIS_COM,                      // center of mass
@@ -1750,6 +1778,7 @@ struct mjvOption_ {                  // abstract visualization options
   mjtByte  actuatorgroup[mjNGROUP];  // actuator visualization by group
   mjtByte  skingroup[mjNGROUP];      // skin visualization by group
   mjtByte  flags[mjNVISFLAG];        // visualization flags (indexed by mjtVisFlag)
+  int bvh_depth;                     // depth of the bounding volume hierarchy to be visualized
 };
 typedef struct mjvOption_ mjvOption;
 struct mjvScene_ {                // abstract scene passed to OpenGL renderer
@@ -1816,7 +1845,7 @@ struct mjvFigure_ {               // abstract 2D figure passed to OpenGL rendere
   // text labels
   char    title[1000];            // figure title; subplots separated with 2+ spaces
   char    xlabel[100];            // x-axis label
-  char    linename[mjMAXLINE][100]; // line names for legend
+  char    linename[mjMAXLINE][100];  // line names for legend
 
   // dynamic settings
   int     legendoffset;           // number of lines to offset legend
@@ -1836,6 +1865,219 @@ struct mjvFigure_ {               // abstract 2D figure passed to OpenGL rendere
   float   yaxisdata[2];           // range of y-axis in data units
 };
 typedef struct mjvFigure_ mjvFigure;
+struct mjvSceneState_ {
+  int nbuffer;                     // size of the buffer in bytes
+  void* buffer;                    // heap-allocated memory for all arrays in this struct
+  int maxgeom;                     // maximum number of mjvGeom supported by this state object
+  mjvScene plugincache;            // scratch space for vis geoms inserted by plugins
+
+  // fields in mjModel that are necessary to re-render a scene
+  struct {
+    int nu;
+    int na;
+    int nbody;
+    int nbvh;
+    int njnt;
+    int ngeom;
+    int nsite;
+    int ncam;
+    int nlight;
+    int nmesh;
+    int nskin;
+    int nskinvert;
+    int nskinface;
+    int nskinbone;
+    int nskinbonevert;
+    int nmat;
+    int neq;
+    int ntendon;
+    int nwrap;
+    int nsensor;
+    int nnames;
+    int nsensordata;
+
+    mjOption opt;
+    mjVisual vis;
+    mjStatistic stat;
+
+    int* body_parentid;
+    int* body_rootid;
+    int* body_weldid;
+    int* body_mocapid;
+    int* body_jntnum;
+    int* body_jntadr;
+    int* body_geomnum;
+    int* body_geomadr;
+    mjtNum* body_iquat;
+    mjtNum* body_mass;
+    mjtNum* body_inertia;
+    int* body_bvhadr;
+    int* body_bvhnum;
+
+    int* bvh_depth;
+    int* bvh_child;
+    int* bvh_geomid;
+    mjtNum* bvh_aabb;
+
+    int* jnt_type;
+    int* jnt_bodyid;
+    int* jnt_group;
+
+    int* geom_type;
+    int* geom_bodyid;
+    int* geom_dataid;
+    int* geom_matid;
+    int* geom_group;
+    mjtNum* geom_size;
+    mjtNum* geom_aabb;
+    mjtNum* geom_rbound;
+    float* geom_rgba;
+
+    int* site_type;
+    int* site_bodyid;
+    int* site_matid;
+    int* site_group;
+    mjtNum* site_size;
+    float* site_rgba;
+
+    mjtNum* cam_fovy;
+    mjtNum* cam_ipd;
+
+    mjtByte* light_directional;
+    mjtByte* light_castshadow;
+    mjtByte* light_active;
+    float* light_attenuation;
+    float* light_cutoff;
+    float* light_exponent;
+    float* light_ambient;
+    float* light_diffuse;
+    float* light_specular;
+
+    int* mesh_texcoordadr;
+    int* mesh_graphadr;
+
+    int* skin_matid;
+    int* skin_group;
+    float* skin_rgba;
+    float* skin_inflate;
+    int* skin_vertadr;
+    int* skin_vertnum;
+    int* skin_texcoordadr;
+    int* skin_faceadr;
+    int* skin_facenum;
+    int* skin_boneadr;
+    int* skin_bonenum;
+    float* skin_vert;
+    int* skin_face;
+    int* skin_bonevertadr;
+    int* skin_bonevertnum;
+    float* skin_bonebindpos;
+    float* skin_bonebindquat;
+    int* skin_bonebodyid;
+    int* skin_bonevertid;
+    float* skin_bonevertweight;
+
+    int* mat_texid;
+    mjtByte* mat_texuniform;
+    float* mat_texrepeat;
+    float* mat_emission;
+    float* mat_specular;
+    float* mat_shininess;
+    float* mat_reflectance;
+    float* mat_rgba;
+
+    int* eq_type;
+    int* eq_obj1id;
+    int* eq_obj2id;
+    mjtByte* eq_active;
+    mjtNum* eq_data;
+
+    int* tendon_num;
+    int* tendon_matid;
+    int* tendon_group;
+    mjtByte* tendon_limited;
+    mjtNum* tendon_width;
+    mjtNum* tendon_range;
+    mjtNum* tendon_stiffness;
+    mjtNum* tendon_damping;
+    mjtNum* tendon_frictionloss;
+    mjtNum* tendon_lengthspring;
+    float* tendon_rgba;
+
+    int* actuator_trntype;
+    int* actuator_dyntype;
+    int* actuator_trnid;
+    int* actuator_actadr;
+    int* actuator_actnum;
+    int* actuator_group;
+    mjtByte* actuator_ctrllimited;
+    mjtByte* actuator_actlimited;
+    mjtNum* actuator_ctrlrange;
+    mjtNum* actuator_actrange;
+    mjtNum* actuator_cranklength;
+
+    int* sensor_type;
+    int* sensor_objid;
+    int* sensor_adr;
+
+    int* name_bodyadr;
+    int* name_jntadr;
+    int* name_geomadr;
+    int* name_siteadr;
+    int* name_camadr;
+    int* name_lightadr;
+    int* name_eqadr;
+    int* name_tendonadr;
+    int* name_actuatoradr;
+    char* names;
+  } model;
+
+  // fields in mjData that are necessary to re-render a scene
+  struct {
+    mjWarningStat warning[mjNWARNING];
+
+    int nefc;
+    int ncon;
+
+    mjtNum time;
+
+    mjtNum* act;
+
+    mjtNum* ctrl;
+    mjtNum* xfrc_applied;
+
+    mjtNum* sensordata;
+
+    mjtNum* xpos;
+    mjtNum* xquat;
+    mjtNum* xmat;
+    mjtNum* xipos;
+    mjtNum* ximat;
+    mjtNum* xanchor;
+    mjtNum* xaxis;
+    mjtNum* geom_xpos;
+    mjtNum* geom_xmat;
+    mjtNum* site_xpos;
+    mjtNum* site_xmat;
+    mjtNum* cam_xpos;
+    mjtNum* cam_xmat;
+    mjtNum* light_xpos;
+    mjtNum* light_xdir;
+
+    mjtNum* subtree_com;
+
+    int* ten_wrapadr;
+    int* ten_wrapnum;
+    int* wrap_obj;
+    mjtNum* wrap_xpos;
+
+    mjtByte* bvh_active;
+
+    mjContact* contact;
+    mjtNum* efc_force;
+  } data;
+};
+typedef struct mjvSceneState_ mjvSceneState;
 
 //----------------------------- MJAPI FUNCTIONS --------------------------------
 void mj_defaultVFS(mjVFS* vfs);
@@ -1844,10 +2086,8 @@ int mj_makeEmptyFileVFS(mjVFS* vfs, const char* filename, int filesize);
 int mj_findFileVFS(const mjVFS* vfs, const char* filename);
 int mj_deleteFileVFS(mjVFS* vfs, const char* filename);
 void mj_deleteVFS(mjVFS* vfs);
-mjModel* mj_loadXML(const char* filename, const mjVFS* vfs,
-                    char* error, int error_sz);
-int mj_saveLastXML(const char* filename, const mjModel* m,
-                   char* error, int error_sz);
+mjModel* mj_loadXML(const char* filename, const mjVFS* vfs, char* error, int error_sz);
+int mj_saveLastXML(const char* filename, const mjModel* m, char* error, int error_sz);
 void mj_freeLastXML(void);
 int mj_printSchema(const char* filename, char* buffer, int buffer_sz,
                    int flg_html, int flg_pad);
@@ -1993,8 +2233,14 @@ mjtNum mjv_frustumHeight(const mjvScene* scn);
 void mjv_alignToCamera(mjtNum res[3], const mjtNum vec[3], const mjtNum forward[3]);
 void mjv_moveCamera(const mjModel* m, int action, mjtNum reldx, mjtNum reldy,
                     const mjvScene* scn, mjvCamera* cam);
+void mjv_moveCameraFromState(const mjvSceneState* scnstate, int action,
+                             mjtNum reldx, mjtNum reldy,
+                             const mjvScene* scn, mjvCamera* cam);
 void mjv_movePerturb(const mjModel* m, const mjData* d, int action, mjtNum reldx,
                      mjtNum reldy, const mjvScene* scn, mjvPerturb* pert);
+void mjv_movePerturbFromState(const mjvSceneState* scnstate, int action,
+                              mjtNum reldx, mjtNum reldy,
+                              const mjvScene* scn, mjvPerturb* pert);
 void mjv_moveModel(const mjModel* m, int action, mjtNum reldx, mjtNum reldy,
                    const mjtNum roomup[3], mjvScene* scn);
 void mjv_initPerturb(const mjModel* m, mjData* d, const mjvScene* scn, mjvPerturb* pert);
@@ -2017,6 +2263,14 @@ void mjv_makeScene(const mjModel* m, mjvScene* scn, int maxgeom);
 void mjv_freeScene(mjvScene* scn);
 void mjv_updateScene(const mjModel* m, mjData* d, const mjvOption* opt,
                      const mjvPerturb* pert, mjvCamera* cam, int catmask, mjvScene* scn);
+int mjv_updateSceneFromState(const mjvSceneState* scnstate, const mjvOption* opt,
+                             const mjvPerturb* pert, mjvCamera* cam, int catmask,
+                             mjvScene* scn);
+void mjv_defaultSceneState(mjvSceneState* scnstate);
+void mjv_makeSceneState(const mjModel* m, const mjData* d,
+                        mjvSceneState* scnstate, int maxgeom);
+void mjv_freeSceneState(mjvSceneState* scnstate);
+void mjv_updateSceneState(const mjModel* m, mjData* d, mjvSceneState* scnstate);
 void mjv_addGeoms(const mjModel* m, mjData* d, const mjvOption* opt,
                   const mjvPerturb* pert, int catmask, mjvScene* scn);
 void mjv_makeLights(const mjModel* m, mjData* d, mjvScene* scn);
@@ -2027,6 +2281,7 @@ void mjr_makeContext(const mjModel* m, mjrContext* con, int fontscale);
 void mjr_changeFont(int fontscale, mjrContext* con);
 void mjr_addAux(int index, int width, int height, int samples, mjrContext* con);
 void mjr_freeContext(mjrContext* con);
+void mjr_resizeOffscreen(int width, int height, mjrContext* con);
 void mjr_uploadTexture(const mjModel* m, const mjrContext* con, int texid);
 void mjr_uploadMesh(const mjModel* m, const mjrContext* con, int meshid);
 void mjr_uploadHField(const mjModel* m, const mjrContext* con, int hfieldid);
@@ -2190,4 +2445,9 @@ int mjp_registerPlugin(const mjpPlugin* plugin);
 int mjp_pluginCount();
 const mjpPlugin* mjp_getPlugin(const char* name, int* slot);
 const mjpPlugin* mjp_getPluginAtSlot(int slot);
+void mjp_defaultResourceProvider(mjpResourceProvider* provider);
+int mjp_registerResourceProvider(const mjpResourceProvider* provider);
+int mjp_resourceProviderCount();
+const mjpResourceProvider* mjp_getResourceProvider(const char* resource_name);
+const mjpResourceProvider* mjp_getResourceProviderAtSlot(int slot);
 // NOLINTEND
