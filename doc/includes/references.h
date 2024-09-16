@@ -459,10 +459,11 @@ typedef enum mjtGeom_ {           // type of geometric shape
   mjGEOM_ARROW1,                  // arrow without wedges
   mjGEOM_ARROW2,                  // arrow in both directions
   mjGEOM_LINE,                    // line
+  mjGEOM_LINEBOX,                 // box with line edges
   mjGEOM_FLEX,                    // flex
   mjGEOM_SKIN,                    // skin
   mjGEOM_LABEL,                   // text label
-  mjGEOM_TRIANGLE,                // triangle connecting a frame
+  mjGEOM_TRIANGLE,                // triangle
 
   mjGEOM_NONE         = 1001      // missing geom type
 } mjtGeom;
@@ -2169,6 +2170,7 @@ struct mjvSceneState_ {
     int nnames;
     int npaths;
     int nsensordata;
+    int narena;
 
     mjOption opt;
     mjVisual vis;
@@ -2382,6 +2384,7 @@ struct mjvSceneState_ {
     mjtNum* ten_length;
     mjtNum* wrap_xpos;
 
+    mjtNum* bvh_aabb_dyn;
     mjtByte* bvh_active;
     int* island_dofadr;
     int* island_dofind;
@@ -2393,6 +2396,7 @@ struct mjvSceneState_ {
 
     mjContact* contact;
     mjtNum* efc_force;
+    void* arena;
   } data;
 };
 typedef struct mjvSceneState_ mjvSceneState;

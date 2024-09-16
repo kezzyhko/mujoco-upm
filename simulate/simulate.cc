@@ -1817,6 +1817,9 @@ void Simulate::Sync() {
   if (!m_) {
     return;
   }
+  if (this->exitrequest.load()) {
+    return;
+  }
 
   bool update_profiler = this->profiler && (this->pause_update || this->run);
   bool update_sensor = this->sensor && (this->pause_update || this->run);
@@ -2479,7 +2482,7 @@ void Simulate::Render() {
     char label[30] = {'\0'};
     if (this->loadrequest) {
       std::snprintf(label, sizeof(label), "LOADING...");
-    } if (this->scrub_index == 0) {
+    } else if (this->scrub_index == 0) {
       std::snprintf(label, sizeof(label), "PAUSE");
     } else {
       std::snprintf(label, sizeof(label), "PAUSE (%d)", this->scrub_index);
@@ -2714,9 +2717,9 @@ void Simulate::RenderLoop() {
     }
   }
 
-  if (!is_passive_){
-    mjv_freeScene(&this->scn);
-  } else {
+  const MutexLock lock(this->mtx);
+  mjv_freeScene(&this->scn);
+  if (is_passive_) {
     mjv_freeSceneState(&scnstate_);
   }
 
