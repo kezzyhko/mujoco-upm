@@ -19,6 +19,7 @@ jobs:
           ref: main
     
       - name: Sync master with upstream latest
+        id: sync
         uses: aormsby/Fork-Sync-With-Upstream-action@v2.3
         env:
           GITHUB_TOKEN: ${{ secrets.ACCESS_TOKEN }}
