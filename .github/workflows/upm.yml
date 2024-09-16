@@ -15,9 +15,11 @@ on:
 jobs:
   sync-to-upm:
     runs-on: ubuntu-latest
+    environment: OpenUPM workflows
     steps:
     - name: Set environment variables
-      run: echo "TAG_NAME=${{ inputs.tag_name || env.GITHUB_REF_NAME }}" >> $GITHUB_ENV
+      run: |
+        echo "TAG_NAME=${{ inputs.tag_name || env.GITHUB_REF_NAME }}" >> $GITHUB_ENV
     - name: Checkout
       uses: actions/checkout@v4
       with:
@@ -25,12 +27,17 @@ jobs:
         ref: upm
     - name: Setup user
       uses: fregante/setup-git-user@v2
-    - name: Merge
+    - name: Merge 1
+      continue-on-error: true
       run: |
-        git merge ${{ env.TAG_NAME }}
+        git merge --no-commit --no-ff ${{ env.TAG_NAME }}
+    - name: Merge 2
+      run: |
+        git reset -- .github
+        git commit --no-edit
         git push
         echo "MERGE_COMMIT_HASH=$(git rev-parse --verify HEAD)" >> $GITHUB_ENV
-    - name: Create Release
+    - name: Create release
       uses: actions/create-release@v1
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
