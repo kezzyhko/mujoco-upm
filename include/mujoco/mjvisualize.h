@@ -507,6 +507,7 @@ struct mjvSceneState_ {
     int* flex_vertadr;
     int* flex_vertnum;
     int* flex_elem;
+    int* flex_elemlayer;
     int* flex_elemadr;
     int* flex_elemnum;
     int* flex_elemdataadr;
@@ -518,6 +519,8 @@ struct mjvSceneState_ {
     int* flex_bvhnum;
     mjtNum* flex_radius;
     float* flex_rgba;
+
+    int* hfield_pathadr;
 
     int* mesh_bvhadr;
     int* mesh_bvhnum;
@@ -545,6 +548,9 @@ struct mjvSceneState_ {
     int* skin_bonebodyid;
     int* skin_bonevertid;
     float* skin_bonevertweight;
+    int* skin_pathadr;
+
+    int* tex_pathadr;
 
     int* mat_texid;
     mjtByte* mat_texuniform;

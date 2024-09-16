@@ -491,6 +491,7 @@ mjCBase::mjCBase() {
   xmlpos[0] = xmlpos[1] = -1;
   model = 0;
   def = 0;
+  frame = nullptr;
 
   // plugin variables
   is_plugin = false;
@@ -534,6 +535,15 @@ std::string mjCBase::GetAssetContentType(std::string_view resource_name,
 }
 
 
+void mjCBase::SetFrame(mjCFrame* _frame) {
+  if (!_frame) {
+    return;
+  }
+  frame = _frame;
+  frame->Compile();
+}
+
+
 //------------------ class mjCBody implementation --------------------------------------------------
 
 // constructor
@@ -549,12 +559,8 @@ mjCBody::mjCBody(mjCModel* _model) {
   mocap = false;
   mjuu_setvec(quat, 1, 0, 0, 0);
   mjuu_setvec(iquat, 1, 0, 0, 0);
-  mjuu_setvec(locquat, 1, 0, 0, 0);
-  mjuu_setvec(lociquat, 1, 0, 0, 0);
   mjuu_zerovec(pos+1, 2);
   mjuu_zerovec(ipos+1, 2);
-  mjuu_zerovec(locpos, 3);
-  mjuu_zerovec(locipos, 3);
   mass = 0;
   mjuu_setvec(inertia, 0, 0, 0);
   parentid = -1;
@@ -574,6 +580,7 @@ mjCBody::mjCBody(mjCModel* _model) {
   // clear object lists
   bodies.clear();
   geoms.clear();
+  frames.clear();
   joints.clear();
   sites.clear();
   cameras.clear();
@@ -587,6 +594,7 @@ mjCBody::~mjCBody() {
   // delete objects allocated here
   for (int i=0; i<bodies.size(); i++) delete bodies[i];
   for (int i=0; i<geoms.size(); i++) delete geoms[i];
+  for (int i=0; i<frames.size(); i++) delete frames[i];
   for (int i=0; i<joints.size(); i++) delete joints[i];
   for (int i=0; i<sites.size(); i++) delete sites[i];
   for (int i=0; i<cameras.size(); i++) delete cameras[i];
@@ -594,6 +602,7 @@ mjCBody::~mjCBody() {
 
   bodies.clear();
   geoms.clear();
+  frames.clear();
   joints.clear();
   sites.clear();
   cameras.clear();
@@ -611,6 +620,15 @@ mjCBody* mjCBody::AddBody(mjCDef* _def) {
   obj->def = _def ? _def : def;
 
   bodies.push_back(obj);
+  return obj;
+}
+
+
+
+// create new frame and add it to body
+mjCFrame* mjCBody::AddFrame(mjCFrame* _frame) {
+  mjCFrame* obj = new mjCFrame(model, _frame ? _frame : NULL);
+  frames.push_back(obj);
   return obj;
 }
 
@@ -874,13 +892,6 @@ void mjCBody::GeomFrame(void) {
 
 
 
-// setup child local frame: pos
-void mjCBody::MakeLocal(double* _locpos, double* _locquat,
-                        const double* _pos, const double* _quat) {
-  mjuu_copyvec(_locpos, _pos, 3);
-  mjuu_copyvec(_locquat, _quat, 4);
-}
-
 // set explicitinertial to true
 void mjCBody::MakeInertialExplicit() {
   explicitinertial = true;
@@ -938,7 +949,7 @@ void mjCBody::Compile(void) {
     GeomFrame();
   }
 
-  // both pos and ipos undefiend: error
+  // both pos and ipos undefined: error
   if (!mjuu_defined(ipos[0]) && !mjuu_defined(pos[0])) {
     throw mjCError(this, "body pos and ipos are both undefined");
   }
@@ -980,19 +991,9 @@ void mjCBody::Compile(void) {
     }
   }
 
-  // compute local frame rel. to parent body
-  if (id>0) {
-    model->bodies[parentid]->MakeLocal(locpos, locquat, pos, quat);
-  }
-
-  // make local inertial frame relative to this body
-  if (id>0) {
-    MakeLocal(locipos, lociquat, ipos, iquat);
-  }
-
-  // make local frames of geoms
-  for (int i=0; i<geoms.size(); i++) {
-    MakeLocal(geoms[i]->locpos, geoms[i]->locquat, geoms[i]->pos, geoms[i]->quat);
+  // frame
+  if (frame) {
+    mjuu_frameaccumChild(frame->pos, frame->quat, pos, quat);
   }
 
   // accumulate rbound, contype, conaffinity over geoms
@@ -1044,9 +1045,9 @@ void mjCBody::Compile(void) {
   // compute body global pose (no joint transformations in qpos0)
   if (id>0) {
     mjCBody* par = model->bodies[parentid];
-    mju_rotVecQuat(xpos0, locpos, par->xquat0);
+    mju_rotVecQuat(xpos0, pos, par->xquat0);
     mju_addTo3(xpos0, par->xpos0);
-    mju_mulQuat(xquat0, par->xquat0, locquat);
+    mju_mulQuat(xquat0, par->xquat0, quat);
   }
 
   // compile all sites
@@ -1072,6 +1073,39 @@ void mjCBody::Compile(void) {
       throw mjCError(this, "plugin '%s' does not support passive forces", plugin->name);
     }
   }
+}
+
+
+
+//------------------ class mjCFrame implementation -------------------------------------------------
+
+// initialize frame
+mjCFrame::mjCFrame(mjCModel* _model, mjCFrame* _frame) {
+  compiled = false;
+  model = _model;
+  frame = _frame ? _frame : NULL;
+  mju_zero3(pos);
+  mjuu_setvec(quat, 1, 0, 0, 0);
+}
+
+void mjCFrame::Compile() {
+  if (compiled) {
+    return;
+  }
+
+  const char* err = alt.Set(quat, 0, model->degree, model->euler);
+  if (err) {
+    throw mjCError(this, "orientation specification error '%s' in site %d", err, id);
+  }
+
+  // compile parents and accumulate result
+  if (frame) {
+    frame->Compile();
+    mjuu_frameaccumChild(frame->pos, frame->quat, pos, quat);
+  }
+
+  mjuu_normvec(quat, 4);
+  compiled = true;
 }
 
 
@@ -1108,8 +1142,6 @@ mjCJoint::mjCJoint(mjCModel* _model, mjCDef* _def) {
 
   // clear internal variables
   body = 0;
-  mjuu_setvec(locpos, 0, 0, 0);
-  mjuu_setvec(locaxis, 0, 0, 1);
   urdfeffort = -1;
 
   // reset to default if given
@@ -1197,6 +1229,13 @@ int mjCJoint::Compile(void) {
     }
   }
 
+  // frame
+  if (frame) {
+    double mat[9];
+    mjuu_quat2mat(mat, frame->quat);
+    mjuu_mulvecmat(axis, axis, mat);
+  }
+
   // FREE or BALL: set axis to (0,0,1)
   if (type==mjJNT_FREE || type==mjJNT_BALL) {
     axis[0] = axis[1] = 0;
@@ -1220,16 +1259,12 @@ int mjCJoint::Compile(void) {
   }
 
   // compute local position
-  if (type!=mjJNT_FREE) {
+  if (type == mjJNT_FREE) {
+    mjuu_zerovec(pos, 3);
+  } else if (frame) {
     double qunit[4] = {1, 0, 0, 0};
-    double qloc[4];
-    body->MakeLocal(locpos, qloc, pos, qunit);
-  } else {
-    mjuu_zerovec(locpos, 3);
+    mjuu_frameaccumChild(frame->pos, frame->quat, pos, qunit);
   }
-
-  // copy axis to local
-  mjuu_copyvec(locaxis, axis, 3);
 
   // convert reference angles to radians for hinge joints
   if (type==mjJNT_HINGE && model->degree) {
@@ -1294,8 +1329,6 @@ mjCGeom::mjCGeom(mjCModel* _model, mjCDef* _def) {
   // clear internal variables
   mjuu_setvec(quat, 1, 0, 0, 0);
   mjuu_setvec(pos, 0, 0, 0);
-  mjuu_setvec(locpos, 0, 0, 0);
-  mjuu_setvec(locquat, 1, 0, 0, 0);
   mass = 0;
   mjuu_setvec(inertia, 0, 0, 0);
   body = 0;
@@ -1842,6 +1875,11 @@ void mjCGeom::Compile(void) {
       throw mjCError(this, "plugin '%s' does not support sign distance fields", plugin->name);
     }
   }
+
+  // frame
+  if (frame) {
+    mjuu_frameaccumChild(frame->pos, frame->quat, pos, quat);
+  }
 }
 
 
@@ -1865,8 +1903,6 @@ mjCSite::mjCSite(mjCModel* _model, mjCDef* _def) {
   // clear internal variables
   material.clear();
   body = 0;
-  mjuu_setvec(locpos, 0, 0, 0);
-  mjuu_setvec(locquat, 1, 0, 0, 0);
   matid = -1;
 
   // reset to default if given
@@ -1952,14 +1988,16 @@ void mjCSite::Compile(void) {
     }
   }
 
+  // frame
+  if (frame) {
+    mjuu_frameaccumChild(frame->pos, frame->quat, pos, quat);
+  }
+
   // normalize quaternion
   mjuu_normvec(quat, 4);
 
   // check size parameters
   checksize(size, type, this, name.c_str(), id);
-
-  // ask parent body to compute our local pos and quat relative to itself
-  body->MakeLocal(locpos, locquat, pos, quat);
 }
 
 
@@ -1986,8 +2024,6 @@ mjCCamera::mjCCamera(mjCModel* _model, mjCDef* _def) {
 
   // clear private variables
   body = 0;
-  mjuu_setvec(locpos, 0, 0, 0);
-  mjuu_setvec(locquat, 1, 0, 0, 0);
   targetbodyid = -1;
 
   // reset to default if given
@@ -2017,11 +2053,13 @@ void mjCCamera::Compile(void) {
     throw mjCError(this, "orientation specification error '%s' in camera %d", err, id);
   }
 
+  // frame
+  if (frame) {
+    mjuu_frameaccumChild(frame->pos, frame->quat, pos, quat);
+  }
+
   // normalize quaternion
   mjuu_normvec(quat, 4);
-
-  // ask parent body to compute our local pos and quat relative to itself
-  body->MakeLocal(locpos, locquat, pos, quat);
 
   // get targetbodyid
   if (!targetbody.empty()) {
@@ -2101,8 +2139,6 @@ mjCLight::mjCLight(mjCModel* _model, mjCDef* _def) {
 
   // clear private variables
   body = 0;
-  mjuu_setvec(locpos, 0, 0, 0);
-  mjuu_setvec(locdir, 0, 0, 0);
   targetbodyid = -1;
 
   // reset to default if given
@@ -2119,18 +2155,17 @@ mjCLight::mjCLight(mjCModel* _model, mjCDef* _def) {
 
 // compiler
 void mjCLight::Compile(void) {
-  double locquat[4], quat[4]= {1, 0, 0, 0};
+  double quat[4]= {1, 0, 0, 0};
+
+  // frame
+  if (frame) {
+    mjuu_frameaccumChild(frame->pos, frame->quat, pos, quat);
+  }
 
   // normalize direction, make sure it is not zero
   if (mjuu_normvec(dir, 3)<mjMINVAL) {
     throw mjCError(this, "zero direction in light '%s' (id = %d)", name.c_str(), id);
   }
-
-  // ask parent body to compute our local pos and quat relative to itself
-  body->MakeLocal(locpos, locquat, pos, quat);
-
-  // copy dir to local frame
-  mjuu_copyvec(locdir, dir, 3);
 
   // get targetbodyid
   if (!targetbody.empty()) {
@@ -3327,7 +3362,6 @@ void mjCEquality::Compile(void) {
   mjtObj objtype;
   mjCBase *px1, *px2;
   mjtJoint jt1, jt2;
-  double anchor[3], qdummy[4], qunit[4] = {1, 0, 0, 0};
 
   // determine object type
   if (type==mjEQ_CONNECT || type==mjEQ_WELD) {
@@ -3392,17 +3426,6 @@ void mjCEquality::Compile(void) {
         (jt2!=mjJNT_HINGE && jt2!=mjJNT_SLIDE)) {
       throw mjCError(this, "only HINGE and SLIDE joint allowed in constraint '%s' (id = %d)",
                      name.c_str(), id);
-    }
-  }
-
-  // connect: convert anchor to body1 local coordinates
-  if (type==mjEQ_CONNECT) {
-    ((mjCBody*)px1)->MakeLocal(anchor, qdummy, data, qunit);
-    mjuu_copyvec(data, anchor, 3);
-  } else if (type==mjEQ_WELD) {
-    if (px2) {
-      ((mjCBody*)px2)->MakeLocal(anchor, qdummy, data, qunit);
-      mjuu_copyvec(data, anchor, 3);
     }
   }
 }
@@ -3775,6 +3798,7 @@ mjCActuator::mjCActuator(mjCModel* _model, mjCDef* _def) {
   forcelimited = 2;
   actlimited = 2;
   actdim = -1;
+  plugin_actdim = 0;
   trntype = mjTRN_UNDEFINED;
   dyntype = mjDYN_NONE;
   gaintype = mjGAIN_FIXED;
@@ -3852,7 +3876,7 @@ void mjCActuator::Compile(void) {
     throw mjCError(this, "invalid control range for actuator '%s' (id = %d)", name.c_str(), id);
   }
   if (actrange[0]>=actrange[1] && actlimited) {
-    throw mjCError(this, "invalid activation range for actuator '%s' (id = %d)", name.c_str(), id);
+    throw mjCError(this, "invalid actrange for actuator '%s' (id = %d)", name.c_str(), id);
   }
   if (actlimited && dyntype == mjDYN_NONE) {
     throw mjCError(this, "actrange specified but dyntype is 'none' in actuator '%s' (id = %d)",

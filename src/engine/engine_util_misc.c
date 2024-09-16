@@ -163,7 +163,7 @@ static mjtNum wrap_circle(mjtNum* pnt, const mjtNum* d, const mjtNum* sd, mjtNum
 //  input: pair of 2D points in d[4], radius
 //  output: pair of 2D points in pnt[4]; return 0 if wrap, -1 if no wrap
 static mjtNum wrap_inside(mjtNum* pnt, const mjtNum* d, mjtNum rad) {
-  // algorithm paramters
+  // algorithm parameters
   const int maxiter = 20;
   const mjtNum zinit = 1 - 1e-7;
   const mjtNum tolerance = 1e-6;
@@ -833,6 +833,26 @@ mjtNum mju_springDamper(mjtNum pos0, mjtNum vel0, mjtNum k, mjtNum b, mjtNum t) 
     // evaluate result
     return mju_exp(-b*t/2) * (c1*mju_cos(w*t) + c2*mju_sin(w*t));
   }
+}
+
+
+
+// return 1 if point is outside box given by pos, mat, size
+int mju_outsideBox(const mjtNum point[3], const mjtNum pos[3], const mjtNum mat[9],
+                   const mjtNum size[3]) {
+  // vector from pos to point, projected to box frame
+  mjtNum vec[3] = {point[0]-pos[0], point[1]-pos[1], point[2]-pos[2]};
+  mju_rotVecMatT(vec, vec, mat);
+
+  // outside
+  if (vec[0] > size[0] || vec[0] < -size[0] ||
+      vec[1] > size[1] || vec[1] < -size[1] ||
+      vec[2] > size[2] || vec[2] < -size[2]) {
+    return 1;
+  }
+
+  // inside
+  return 0;
 }
 
 

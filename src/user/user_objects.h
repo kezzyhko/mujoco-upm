@@ -30,6 +30,7 @@ class mjCError;
 class mjCAlternative;
 class mjCBase;
 class mjCBody;
+class mjCFrame;
 class mjCJoint;
 class mjCGeom;
 class mjCSite;
@@ -176,12 +177,16 @@ class mjCBase {
   // content type from resource_name; throw on failure
   std::string GetAssetContentType(std::string_view resource_name, std::string_view raw_text);
 
+  // Add frame transformation
+  void SetFrame(mjCFrame* _frame);
+
   std::string name;               // object name
   std::string classname;          // defaults class name
   int id;                         // object id
   int xmlpos[2];                  // row and column in xml file
   mjCDef* def;                    // defaults class used to init this object
   mjCModel* model;                // pointer to model that created object
+  mjCFrame* frame;                // pointer to frame transformation
 
   // plugin support
   bool is_plugin;
@@ -215,6 +220,7 @@ class mjCBody : public mjCBase {
  public:
   // API for adding objects to body
   mjCBody*    AddBody(mjCDef* = 0);
+  mjCFrame*   AddFrame(mjCFrame* = 0);
   mjCJoint*   AddJoint(mjCDef* = 0, bool isfree = false);
   mjCGeom*    AddGeom(mjCDef* = 0);
   mjCSite*    AddSite(mjCDef* = 0);
@@ -225,9 +231,6 @@ class mjCBody : public mjCBase {
   int NumObjects(mjtObj type);
   mjCBase* GetObject(mjtObj type, int id);
   mjCBase* FindObject(mjtObj type, std::string name, bool recursive = true);
-
-  // setup child local frame, take into account change
-  void MakeLocal(double* locpos, double* locquat, const double* pos, const double* quat);
 
   // set explicitinertial to true
   void MakeInertialExplicit();
@@ -253,10 +256,6 @@ class mjCBody : public mjCBase {
 
   void GeomFrame(void);               // get inertial info from geoms
 
-  double locpos[3];               // position relative to parent
-  double locquat[4];              // orientation relative to parent
-  double locipos[3];              // inertial position frame, rel. to local frame
-  double lociquat[4];             // inertial frame orientation
   int parentid;                   // parent index in global array
   int weldid;                     // top index of body we are welded to
   int dofnum;                     // number of motion dofs for body
@@ -278,10 +277,33 @@ class mjCBody : public mjCBase {
   // objects allocated by Add functions
   std::vector<mjCBody*>    bodies;     // child bodies
   std::vector<mjCGeom*>    geoms;      // geoms attached to this body
+  std::vector<mjCFrame*>   frames;     // frames attached to this body
   std::vector<mjCJoint*>   joints;     // joints allowing motion relative to parent
   std::vector<mjCSite*>    sites;      // sites attached to this body
   std::vector<mjCCamera*>  cameras;    // cameras attached to this body
   std::vector<mjCLight*>   lights;     // lights attached to this body
+};
+
+
+
+//------------------------- class mjCFrame ---------------------------------------------------------
+// Describes a coordinate transformation relative to its parent
+
+class mjCFrame : public mjCBase {
+  friend class mjCBase;
+  friend class mjCBody;
+  friend class mjCModel;
+
+ public:
+  double pos[3];                           // frame position
+  double quat[4];                          // frame orientation
+  mjCAlternative alt;                      // alternative orientation specification
+
+ private:
+  bool compiled;                           // frame already compiled
+
+  mjCFrame(mjCModel* = 0, mjCFrame* = 0);  // constructor
+  void Compile(void);                      // compiler
 };
 
 
@@ -330,8 +352,6 @@ class mjCJoint : public mjCBase {
   int Compile(void);                  // compiler; return dofnum
 
   mjCBody* body;                  // joint's body
-  double locpos[3];               // anchor position in child or parent
-  double locaxis[3];              // joint axis in child or parent
 };
 
 
@@ -407,8 +427,6 @@ class mjCGeom : public mjCBase {
   int hfieldid;                   // id of geom's hfield (-1: none)
   double mass;                    // mass
   double inertia[3];              // local diagonal inertia
-  double locpos[3];               // local position
-  double locquat[4];              // local orientation
   double aabb[6];                 // axis-aligned bounding box (center, size)
   mjCBody* body;                  // geom's body
 };
@@ -444,8 +462,6 @@ class mjCSite : public mjCBase {
   void Compile(void);                     // compiler
 
   mjCBody* body;                  // site's body
-  double locpos[3];               // local position
-  double locquat[4];              // local orientation
   int matid;                      // material id for rendering
 };
 
@@ -483,8 +499,6 @@ class mjCCamera : public mjCBase {
   void Compile(void);                     // compiler
 
   mjCBody* body;                  // camera's body
-  double locpos[3];               // local position
-  double locquat[4];              // local orientation
   int targetbodyid;               // id of target body; -1: none
 };
 
@@ -520,8 +534,6 @@ class mjCLight : public mjCBase {
   void Compile(void);                     // compiler
 
   mjCBody* body;                  // light's body
-  double locpos[3];               // local position
-  double locdir[3];               // local direction
   int targetbodyid;               // id of target body; -1: none
 };
 
@@ -603,6 +615,7 @@ class mjCMesh: public mjCBase {
   // public getters
   const std::string& content_type() const { return content_type_; }
   const std::string& file() const { return file_; }
+  const std::string& get_file() const { return file_; }
   const double* refpos() const { return refpos_; }
   const double* refquat() const { return refquat_; }
   const double* scale() const { return scale_; }
@@ -754,6 +767,8 @@ class mjCSkin: public mjCBase {
   friend class mjXWriter;
 
  public:
+  std::string get_file() const { return file; }
+
   std::string file;                   // skin file
   std::string material;               // name of material used for rendering
   float rgba[4];                      // rgba when material is omitted
@@ -792,6 +807,8 @@ class mjCHField : public mjCBase {
   friend class mjXWriter;
 
  public:
+  std::string get_file() const { return file; }
+
   std::string content_type;       // content type of file
   std::string file;               // file: (nrow, ncol, [elevation data])
   double size[4];                 // hfield size (ignore referencing geom size)
@@ -819,6 +836,8 @@ class mjCTexture : public mjCBase {
   friend class mjXWriter;
 
  public:
+  std::string get_file() const { return file; }
+
   mjtTexture type;                // texture type
 
   // method 1: builtin
@@ -1099,6 +1118,7 @@ class mjCActuator : public mjCBase {
   int forcelimited;               // are force limits defined: 0 false, 1 true, 2 auto
   int actlimited;                 // are activation limits defined: 0 false, 1 true, 2 auto
   int actdim;                     // dimension of associated activations
+  int plugin_actdim;              // actuator state size for plugins
   mjtDyn dyntype;                 // dynamics type
   mjtTrn trntype;                 // transmission type
   mjtGain gaintype;               // gain type
