@@ -1,4 +1,4 @@
-name: UPM
+name: UPM Release
 
 on:
   workflow_dispatch:
