@@ -36,8 +36,8 @@
   #endif
 #endif
 
-#define mjVERSION 232
-#define mjVERSIONSTRING "2.3.2"
+#define mjVERSION 233
+#define mjVERSIONSTRING "2.3.3"
 
 // names of disable flags
 const char* mjDISABLESTRING[mjNDISABLE] = {
@@ -53,7 +53,8 @@ const char* mjDISABLESTRING[mjNDISABLE] = {
   "Filterparent",
   "Actuation",
   "Refsafe",
-  "Sensor"
+  "Sensor",
+  "Midphase"
 };
 
 
@@ -267,7 +268,7 @@ void mj_jacSparse(const mjModel* m, const mjData* d,
 
     // make sure we found it; SHOULD NOT OCCUR
     if (chain[ci]!=da) {
-      mju_error_i("dof index %d not found in chain", da);
+      mju_error("dof index %d not found in chain", da);
     }
 
     // construct rotation jacobian
@@ -636,8 +637,8 @@ uint64_t mj_hashdjb2(const char* s, uint64_t n) {
   return h % n;
 }
 
-
-// get id of object with specified name; -1: not found
+// get id of object with the specified mjtObj type and name,
+// returns -1 if id not found
 int mj_name2id(const mjModel* m, int type, const char* name) {
   int mapadr;
   int* adr = 0;
@@ -652,19 +653,23 @@ int mj_name2id(const mjModel* m, int type, const char* name) {
 
     do {
       int j = m->names_map[mapadr + i];
-      if (j < 0) return -1;
+      if (j<0) {
+        return -1;
+      }
+
       if (!strncmp(name, m->names+adr[j], m->nnames-adr[j])) {
         return j;
       }
-      if (++i == num) i = 0;
-    } while(i != hash);
+      if ((++i)==num) i = 0;
+    } while (i!=hash);
   }
   return -1;
 }
 
 
 
-// get name of object with specified id; 0: invalid type or id, or null name
+// get name of object with the specified mjtObj type and id,
+// returns NULL if name not found
 const char* mj_id2name(const mjModel* m, int type, int id) {
   int mapadr;
   int* adr = 0;
@@ -672,15 +677,12 @@ const char* mj_id2name(const mjModel* m, int type, int id) {
   // get number of objects and name addresses
   int num = _getnumadr(m, type, &adr, &mapadr);
 
-  if (id>=0 && id<num) {
-    if (m->names[adr[id]]) {
-      return m->names+adr[id];
-    } else {
-      return 0;
-    }
-  } else {
-    return 0;
+  // id is in [0, num) and the found name is not the empty string "\0"
+  if (id>=0 && id<num && m->names[adr[id]]) {
+    return m->names+adr[id];
   }
+
+  return NULL;
 }
 
 
@@ -974,94 +976,63 @@ void mj_addM(const mjModel* m, mjData* d, mjtNum* dst,
 
 
 
-// construct sparse matrix representations matching qM
-void mj_makeMSparse(const mjModel* m, mjData* d, int* rownnz, int* rowadr, int* colind) {
+//-------------------------- sparse system matrix conversion ---------------------------------------
+
+// dst[D] = src[M], handle different sparsity representations
+void mj_copyM2DSparse(const mjModel* m, mjData* d, mjtNum* dst, const mjtNum* src) {
   int nv = m->nv;
-
   mjMARKSTACK;
-  int *remaining = (int*) mj_stackAlloc(d, nv);
 
-  // compute rownnz
-  memset(rownnz, 0, nv*sizeof(int));
-  for (int i=nv-1; i>=0; i--) {
-    // init at diagonal
-    int j = i;
-    rownnz[i]++;
-
-    // process below diagonal
-    while ((j=m->dof_parentid[j]) >= 0) {
-      rownnz[i]++;
-      rownnz[j]++;
-    }
-  }
-
-  // accumulate rowadr
-  rowadr[0] = 0;
-  for (int i=1; i<nv; i++) {
-    rowadr[i] = rowadr[i-1] + rownnz[i-1];
-  }
-
-  // populate colind
-  memcpy(remaining, rownnz, nv*sizeof(int));
-  for (int i=nv-1; i>=0; i--) {
-    // init at diagonal
-    remaining[i]--;
-    colind[rowadr[i] + remaining[i]] = i;
-
-    // process below diagonal
-    int j = i;
-    while ((j = m->dof_parentid[j]) >= 0) {
-      remaining[i]--;
-      colind[rowadr[i] + remaining[i]] = j;
-
-      remaining[j]--;
-      colind[rowadr[j] + remaining[j]] = i;
-    }
-  }
-
-  // sanity check; SHOULD NOT OCCUR
-  for (int i=0; i<nv; i++) {
-    if (remaining[i]!=0) {
-      mju_error("Error in mj_makeMSparse: unexpected remaining");
-    }
-  }
-
-  mjFREESTACK;
-}
-
-
-
-// set dst = qM, handle different sparsity representations
-void mj_setMSparse(const mjModel* m, mjData* d, mjtNum* dst,
-                   const int *rownnz, const int *rowadr, const int *colind) {
-  int nv = m->nv;
-
-  mjMARKSTACK;
-  int *remaining = (int*) mj_stackAlloc(d, nv);
+  // init remaining
+  int* remaining = mj_stackAllocInt(d, nv);
+  memcpy(remaining, d->D_rownnz, nv * sizeof(int));
 
   // copy data
-  memcpy(remaining, rownnz, nv*sizeof(int));
-  for (int i=nv-1; i>=0; i--) {
+  for (int i = nv - 1; i >= 0; i--) {
     // init at diagonal
     int adr = m->dof_Madr[i];
     remaining[i]--;
-    dst[rowadr[i] + remaining[i]] = d->qM[adr];
+    dst[d->D_rowadr[i] + remaining[i]] = src[adr];
     adr++;
 
     // process below diagonal
     int j = i;
     while ((j = m->dof_parentid[j]) >= 0) {
       remaining[i]--;
-      dst[rowadr[i] + remaining[i]] = d->qM[adr];
+      dst[d->D_rowadr[i] + remaining[i]] = src[adr];
 
       remaining[j]--;
-      dst[rowadr[j] + remaining[j]] = d->qM[adr];
+      dst[d->D_rowadr[j] + remaining[j]] = src[adr];
 
       adr++;
     }
   }
 
-  mjFREESTACK;
+  mjFREESTACK
+}
+
+
+
+// dst[M] = src[D lower], handle different sparsity representations
+void mj_copyD2MSparse(const mjModel* m, mjData* d, mjtNum* dst, const mjtNum* src) {
+  int nv = m->nv;
+
+  // copy data
+  for (int i = nv - 1; i >= 0; i--) {
+    // find diagonal in qDeriv
+    int j = 0;
+    while (d->D_colind[d->D_rowadr[i] + j] < i) {
+      j++;
+    }
+
+    // copy
+    int adr = m->dof_Madr[i];
+    while (j >= 0) {
+      dst[adr] = src[d->D_rowadr[i] + j];
+      adr++;
+      j--;
+    }
+  }
 }
 
 
@@ -1082,7 +1053,7 @@ void mj_applyFT(const mjModel* m, mjData* d,
 
   // make sure body is in range
   if (body<0 || body>=m->nbody) {
-    mju_error_i("Invalid body %d in applyFT", body);
+    mju_error("Invalid body %d in applyFT", body);
   }
 
   // compute Jacobians
@@ -1157,7 +1128,7 @@ void mj_objectVelocity(const mjModel* m, const mjData* d,
 
   // object without spatial frame
   else {
-    mju_error_i("Invalid object type %d in mj_objectVelocity", objtype);
+    mju_error("Invalid object type %d in mj_objectVelocity", objtype);
   }
 
   // transform velocity
@@ -1210,7 +1181,7 @@ void mj_objectAcceleration(const mjModel* m, const mjData* d,
 
   // object without spatial frame
   else {
-    mju_error_i("Invalid object type %d in mj_objectAcceleration", objtype);
+    mju_error("Invalid object type %d in mj_objectAcceleration", objtype);
   }
 
   // transform com-based velocity to local frame
@@ -1270,7 +1241,8 @@ void mj_differentiatePos(const mjModel* m, mjtNum* qvel, mjtNum dt,
       vadr += 3;
       padr += 3;
 
-    // continute with rotations
+      // continute with rotations
+      mjFALLTHROUGH;
 
     case mjJNT_BALL:
       mju_negQuat(neg, qpos1+padr);           // solve:  qpos1 * dif = qpos2
@@ -1304,7 +1276,8 @@ void mj_integratePos(const mjModel* m, mjtNum* qpos, const mjtNum* qvel, mjtNum 
       padr += 3;
       vadr += 3;
 
-    // continue with rotation update
+      // continue with rotation update
+      mjFALLTHROUGH;
 
     case mjJNT_BALL:
       // quaternion update
@@ -1413,11 +1386,10 @@ void mj_setTotalmass(mjModel* m, mjtNum newmass) {
 
 // count warnings, print only the first time
 void mj_warning(mjData* d, int warning, int info) {
-  char str[1000];
 
   // check type
   if (warning<0 || warning>=mjNWARNING) {
-    mju_error_i("Invalid warning type %d", warning);
+    mju_error("Invalid warning type %d", warning);
   }
 
   // save info (override previous)
@@ -1425,8 +1397,7 @@ void mj_warning(mjData* d, int warning, int info) {
 
   // print message only the first time this warning is encountered
   if (!d->warning[warning].number) {
-    mjSNPRINTF(str, "%s Time = %.4f.", mju_warningText(warning, info), d->time);
-    mju_warning(str);
+    mju_warning("%s Time = %.4f.", mju_warningText(warning, info), d->time);
   }
 
   // increase counter

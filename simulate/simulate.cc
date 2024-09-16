@@ -54,7 +54,7 @@ using Milliseconds = std::chrono::duration<double, std::milli>;
 
 //------------------------------------------- global -----------------------------------------------
 
-const int maxgeom = 5000;            // preallocated geom array in mjvScene
+const int maxgeom = 20000;           // preallocated geom array in mjvScene
 const double zoom_increment = 0.02;  // ratio of one click-wheel zoom increment to vertical extent
 
 // section ids
@@ -547,7 +547,7 @@ void makephysics(mj::Simulate* sim, int oldstate) {
 
   mjuiDef defPhysics[] = {
     {mjITEM_SECTION,   "Physics",       oldstate, nullptr,           "AP"},
-    {mjITEM_SELECT,    "Integrator",    2, &(opt.integrator),        "Euler\nRK4\nimplicit"},
+    {mjITEM_SELECT,    "Integrator",    2, &(opt.integrator),        "Euler\nRK4\nimplicit\nimplicitfast"},
     {mjITEM_SELECT,    "Collision",     2, &(opt.collision),         "All\nPair\nDynamic"},
     {mjITEM_SELECT,    "Cone",          2, &(opt.cone),              "Pyramidal\nElliptic"},
     {mjITEM_SELECT,    "Jacobian",      2, &(opt.jacobian),          "Dense\nSparse\nAuto"},
@@ -634,7 +634,7 @@ void makerendering(mj::Simulate* sim, int oldstate) {
       2,
       &(sim->vopt.label),
       "None\nBody\nJoint\nGeom\nSite\nCamera\nLight\nTendon\n"
-      "Actuator\nConstraint\nSkin\nSelection\nSel Pnt\nForce"
+      "Actuator\nConstraint\nSkin\nSelection\nSel Pnt\nContact\nForce"
     },
     {
       mjITEM_SELECT,
@@ -710,6 +710,13 @@ void makerendering(mj::Simulate* sim, int oldstate) {
     defFlag[0].pdata = sim->vopt.flags + i;
     mjui_add(&sim->ui0, defFlag);
   }
+
+  // create tree slider
+  sim->m->vis.global.treedepth = 0;
+  mjuiDef defTree[] = {{mjITEM_SLIDERINT, "Tree depth", 2, &sim->m->vis.global.treedepth, "-1 15"},
+                       {mjITEM_END}};
+  mjui_add(&sim->ui0, defTree);
+
   mjui_add(&sim->ui0, defOpenGL);
   for (i=0; i<mjNRNDFLAG; i++) {
     mju::strcpy_arr(defFlag[0].name, mjRNDSTRING[i][0]);
@@ -1949,6 +1956,9 @@ void Simulate::renderloop() {
   mjui_add(&this->ui0, this->defWatch);
   uiModify(&this->ui0, &this->uistate, &this->platform_ui->mjr_context());
   uiModify(&this->ui1, &this->uistate, &this->platform_ui->mjr_context());
+
+  // set VSync to initial value
+  this->platform_ui->SetVSync(this->vsync);
 
   // run event loop
   while (!this->platform_ui->ShouldCloseWindow() && !this->exitrequest.load()) {

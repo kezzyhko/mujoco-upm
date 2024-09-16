@@ -25,6 +25,11 @@
 
 namespace mujoco::python {
 namespace {
+template <typename T, int N>
+constexpr inline std::size_t sizeof_arr(const T(&arr)[N]) {
+  return sizeof(arr);
+}
+
 PYBIND11_MODULE(_simulate, pymodule) {
   namespace py = ::pybind11;
   using SimulateMutex = decltype(mujoco::Simulate::mtx);
@@ -88,10 +93,13 @@ PYBIND11_MODULE(_simulate, pymodule) {
       .def_readonly("run", &mujoco::Simulate::run,
                     py::call_guard<py::gil_scoped_release>())
 
-      .def_property_readonly(
+      .def_property(
           "exitrequest",
           [](mujoco::Simulate& simulate) {
             return simulate.exitrequest.load();
+          },
+          [](mujoco::Simulate& simulate, bool exitrequest) {
+            simulate.exitrequest.store(exitrequest);
           },
           py::call_guard<py::gil_scoped_release>())
 
@@ -135,8 +143,9 @@ PYBIND11_MODULE(_simulate, pymodule) {
             return simulate.loadError;
           },
           [](mujoco::Simulate& simulate, const std::string& error) {
-            std::strncpy(simulate.loadError, error.c_str(),
-                         simulate.kMaxFilenameLength);
+            const auto max_length = sizeof_arr(simulate.loadError);
+            std::strncpy(simulate.loadError, error.c_str(), max_length - 1);
+            simulate.loadError[max_length - 1] = '\0';
           });
 
   pymodule.def("setglfwdlhandle", [](std::uintptr_t dlhandle) {

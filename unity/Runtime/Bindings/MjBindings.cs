@@ -101,7 +101,7 @@ public const int mjMAXLINEPNT = 1000;
 public const int mjMAXPLANEGRID = 200;
 public const bool THIRD_PARTY_MUJOCO_MJXMACRO_H_ = true;
 public const bool THIRD_PARTY_MUJOCO_MUJOCO_H_ = true;
-public const int mjVERSION_HEADER = 232;
+public const int mjVERSION_HEADER = 233;
 
 
 // ------------------------------------Enums------------------------------------
@@ -146,7 +146,8 @@ public enum mjtDisableBit : int{
   mjDSBL_ACTUATION = 1024,
   mjDSBL_REFSAFE = 2048,
   mjDSBL_SENSOR = 4096,
-  mjNDISABLE = 13,
+  mjDSBL_MIDPHASE = 8192,
+  mjNDISABLE = 14,
 }
 public enum mjtEnableBit : int{
   mjENBL_OVERRIDE = 1,
@@ -196,6 +197,7 @@ public enum mjtIntegrator : int{
   mjINT_EULER = 0,
   mjINT_RK4 = 1,
   mjINT_IMPLICIT = 2,
+  mjINT_IMPLICITFAST = 3,
 }
 public enum mjtCollision : int{
   mjCOL_ALL = 0,
@@ -445,8 +447,9 @@ public enum mjtLabel : int{
   mjLABEL_SKIN = 10,
   mjLABEL_SELECTION = 11,
   mjLABEL_SELPNT = 12,
-  mjLABEL_CONTACTFORCE = 13,
-  mjNLABEL = 14,
+  mjLABEL_CONTACTPOINT = 13,
+  mjLABEL_CONTACTFORCE = 14,
+  mjNLABEL = 15,
 }
 public enum mjtFrame : int{
   mjFRAME_NONE = 0,
@@ -483,7 +486,8 @@ public enum mjtVisFlag : int{
   mjVIS_SELECT = 20,
   mjVIS_STATIC = 21,
   mjVIS_SKIN = 22,
-  mjNVISFLAG = 23,
+  mjVIS_MIDPHASE = 23,
+  mjNVISFLAG = 24,
 }
 public enum mjtRndFlag : int{
   mjRND_SHADOW = 0,
@@ -1586,6 +1590,7 @@ public unsafe struct mjData_ {
   public int ne;
   public int nf;
   public int nefc;
+  public int nnzJ;
   public int ncon;
   public double time;
   public fixed double energy[2];
@@ -1641,6 +1646,7 @@ public unsafe struct mjData_ {
   public double* qLD;
   public double* qLDiagInv;
   public double* qLDiagSqrtInv;
+  public byte* bvh_active;
   public double* ten_velocity;
   public double* actuator_velocity;
   public double* cvel;
@@ -1656,6 +1662,9 @@ public unsafe struct mjData_ {
   public int* D_rownnz;
   public int* D_rowadr;
   public int* D_colind;
+  public int* B_rownnz;
+  public int* B_rowadr;
+  public int* B_colind;
   public double* qDeriv;
   public double* qLU;
   public double* actuator_force;
@@ -1706,7 +1715,7 @@ public unsafe struct mjLROpt_ {
   public double timeconst;
   public double timestep;
   public double inttotal;
-  public double inteval;
+  public double interval;
   public double tolrange;
 }
 
@@ -1758,6 +1767,7 @@ public unsafe struct global {
   public float realtime;
   public int offwidth;
   public int offheight;
+  public int treedepth;
 }
 
 [StructLayout(LayoutKind.Sequential)]
@@ -1866,6 +1876,7 @@ public unsafe struct mjModel_ {
   public int nu;
   public int na;
   public int nbody;
+  public int nbvh;
   public int njnt;
   public int ngeom;
   public int nsite;
@@ -1873,7 +1884,8 @@ public unsafe struct mjModel_ {
   public int nlight;
   public int nmesh;
   public int nmeshvert;
-  public int nmeshtexvert;
+  public int nmeshnormal;
+  public int nmeshtexcoord;
   public int nmeshface;
   public int nmeshgraph;
   public int nskin;
@@ -1915,6 +1927,7 @@ public unsafe struct mjModel_ {
   public int nnames_map;
   public int nM;
   public int nD;
+  public int nB;
   public int nemax;
   public int njmax;
   public int nconmax;
@@ -1952,6 +1965,12 @@ public unsafe struct mjModel_ {
   public double* body_gravcomp;
   public double* body_user;
   public int* body_plugin;
+  public int* body_bvhadr;
+  public int* body_bvhnum;
+  public int* bvh_depth;
+  public int* bvh_child;
+  public int* bvh_geomid;
+  public double* bvh_aabb;
   public int* jnt_type;
   public int* jnt_qposadr;
   public int* jnt_dofadr;
@@ -1992,6 +2011,7 @@ public unsafe struct mjModel_ {
   public double* geom_solref;
   public double* geom_solimp;
   public double* geom_size;
+  public double* geom_aabb;
   public double* geom_rbound;
   public double* geom_pos;
   public double* geom_quat;
@@ -2041,14 +2061,19 @@ public unsafe struct mjModel_ {
   public float* light_specular;
   public int* mesh_vertadr;
   public int* mesh_vertnum;
-  public int* mesh_texcoordadr;
   public int* mesh_faceadr;
   public int* mesh_facenum;
+  public int* mesh_normaladr;
+  public int* mesh_normalnum;
+  public int* mesh_texcoordadr;
+  public int* mesh_texcoordnum;
   public int* mesh_graphadr;
   public float* mesh_vert;
   public float* mesh_normal;
   public float* mesh_texcoord;
   public int* mesh_face;
+  public int* mesh_facenormal;
+  public int* mesh_facetexcoord;
   public int* mesh_graph;
   public int* skin_matid;
   public int* skin_group;
@@ -2465,8 +2490,9 @@ public unsafe struct mjvPerturb_ {
   public int active2;
   public fixed double refpos[3];
   public fixed double refquat[4];
-  public fixed double reflocalpos[3];
+  public fixed double refselpos[3];
   public fixed double localpos[3];
+  public double localmass;
   public double scale;
 }
 
@@ -2544,7 +2570,7 @@ public unsafe struct mjvOption_ {
   public fixed byte tendongroup[6];
   public fixed byte actuatorgroup[6];
   public fixed byte skingroup[6];
-  public fixed byte flags[23];
+  public fixed byte flags[24];
 }
 
 [StructLayout(LayoutKind.Sequential)]
@@ -2806,6 +2832,9 @@ public static unsafe extern void mj_resetDataKeyframe(mjModel_* m, mjData_* d, i
 
 [DllImport("mujoco", CallingConvention = CallingConvention.Cdecl)]
 public static unsafe extern double* mj_stackAlloc(mjData_* d, int size);
+
+[DllImport("mujoco", CallingConvention = CallingConvention.Cdecl)]
+public static unsafe extern int* mj_stackAllocInt(mjData_* d, int size);
 
 [DllImport("mujoco", CallingConvention = CallingConvention.Cdecl)]
 public static unsafe extern void mj_deleteData(mjData_* d);
@@ -3251,16 +3280,10 @@ public static unsafe extern mjuiItem_* mjui_event(mjUI_* ui, mjuiState_* state, 
 public static unsafe extern void mjui_render(mjUI_* ui, mjuiState_* state, mjrContext_* con);
 
 [DllImport("mujoco", CallingConvention = CallingConvention.Cdecl)]
-public static unsafe extern void mju_error([MarshalAs(UnmanagedType.LPStr)]string msg);
-
-[DllImport("mujoco", CallingConvention = CallingConvention.Cdecl)]
 public static unsafe extern void mju_error_i([MarshalAs(UnmanagedType.LPStr)]string msg, int i);
 
 [DllImport("mujoco", CallingConvention = CallingConvention.Cdecl)]
 public static unsafe extern void mju_error_s([MarshalAs(UnmanagedType.LPStr)]string msg, [MarshalAs(UnmanagedType.LPStr)]string text);
-
-[DllImport("mujoco", CallingConvention = CallingConvention.Cdecl)]
-public static unsafe extern void mju_warning([MarshalAs(UnmanagedType.LPStr)]string msg);
 
 [DllImport("mujoco", CallingConvention = CallingConvention.Cdecl)]
 public static unsafe extern void mju_warning_i([MarshalAs(UnmanagedType.LPStr)]string msg, int i);

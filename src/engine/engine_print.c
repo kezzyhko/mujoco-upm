@@ -51,13 +51,14 @@ static void printArray(const char* str, int nr, int nc, const mjtNum* data, FILE
     return;
   }
   if (nr && nc) {
-    fprintf(fp, "%s\n  ", str);
+    fprintf(fp, "%s\n", str);
     for (int r=0; r<nr; r++) {
+      fprintf(fp, " ");
       for (int c=0; c<nc; c++) {
-        fprintf(fp, float_format, data[c + r*nc]);
         fprintf(fp, " ");
+        fprintf(fp, float_format, data[c + r*nc]);
       }
-      fprintf(fp, "\n  ");
+      fprintf(fp, "\n");
     }
     fprintf(fp, "\n");
   }
@@ -70,12 +71,14 @@ static void printArrayInt(const char* str, int nr, int nc, const int* data, FILE
     return;
   }
   if (nr && nc) {
-    fprintf(fp, "%s\n  ", str);
+    fprintf(fp, "%s\n", str);
     for (int r=0; r<nr; r++) {
+      fprintf(fp, " ");
       for (int c=0; c<nc; c++) {
-        fprintf(fp, "%d ", data[c + r*nc]);
+        fprintf(fp, " ");
+        fprintf(fp, "%d", data[c + r*nc]);
       }
-      fprintf(fp, "\n  ");
+      fprintf(fp, "\n");
     }
     fprintf(fp, "\n");
   }
@@ -90,15 +93,16 @@ static void printSparse(const char* str, const mjtNum* mat, int nr,
   if (!mat) {
     return;
   }
-  fprintf(fp, "%s\n  ", str);
+  fprintf(fp, "%s\n", str);
 
   for (int r=0; r<nr; r++) {
+    fprintf(fp, "  ");
     for (int adr=rowadr[r]; adr<rowadr[r]+rownnz[r]; adr++) {
+      fprintf(fp, "  ");
       fprintf(fp, "%d: ", colind[adr]);
       fprintf(fp, float_format, mat[adr]);
-      fprintf(fp, "  ");
     }
-    fprintf(fp, "\n  ");
+    fprintf(fp, "\n");
   }
   fprintf(fp, "\n");
 }
@@ -116,8 +120,8 @@ static void printVector(const char* str, const mjtNum* data, int n, FILE* fp,
 
   // print data
   for (int i=0; i<n; i++) {
-    fprintf(fp, float_format, data[i]);
     fprintf(fp, " ");
+    fprintf(fp, float_format, data[i]);
   }
   fprintf(fp, "\n");
 }
@@ -135,13 +139,13 @@ static bool validateFloatFormat(const char* float_format) {
 
   // example valid format string: "% -9.2g"
   if (strnlen(float_format, FLOAT_FORMAT_MAX_LEN + 1) > FLOAT_FORMAT_MAX_LEN) {
-    mju_warning_i("Format string longer than limit of %d.", FLOAT_FORMAT_MAX_LEN);
+    mju_warning("Format string longer than limit of %d.", FLOAT_FORMAT_MAX_LEN);
     return false;
   }
 
   int cur_idx = 0;
   if (float_format[cur_idx] != '%') {
-    mju_warning("Format string must start with '%'.");
+    mju_warning("Format string must start with '%%'.");
     return false;
   }
   cur_idx++;
@@ -188,8 +192,8 @@ static bool validateFloatFormat(const char* float_format) {
   if (float_format[cur_idx] == '\0') {
     return true;
   } else {
-    mju_warning_s("Unable to match format string %s with expected pattern for a single float.",
-                  float_format);
+    mju_warning("Unable to match format string %s with expected pattern for a single float.",
+                float_format);
     return false;
   }
 }
@@ -215,7 +219,7 @@ void mj_printFormattedModel(const mjModel* m, const char* filename, const char* 
 
   // check for nullptr
   if (!fp) {
-    mju_warning_s("Could not open file '%s' for writing mjModel", filename);
+    mju_warning("Could not open file '%s' for writing mjModel", filename);
     return;
   }
 
@@ -744,7 +748,7 @@ void mj_printFormattedData(const mjModel* m, mjData* d, const char* filename,
 
   // check for nullptr
   if (!fp) {
-    mju_warning_s("Could not open file '%s' for writing mjModel", filename);
+    mju_warning("Could not open file '%s' for writing mjModel", filename);
     mjFREESTACK;
     return;
   }
@@ -911,21 +915,42 @@ void mj_printFormattedData(const mjModel* m, mjData* d, const char* filename,
   // D_rownnz
   fprintf(fp, NAME_FORMAT, "D_rownnz");
   for (int i = 0; i < m->nv; i++) {
-    fprintf(fp, "%d ", d->D_rownnz[i]);
+    fprintf(fp, " %d", d->D_rownnz[i]);
   }
   fprintf(fp, "\n\n");
 
   // D_rowadr
   fprintf(fp, NAME_FORMAT, "D_rowadr");
   for (int i = 0; i < m->nv; i++) {
-    fprintf(fp, "%d ", d->D_rowadr[i]);
+    fprintf(fp, " %d", d->D_rowadr[i]);
   }
   fprintf(fp, "\n\n");
 
   // D_colind
   fprintf(fp, NAME_FORMAT, "D_colind");
   for (int i = 0; i < m->nD; i++) {
-    fprintf(fp, "%d ", d->D_colind[i]);
+    fprintf(fp, " %d", d->D_colind[i]);
+  }
+  fprintf(fp, "\n\n");
+
+  // B_rownnz
+  fprintf(fp, NAME_FORMAT, "B_rownnz");
+  for (int i = 0; i < m->nbody; i++) {
+    fprintf(fp, " %d", d->B_rownnz[i]);
+  }
+  fprintf(fp, "\n\n");
+
+  // B_rowadr
+  fprintf(fp, NAME_FORMAT, "B_rowadr");
+  for (int i = 0; i < m->nbody; i++) {
+    fprintf(fp, " %d", d->B_rowadr[i]);
+  }
+  fprintf(fp, "\n\n");
+
+  // B_colind
+  fprintf(fp, NAME_FORMAT, "B_colind");
+  for (int i = 0; i < m->nB; i++) {
+    fprintf(fp, " %d", d->B_colind[i]);
   }
   fprintf(fp, "\n\n");
 

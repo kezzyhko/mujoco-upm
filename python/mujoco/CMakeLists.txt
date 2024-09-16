@@ -22,6 +22,9 @@ set(CMAKE_POLICY_DEFAULT_CMP0069 NEW)
 
 enable_language(C)
 enable_language(CXX)
+if(APPLE)
+  enable_language(OBJCXX)
+endif()
 
 if(MSVC AND MSVC_VERSION GREATER_EQUAL 1927)
   set(CMAKE_CXX_STANDARD 20) # For forceinline lambdas.
@@ -67,7 +70,12 @@ include(FindOrFetch)
 
 # ==================== MUJOCO LIBRARY ==========================================
 if(NOT TARGET mujoco)
-  add_library(mujoco SHARED IMPORTED GLOBAL)
+  add_library(
+    mujoco
+    SHARED
+    IMPORTED
+    GLOBAL
+  )
   if(APPLE)
     # On macOS, check if we are using mujoco.framework first.
     # Framework headers are searched differently from normal headers.
@@ -75,13 +83,17 @@ if(NOT TARGET mujoco)
     find_path(MUJOCO_FRAMEWORK mujoco.Framework HINTS ${MUJOCO_FRAMEWORK_DIR})
     if(MUJOCO_FRAMEWORK)
       message("MuJoCo framework is at ${MUJOCO_FRAMEWORK}/mujoco.framework")
-      set(MUJOCO_LIBRARY ${MUJOCO_FRAMEWORK}/mujoco.framework/Versions/A/libmujoco.2.3.2.dylib)
+      set(MUJOCO_LIBRARY
+          ${MUJOCO_FRAMEWORK}/mujoco.framework/Versions/A/libmujoco.2.3.3.dylib
+      )
       target_compile_options(mujoco INTERFACE -F${MUJOCO_FRAMEWORK})
     endif()
   endif()
 
   if(NOT MUJOCO_FRAMEWORK)
-    find_library(MUJOCO_LIBRARY mujoco mujoco.2.3.2 HINTS ${MUJOCO_LIBRARY_DIR} REQUIRED)
+    find_library(
+      MUJOCO_LIBRARY mujoco mujoco.2.3.3 HINTS ${MUJOCO_LIBRARY_DIR} REQUIRED
+    )
     find_path(MUJOCO_INCLUDE mujoco/mujoco.h HINTS ${MUJOCO_INCLUDE_DIR} REQUIRED)
     message("MuJoCo is at ${MUJOCO_LIBRARY}")
     message("MuJoCo headers are at ${MUJOCO_INCLUDE}")
@@ -128,7 +140,7 @@ findorfetch(
   GIT_REPO
   https://github.com/abseil/abseil-cpp
   GIT_TAG
-  78be63686ba732b25052be15f8d6dee891c05749 # LTS 20230125
+  c8a2f92586fe9b4e1aff049108f5db8064924d8e # LTS 20230125.1
   TARGETS
   ${MUJOCO_PYTHON_ABSL_TARGETS}
   EXCLUDE_FROM_ALL
@@ -178,7 +190,7 @@ findorfetch(
   GIT_REPO
   https://github.com/pybind/pybind11
   GIT_TAG
-  8ece7d641ca6ce316e59fec6744b8517073bbe32
+  0bd8896a4010f2d91b2340570c24fa08606ec406 # v2.10.3
   TARGETS
   pybind11::pybind11_headers
   EXCLUDE_FROM_ALL
@@ -276,16 +288,18 @@ macro(mujoco_pybind11_module name)
   pybind11_add_module(${name} ${ARGN})
   target_compile_options(${name} PRIVATE ${AVX_COMPILE_OPTIONS})
   if(NOT MSVC)
-    target_compile_options(${name} PRIVATE -Wall -Werror)
-    if(CMAKE_C_COMPILER_ID STREQUAL GNU)
-      target_compile_options(
-        ${name}
-        PRIVATE -Wno-int-in-bool-context
-                -Wno-maybe-uninitialized
-                -Wno-sign-compare
-                -Wno-stringop-overflow
-                -Wno-stringop-truncation
-      )
+    target_compile_options(
+      ${name}
+      PRIVATE -Werror
+              -Wall
+              -Wimplicit-fallthrough
+              -Wunused
+              -Wno-int-in-bool-context
+              -Wno-sign-compare
+    )
+    if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
+      # Only allow fallthrough annotation via __attribute__.
+      target_compile_options(${name} PRIVATE -Wimplicit-fallthrough=5)
     endif()
   endif()
   set_target_properties(${name} PROPERTIES LIBRARY_OUTPUT_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR})
@@ -380,7 +394,8 @@ target_link_libraries(
   PRIVATE mujoco
           mujoco::libsimulate
           raw
-          structs_header)
+          structs_header
+)
 
 set(LIBRARIES_FOR_WHEEL
     "$<TARGET_FILE:_callbacks>"
@@ -394,6 +409,13 @@ set(LIBRARIES_FOR_WHEEL
     "$<TARGET_FILE:_structs>"
     "$<TARGET_FILE:mujoco>"
 )
+
+if(APPLE)
+  add_executable(mjpython mjpython/mjpython.mm)
+  target_include_directories(mjpython PRIVATE "${Python3_INCLUDE_DIRS}")
+  target_link_libraries(mjpython PRIVATE "-framework Cocoa")
+  set(LIBRARIES_FOR_WHEEL "${LIBRARIES_FOR_WHEEL}" "$<TARGET_FILE:mjpython>")
+endif()
 
 if(MUJOCO_PYTHON_MAKE_WHEEL)
   add_custom_target(
@@ -422,4 +444,7 @@ if(MUJOCO_PYTHON_MAKE_WHEEL)
     _structs
     mujoco
   )
+  if(APPLE)
+    add_dependencies(wheel mjpython)
+  endif()
 endif()

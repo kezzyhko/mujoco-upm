@@ -14,11 +14,13 @@
 # ==============================================================================
 """Interactive GUI viewer for MuJoCo."""
 
+import abc
 import atexit
 import code
 import inspect
 import math
 import os
+import sys
 import threading
 import time
 from typing import Callable, Optional, Tuple, Union
@@ -55,6 +57,18 @@ _LoaderWithPathType = Callable[[], Tuple[mujoco.MjModel, mujoco.MjData, str]]
 _InternalLoaderType = Union[LoaderType, _LoaderWithPathType]
 
 Simulate = _simulate.Simulate
+
+
+# Abstract base dispatcher class for systems that require UI calls to be made
+# on a specific thread (e.g. macOS). This is subclassed by system-specific
+# Python launcher (mjpython) to implement the required dispatching mechanism.
+class _MjPythonBase(metaclass=abc.ABCMeta):
+
+  def launch_on_ui_thread(self, model: mujoco.MjModel, data: mujoco.MjData):
+    pass
+
+# When running under mjpython, the launcher initializes this object.
+_MJPYTHON: Optional[_MjPythonBase] = None
 
 
 def _file_loader(path: str) -> _LoaderWithPathType:
@@ -213,7 +227,8 @@ def _launch_internal(model: Optional[mujoco.MjModel] = None,
                      data: Optional[mujoco.MjData] = None,
                      *,
                      run_physics_thread: bool = True,
-                     loader: Optional[_InternalLoaderType] = None) -> None:
+                     loader: Optional[_InternalLoaderType] = None,
+                     simulate: Optional[Simulate] = None) -> None:
   """Internal API, so that the public API has more readable type annotations."""
   if model is None and data is not None:
     raise ValueError('mjData is specified but mjModel is not')
@@ -233,13 +248,14 @@ def _launch_internal(model: Optional[mujoco.MjModel] = None,
     loader = _loader
 
   # The simulate object encapsulates the UI.
-  simulate = Simulate()
+  if simulate is None:
+    simulate = Simulate()
 
-  # Initialize GLFW.
-  if not glfw.init():
-    raise mujoco.FatalError('could not initialize GLFW')
-
-  atexit.register(glfw.terminate)
+  # Initialize GLFW if not using mjpython.
+  if _MJPYTHON is None:
+    if not glfw.init():
+      raise mujoco.FatalError('could not initialize GLFW')
+    atexit.register(glfw.terminate)
 
   side_thread = None
   if run_physics_thread:
@@ -248,8 +264,18 @@ def _launch_internal(model: Optional[mujoco.MjModel] = None,
   else:
     side_thread = threading.Thread(
         target=_reload, args=(simulate, loader))
+
+  def make_exit_requester(simulate):
+    def exit_requester():
+      simulate.exitrequest = True
+    return exit_requester
+
+  exit_requester = make_exit_requester(simulate)
+  atexit.register(exit_requester)
+
   side_thread.start()
   simulate.renderloop()
+  atexit.unregister(exit_requester)
   side_thread.join()
 
 
@@ -268,26 +294,102 @@ def launch_from_path(path: str) -> None:
   _launch_internal(loader=_file_loader(path))
 
 
+def launch_passive(model: mujoco.MjModel, data: mujoco.MjData) -> None:
+  """Launches a passive Simulate GUI without blocking the running thread."""
+  if not isinstance(model, mujoco.MjModel):
+    raise ValueError(f'`model` is not a mujoco.MjModel: got {model!r}')
+  if not isinstance(data, mujoco.MjData):
+    raise ValueError(f'`data` is not a mujoco.MjData: got {data!r}')
+  if sys.platform != 'darwin':
+    thread = threading.Thread(
+        target=_launch_internal,
+        args=(model, data),
+        kwargs=dict(run_physics_thread=False),
+    )
+    thread.daemon = True
+    thread.start()
+  else:
+    if not isinstance(_MJPYTHON, _MjPythonBase):
+      raise RuntimeError(
+          '`launch_passive` requires that the Python script be run under '
+          '`mjpython`')
+    _MJPYTHON.launch_on_ui_thread(model, data)
+
+
 def launch_repl(model: mujoco.MjModel, data: mujoco.MjData) -> None:
-  """EXPERIMENTAL FEATURE: Launches the Simulate GUI in REPL mode."""
+  """Launches the Simulate GUI in REPL mode."""
+  ipython_shell = None
   try:
     import IPython  # pylint: disable=g-import-not-at-top
-    has_ipython = True
+    ipython_shell = IPython.get_ipython()
+    ipython_is_terminal_interactive_shell = isinstance(
+        ipython_shell,
+        IPython.terminal.interactiveshell.TerminalInteractiveShell)
   except ImportError:
-    has_ipython = False
+    ipython_is_terminal_interactive_shell = False
+
+  simulate = Simulate()
+  viewer_is_running = True
 
   def start_shell(global_variables):
-    if has_ipython and IPython.get_ipython() is not None:
-      locals().update(global_variables)
-      IPython.embed()
+    if ipython_is_terminal_interactive_shell:
+      ipython_shell.execution_count += 1
+
+      # A SQLite connection can only be used on the same thread that opened it.
+      # We cache the existing connection and reopen on the current thread.
+      old_db = ipython_shell.history_manager.db
+      ipython_shell.history_manager.init_db()
+      ipython_shell.history_manager.new_session()
+
+      try:
+        # Replicate IPython main loop without exiting on keyboard interrupt,
+        # unless the viewer window has already been closed.
+        # (https://github.com/ipython/ipython/blob/8.9.0/IPython/terminal/interactiveshell.py#L701)
+        while viewer_is_running and ipython_shell.keep_running:
+          print(ipython_shell.separate_in, end='')
+          try:
+            c = ipython_shell.prompt_for_code()
+          except EOFError:
+            if not ipython_shell.confirm_exit or ipython_shell.ask_yes_no(
+                'Do you really want to exit ([y]/n)?', 'y', 'n'):
+              ipython_shell.ask_exit()
+            if not ipython_shell.keep_running and simulate is not None:
+              simulate.exitrequest = True
+          else:
+            if c:
+              ipython_shell.run_cell(c, store_history=True)
+      finally:
+        # Close the temporary history DB connection and restore the old one.
+        ipython_shell.history_manager.end_session()
+        ipython_shell.history_manager.db.close()
+        ipython_shell.history_manager.db = old_db
+        ipython_shell.execution_count -= 1
     else:
       code.InteractiveConsole(locals=global_variables).interact()
 
-  repl_thread = threading.Thread(
-      target=start_shell, args=(inspect.stack()[1][0].f_globals,))
-  repl_thread.start()
-  launch(model, data, run_physics_thread=False)
-  repl_thread.join()
+  # End IPython history session on the main thread. We will need to open
+  # a new session in the REPL thread.
+  if ipython_is_terminal_interactive_shell:
+    ipython_shell.history_manager.end_session()
+
+  try:
+    # Continue the IPython REPL session in a separate thread.
+    repl_thread = threading.Thread(
+        target=start_shell, args=(inspect.stack()[1][0].f_globals,))
+    repl_thread.start()
+
+    # Launch the viewer on the main thread.
+    _launch_internal(
+        model, data, run_physics_thread=False, simulate=simulate)
+    simulate = None
+
+    # Wait until the REPL thread quits, then restore the IPython history
+    # DB session on the main thread.
+    viewer_is_running = False
+    repl_thread.join()
+  finally:
+    if ipython_is_terminal_interactive_shell:
+      ipython_shell.history_manager.new_session()
 
 
 if __name__ == '__main__':

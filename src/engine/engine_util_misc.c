@@ -286,7 +286,7 @@ mjtNum mju_wrap(mjtNum* wpnt, const mjtNum* x0, const mjtNum* x1,
 
   // check object type;  SHOULD NOT OCCUR
   if (type!=mjWRAP_SPHERE && type!=mjWRAP_CYLINDER) {
-    mju_error_i("mju_wrap: unknown wrapping object type %d", type);
+    mju_error("mju_wrap: unknown wrapping object type %d", type);
   }
 
   // map sites to wrap object's local frame
@@ -947,7 +947,7 @@ int mju_str2Type(const char* str) {
 
 
 // return human readable number of bytes using standard letter suffix
-const char* mju_writeNumBytes(const size_t nbytes) {
+const char* mju_writeNumBytes(size_t nbytes) {
   int i;
   static mjTHREADLOCAL char message[20];
   static const char suffix[] = " KMGTPE";

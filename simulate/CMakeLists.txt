@@ -29,7 +29,7 @@ set(MUJOCO_DEP_VERSION_lodepng
 
 project(
   mujoco_simulate
-  VERSION 2.3.2
+  VERSION 2.3.3
   DESCRIPTION "MuJoCo simulate binaries"
   HOMEPAGE_URL "https://mujoco.org"
 )
@@ -104,19 +104,17 @@ endif()
 add_library(platform_ui_adapter OBJECT)
 target_sources(
   platform_ui_adapter
-  PUBLIC glfw_adapter.h
-         glfw_dispatch.h
-         platform_ui_adapter.h
-  PRIVATE glfw_adapter.cc
-          glfw_dispatch.cc
-          platform_ui_adapter.cc
+  PUBLIC glfw_adapter.h glfw_dispatch.h platform_ui_adapter.h
+  PRIVATE glfw_adapter.cc glfw_dispatch.cc platform_ui_adapter.cc
 )
 target_compile_options(platform_ui_adapter PUBLIC ${MUJOCO_SIMULATE_COMPILE_OPTIONS})
+if(APPLE)
+  target_sources(platform_ui_adapter PUBLIC glfw_corevideo.h PRIVATE glfw_corevideo.mm)
+  target_link_libraries(platform_ui_adapter PUBLIC "-framework CoreVideo")
+endif()
 target_include_directories(
-  platform_ui_adapter
-  PUBLIC
-  ${CMAKE_CURRENT_SOURCE_DIR}
-  $<TARGET_PROPERTY:glfw,INTERFACE_INCLUDE_DIRECTORIES>
+  platform_ui_adapter PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}
+                             $<TARGET_PROPERTY:glfw,INTERFACE_INCLUDE_DIRECTORIES>
 )
 target_link_libraries(platform_ui_adapter PUBLIC mujoco::mujoco)
 if(SIMULATE_GLFW_DYNAMIC_SYMBOLS)
@@ -131,8 +129,7 @@ add_library(mujoco::libsimulate ALIAS libsimulate)
 target_sources(
   libsimulate
   PUBLIC simulate.h
-  PRIVATE simulate.cc
-          array_safety.h
+  PRIVATE simulate.cc array_safety.h
 )
 target_include_directories(libsimulate PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 target_compile_options(libsimulate PUBLIC ${MUJOCO_SIMULATE_COMPILE_OPTIONS})

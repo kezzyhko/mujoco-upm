@@ -234,6 +234,7 @@ mjCModel::~mjCModel() {
 void mjCModel::Clear(void) {
   // sizes set from list lengths
   nbody = 0;
+  nbvh = 0;
   njnt = 0;
   ngeom = 0;
   nsite = 0;
@@ -258,7 +259,8 @@ void mjCModel::Clear(void) {
   nu = 0;
   na = 0;
   nmeshvert = 0;
-  nmeshtexvert = 0;
+  nmeshnormal = 0;
+  nmeshtexcoord = 0;
   nmeshface = 0;
   nmeshgraph = 0;
   nskinvert = 0;
@@ -280,6 +282,7 @@ void mjCModel::Clear(void) {
   nemax = 0;
   nM = 0;
   nD = 0;
+  nB = 0;
   njmax = -1;
   nconmax = -1;
 
@@ -933,11 +936,17 @@ void mjCModel::SetSizes(void) {
     }
   }
 
-  // nmeshvert, nmeshface, nmeshtexvert, nmeshgraph
+  // nbvh
+  for (i=0; i<nbody; i++) {
+    nbvh += bodies[i]->nbvh;
+  }
+
+  // nmeshvert, nmeshface, nmeshtexcoord, nmeshgraph
   for (i=0; i<nmesh; i++) {
     nmeshvert += meshes[i]->nvert;
+    nmeshnormal += meshes[i]->nnormal;
     nmeshface += meshes[i]->nface;
-    nmeshtexvert += (meshes[i]->texcoord ? meshes[i]->nvert : 0);
+    nmeshtexcoord += (meshes[i]->texcoord ? meshes[i]->ntexcoord : 0);
     nmeshgraph += meshes[i]->szgraph;
   }
 
@@ -1321,6 +1330,7 @@ void mjCModel::CopyTree(mjModel* m) {
   int jntadr = 0;         // addresses in global arrays
   int dofadr = 0;
   int qposadr = 0;
+  int bvh_adr = 0;
 
   // main loop over bodies
   for (i=0; i<nbody; i++) {
@@ -1346,6 +1356,17 @@ void mjCModel::CopyTree(mjModel* m) {
     copyvec(m->body_inertia+3*i, pb->inertia, 3);
     m->body_gravcomp[i] = pb->gravcomp;
     copyvec(m->body_user+nuser_body*i, pb->userdata.data(), nuser_body);
+
+    // bounding volume hierarchy
+    m->body_bvhadr[i] = (!pb->geoms.empty() ? bvh_adr : -1);
+    m->body_bvhnum[i] = pb->nbvh;
+    if (pb->nbvh) {
+      memcpy(m->bvh_aabb + 6*bvh_adr, pb->bvh.data(), 6*pb->nbvh*sizeof(mjtNum));
+      memcpy(m->bvh_child + 2*bvh_adr, pb->child.data(), 2*pb->nbvh*sizeof(int));
+      memcpy(m->bvh_geomid + bvh_adr, pb->nodeid.data(), pb->nbvh*sizeof(int));
+      memcpy(m->bvh_depth + bvh_adr, pb->level.data(), pb->nbvh*sizeof(int));
+    }
+    bvh_adr += pb->nbvh;
 
     // count free joints
     int cntfree = 0;
@@ -1495,6 +1516,7 @@ void mjCModel::CopyTree(mjModel* m) {
       m->geom_group[gid] = pg->group;
       m->geom_priority[gid] = pg->priority;
       copyvec(m->geom_size+3*gid, pg->size, 3);
+      copyvec(m->geom_aabb+6*gid, pg->aabb, 6);
       copyvec(m->geom_pos+3*gid, pg->locpos, 3);
       copyvec(m->geom_quat+4*gid, pg->locquat, 4);
       copyvec(m->geom_friction+3*gid, pg->friction, 3);
@@ -1620,9 +1642,38 @@ void mjCModel::CopyTree(mjModel* m) {
   }
   m->nM = nM;
 
-  // set nD
-  nD = 2*nM - nv;
+  // compute nD
+  nD = 2 * nM - nv;
   m->nD = nD;
+
+  // compute subtreedofs in backward pass over bodies
+  for (i = nbody - 1; i > 0; i--) {
+    // add body dofs to self count
+    bodies[i]->subtreedofs += bodies[i]->dofnum;
+
+    // add to parent count
+    bodies[bodies[i]->parentid]->subtreedofs += bodies[i]->subtreedofs;
+  }
+
+  // make sure all dofs are in world "subtree", SHOULD NOT OCCUR
+  if (bodies[0]->subtreedofs != nv) {
+    throw mjCError(0, "all DOFs should be in world subtree");
+  }
+
+  // compute nB
+  nB = 0;
+  for (i = 0; i < nbody; i++) {
+    // add subtree dofs (including self)
+    nB += bodies[i]->subtreedofs;
+
+    // add dofs in ancestor bodies
+    j = bodies[i]->parentid;
+    while (j > 0) {
+      nB += bodies[j]->dofnum;
+      j = bodies[j]->parentid;
+    }
+  }
+  m->nB = nB;
 
   // set dof_simplenum
   int scnt = 0;
@@ -1645,7 +1696,7 @@ void mjCModel::CopyTree(mjModel* m) {
 
 // copy objects outside kinematic tree
 void mjCModel::CopyObjects(mjModel* m) {
-  int i, j, adr, bone_adr, vert_adr, face_adr, texcoord_adr;
+  int i, j, adr, bone_adr, vert_adr, normal_adr, face_adr, texcoord_adr;
   int bonevert_adr, graph_adr, data_adr;
 
   // sizes outside call to mj_makeModel
@@ -1657,6 +1708,7 @@ void mjCModel::CopyObjects(mjModel* m) {
 
   // meshes
   vert_adr = 0;
+  normal_adr = 0;
   texcoord_adr = 0;
   face_adr = 0;
   graph_adr = 0;
@@ -1667,17 +1719,24 @@ void mjCModel::CopyObjects(mjModel* m) {
     // set fields
     m->mesh_vertadr[i] = vert_adr;
     m->mesh_vertnum[i] = pme->nvert;
+    m->mesh_normaladr[i] = normal_adr;
+    m->mesh_normalnum[i] = pme->nnormal;
     m->mesh_texcoordadr[i] = (pme->texcoord ? texcoord_adr : -1);
+    m->mesh_texcoordnum[i] = pme->ntexcoord;
     m->mesh_faceadr[i] = face_adr;
     m->mesh_facenum[i] = pme->nface;
     m->mesh_graphadr[i] = (pme->szgraph ? graph_adr : -1);
 
     // copy vertices, normals, faces, texcoords, aux data
     memcpy(m->mesh_vert + 3*vert_adr, pme->vert, 3*pme->nvert*sizeof(float));
-    memcpy(m->mesh_normal + 3*vert_adr, pme->normal, 3*pme->nvert*sizeof(float));
+    memcpy(m->mesh_normal + 3*normal_adr, pme->normal, 3*pme->nnormal*sizeof(float));
     memcpy(m->mesh_face + 3*face_adr, pme->face, 3*pme->nface*sizeof(float));
+    memcpy(m->mesh_facenormal + 3*face_adr, pme->facenormal, 3*pme->nface*sizeof(int));
     if (pme->texcoord) {
-      memcpy(m->mesh_texcoord + 2*texcoord_adr, pme->texcoord, 2*pme->nvert*sizeof(float));
+      memcpy(m->mesh_texcoord + 2*texcoord_adr, pme->texcoord, 2*pme->ntexcoord*sizeof(float));
+      memcpy(m->mesh_facetexcoord + 3*face_adr, pme->facetexcoord, 3*pme->nface*sizeof(int));
+    } else {
+      memset(m->mesh_facetexcoord + 3*face_adr, 0, 3*pme->nface*sizeof(int));
     }
     if (pme->szgraph) {
       memcpy(m->mesh_graph + graph_adr, pme->graph, pme->szgraph*sizeof(int));
@@ -1685,7 +1744,8 @@ void mjCModel::CopyObjects(mjModel* m) {
 
     // advance counters
     vert_adr += pme->nvert;
-    texcoord_adr += (pme->texcoord ? pme->nvert : 0);
+    normal_adr += pme->nnormal;
+    texcoord_adr += (pme->texcoord ? pme->ntexcoord : 0);
     face_adr += pme->nface;
     graph_adr += pme->szgraph;
   }
@@ -2618,8 +2678,8 @@ void mjCModel::TryCompile(mjModel*& m, mjData*& d, const mjVFS* vfs) {
   }
 
   // create low-level model
-  m = mj_makeModel(nq, nv, nu, na, nbody, njnt, ngeom, nsite, ncam, nlight,
-                   nmesh, nmeshvert, nmeshtexvert, nmeshface, nmeshgraph,
+  m = mj_makeModel(nq, nv, nu, na, nbody, nbvh, njnt, ngeom, nsite, ncam, nlight,
+                   nmesh, nmeshvert, nmeshnormal, nmeshtexcoord, nmeshface, nmeshgraph,
                    nskin, nskinvert, nskintexvert, nskinface, nskinbone, nskinbonevert,
                    nhfield, nhfielddata, ntex, ntexdata, nmat, npair, nexclude,
                    neq, ntendon, nwrap, nsensor,
@@ -2686,7 +2746,7 @@ void mjCModel::TryCompile(mjModel*& m, mjData*& d, const mjVFS* vfs) {
     for (int i = 0; i < nplugin; ++i) {
       const mjpPlugin* plugin = mjp_getPluginAtSlot(m->plugin[i]);
       if (!plugin->nstate) {
-        mju_error_i("`nstate` is null for plugin at slot %d", m->plugin[i]);
+        mju_error("`nstate` is null for plugin at slot %d", m->plugin[i]);
       }
       int nstate = plugin->nstate(m, i);
       m->plugin_stateadr[i] = stateadr;
@@ -2695,7 +2755,7 @@ void mjCModel::TryCompile(mjModel*& m, mjData*& d, const mjVFS* vfs) {
       if (plugin->capabilityflags & mjPLUGIN_SENSOR) {
         for (int sensor_id : plugin_to_sensors[i]) {
           if (!plugin->nsensordata) {
-            mju_error_i("`nsensordata` is null for plugin at slot %d", m->plugin[i]);
+            mju_error("`nsensordata` is null for plugin at slot %d", m->plugin[i]);
           }
           int nsensordata = plugin->nsensordata(m, i, sensor_id);
           sensors[sensor_id]->dim = nsensordata;
@@ -2835,7 +2895,7 @@ bool mjCModel::CopyBack(const mjModel* m) {
       neq!=m->neq || ntendon!=m->ntendon || nwrap!=m->nwrap || nsensor!=m->nsensor ||
       nnumeric!=m->nnumeric || nnumericdata!=m->nnumericdata || ntext!=m->ntext ||
       ntextdata!=m->ntextdata || nnames!=m->nnames || nM!=m->nM || nD!=m->nD ||
-      nemax!=m->nemax || nconmax!=m->nconmax || njmax!=m->njmax) {
+      nB!=m->nB || nemax!=m->nemax || nconmax!=m->nconmax || njmax!=m->njmax) {
     errInfo = mjCError(0, "incompatible models in CopyBack");
     return false;
   }

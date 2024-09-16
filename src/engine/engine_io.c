@@ -29,6 +29,7 @@
 #include "engine/engine_plugin.h"
 #include "engine/engine_util_blas.h"
 #include "engine/engine_util_errmem.h"
+#include "engine/engine_util_misc.h"
 #include "engine/engine_vfs.h"
 
 #ifdef _MSC_VER
@@ -50,7 +51,7 @@ void mj_defaultLROpt(mjLROpt* opt) {
   opt->timeconst      = 1;
   opt->timestep       = 0.01;
   opt->inttotal       = 10;
-  opt->inteval        = 2;
+  opt->interval       = 2;
   opt->tolrange       = 0.05;
 }
 
@@ -143,6 +144,7 @@ void mj_defaultVisual(mjVisual* vis) {
   vis->global.offwidth            = 640;
   vis->global.offheight           = 480;
   vis->global.realtime            = 1.0;
+  vis->global.treedepth           = 1;
 
   // rendering quality
   vis->quality.shadowsize         = 4096;
@@ -307,6 +309,15 @@ static void bufread(void* dest, int num, int szbuf, const void* buf, int* ptrbuf
 
 
 
+// number of bytes to be skipped to achieve 64-byte alignment
+static inline unsigned int SKIP(intptr_t offset) {
+  const unsigned int align = 64;
+  // compute skipped bytes
+  return (align - (offset % align)) % align;
+}
+
+
+
 //----------------------------------- mjModel construction -----------------------------------------
 
 // set pointers in mjModel buffer
@@ -365,10 +376,10 @@ static int safeAddToBufferSize(intptr_t* offset, int* nbuffer, size_t type_size,
 
 
 // allocate and initialize mjModel structure
-mjModel* mj_makeModel(int nq, int nv, int nu, int na, int nbody, int njnt,
+mjModel* mj_makeModel(int nq, int nv, int nu, int na, int nbody, int nbvh, int njnt,
                       int ngeom, int nsite, int ncam, int nlight,
-                      int nmesh, int nmeshvert, int nmeshtexvert, int nmeshface, int nmeshgraph,
-                      int nskin, int nskinvert, int nskintexvert, int nskinface,
+                      int nmesh, int nmeshvert, int nmeshnormal, int nmeshtexcoord, int nmeshface,
+                      int nmeshgraph, int nskin, int nskinvert, int nskintexvert, int nskinface,
                       int nskinbone, int nskinbonevert, int nhfield, int nhfielddata,
                       int ntex, int ntexdata, int nmat, int npair, int nexclude,
                       int neq, int ntendon, int nwrap, int nsensor,
@@ -392,6 +403,7 @@ mjModel* mj_makeModel(int nq, int nv, int nu, int na, int nbody, int njnt,
   m->nu = nu;
   m->na = na;
   m->nbody = nbody;
+  m->nbvh = nbvh;
   m->njnt = njnt;
   m->ngeom = ngeom;
   m->nsite = nsite;
@@ -399,7 +411,8 @@ mjModel* mj_makeModel(int nq, int nv, int nu, int na, int nbody, int njnt,
   m->nlight = nlight;
   m->nmesh = nmesh;
   m->nmeshvert = nmeshvert;
-  m->nmeshtexvert = nmeshtexvert;
+  m->nmeshnormal = nmeshnormal;
+  m->nmeshtexcoord = nmeshtexcoord;
   m->nmeshface = nmeshface;
   m->nmeshgraph = nmeshgraph;
   m->nskin = nskin;
@@ -510,9 +523,9 @@ mjModel* mj_copyModel(mjModel* dest, const mjModel* src) {
 
   // allocate new model if needed
   if (!dest) {
-    dest = mj_makeModel(src->nq, src->nv, src->nu, src->na, src->nbody, src->njnt,
+    dest = mj_makeModel(src->nq, src->nv, src->nu, src->na, src->nbody, src->nbvh, src->njnt,
                         src->ngeom, src->nsite, src->ncam, src->nlight, src->nmesh, src->nmeshvert,
-                        src->nmeshtexvert, src->nmeshface, src->nmeshgraph,
+                        src->nmeshnormal, src->nmeshtexcoord, src->nmeshface, src->nmeshgraph,
                         src->nskin, src->nskinvert, src->nskintexvert, src->nskinface,
                         src->nskinbone, src->nskinbonevert, src->nhfield, src->nhfielddata,
                         src->ntex, src->ntexdata, src->nmat, src->npair, src->nexclude,
@@ -565,7 +578,7 @@ void mj_saveModel(const mjModel* m, const char* filename, void* buffer, int buff
   if (!buffer) {
     fp = fopen(filename, "wb");
     if (!fp) {
-      mju_warning_s("Could not open file '%s'", filename);
+      mju_warning("Could not open file '%s'", filename);
       return;
     }
   }
@@ -631,7 +644,7 @@ mjModel* mj_loadModel(const char* filename, const mjVFS* vfs) {
   if (!buffer) {
     fp = fopen(filename, "rb");
     if (!fp) {
-      mju_warning_s("Could not open file '%s'", filename);
+      mju_warning("Could not open file '%s'", filename);
       return 0;
     }
   }
@@ -691,7 +704,7 @@ mjModel* mj_loadModel(const char* filename, const mjVFS* vfs) {
                    info[28], info[29], info[30], info[31], info[32], info[33], info[34],
                    info[35], info[36], info[37], info[38], info[39], info[40], info[41],
                    info[42], info[43], info[44], info[45], info[46], info[47], info[48],
-                   info[49], info[50]);
+                   info[49], info[50], info[51], info[52]);
   if (!m || m->nbuffer!=info[getnint()-1]) {
     if (fp) {
       fclose(fp);
@@ -764,7 +777,7 @@ mjModel* mj_loadModel(const char* filename, const mjVFS* vfs) {
 
   const char* validationError = mj_validateReferences(m);
   if (validationError) {
-    mju_warning(validationError);
+    mju_warning("%s", validationError);
     mj_deleteModel(m);
     return 0;
   }
@@ -791,6 +804,183 @@ void mj_deleteModel(mjModel* m) {
 int mj_sizeModel(const mjModel* m) {
   return sizeof(int)*(4+getnint()) + sizeof(mjOption) +
          sizeof(mjVisual) + sizeof(mjStatistic) + m->nbuffer;
+}
+
+
+
+
+//-------------------------- sparse system matrix construction -------------------------------------
+
+// construct sparse representation of dof-dof matrix
+static void makeDSparse(const mjModel* m, mjData* d) {
+  int nv = m->nv;
+  int* rownnz = d->D_rownnz;
+  int* rowadr = d->D_rowadr;
+  int* colind = d->D_colind;
+
+  mjMARKSTACK;
+  int* remaining = mj_stackAllocInt(d, nv);
+
+  // compute rownnz
+  memset(rownnz, 0, nv * sizeof(int));
+  for (int i = nv - 1; i >= 0; i--) {
+    // init at diagonal
+    int j = i;
+    rownnz[i]++;
+
+    // process below diagonal
+    while ((j = m->dof_parentid[j]) >= 0) {
+      rownnz[i]++;
+      rownnz[j]++;
+    }
+  }
+
+  // accumulate rowadr
+  rowadr[0] = 0;
+  for (int i = 1; i < nv; i++) {
+    rowadr[i] = rowadr[i - 1] + rownnz[i - 1];
+  }
+
+  // populate colind
+  memcpy(remaining, rownnz, nv * sizeof(int));
+  for (int i = nv - 1; i >= 0; i--) {
+    // init at diagonal
+    remaining[i]--;
+    colind[rowadr[i] + remaining[i]] = i;
+
+    // process below diagonal
+    int j = i;
+    while ((j = m->dof_parentid[j]) >= 0) {
+      remaining[i]--;
+      colind[rowadr[i] + remaining[i]] = j;
+
+      remaining[j]--;
+      colind[rowadr[j] + remaining[j]] = i;
+    }
+  }
+
+  // sanity check; SHOULD NOT OCCUR
+  for (int i = 0; i < nv; i++) {
+    if (remaining[i] != 0) {
+      mju_error("Error in mj_makeDSparse: unexpected remaining");
+    }
+  }
+
+  mjFREESTACK;
+}
+
+
+
+// construct sparse representation of body-dof matrix
+static void makeBSparse(const mjModel* m, mjData* d) {
+  int nv = m->nv, nbody = m->nbody;
+  int* rownnz = d->B_rownnz;
+  int* rowadr = d->B_rowadr;
+  int* colind = d->B_colind;
+
+  // set rownnz to subtree dofs counts, including self
+  memset(rownnz, 0, sizeof(int) * nbody);
+  for (int i = nbody - 1; i > 0; i--) {
+    rownnz[i] += m->body_dofnum[i];
+    rownnz[m->body_parentid[i]] += rownnz[i];
+  }
+
+  // sanity check; SHOULD NOT OCCUR
+  if (rownnz[0] != nv) {
+    mju_error("Error in mj_makeBSparse: rownnz[0] different from nv");
+  }
+
+  // add dofs in ancestors bodies
+  for (int i = 0; i < nbody; i++) {
+    int j = m->body_parentid[i];
+    while (j > 0) {
+      rownnz[i] += m->body_dofnum[j];
+      j = m->body_parentid[j];
+    }
+  }
+
+  // compute rowadr
+  rowadr[0] = 0;
+  for (int i = 1; i < nbody; i++) {
+    rowadr[i] = rowadr[i - 1] + rownnz[i - 1];
+  }
+
+  // sanity check; SHOULD NOT OCCUR
+  if (m->nB != rowadr[nbody - 1] + rownnz[nbody - 1]) {
+    mju_error("Error in mj_makeBSparse: sum of rownnz different from nB");
+  }
+
+  // allocate and clear incremental row counts
+  mjMARKSTACK;
+  int* cnt = mj_stackAllocInt(d, nbody);
+  memset(cnt, 0, sizeof(int) * nbody);
+
+  // add subtree dofs to colind
+  for (int i = nbody - 1; i > 0; i--) {
+    // add this body's dofs to subtree
+    for (int n = 0; n < m->body_dofnum[i]; n++) {
+      colind[rowadr[i] + cnt[i]] = m->body_dofadr[i] + n;
+      cnt[i]++;
+    }
+
+    // add body subtree to parent
+    int par = m->body_parentid[i];
+    for (int n = 0; n < cnt[i]; n++) {
+      colind[rowadr[par] + cnt[par]] = colind[rowadr[i] + n];
+      cnt[par]++;
+    }
+  }
+
+  // add all ancestor dofs
+  for (int i = 0; i < nbody; i++) {
+    int par = m->body_parentid[i];
+    while (par > 0) {
+      // add ancestor body dofs
+      for (int n = 0; n < m->body_dofnum[par]; n++) {
+        colind[rowadr[i] + cnt[i]] = m->body_dofadr[par] + n;
+        cnt[i]++;
+      }
+
+      // advance to parent
+      par = m->body_parentid[par];
+    }
+  }
+
+  // process all bodies
+  for (int i = 0; i < nbody; i++) {
+    // make sure cnt = rownnz; SHOULD NOT OCCUR
+    if (rownnz[i] != cnt[i]) {
+      mju_error("Error in mj_makeBSparse: cnt different from rownnz");
+    }
+
+    // sort colind in each row
+    if (cnt[i] > 1) {
+      mju_insertionSortInt(colind + rowadr[i], cnt[i]);
+    }
+  }
+
+  mjFREESTACK;
+}
+
+
+
+// check D and B sparsity for consistency
+static void checkDBSparse(const mjModel* m, mjData* d) {
+  // process all dofs
+  for (int j = 0; j < m->nv; j++) {
+    // get body for this dof
+    int i = m->dof_bodyid[j];
+
+    // D[row j] and B[row i] should be identical
+    if (d->D_rownnz[j] != d->B_rownnz[i]) {
+      mju_error("Error in checkDBSparse: rows have different nnz");
+    }
+    for (int k = 0; k < d->D_rownnz[j]; k++) {
+      if (d->D_colind[d->D_rowadr[j] + k] != d->B_colind[d->B_rowadr[i] + k]) {
+        mju_error("Error in checkDBSparse: rows have different colind");
+      }
+    }
+  }
 }
 
 
@@ -887,7 +1077,7 @@ static mjData* _makeData(const mjModel* m) {
         mju_free(d->buffer);
         mju_free(d->arena);
         mju_free(d);
-        mju_error_i("plugin->init failed for plugin id %d", i);
+        mju_error("plugin->init failed for plugin id %d", i);
       }
     }
   }
@@ -1017,12 +1207,10 @@ mjtNum* mj_stackAlloc(mjData* d, int size) {
   size_t stack_available_bytes = d->nstack * sizeof(mjtNum) - d->parena;
   size_t stack_required_bytes = (d->pstack + size) * sizeof(mjtNum);
   if (stack_required_bytes > stack_available_bytes) {
-    char err[256];
-    mjSNPRINTF(err, "stack overflow: max = %zu, available = %zu, requested = %zu "
-                    "(ne = %d, nf = %d, nefc = %d, ncon = %d)",
-               d->nstack * sizeof(mjtNum), stack_available_bytes, stack_required_bytes,
-               d->ne, d->nf, d->nefc, d->ncon);
-    mju_error(err);
+    mju_error("stack overflow: max = %zu, available = %zu, requested = %zu "
+              "(ne = %d, nf = %d, nefc = %d, ncon = %d)",
+              d->nstack * sizeof(mjtNum), stack_available_bytes, stack_required_bytes,
+              d->ne, d->nf, d->nefc, d->ncon);
   }
 
   // allocate at end of arena
@@ -1040,6 +1228,19 @@ mjtNum* mj_stackAlloc(mjData* d, int size) {
   d->maxuse_stack = mjMAX(d->maxuse_stack, d->pstack);
   d->maxuse_arena = mjMAX(d->maxuse_arena, d->pstack*sizeof(mjtNum) + d->parena);
   return (mjtNum*)result;
+}
+
+
+
+int* mj_stackAllocInt(mjData* d, int size) {
+  // optimize for mjtNum being twice the size of int
+  if (2*sizeof(int) == sizeof(mjtNum)) {
+    return (int*)mj_stackAlloc(d, (size + 1) >> 1);
+  }
+
+  // arbitrary bytes sizes
+  int new_size = (sizeof(int)*size + sizeof(mjtNum) - 1) / sizeof(mjtNum);
+  return (int*)mj_stackAlloc(d, new_size);
 }
 
 
@@ -1082,6 +1283,7 @@ static void _resetData(const mjModel* m, mjData* d, unsigned char debug_value) {
   d->ne = 0;
   d->nf = 0;
   d->nefc = 0;
+  d->nnzJ = 0;
   d->ncon = 0;
 
   // clear global properties
@@ -1141,6 +1343,13 @@ static void _resetData(const mjModel* m, mjData* d, unsigned char debug_value) {
     for (int i=0; i<m->nmocap; i++) {
       d->mocap_quat[4*i] = 1.0;
     }
+  }
+
+  // construct sparse matrix representations
+  if (m->body_dofadr) {
+    makeDSparse(m, d);
+    makeBSparse(m, d);
+    checkDBSparse(m, d);
   }
 
   // restore pluginstate and plugindata
@@ -1361,7 +1570,8 @@ const char* mj_validateReferences(const mjModel* m) {
   X(light_bodyid,       nlight,        nbody        , 0                      ) \
   X(light_targetbodyid, nlight,        nbody        , 0                      ) \
   X(mesh_vertadr,       nmesh,         nmeshvert    , m->mesh_vertnum        ) \
-  X(mesh_texcoordadr,   nmesh,         nmeshtexvert , 0                      ) \
+  X(mesh_normaladr,     nmesh,         nmeshnormal  , m->mesh_normalnum      ) \
+  X(mesh_texcoordadr,   nmesh,         nmeshtexcoord, m->mesh_texcoordnum    ) \
   X(mesh_faceadr,       nmesh,         nmeshface    , m->mesh_facenum        ) \
   X(mesh_graphadr,      nmesh,         nmeshgraph   , 0                      ) \
   X(skin_matid,         nskin,         nmat         , 0                      ) \
@@ -1507,6 +1717,7 @@ const char* mj_validateReferences(const mjModel* m) {
           return "Invalid model: eq_obj2id out of bounds.";
         }
         break;
+
       case mjEQ_TENDON:
         if (obj1id >= m->ntendon || obj1id < 0) {
           return "Invalid model: eq_obj1id out of bounds.";
@@ -1516,8 +1727,7 @@ const char* mj_validateReferences(const mjModel* m) {
           return "Invalid model: eq_obj2id out of bounds.";
         }
         break;
-      case mjEQ_DISTANCE:
-        return "distance equality constraints are no longer supported";
+
       case mjEQ_WELD:
       case mjEQ_CONNECT:
         if (obj1id >= m->nbody || obj1id < 0) {
@@ -1527,6 +1737,9 @@ const char* mj_validateReferences(const mjModel* m) {
           return "Invalid model: eq_obj2id out of bounds.";
         }
         break;
+
+      default:
+        mju_error("mj_validateReferences: unknown equality constraint type.");
     }
   }
   for (int i=0; i<m->nwrap; i++) {
@@ -1594,8 +1807,8 @@ const char* mj_validateReferences(const mjModel* m) {
     if (sensor_type == mjSENS_PLUGIN) {
       const mjpPlugin* plugin = mjp_getPluginAtSlot(m->plugin[m->sensor_plugin[i]]);
       if (!plugin->nsensordata) {
-        mju_error_i("`nsensordata` is a null function pointer for plugin at slot %d",
-                    m->plugin[m->sensor_plugin[i]]);
+        mju_error("`nsensordata` is a null function pointer for plugin at slot %d",
+                  m->plugin[m->sensor_plugin[i]]);
       }
       sensor_size = plugin->nsensordata(m, m->sensor_plugin[i], i);
     } else {

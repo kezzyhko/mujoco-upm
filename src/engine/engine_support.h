@@ -81,10 +81,10 @@ MJAPI int mj_jacDifPair(const mjModel* m, const mjData* d, int* chain,
 // get string hash, see http://www.cse.yorku.ca/~oz/hash.html
 uint64_t mj_hashdjb2(const char* s, uint64_t n);
 
-// get id of object with specified name; -1: not found; type is mjtObj
+// get id of object with the specified mjtObj type and name, returns -1 if id not found
 MJAPI int mj_name2id(const mjModel* m, int type, const char* name);
 
-// get name of object with specified id; 0: invalid type or id; type is mjtObj
+// get name of object with the specified mjtObj type and id, returns NULL if name not found
 MJAPI const char* mj_id2name(const mjModel* m, int type, int id);
 
 
@@ -104,12 +104,14 @@ MJAPI void mj_mulM2(const mjModel* m, const mjData* d, mjtNum* res, const mjtNum
 MJAPI void mj_addM(const mjModel* m, mjData* d, mjtNum* dst,
                    int* rownnz, int* rowadr, int* colind);
 
-// construct sparse matrix representations matching qM
-MJAPI void mj_makeMSparse(const mjModel* m, mjData* d, int *rownnz, int *rowadr, int *colind);
 
-// set dst = qM, handle different sparsity representations
-MJAPI void mj_setMSparse(const mjModel* m, mjData* d, mjtNum* dst,
-                         const int *rownnz, const int *rowadr, const int *colind);
+//-------------------------- sparse system matrix conversion ---------------------------------------
+
+// dst[D] = src[M], handle different sparsity representations
+MJAPI void mj_copyM2DSparse(const mjModel* m, mjData* d, mjtNum* dst, const mjtNum* src);
+
+// dst[M] = src[D lower], handle different sparsity representations
+MJAPI void mj_copyD2MSparse(const mjModel* m, mjData* d, mjtNum* dst, const mjtNum* src);
 
 
 //-------------------------- perturbations ---------------------------------------------------------
@@ -146,7 +148,7 @@ MJAPI void mj_differentiatePos(const mjModel* m, mjtNum* qvel, mjtNum dt,
 // integrate position with given velocity
 MJAPI void mj_integratePos(const mjModel* m, mjtNum* qpos, const mjtNum* qvel, mjtNum dt);
 
-// normalize all quaterions in qpos-type vector
+// normalize all quaternions in qpos-type vector
 MJAPI void mj_normalizeQuat(const mjModel* m, mjtNum* qpos);
 
 // map from body local to global Cartesian coordinates

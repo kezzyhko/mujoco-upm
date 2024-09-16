@@ -695,7 +695,27 @@ FUNCTIONS: Mapping[str, FunctionDecl] = dict([
                  type=ValueType(name='int'),
              ),
          ),
-         doc='Allocate array of specified size on mjData stack. Call mju_error on stack overflow.',  # pylint: disable=line-too-long
+         doc='Allocate array of mjtNums on mjData stack. Call mju_error on stack overflow.',  # pylint: disable=line-too-long
+     )),
+    ('mj_stackAllocInt',
+     FunctionDecl(
+         name='mj_stackAllocInt',
+         return_type=PointerType(
+             inner_type=ValueType(name='int'),
+         ),
+         parameters=(
+             FunctionParameterDecl(
+                 name='d',
+                 type=PointerType(
+                     inner_type=ValueType(name='mjData'),
+                 ),
+             ),
+             FunctionParameterDecl(
+                 name='size',
+                 type=ValueType(name='int'),
+             ),
+         ),
+         doc='Allocate array of ints on mjData stack. Call mju_error on stack overflow.',  # pylint: disable=line-too-long
      )),
     ('mj_deleteData',
      FunctionDecl(
@@ -2184,7 +2204,7 @@ FUNCTIONS: Mapping[str, FunctionDecl] = dict([
                  ),
              ),
          ),
-         doc='Get id of object with specified name, return -1 if not found; type is mjtObj.',  # pylint: disable=line-too-long
+         doc='Get id of object with the specified mjtObj type and name, returns -1 if id not found.',  # pylint: disable=line-too-long
      )),
     ('mj_id2name',
      FunctionDecl(
@@ -2208,7 +2228,7 @@ FUNCTIONS: Mapping[str, FunctionDecl] = dict([
                  type=ValueType(name='int'),
              ),
          ),
-         doc='Get name of object with specified id, return 0 if invalid type or id; type is mjtObj.',  # pylint: disable=line-too-long
+         doc='Get name of object with the specified mjtObj type and id, returns NULL if name not found.',  # pylint: disable=line-too-long
      )),
     ('mj_fullM',
      FunctionDecl(
@@ -2432,7 +2452,7 @@ FUNCTIONS: Mapping[str, FunctionDecl] = dict([
                  type=ValueType(name='int'),
              ),
          ),
-         doc='Compute object 6D velocity in object-centered frame, world/local orientation.',  # pylint: disable=line-too-long
+         doc='Compute object 6D velocity (rot:lin) in object-centered frame, world/local orientation.',  # pylint: disable=line-too-long
      )),
     ('mj_objectAcceleration',
      FunctionDecl(
@@ -2471,7 +2491,7 @@ FUNCTIONS: Mapping[str, FunctionDecl] = dict([
                  type=ValueType(name='int'),
              ),
          ),
-         doc='Compute object 6D acceleration in object-centered frame, world/local orientation.',  # pylint: disable=line-too-long
+         doc='Compute object 6D acceleration (rot:lin) in object-centered frame, world/local orientation.',  # pylint: disable=line-too-long
      )),
     ('mj_contactForce',
      FunctionDecl(
@@ -3353,7 +3373,7 @@ FUNCTIONS: Mapping[str, FunctionDecl] = dict([
              FunctionParameterDecl(
                  name='d',
                  type=PointerType(
-                     inner_type=ValueType(name='mjData', is_const=True),
+                     inner_type=ValueType(name='mjData'),
                  ),
              ),
              FunctionParameterDecl(
@@ -3630,7 +3650,7 @@ FUNCTIONS: Mapping[str, FunctionDecl] = dict([
                  type=ValueType(name='mjtNum'),
              ),
          ),
-         doc='Set (type, size, pos, mat) for connector-type geom between given points. Assume that mjv_initGeom was already called to set all other properties.',  # pylint: disable=line-too-long
+         doc='Set (type, size, pos, mat) for connector-type geom between given points. Assume that mjv_initGeom was already called to set all other properties. Width of mjGEOM_LINE is denominated in pixels.',  # pylint: disable=line-too-long
      )),
     ('mjv_defaultScene',
      FunctionDecl(
@@ -4674,7 +4694,7 @@ FUNCTIONS: Mapping[str, FunctionDecl] = dict([
                  type=ValueType(name='int'),
              ),
          ),
-         doc='Error function with int argument; msg is a printf format string.',
+         doc='Deprecated: use mju_error.',
      )),
     ('mju_error_s',
      FunctionDecl(
@@ -4694,7 +4714,7 @@ FUNCTIONS: Mapping[str, FunctionDecl] = dict([
                  ),
              ),
          ),
-         doc='Error function with string argument.',
+         doc='Deprecated: use mju_error.',
      )),
     ('mju_warning',
      FunctionDecl(
@@ -4726,7 +4746,7 @@ FUNCTIONS: Mapping[str, FunctionDecl] = dict([
                  type=ValueType(name='int'),
              ),
          ),
-         doc='Warning function with int argument.',
+         doc='Deprecated: use mju_warning.',
      )),
     ('mju_warning_s',
      FunctionDecl(
@@ -4746,7 +4766,7 @@ FUNCTIONS: Mapping[str, FunctionDecl] = dict([
                  ),
              ),
          ),
-         doc='Warning function with string argument.',
+         doc='Deprecated: use mju_warning.',
      )),
     ('mju_clearHandlers',
      FunctionDecl(
@@ -5651,7 +5671,7 @@ FUNCTIONS: Mapping[str, FunctionDecl] = dict([
              ),
              FunctionParameterDecl(
                  name='n',
-                 type=ValueType(name='int', is_const=True),
+                 type=ValueType(name='int'),
              ),
          ),
          doc='Return dot-product of vec1 and vec2.',
@@ -6978,7 +6998,7 @@ FUNCTIONS: Mapping[str, FunctionDecl] = dict([
          parameters=(
              FunctionParameterDecl(
                  name='nbytes',
-                 type=ValueType(name='size_t', is_const=True),
+                 type=ValueType(name='size_t'),
              ),
          ),
          doc='Return human readable number of bytes using standard letter suffix.',  # pylint: disable=line-too-long

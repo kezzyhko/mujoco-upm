@@ -77,6 +77,8 @@ TEST_F(EngineIoTest, MakeDataFromPartialModel) {
   {
     MJDATA_POINTERS_PREAMBLE((&partial_model))
     #define X(type, name, nr, nc)                                              \
+      if (strcmp(#name, "D_rownnz") && strcmp(#name, "D_rowadr")  &&           \
+          strcmp(#name, "B_rownnz") && strcmp(#name, "B_rowadr"))              \
         EXPECT_EQ(std::memcmp(data_from_partial->name, data_from_model->name,  \
                               sizeof(type)*(partial_model.nr)*(nc)),           \
                   0) << "mjData::" #name " differs";
@@ -196,6 +198,27 @@ TEST_F(EngineIoTest, MakeDataReturnsNullOnFailure) {
   mjData* data = mj_makeData(model);
   EXPECT_THAT(data, IsNull());
   EXPECT_TRUE(warning) << "Expecting warning to be triggered.";
+
+  mj_deleteData(data);
+  mj_deleteModel(model);
+}
+
+TEST_F(EngineIoTest, ResetVariableSizes) {
+  constexpr char xml[] = "<mujoco/>";
+
+  std::array<char, 1024> error;
+  mjModel* model = LoadModelFromString(xml, error.data(), error.size());
+  ASSERT_THAT(model, NotNull()) << "Failed to load model: " << error.data();
+
+  mjData* data = mj_makeData(model);
+  ASSERT_THAT(model, NotNull()) << "Failed to create mjData";
+
+  // don't call mj_forward, vars should be reset
+  EXPECT_EQ(data->ne, 0);
+  EXPECT_EQ(data->nf, 0);
+  EXPECT_EQ(data->nefc, 0);
+  EXPECT_EQ(data->nnzJ, 0);
+  EXPECT_EQ(data->ncon, 0);
 
   mj_deleteData(data);
   mj_deleteModel(model);

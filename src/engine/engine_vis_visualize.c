@@ -14,7 +14,6 @@
 
 #include "engine/engine_vis_visualize.h"
 
-#include <math.h>
 #include <stddef.h>
 #include <string.h>
 
@@ -62,6 +61,7 @@ static void makeLabel(const mjModel* m, mjtObj type, int id, char* label) {
 
   // copy result into label
   strncpy(label, txt, 99);
+  label[99] = '\0';
 }
 
 
@@ -126,6 +126,17 @@ static void addContactGeom(const mjModel* m, mjData* d, const mjtByte* flags,
         f2f(thisgeom->rgba, m->vis.rgba.contactpoint, 4);
       } else {
         f2f(thisgeom->rgba, m->vis.rgba.contactgap, 4);
+      }
+
+      // label contacting geom names or ids
+      if (vopt->label==mjLABEL_CONTACTPOINT) {
+        const char* name1 = mj_id2name(m, mjOBJ_GEOM, con->geom1);
+        char id1[10];
+        mjSNPRINTF(id1, "%d", con->geom1);
+        const char* name2 = mj_id2name(m, mjOBJ_GEOM, con->geom2);
+        char id2[10];
+        mjSNPRINTF(id2, "%d", con->geom2);
+        mjSNPRINTF(thisgeom->label, "%s | %s", name1 ? name1 : id1 , name2 ? name2 : id2);
       }
 
       FINISH
@@ -292,7 +303,7 @@ void mjv_makeConnector(mjvGeom* geom, int type, mjtNum width,
   if (type!=mjGEOM_CAPSULE && type!=mjGEOM_CYLINDER &&
       type!=mjGEOM_ARROW && type!=mjGEOM_ARROW1 && type!=mjGEOM_ARROW2
       && type!=mjGEOM_LINE) {
-    mju_error_i("Invalid geom type %d for connector", type);
+    mju_error("Invalid geom type %d for connector", type);
   }
 
   // assign type
@@ -456,7 +467,6 @@ void mjv_addGeoms(const mjModel* m, mjData* d, const mjvOption* vopt,
   mjtNum *cur, *nxt, *xpos, *xfrc;
   mjtNum vec[3], end[3], axis[3], rod, len, det, tmp[9], quat[4];
   mjtByte broken;
-  mjContact *con;
   mjvGeom* thisgeom;
   mjvPerturb localpert;
   float scl = m->stat.meansize, rgba[4];
@@ -507,6 +517,71 @@ void mjv_addGeoms(const mjModel* m, mjData* d, const mjvOption* vopt,
       }
 
       FINISH
+    }
+  }
+
+  // bounding volume hierarchy
+  if (vopt->flags[mjVIS_MIDPHASE]) {
+    int bodyid = 0;
+    float rgba[] = {1, 0, 0, 1};
+    for (int i = 0; i < m->nbvh; i++) {
+      int isleaf = m->bvh_child[2*i]==-1 && m->bvh_child[2*i+1]==-1;
+      if (scn->ngeom >= scn->maxgeom) break;
+      if (m->bvh_depth[i] != m->vis.global.treedepth) {
+        if (!isleaf || m->bvh_depth[i] > m->vis.global.treedepth) {
+          continue;
+        }
+      }
+
+      // find geom number
+      int geomid = m->bvh_geomid[i];
+      while (i >= m->body_bvhadr[bodyid] + m->body_bvhnum[bodyid]) {
+        bodyid++;
+        if (bodyid >= m->nbody) {
+          mju_error("nbvh outside body range.");
+        }
+      }
+
+      // compute transformation
+      mjtNum *aabb = isleaf ? m->geom_aabb + 6*geomid : m->bvh_aabb + 6*i;
+      mjtNum x[3];
+
+      const mjtNum* xpos = isleaf ? d->geom_xpos + 3 * geomid : d->xipos + 3 * bodyid;
+      const mjtNum* xmat = isleaf ? d->geom_xmat + 9 * geomid : d->ximat + 9 * bodyid;
+
+      mju_rotVecMat(x, aabb, xmat);
+      mju_addTo3(x, xpos);
+
+      rgba[0] = d->bvh_active[i] ? 1 : 0;
+      rgba[1] = d->bvh_active[i] ? 0 : 1;
+
+      mjtNum dist[3][3];
+      for (int j=0; j<3; j++) {
+        for (int k=0; k<3; k++) {
+          dist[k][j] = aabb[k+3] * xmat[3*j+k];
+        }
+      }
+
+      int split[3] = {1, 2, 4};
+      for (int v=0; v<8; v++) {
+        mjtNum from[3] = {x[0], x[1], x[2]};
+        for (int k=0; k<3; k++) {
+          mju_addToScl3(from, dist[k], v&split[k] ? 1 : -1);
+        }
+
+        mjtNum to[3];
+        for (int k=0; k<3; k++) {
+          mju_addScl3(to, from, dist[k], 2);
+          if (!(v&split[k])) {
+            START
+            mjv_makeConnector(thisgeom, mjGEOM_LINE, 2,
+                      from[0], from[1], from[2],
+                      to[0], to[1], to[2]);
+            f2f(thisgeom->rgba, rgba, 4);
+            FINISH
+          }
+        }
+      }
     }
   }
 
@@ -575,7 +650,7 @@ void mjv_addGeoms(const mjModel* m, mjData* d, const mjvOption* vopt,
       sz[0] = scl * m->vis.scale.constraint;
       mjv_makeConnector(thisgeom, mjGEOM_CAPSULE, sz[0],
                         selpos[0], selpos[1], selpos[2],
-                        pert->reflocalpos[0], pert->reflocalpos[1], pert->reflocalpos[2]);
+                        pert->refselpos[0], pert->refselpos[1], pert->refselpos[2]);
 
       // prepare color
       mixcolor(rgba, m->vis.rgba.constraint,
@@ -593,7 +668,7 @@ void mjv_addGeoms(const mjModel* m, mjData* d, const mjvOption* vopt,
       sz[0] = 2*sz[0];
       sz[1] = sz[2] = sz[0];
       mju_quat2Mat(mat, pert->refquat);
-      mjv_initGeom(thisgeom, mjGEOM_SPHERE, sz, pert->reflocalpos, mat, rgba);
+      mjv_initGeom(thisgeom, mjGEOM_SPHERE, sz, pert->refselpos, mat, rgba);
 
       FINISH
     }
@@ -759,7 +834,7 @@ void mjv_addGeoms(const mjModel* m, mjData* d, const mjvOption* vopt,
           break;
 
         default:
-          mju_error_i("Unknown joint type %d in mjv_visualize", m->jnt_type[i]);
+          mju_error("Unknown joint type %d in mjv_visualize", m->jnt_type[i]);
         }
 
         f2f(thisgeom->rgba, m->vis.rgba.joint, 4);
@@ -1580,7 +1655,7 @@ void mjv_addGeoms(const mjModel* m, mjData* d, const mjvOption* vopt,
 
         // make ray
         START
-        mjv_makeConnector(thisgeom, mjGEOM_LINE, .01,
+        mjv_makeConnector(thisgeom, mjGEOM_LINE, 3,
                           d->site_xpos[3*sid],
                           d->site_xpos[3*sid+1],
                           d->site_xpos[3*sid+2],
@@ -1654,39 +1729,6 @@ void mjv_addGeoms(const mjModel* m, mjData* d, const mjvOption* vopt,
         }
         FINISH
       }
-    }
-
-    // distance: find constraints at the end of the contact list
-    int j = d->ncon-1;
-    while (j>=0 && d->contact[j].exclude==3) {
-      // recover constraint id
-      int i = -d->contact[j].efc_address-2;
-
-      // segment = pos +/- normal*len
-      con = d->contact+j;
-      len = con->dist - m->eq_data[mjNEQDATA*i];
-      mju_addScl3(vec, con->pos, con->frame, 0.5*len);
-      mju_addScl3(end, con->pos, con->frame, -0.5*len);
-
-      // connect endpoints
-      START
-
-      // construct geom
-      sz[0] = scl * m->vis.scale.constraint;
-      mjv_makeConnector(thisgeom, mjGEOM_CAPSULE, sz[0],
-                        vec[0], vec[1], vec[2],
-                        end[0], end[1], end[2]);
-
-      f2f(thisgeom->rgba, m->vis.rgba.constraint, 4);
-
-      // vopt->label flag
-      if (vopt->label==mjLABEL_CONSTRAINT) {
-        makeLabel(m, mjOBJ_EQUALITY, i, thisgeom->label);
-      }
-
-      FINISH
-
-      j--;
     }
   }
 
@@ -2030,7 +2072,7 @@ void mjv_updateScene(const mjModel* m, mjData* d, const mjvOption* opt,
       const int slot = m->plugin[i];
       const mjpPlugin* plugin = mjp_getPluginAtSlotUnsafe(slot, nslot);
       if (!plugin) {
-        mju_error_i("invalid plugin slot: %d", slot);
+        mju_error("invalid plugin slot: %d", slot);
       }
       if (plugin->visualize) {
         plugin->visualize(m, d, scn, i);
@@ -2212,4 +2254,3 @@ int mjv_catenary(const mjtNum x0[3], const mjtNum x1[3], const mjtNum gravity[3]
 
   return 0;  // SHOULD NOT OCCUR
 }
-

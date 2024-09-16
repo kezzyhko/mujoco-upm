@@ -79,7 +79,7 @@ void ReadPluginConfigs(tinyxml2::XMLElement* elem, mjCPlugin* pp) {
 
 //---------------------------------- MJCF schema ---------------------------------------------------
 
-static const int nMJCF = 191;
+static const int nMJCF = 190;
 static const char* MJCF[nMJCF][mjXATTRNUM] = {
 {"mujoco", "!", "1", "model"},
 {"<"},
@@ -91,7 +91,7 @@ static const char* MJCF[nMJCF][mjXATTRNUM] = {
     {"<"},
         {"lengthrange", "?", "10", "mode", "useexisting", "uselimit",
             "accel", "maxforce", "timeconst", "timestep",
-            "inttotal", "inteval", "tolrange"},
+            "inttotal", "interval", "tolrange"},
     {">"},
 
     {"option", "*", "22",
@@ -190,11 +190,11 @@ static const char* MJCF[nMJCF][mjXATTRNUM] = {
 
     {"extension", "*", "0"},
     {"<"},
-        {"required", "*", "1", "plugin"},
+        {"plugin", "*", "1", "plugin"},
         {"<"},
             {"instance", "*", "1", "name"},
             {"<"},
-              {"config", "*", "2", "key", "value"},
+                {"config", "*", "2", "key", "value"},
             {">"},
         {">"},
     {">"},
@@ -297,8 +297,6 @@ static const char* MJCF[nMJCF][mjXATTRNUM] = {
         {"joint", "*", "8", "name", "class", "joint1", "joint2", "polycoef",
             "active", "solref", "solimp"},
         {"tendon", "*", "8", "name", "class", "tendon1", "tendon2", "polycoef",
-            "active", "solref", "solimp"},
-        {"distance", "*", "8", "name", "class", "geom1", "geom2", "distance",
             "active", "solref", "solimp"},
     {">"},
 
@@ -511,11 +509,12 @@ const mjMap camlight_map[camlight_sz] = {
 
 
 // integrator type
-const int integrator_sz = 3;
+const int integrator_sz = 4;
 const mjMap integrator_map[integrator_sz] = {
-  {"Euler",       mjINT_EULER},
-  {"RK4",         mjINT_RK4},
-  {"implicit",    mjINT_IMPLICIT}
+  {"Euler",        mjINT_EULER},
+  {"RK4",          mjINT_RK4},
+  {"implicit",     mjINT_IMPLICIT},
+  {"implicitfast", mjINT_IMPLICITFAST}
 };
 
 
@@ -923,7 +922,7 @@ void mjXReader::Compiler(XMLElement* section, mjCModel* mod) {
     ReadAttr(elem, "timeconst", 1, &opt->timeconst, text);
     ReadAttr(elem, "timestep", 1, &opt->timestep, text);
     ReadAttr(elem, "inttotal", 1, &opt->inttotal, text);
-    ReadAttr(elem, "inteval", 1, &opt->inteval, text);
+    ReadAttr(elem, "interval", 1, &opt->interval, text);
     ReadAttr(elem, "tolrange", 1, &opt->tolrange, text);
   }
 }
@@ -982,6 +981,7 @@ void mjXReader::Option(XMLElement* section, mjOption* opt) {
     READDSBL("actuation",    mjDSBL_ACTUATION)
     READDSBL("refsafe",      mjDSBL_REFSAFE)
     READDSBL("sensor",       mjDSBL_SENSOR)
+    READDSBL("midphase",     mjDSBL_MIDPHASE)
 #undef READDSBL
 
 #define READENBL(NAME, MASK) \
@@ -1549,7 +1549,7 @@ void mjXReader::OneEquality(XMLElement* elem, mjCEquality* pequality) {
       break;
 
     case mjEQ_DISTANCE:
-      throw mjXError(elem, "support for distance equality contraints was removed in MuJoCo 2.2.2");
+      throw mjXError(elem, "support for distance equality constraints was removed in MuJoCo 2.2.2");
       break;
 
     default:                    // SHOULD NOT OCCUR
@@ -2196,7 +2196,7 @@ void mjXReader::Extension(XMLElement* section) {
     // get sub-element name
     std::string_view name = elem->Value();
 
-    if (name == "required") {
+    if (name == "plugin") {
       std::string plugin_name;
       int plugin_slot = -1;
       ReadAttrTxt(elem, "plugin", plugin_name, /* required = */ true);

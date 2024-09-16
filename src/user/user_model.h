@@ -215,8 +215,10 @@ class mjCModel {
   int nv;                         // number of degrees of freedom = dim(qvel)
   int nu;                         // number of actuators/controls
   int na;                         // number of activation variables
+  int nbvh;                       // number of boundary volume hierarchies
   int nmeshvert;                  // number of vertices in all meshes
-  int nmeshtexvert;               // number of texture coordinates in all meshes
+  int nmeshnormal;                // number of normals in all meshes
+  int nmeshtexcoord;              // number of texture coordinates in all meshes
   int nmeshface;                  // number of triangular faces in all meshes
   int nmeshgraph;                 // number of shorts in mesh auxiliary data
   int nskinvert;                  // number of vertices in all skins
@@ -234,7 +236,8 @@ class mjCModel {
   int npluginattr;                // number of chars in all plugin config attributes
   int nnames;                     // number of chars in all names
   int nM;                         // number of non-zeros in sparse inertia matrix
-  int nD;                         // number of non-zeros in sparse derivative matrix
+  int nD;                         // number of non-zeros in sparse dof-dof matrix
+  int nB;                         // number of non-zeros in sparse body-dof matrix
 
   //------------------------ object lists
   // objects created here

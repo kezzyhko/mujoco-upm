@@ -483,11 +483,8 @@ void mjXWriter::OneEquality(XMLElement* elem, mjCEquality* peq, mjCDef* def) {
       WriteAttr(elem, "polycoef", 5, peq->data);
       break;
 
-    case mjEQ_DISTANCE:
-      WriteAttrTxt(elem, "geom1", peq->name1);
-      WriteAttrTxt(elem, "geom2", peq->name2);
-      WriteAttr(elem, "distance", 1, peq->data);
-      break;
+    default:
+      mju_error("mjXWriter: unknown equality type.");
     }
   }
 
@@ -803,6 +800,7 @@ void mjXWriter::Option(XMLElement* root) {
     WRITEDSBL("actuation",      mjDSBL_ACTUATION)
     WRITEDSBL("refsafe",        mjDSBL_REFSAFE)
     WRITEDSBL("sensor",         mjDSBL_SENSOR)
+    WRITEDSBL("midphase",       mjDSBL_MIDPHASE)
 #undef WRITEDSBL
 
 #define WRITEENBL(NAME, MASK) \
@@ -1081,12 +1079,12 @@ void mjXWriter::Extension(XMLElement* root) {
   // create section
   XMLElement* section = InsertEnd(root, "extension");
 
-  // keep track of plugins whose <required> section have been created
+  // keep track of plugins whose <plugin> section have been created
   std::unordered_set<const mjpPlugin*> seen_plugins;
 
   // write all plugins
   const mjpPlugin* last_plugin = nullptr;
-  XMLElement* required_elem = nullptr;
+  XMLElement* plugin_elem = nullptr;
   for (int i = 0; i < model->plugins.size(); ++i) {
     mjCPlugin* pp = static_cast<mjCPlugin*>(model->GetObject(mjOBJ_PLUGIN, i));
 
@@ -1096,17 +1094,17 @@ void mjXWriter::Extension(XMLElement* root) {
       break;
     }
 
-    // check if we need to open a new <required> section
+    // check if we need to open a new <plugin> section
     const mjpPlugin* plugin = mjp_getPluginAtSlot(pp->plugin_slot);
     if (plugin != last_plugin) {
-      required_elem = InsertEnd(section, "required");
-      WriteAttrTxt(required_elem, "plugin", plugin->name);
+      plugin_elem = InsertEnd(section, "plugin");
+      WriteAttrTxt(plugin_elem, "plugin", plugin->name);
       seen_plugins.insert(plugin);
       last_plugin = plugin;
     }
 
     // write instance element
-    XMLElement* elem = InsertEnd(required_elem, "instance");
+    XMLElement* elem = InsertEnd(plugin_elem, "instance");
     WriteAttrTxt(elem, "name", pp->name);
 
     // write plugin config attributes
@@ -1123,11 +1121,11 @@ void mjXWriter::Extension(XMLElement* root) {
     }
   }
 
-  // write <required> elements for plugins without explicit instances
+  // write <plugin> elements for plugins without explicit instances
   for (const auto& [plugin, slot] : model->active_plugins) {
     if (seen_plugins.find(plugin) == seen_plugins.end()) {
-      required_elem = InsertEnd(section, "required");
-      WriteAttrTxt(required_elem, "plugin", plugin->name);
+      plugin_elem = InsertEnd(section, "plugin");
+      WriteAttrTxt(plugin_elem, "plugin", plugin->name);
     }
   }
 }

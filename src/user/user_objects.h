@@ -209,7 +209,18 @@ class mjCBody : public mjCBase {
   int mocapid;                    // mocap id, -1: not mocap
   bool explicitinertial;          // whether to save the body with an explicit inertial clause
 
-  int lastdof;                    // id of last dof (used by compiler)
+  // used internally by compiler
+  int lastdof;                    // id of last dof
+  int subtreedofs;                // number of dofs in subtree, including self
+
+  int MakeBVH(std::vector<mjCGeom *>&, int lev);  // make bounding volume hierarchy
+
+  int nbvh;
+  std::vector<mjtNum> bvh;            // bounding volume hierarchy
+  std::vector<int> child;             // children of bvh nodes
+  std::vector<int> nodeid;            // id of the geom contained by the node
+  std::vector<int> level;             // levels of bvh
+
 
   // objects allocated by Add functions
   std::vector<mjCBody*>    bodies;     // child bodies
@@ -331,6 +342,7 @@ class mjCGeom : public mjCBase {
   mjCGeom(mjCModel* = 0, mjCDef* = 0);// constructor
   void Compile(void);                 // compiler
   double GetRBound(void);             // compute bounding sphere radius
+  void ComputeAABB(void);             // compute axis-aligned bounding box
 
   int matid;                      // id of geom's material
   int meshid;                     // id of geom's mesh (-1: none)
@@ -339,6 +351,7 @@ class mjCGeom : public mjCBase {
   double inertia[3];              // local diagonal inertia
   double locpos[3];               // local position
   double locquat[4];              // local orientation
+  double aabb[6];                 // half-sizes of axis-aligned bounding box
   mjCBody* body;                  // geom's body
 };
 
@@ -476,7 +489,9 @@ class mjCMesh: public mjCBase {
   std::vector<float> uservert;                   // user vertex data
   std::vector<float> usernormal;                 // user normal data
   std::vector<float> usertexcoord;               // user texcoord data
-  std::vector<int> userface;                     // user face data
+  std::vector<int> userface;                     // user vertex indices
+  std::vector<int> userfacenormal;               // user normal indices
+  std::vector<int> userfacetexcoord;             // user texcoord indices
   std::vector< std::pair<int, int> > useredge;   // user half-edge data
 
  private:
@@ -508,18 +523,22 @@ class mjCMesh: public mjCBase {
   double quat_surface[4];             // inertia orientation
   double boxsz_volume[3];             // half-sizes of equivalent inertia box (volume)
   double boxsz_surface[3];            // half-sizes of equivalent inertia box (surface)
-  double aabb[3];                     // half-sizes of axis-aligned bounding box
+  double aabb[6];                     // axis-aligned bounding box
   double volume;                      // volume of the mesh
   double surface;                     // surface of the mesh
 
   // mesh data to be copied into mjModel
   int nvert;                          // number of vertices
+  int nnormal;                        // number of normals
+  int ntexcoord;                      // number of texcoords
   int nface;                          // number of faces
   int szgraph;                        // size of graph data in ints
   float* vert;                        // vertex data (3*nvert), relative to (pos, quat)
-  float* normal;                      // vertex normal data (3*nvert)
-  float* texcoord;                    // vertex texcoord data (2*nvert, or NULL)
+  float* normal;                      // vertex normal data (3*nnormal)
+  float* texcoord;                    // vertex texcoord data (2*ntexcoord or NULL)
   int* face;                          // face vertex indices (3*nface)
+  int* facenormal;                    // face normal indices (3*nface)
+  int* facetexcoord;                  // face texcoord indices (3*nface)
   int* graph;                         // convex graph data
 
   bool needhull;                      // needs convex hull for collisions
