@@ -12,24 +12,24 @@ jobs:
     name: Sync main with upstream latest
     
     steps:
-      - name: Checkout master
-        uses: actions/checkout@v4
-        with:
-          persist-credentials: false
-          ref: main
-    
-      - name: Sync master with upstream latest
-        id: sync
-        uses: aormsby/Fork-Sync-With-Upstream-action@v2.3
-        env:
-          GITHUB_TOKEN: ${{ secrets.ACCESS_TOKEN }}
-        with:
-          upstream_repository: google-deepmind/mujoco
-          upstream_branch: main
-          target_branch: main
-          git_fetch_args: --tags
-          git_pull_args: --tags
-          git_push_args: --tags
+    - name: Checkout master
+      uses: actions/checkout@v4
+      with:
+        persist-credentials: false
+        ref: main
+  
+    - name: Sync master with upstream latest
+      id: sync
+      uses: aormsby/Fork-Sync-With-Upstream-action@v2.3
+      env:
+        GITHUB_TOKEN: ${{ secrets.ACCESS_TOKEN }}
+      with:
+        upstream_repository: google-deepmind/mujoco
+        upstream_branch: main
+        target_branch: main
+        git_fetch_args: --tags
+        git_pull_args: --tags
+        git_push_args: --tags
       
     - name: Show value of 'has_new_commits'
       run: echo ${{ steps.sync.outputs.has_new_commits }}
