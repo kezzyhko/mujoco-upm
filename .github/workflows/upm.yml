@@ -23,14 +23,13 @@ jobs:
       with:
         fetch-depth: 0
         ref: upm
+    - name: Setup user
+      uses: fregante/setup-git-user@v2
     - name: Merge
-      uses: devmasx/merge-branch@master
-      with:
-        type: now
-        from_branch: ${{ env.TAG_NAME }}
-        target_branch: upm
-        github_token: ${{ secrets.GITHUB_TOKEN }}
+      run: git merge ${{ env.TAG_NAME }}
     - name: Create tag
       uses: rickstaa/action-create-tag@v1.7.2
       with:
         tag: upm-${{ env.TAG_NAME }}
+    - name: Push
+      run: git push
