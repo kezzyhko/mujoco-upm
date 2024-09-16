@@ -17,16 +17,22 @@
 
 #include <string>
 
+#include <mujoco/mjexport.h>
 #include <mujoco/mjmodel.h>
 #include "user/user_api.h"
 
 // Top level API
 
 // Main writer function
-std::string mjWriteXML(mjmModel* model, char* error, int error_sz);
+std::string mjWriteXML(mjSpec* model, char* error, int error_sz);
 
 // Main parser function
-mjmModel* mjParseXML(const char* filename, const mjVFS* vfs, char* error, int error_sz);
+MJAPI mjSpec* mjParseXML(const char* filename, const mjVFS* vfs, char* error, int error_sz);
+
+// Returns a newly-allocated mjSpec, loaded from the contents of xml.
+// On failure returns nullptr and populates the error array if present.
+MJAPI mjSpec* ParseSpecFromString(std::string_view xml, char* error = nullptr,
+                                  int error_size = 0, mjVFS* vfs = nullptr);
 
 
 #endif  // MUJOCO_SRC_XML_XML_H_

@@ -310,6 +310,7 @@ class Model(PyTreeNode):
     nexclude: number of excluded geom pairs
     neq: number of equality constraints
     nnumeric: number of numeric custom fields
+    nuserdata: size of userdata array
     nM: number of non-zeros in sparse inertia matrix
     opt: physics options
     stat: model statistics
@@ -394,8 +395,10 @@ class Model(PyTreeNode):
     mesh_face: vertex face data                               (nmeshface, 3)
     geom_convex_face: vertex face data, MJX only              (ngeom,)
     geom_convex_vert: vertex data, MJX only                   (ngeom,)
-    geom_convex_edge: unique edge data, MJX only              (ngeom,)
+    geom_convex_edge_dir: unique edge direction, MJX only     (ngeom,)
     geom_convex_facenormal: normal face data, MJX only        (ngeom,)
+    geom_convex_face_edge: edges for each face                (ngeom,)
+    geom_convex_face_edge_normal: edge normals for each face  (ngeom,)
     pair_dim: contact dimensionality                          (npair,)
     pair_geom1: id of geom1                                   (npair,)
     pair_geom2: id of geom2                                   (npair,)
@@ -452,6 +455,7 @@ class Model(PyTreeNode):
   nexclude: int
   neq: int
   nnumeric: int
+  nuserdata: int
   nM: int  # pylint:disable=invalid-name
   opt: Option
   stat: Statistic
@@ -539,8 +543,10 @@ class Model(PyTreeNode):
   pair_geom2: np.ndarray
   geom_convex_face: List[Optional[jax.Array]]
   geom_convex_vert: List[Optional[jax.Array]]
-  geom_convex_edge: List[Optional[jax.Array]]
+  geom_convex_edge_dir: List[Optional[jax.Array]]
   geom_convex_facenormal: List[Optional[jax.Array]]
+  geom_convex_edge: List[Optional[jax.Array]]
+  geom_convex_edge_face_normal: List[Optional[jax.Array]]
   pair_solref: jax.Array
   pair_solreffriction: jax.Array
   pair_solimp: jax.Array
@@ -681,6 +687,7 @@ class Data(PyTreeNode):
     qfrc_inverse: net external force; should equal:               (nv,)
       qfrc_applied + J'*xfrc_applied + qfrc_actuator
     efc_force: constraint force in constraint space               (nefc,)
+    userdata: user data, not touched by engine                    (nuserdata,)
   """
   # solver statistics:
   solver_niter: jax.Array
@@ -699,6 +706,8 @@ class Data(PyTreeNode):
   # dynamics:
   qacc: jax.Array
   act_dot: jax.Array
+  # user data:
+  userdata: jax.Array
   # position dependent:
   xpos: jax.Array
   xquat: jax.Array

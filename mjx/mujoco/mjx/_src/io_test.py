@@ -110,7 +110,7 @@ class ModelIOTest(parameterized.TestCase):
     np.testing.assert_almost_equal(mx.geom_pos, m.geom_pos)
     self.assertLen(mx.geom_convex_face, 6)
     self.assertLen(mx.geom_convex_vert, 6)
-    self.assertLen(mx.geom_convex_edge, 6)
+    self.assertLen(mx.geom_convex_edge_dir, 6)
     self.assertLen(mx.geom_convex_facenormal, 6)
 
     np.testing.assert_allclose(mx.jnt_type, m.jnt_type)
@@ -201,6 +201,25 @@ class ModelIOTest(parameterized.TestCase):
             <body>
               <freejoint/>
               <geom type="cylinder" size="0.05 0.05"/>
+            </body>
+            <body>
+              <freejoint/>
+              <geom size="0.05"/>
+            </body>
+          </worldbody>
+        </mujoco>"""))
+
+  def test_margin_gap_mesh_not_implemented(self):
+    with self.assertRaises(NotImplementedError):
+      mjx.put_model(mujoco.MjModel.from_xml_string("""
+        <mujoco>
+          <asset>
+            <mesh name="box" vertex="-1 -1 -1 1 -1 -1 1 1 -1 1 1 1 1 -1 1 -1 1 -1 -1 1 1 -1 -1 1" scale="1 1 1"/>
+          </asset>
+          <worldbody>
+            <body>
+              <freejoint/>
+              <geom type="mesh" mesh="box" margin="0.3"/>
             </body>
             <body>
               <freejoint/>
@@ -433,6 +452,21 @@ class DataIOTest(parameterized.TestCase):
     np.testing.assert_allclose(d_2.contact.dist, d.contact.dist)
     self.assertEqual(d_2.contact.frame.shape, (1, 9))
     np.testing.assert_allclose(d_2.contact.frame, d.contact.frame)
+
+  def test_make_matches_put(self):
+    """Test that make_data produces a pytree that matches put_data."""
+
+    m = mujoco.MjModel.from_xml_string(_MULTIPLE_CONSTRAINTS)
+    d = mujoco.MjData(m)
+    mujoco.mj_step(m, d, 2)
+    dx = mjx.put_data(m, d)
+
+    step_fn = lambda d: d.replace(time=d.time + 1)
+    step_fn_jit = jax.jit(step_fn).lower(dx).compile()
+
+    # placing an MjData onto device should yield the same treedef mjx.Data as
+    # calling make_data.  they should be interchangeable for jax functions:
+    step_fn_jit(mjx.make_data(m))
 
 if __name__ == '__main__':
   absltest.main()
