@@ -16,6 +16,7 @@
 #define MUJOCO_SRC_USER_USER_UTIL_H_
 
 #include <string>
+#include <string_view>
 
 
 extern const double mjNAN;                      // used to mark undefined fields
@@ -123,11 +124,27 @@ void mjuu_offcenter(double* res, const double mass, const double* vec);
 // compute viscosity coefficients from mass and inertia
 void mjuu_visccoef(double* visccoef, double mass, const double* inertia, double scl=1);
 
+// update moving frame along a discrete curve or initialize it, returns edge length
+//   inputs:
+//     normal    - normal vector computed by a previous call to the function
+//     edge      - edge vector (non-unit tangent vector)
+//     tprv      - unit tangent vector of previous body
+//     tnxt      - unit tangent vector of next body
+//     first     - 1 if the frame requires initialization
+//   outputs:
+//     quat      - frame orientation
+//     normal    - unit normal vector
+double mju_updateFrame(double quat[4], double normal[3], const double edge[3],
+                       const double tprv[3], const double tnxt[3], int first);
+
 // strip path from filename
 std::string mjuu_strippath(std::string filename);
 
 // strip extension from filename
 std::string mjuu_stripext(std::string filename);
+
+// get the extension of a filename
+std::string mjuu_getext(std::string_view filename);
 
 // check if path is absolute
 bool mjuu_isabspath(std::string path);

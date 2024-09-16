@@ -28,7 +28,7 @@ set(MSVC_INCREMENTAL_DEFAULT ON)
 
 project(
   mujoco
-  VERSION 2.2.2
+  VERSION 2.3.0
   DESCRIPTION "MuJoCo Physics Simulator"
   HOMEPAGE_URL "https://mujoco.org"
 )
@@ -56,6 +56,7 @@ set(MUJOCO_HEADERS
     include/mujoco/mjdata.h
     include/mujoco/mjexport.h
     include/mujoco/mjmodel.h
+    include/mujoco/mjplugin.h
     include/mujoco/mjrender.h
     include/mujoco/mjtnum.h
     include/mujoco/mjui.h
@@ -64,7 +65,14 @@ set(MUJOCO_HEADERS
     include/mujoco/mujoco.h
 )
 
-add_library(mujoco SHARED)
+# Add metadata to mujoco.dll when building on Windows.
+if(WIN32)
+  set(MUJOCO_RESOURCE_FILES ${CMAKE_CURRENT_SOURCE_DIR}/dist/mujoco.rc)
+else()
+  set(MUJOCO_RESOURCE_FILES "")
+endif()
+
+add_library(mujoco SHARED ${MUJOCO_RESOURCE_FILES})
 target_include_directories(
   mujoco
   PUBLIC $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
@@ -72,6 +80,7 @@ target_include_directories(
   PRIVATE src
 )
 
+add_subdirectory(plugin/elasticity)
 add_subdirectory(src/engine)
 add_subdirectory(src/user)
 add_subdirectory(src/xml)

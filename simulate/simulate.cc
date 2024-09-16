@@ -26,6 +26,7 @@
 #include <GLFW/glfw3.h>
 #include "lodepng.h"
 #include <mujoco/mjmodel.h>
+#include <mujoco/mjtnum.h>
 #include <mujoco/mjvisualize.h>
 #include <mujoco/mjxmacro.h>
 #include "glfw_dispatch.h"
@@ -475,9 +476,9 @@ void infotext(mj::Simulate* sim,
   solerr = mju_log10(mju_max(mjMINVAL, solerr));
 
   // prepare info text
-  mju::strcpy_arr(title, "Time\nSize\nCPU\nSolver   \nFPS\nstack\nconbuf\nefcbuf");
+  mju::strcpy_arr(title, "Time\nSize\nCPU\nSolver   \nFPS\nMemory");
   mju::sprintf_arr(content,
-                   "%-9.3f\n%d  (%d con)\n%.3f\n%.1f  (%d it)\n%.0f\n%.3f\n%.3f\n%.3f",
+                   "%-9.3f\n%d  (%d con)\n%.3f\n%.1f  (%d it)\n%.0f\n%.3f",
                    d->time,
                    d->nefc, d->ncon,
                    sim->run ?
@@ -485,9 +486,7 @@ void infotext(mj::Simulate* sim,
                    d->timer[mjTIMER_FORWARD].duration / mjMAX(1, d->timer[mjTIMER_FORWARD].number),
                    solerr, d->solver_iter,
                    1/interval,
-                   d->maxuse_stack/(double)d->nstack,
-                   d->maxuse_con/(double)m->nconmax,
-                   d->maxuse_efc/(double)m->njmax);
+                   d->maxuse_arena/(double)(d->nstack * sizeof(mjtNum)));
 
   // add Energy if enabled
   {
@@ -703,7 +702,11 @@ void makerendering(mj::Simulate* sim, int oldstate) {
       }
 
     // set shortcut and data
-    mju::sprintf_arr(defFlag[0].other, " %s", mjVISSTRING[i][2]);
+    if (mjVISSTRING[i][2][0]) {
+      mju::sprintf_arr(defFlag[0].other, " %s", mjVISSTRING[i][2]);
+    } else {
+      mju::sprintf_arr(defFlag[0].other, "");
+    }
     defFlag[0].pdata = sim->vopt.flags + i;
     mjui_add(&sim->ui0, defFlag);
   }
@@ -712,6 +715,8 @@ void makerendering(mj::Simulate* sim, int oldstate) {
     mju::strcpy_arr(defFlag[0].name, mjRNDSTRING[i][0]);
     if (mjRNDSTRING[i][2][0]) {
       mju::sprintf_arr(defFlag[0].other, " %s", mjRNDSTRING[i][2]);
+    } else {
+      mju::sprintf_arr(defFlag[0].other, "");
     }
     defFlag[0].pdata = sim->scn.flags + i;
     mjui_add(&sim->ui0, defFlag);
@@ -1642,6 +1647,18 @@ void Simulate::loadmodel() {
   // clear request
   this->loadrequest = 0;
   cond_loadrequest.notify_all();
+
+  // set real time index
+  int numclicks = sizeof(this->percentRealTime) / sizeof(this->percentRealTime[0]);
+  float min_error = 1e6;
+  float desired = mju_log(100*this->m->vis.global.realtime);
+  for (int click=0; click<numclicks; click++) {
+    float error = mju_abs(mju_log(this->percentRealTime[click]) - desired);
+    if (error < min_error) {
+      min_error = error;
+      this->realTimeIndex = click;
+    }
+  }
 }
 
 
@@ -1759,26 +1776,30 @@ void Simulate::render() {
                 this->loadrequest ? "loading" : "pause", nullptr, &this->con);
   }
 
-  // show realtime label
-  if (this->run) {
-    // get desired and actual percent-of-real-time
-    float desiredRealtime = this->percentRealTime[this->realTimeIndex];
-    float actualRealtime = 100 / this->measuredSlowdown;
+  // get desired and actual percent-of-real-time
+  float desiredRealtime = this->percentRealTime[this->realTimeIndex];
+  float actualRealtime = 100 / this->measuredSlowdown;
 
-    // check if real-time tracking is misaligned by more than than 10%
-    bool misalignment = mju_abs(actualRealtime - desiredRealtime) > 0.1 * desiredRealtime;
+  // if running, check for misalignment of more than 10%
+  float realtime_offset = mju_abs(actualRealtime - desiredRealtime);
+  bool misaligned = this->run && realtime_offset > 0.1 * desiredRealtime;
 
-    // display realtime overlay if not 100% or there is misalignment
-    if (desiredRealtime != 100.0 || misalignment) {
-      char overlay[30];
-      if (misalignment) {
-        std::snprintf(overlay, sizeof(overlay), "%g%% (%-.1f%%)", desiredRealtime, actualRealtime);
-      } else {
-        std::snprintf(overlay, sizeof(overlay), "%g%%", desiredRealtime);
-      }
-      mjr_overlay(mjFONT_BIG, mjGRID_TOPLEFT, smallrect, overlay, nullptr, &this->con);
+  // draw realtime overlay
+  if (desiredRealtime != 100.0 || misaligned) {
+    char rtlabel[30];
+
+    // print desired realtime
+    int labelsize = std::snprintf(rtlabel, sizeof(rtlabel), "%g%%", desiredRealtime);
+
+    // if misaligned, append to label
+    if (misaligned) {
+      std::snprintf(rtlabel+labelsize, sizeof(rtlabel)-labelsize, " (%-4.1f%%)", actualRealtime);
     }
+
+    // draw overlay
+    mjr_overlay(mjFONT_BIG, mjGRID_TOPLEFT, smallrect, rtlabel, nullptr, &this->con);
   }
+
 
   // show ui 0
   if (this->ui0_enable) {

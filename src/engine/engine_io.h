@@ -52,9 +52,10 @@ mjModel* mj_makeModel(int nq, int nv, int nu, int na, int nbody, int njnt,
                       int ntex, int ntexdata, int nmat, int npair, int nexclude,
                       int neq, int ntendon, int nwrap, int nsensor,
                       int nnumeric, int nnumericdata, int ntext, int ntextdata,
-                      int ntuple, int ntupledata, int nkey, int nmocap,
-                      int nuser_body, int nuser_jnt, int nuser_geom, int nuser_site, int nuser_cam,
-                      int nuser_tendon, int nuser_actuator, int nuser_sensor, int nnames);
+                      int ntuple, int ntupledata, int nkey, int nmocap, int nplugin,
+                      int npluginattr, int nuser_body, int nuser_jnt, int nuser_geom,
+                      int nuser_site, int nuser_cam, int nuser_tendon, int nuser_actuator,
+                      int nuser_sensor, int nnames);
 
 // copy mjModel; allocate new if dest is NULL
 MJAPI mjModel* mj_copyModel(mjModel* dest, const mjModel* src);
@@ -94,6 +95,9 @@ MJAPI void mj_resetDataDebug(const mjModel* m, mjData* d, unsigned char debug_va
 
 // reset data, set fields from specified keyframe
 MJAPI void mj_resetDataKeyframe(const mjModel* m, mjData* d, int key);
+
+// mjData arena allocate
+void* mj_arenaAlloc(mjData* d, int bytes, int alignment);
 
 // mjData stack allocate
 MJAPI mjtNum* mj_stackAlloc(mjData* d, int size);

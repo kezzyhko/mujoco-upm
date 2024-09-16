@@ -19,9 +19,11 @@
 #include <cstdio>
 #include <limits>
 #include <string>
+#include <string_view>
 
 #include <mujoco/mjtnum.h>
 #include "engine/engine_macro.h"
+#include "engine/engine_util_spatial.h"
 
 using std::isnan;
 using std::string;
@@ -460,6 +462,55 @@ void mjuu_visccoef(double* visccoef, double mass, const double* inertia, double 
 }
 
 
+// update moving frame along a curve or initialize it, returns edge length
+//   inputs:
+//     normal    - normal vector computed by a previous call to the function
+//     edge      - edge vector (non-unit tangent vector)
+//     tprv      - unit tangent vector of previous body
+//     tnxt      - unit tangent vector of next body
+//     first     - 1 if the frame requires initialization
+//   outputs:
+//     quat      - frame orientation
+//     normal    - unit normal vector
+mjtNum mju_updateFrame(mjtNum quat[4], mjtNum normal[3], const mjtNum edge[3],
+                       const mjtNum tprv[3], const mjtNum tnxt[3], int first) {
+  mjtNum tangent[3], binormal[3];
+
+  // normalize tangent
+  mjuu_copyvec(tangent, edge, 3);
+  mjuu_normvec(tangent, 3);
+
+  // compute moving frame
+  if (first) {
+    // use the first vertex binormal for the first edge
+    mjuu_crossvec(binormal, tangent, tnxt);
+    mjuu_normvec(binormal, 3);
+
+    // compute edge normal given tangent and binormal
+    mjuu_crossvec(normal, binormal, tangent);
+    mjuu_normvec(normal, 3);
+  } else {
+    mjtNum darboux[4];
+
+    // rotate edge normal about the vertex binormal
+    mjuu_crossvec(binormal, tprv, tangent);
+    mjtNum angle = atan2(mjuu_normvec(binormal, 3), mjuu_dot3(tprv, tangent));
+    mju_axisAngle2Quat(darboux, binormal, angle);
+    mju_rotVecQuat(normal, normal, darboux);
+    mjuu_normvec(normal, 3);
+
+    // compute edge binormal given tangent and normal
+    mjuu_crossvec(binormal, tangent, normal);
+    mjuu_normvec(binormal, 3);
+  }
+  // global orientation of the frame
+  mjuu_frame2quat(quat, tangent, normal, binormal);
+
+  // return edge length
+  return sqrt(mjuu_dot3(edge, edge));
+}
+
+
 // strip directory from filename
 string mjuu_strippath(string filename) {
   // find last pathsymbol
@@ -488,9 +539,16 @@ string mjuu_stripext(string filename) {
   }
 
   // return name without extension
-  else {
-    return filename.substr(0, end);
+  return filename.substr(0, end);
+}
+
+string mjuu_getext(std::string_view filename) {
+  size_t dot = filename.find_last_of('.');
+
+  if (dot==string::npos) {
+    return "";
   }
+  return string(filename.substr(dot, filename.size() - dot));
 }
 
 

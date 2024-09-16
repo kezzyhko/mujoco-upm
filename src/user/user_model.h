@@ -16,10 +16,12 @@
 #define MUJOCO_SRC_USER_USER_MODEL_H_
 
 #include <string>
+#include <utility>
 #include <vector>
 
 #include <mujoco/mjdata.h>
 #include <mujoco/mjmodel.h>
+#include <mujoco/mjplugin.h>
 #include "user/user_objects.h"
 
 typedef enum _mjtInertiaFromGeom {
@@ -85,6 +87,7 @@ class mjCModel {
   mjCText*    AddText(void);                          // custom text
   mjCTuple*   AddTuple(void);                         // custom tuple
   mjCKey*     AddKey(void);                           // keyframe
+  mjCPlugin*  AddPlugin(void);                        // plugin instance
 
   //------------------------ API for access to model elements (outside tree)
   int         NumObjects(mjtObj type);                // number of objects in specified list
@@ -100,6 +103,12 @@ class mjCModel {
   mjCBase*    FindObject(mjtObj type, std::string name);  // find object given type and name
   bool        IsNullPose(const mjtNum* pos, const mjtNum* quat); // detect null pose
 
+  //------------------------ API for plugins
+  void        ResolvePlugin(mjCBase* obj,     // resolve plugin instance, create a new one if needed
+                            const std::string& plugin_name,
+                            const std::string& plugin_instance_name,
+                            mjCPlugin** plugin_instance);
+
 
   //------------------------ global data
   std::string comment;            // comment at top of XML
@@ -108,8 +117,8 @@ class mjCModel {
 
   //------------------------ compiler settings
   bool autolimits;                // infer "limited" attribute based on range
-  double boundmass;               // enfore minimum body mass
-  double boundinertia;            // enfore minimum body diagonal inertia
+  double boundmass;               // enforce minimum body mass
+  double boundinertia;            // enforce minimum body diagonal inertia
   double settotalmass;            // rescale masses and inertias; <=0: ignore
   bool balanceinertia;            // automatically impose A + B >= C rule
   bool strippath;                 // automatically strip paths from mesh files
@@ -139,10 +148,11 @@ class mjCModel {
   std::string modelname;          // model name
   mjOption option;                // options
   mjVisual visual;                // visual options
+  std::size_t memory;             // size of arena+stack memory in bytes
   int nemax;                      // max number of equality constraints
   int njmax;                      // max number of constraints (Jacobian rows)
   int nconmax;                    // max number of detected contacts (mjContact array size)
-  int nstack;                     // number of fields in mjData stack
+  int nstack;                     // (deprecated) number of fields in mjData stack
   int nuserdata;                  // number extra fields in mjData
   int nuser_body;                 // number of mjtNums in body_user
   int nuser_jnt;                  // number of mjtNums in jnt_user
@@ -198,6 +208,7 @@ class mjCModel {
   int ntuple;                     // number of tuple fields
   int nkey;                       // number of keyframes
   int nmocap;                     // number of mocap bodies
+  int nplugin;                    // number of plugin instances
 
   // sizes computed by Compile
   int nq;                         // number of generalized coordinates = dim(qpos)
@@ -220,6 +231,7 @@ class mjCModel {
   int nnumericdata;               // number of mjtNums in all custom fields
   int ntextdata;                  // number of chars in all text fields, including 0
   int ntupledata;                 // number of objects in all tuple fields
+  int npluginattr;                // number of chars in all plugin config attributes
   int nnames;                     // number of chars in all names
   int nM;                         // number of non-zeros in sparse inertia matrix
   int nD;                         // number of non-zeros in sparse derivative matrix
@@ -242,6 +254,9 @@ class mjCModel {
   std::vector<mjCTuple*>    tuples;      // list of tuple fields
   std::vector<mjCKey*>      keys;        // list of keyframe fields
 
+  std::vector<std::pair<const mjpPlugin*, int>> active_plugins;  // list of active plugins
+  std::vector<mjCPlugin*>   plugins;     // list of plugin instances
+
   // pointers to objects created inside kinematic tree
   std::vector<mjCBody*>   bodies;   // list of bodies
   std::vector<mjCJoint*>  joints;   // list of joints allowing motion relative to parent
@@ -251,6 +266,7 @@ class mjCModel {
   std::vector<mjCLight*>  lights;   // list of lights
 
   //------------------------ internal variables
+  bool hasImplicitPluginElem;     // already encountered an implicit plugin sensor/actuator
   bool compiled;                  // already compiled flag (cannot be compiled again)
   mjCError errInfo;               // last error info
   int fixCount;                   // how many bodies have been fixed

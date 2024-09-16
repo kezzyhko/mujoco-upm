@@ -23,6 +23,7 @@
 #include "engine/engine_core_constraint.h"
 #include "engine/engine_io.h"
 #include "engine/engine_macro.h"
+#include "engine/engine_plugin.h"
 #include "engine/engine_support.h"
 #include "engine/engine_util_blas.h"
 #include "engine/engine_util_errmem.h"
@@ -35,7 +36,7 @@
 // forward kinematics
 void mj_kinematics(const mjModel* m, mjData* d) {
   mjtNum pos[3], quat[4], *bodypos, *bodyquat;
-  mjtNum qloc[4], qtmp[4], vec[3], vec1[3], xanchor[3], xaxis[3];
+  mjtNum qloc[4], vec[3], vec1[3], xanchor[3], xaxis[3];
 
   // set world position and orientation
   mju_zero3(d->xpos);
@@ -124,8 +125,7 @@ void mj_kinematics(const mjModel* m, mjData* d) {
           }
 
           // apply rotation
-          mju_mulQuat(qtmp, quat, qloc);
-          mju_copy4(quat, qtmp);
+          mju_mulQuat(quat, quat, qloc);
 
           // correct for off-center rotation
           mju_sub3(vec, xanchor, pos);
@@ -1422,6 +1422,25 @@ void mj_passive(const mjModel* m, mjData* d) {
   // user callback: add custom passive forces
   if (mjcb_passive) {
     mjcb_passive(m, d);
+  }
+
+  // plugin
+  if (m->nplugin) {
+    const int nslot = mjp_pluginCount();
+    // iterate over plugins, call compute if type is mjPLUGIN_PASSIVE
+    for (int i=0; i<m->nplugin; i++) {
+      const int slot = m->plugin[i];
+      const mjpPlugin* plugin = mjp_getPluginAtSlotUnsafe(slot, nslot);
+      if (!plugin) {
+        mju_error_i("invalid plugin slot: %d", slot);
+      }
+      if (plugin->type & mjPLUGIN_PASSIVE) {
+        if (!plugin->compute) {
+          mju_error_i("`compute` is a null function pointer for plugin at slot %d", slot);
+        }
+        plugin->compute(m, d, i, mjPLUGIN_PASSIVE);
+      }
+    }
   }
 }
 

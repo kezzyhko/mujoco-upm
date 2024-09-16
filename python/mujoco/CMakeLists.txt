@@ -75,13 +75,13 @@ if(NOT TARGET mujoco)
     find_path(MUJOCO_FRAMEWORK mujoco.Framework HINTS ${MUJOCO_FRAMEWORK_DIR})
     if(MUJOCO_FRAMEWORK)
       message("MuJoCo framework is at ${MUJOCO_FRAMEWORK}/mujoco.framework")
-      set(MUJOCO_LIBRARY ${MUJOCO_FRAMEWORK}/mujoco.framework/Versions/A/libmujoco.2.2.2.dylib)
+      set(MUJOCO_LIBRARY ${MUJOCO_FRAMEWORK}/mujoco.framework/Versions/A/libmujoco.2.3.0.dylib)
       target_compile_options(mujoco INTERFACE -F${MUJOCO_FRAMEWORK})
     endif()
   endif()
 
   if(NOT MUJOCO_FRAMEWORK)
-    find_library(MUJOCO_LIBRARY mujoco mujoco.2.2.2 HINTS ${MUJOCO_LIBRARY_DIR} REQUIRED)
+    find_library(MUJOCO_LIBRARY mujoco mujoco.2.3.0 HINTS ${MUJOCO_LIBRARY_DIR} REQUIRED)
     find_path(MUJOCO_INCLUDE mujoco/mujoco.h HINTS ${MUJOCO_INCLUDE_DIR} REQUIRED)
     message("MuJoCo is at ${MUJOCO_LIBRARY}")
     message("MuJoCo headers are at ${MUJOCO_INCLUDE}")
@@ -160,7 +160,7 @@ findorfetch(
   GIT_REPO
   https://gitlab.com/libeigen/eigen
   GIT_TAG
-  34780d8bd13d0af0cf17a22789ef286e8512594d
+  3bb6a48d8c171cf20b5f8e48bfb4e424fbd4f79e
   TARGETS
   Eigen3::Eigen
   EXCLUDE_FROM_ALL
@@ -177,7 +177,7 @@ findorfetch(
   GIT_REPO
   https://github.com/pybind/pybind11
   GIT_TAG
-  6df86934c258d8cd99acf192f6d3f4d1289b5d68
+  0aa8c9452803604b8e65a624c28f6ba89bd6499a
   TARGETS
   pybind11::pybind11_headers
   EXCLUDE_FROM_ALL

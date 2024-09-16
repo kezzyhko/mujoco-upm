@@ -15,6 +15,7 @@
 #ifndef MUJOCO_SRC_USER_USER_OBJECTS_H_
 #define MUJOCO_SRC_USER_USER_OBJECTS_H_
 
+#include <map>
 #include <string>
 #include <vector>
 
@@ -84,7 +85,7 @@ typedef enum _mjtMeshType {
 
 
 // error information
-class mjCError {
+class [[nodiscard]] mjCError {
  public:
   mjCError(const mjCBase* obj = 0,
            const char* msg = 0,
@@ -117,6 +118,7 @@ class mjCAlternative {
 //------------------------- class mjCBase ----------------------------------------------------------
 // Generic functionality for all derived classes
 
+class mjCPlugin;
 class mjCBase {
   friend class mjCDef;
 
@@ -126,10 +128,16 @@ class mjCBase {
   int id;                         // object id
   int xmlpos[2];                  // row and column in xml file
   mjCDef* def;                    // defaults class used to init this object
+  mjCModel* model;                // pointer to model that created object
+
+  // plugin support
+  bool is_plugin;
+  std::string plugin_name;
+  std::string plugin_instance_name;
+  mjCPlugin* plugin_instance;
 
  protected:
   mjCBase();                      // constructor
-  mjCModel* model;                // pointer to model that created object
 };
 
 
@@ -833,6 +841,27 @@ class mjCWrap : public mjCBase {
 
 
 
+//------------------------- class mjCPlugin --------------------------------------------------------
+// Describes an instance of a plugin
+
+class mjCPlugin : public mjCBase {
+  friend class mjCModel;
+  friend class mjXWriter;
+
+ public:
+  int plugin_slot;   // global registered slot number of the plugin
+  int nstate;        // state size for the plugin instance
+  mjCBase* parent;   // parent object (only used when generating error message)
+  std::map<std::string, std::string, std::less<>> config_attribs;  // raw config attributes from XML
+  std::vector<char> flattened_attributes;  // config attributes flattened in plugin-declared order
+
+ private:
+  mjCPlugin(mjCModel*);            // constructor
+  void Compile(void);              // compiler
+};
+
+
+
 //------------------------- class mjCActuator ------------------------------------------------------
 // Describes an actuator
 
@@ -865,6 +894,12 @@ class mjCActuator : public mjCBase {
   std::string slidersite;         // site defining cylinder, for slider-crank only
   std::string refsite;            // reference site, for site transmission only
 
+  // plugin support
+  bool is_plugin;
+  std::string plugin_name;
+  std::string plugin_instance_name;
+  mjCPlugin* plugin_instance;
+
  private:
   mjCActuator(mjCModel* = 0, mjCDef* = 0);// constructor
   void Compile(void);                     // compiler
@@ -895,6 +930,11 @@ class mjCSensor : public mjCBase {
   double cutoff;                  // cutoff for real and positive datatypes
   double noise;                   // noise stdev
   std::vector<double> userdata;   // user data
+
+  // plugin support
+  std::string plugin_name;
+  std::string plugin_instance_name;
+  mjCPlugin* plugin_instance;
 
  private:
   mjCSensor(mjCModel*);           // constructor

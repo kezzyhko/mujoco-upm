@@ -22,36 +22,18 @@
 #include <string.h>
 
 #include <mujoco/mjmodel.h>
+#include <mujoco/mjplugin.h>
 #include <mujoco/mjxmacro.h>
+#include "engine/engine_array_safety.h"
 #include "engine/engine_macro.h"
+#include "engine/engine_plugin.h"
 #include "engine/engine_util_blas.h"
 #include "engine/engine_util_errmem.h"
 #include "engine/engine_vfs.h"
 
-#ifdef ADDRESS_SANITIZER
-  #include <sanitizer/asan_interface.h>
-#elif defined(_MSC_VER)
-  #define ASAN_POISON_MEMORY_REGION(addr, size)
-  #define ASAN_UNPOISON_MEMORY_REGION(addr, size)
-#else
-  #define ASAN_POISON_MEMORY_REGION(addr, size) ((void)(addr), (void)(size))
-  #define ASAN_UNPOISON_MEMORY_REGION(addr, size) ((void)(addr), (void)(size))
-#endif
-
-#ifdef MEMORY_SANITIZER
-  #include <sanitizer/msan_interface.h>
-#endif
-
 #ifdef _MSC_VER
   #pragma warning (disable: 4305)  // disable MSVC warning: truncation from 'double' to 'float'
 #endif
-
-#ifndef __has_builtin
-#define __has_builtin(x) 0
-#endif
-
-#define PTRDIFF(x, y) ((void*)(x) - (void*)(y))
-
 
 //------------------------------ mjLROpt -----------------------------------------------------------
 
@@ -158,6 +140,7 @@ void mj_defaultVisual(mjVisual* vis) {
   vis->global.glow                = 0.3;
   vis->global.offwidth            = 640;
   vis->global.offheight           = 480;
+  vis->global.realtime            = 1.0;
 
   // rendering quality
   vis->quality.shadowsize         = 4096;
@@ -255,14 +238,6 @@ void mj_defaultStatistic(mjStatistic* stat) {
 
 // id used to indentify binary mjModel file/buffer
 static const int ID = 54321;
-
-
-// number of bytes to be skipped to achieve 64-byte alignment
-static unsigned int SKIP(intptr_t offset) {
-  const unsigned int align = 64;
-  // compute skipped bytes
-  return (align - (offset % align)) % align;
-}
 
 
 
@@ -396,9 +371,10 @@ mjModel* mj_makeModel(int nq, int nv, int nu, int na, int nbody, int njnt,
                       int ntex, int ntexdata, int nmat, int npair, int nexclude,
                       int neq, int ntendon, int nwrap, int nsensor,
                       int nnumeric, int nnumericdata, int ntext, int ntextdata,
-                      int ntuple, int ntupledata, int nkey, int nmocap,
-                      int nuser_body, int nuser_jnt, int nuser_geom, int nuser_site, int nuser_cam,
-                      int nuser_tendon, int nuser_actuator, int nuser_sensor, int nnames) {
+                      int ntuple, int ntupledata, int nkey, int nmocap, int nplugin,
+                      int npluginattr, int nuser_body, int nuser_jnt, int nuser_geom,
+                      int nuser_site, int nuser_cam, int nuser_tendon, int nuser_actuator,
+                      int nuser_sensor, int nnames) {
   intptr_t offset = 0;
 
   // allocate mjModel
@@ -449,6 +425,8 @@ mjModel* mj_makeModel(int nq, int nv, int nu, int na, int nbody, int njnt,
   m->ntupledata = ntupledata;
   m->nkey = nkey;
   m->nmocap = nmocap;
+  m->nplugin = nplugin;
+  m->npluginattr = npluginattr;
   m->nuser_body = nuser_body;
   m->nuser_jnt = nuser_jnt;
   m->nuser_geom = nuser_geom;
@@ -533,10 +511,10 @@ mjModel* mj_copyModel(mjModel* dest, const mjModel* src) {
                         src->ntex, src->ntexdata, src->nmat, src->npair, src->nexclude,
                         src->neq, src->ntendon, src->nwrap, src->nsensor,
                         src->nnumeric, src->nnumericdata, src->ntext, src->ntextdata,
-                        src->ntuple, src->ntupledata, src->nkey, src->nmocap,
-                        src->nuser_body, src->nuser_jnt, src->nuser_geom, src->nuser_site,
-                        src->nuser_cam, src->nuser_tendon, src->nuser_actuator, src->nuser_sensor,
-                        src->nnames);
+                        src->ntuple, src->ntupledata, src->nkey, src->nmocap, src->nplugin,
+                        src->npluginattr, src->nuser_body, src->nuser_jnt, src->nuser_geom,
+                        src->nuser_site, src->nuser_cam, src->nuser_tendon, src->nuser_actuator,
+                        src->nuser_sensor, src->nnames);
   }
   if (!dest) {
     mju_error("Failed to make mjModel. Invalid sizes.");
@@ -705,7 +683,8 @@ mjModel* mj_loadModel(const char* filename, const mjVFS* vfs) {
                    info[21], info[22], info[23], info[24], info[25], info[26], info[27],
                    info[28], info[29], info[30], info[31], info[32], info[33], info[34],
                    info[35], info[36], info[37], info[38], info[39], info[40], info[41],
-                   info[42], info[43], info[44], info[45], info[46], info[47], info[48]);
+                   info[42], info[43], info[44], info[45], info[46], info[47], info[48],
+                   info[49], info[50]);
   if (!m || m->nbuffer!=info[getnint()-1]) {
     if (fp) {
       fclose(fp);
@@ -833,6 +812,13 @@ static void mj_setPtrData(const mjModel* m, mjData* d) {
   if (d->nbuffer != sz) {
     mju_error("mjData buffer size mismatch");
   }
+
+  // zero-initialize arena pointers
+#define X(type, name, nr, nc) d->name = NULL;
+  MJDATA_ARENA_POINTERS
+#undef X
+
+  d->contact = d->arena;
 }
 
 
@@ -852,7 +838,7 @@ static mjData* _makeData(const mjModel* m) {
 
   // compute buffer size
   d->nbuffer = 0;
-  d->buffer = d->stack = NULL;
+  d->buffer = d->arena = NULL;
 #define X(type, name, nr, nc)                                                \
   if (!safeAddToBufferSize(&offset, &d->nbuffer, sizeof(type), m->nr, nc)) { \
     mju_free(d);                                                             \
@@ -873,16 +859,31 @@ static mjData* _makeData(const mjModel* m) {
     mju_error("Could not allocate mjData buffer");
   }
 
-  // allocate stack
-  d->stack = (mjtNum*) mju_malloc(d->nstack * sizeof(mjtNum));
-  if (!d->stack) {
+  // allocate arena
+  d->arena = mju_malloc(d->nstack * sizeof(mjtNum));
+  if (!d->arena) {
     mju_free(d->buffer);
     mju_free(d);
-    mju_error("Could not allocate mjData stack");
+    mju_error("Could not allocate mjData arena");
   }
 
   // set pointers into buffer, reset data
   mj_setPtrData(m, d);
+
+  // copy plugins into d, required for deletion
+  d->nplugin = m->nplugin;
+  for (int i = 0; i < m->nplugin; ++i) {
+    d->plugin[i] = m->plugin[i];
+    const mjpPlugin* plugin = mjp_getPluginAtSlot(m->plugin[i]);
+    if (plugin->init) {
+      if (plugin->init(m, d, i) < 0) {
+        mju_free(d->buffer);
+        mju_free(d->arena);
+        mju_free(d);
+        mju_error_i("plugin->init failed for plugin id %d", i);
+      }
+    }
+  }
 
   return d;
 }
@@ -899,7 +900,7 @@ mjData* mj_makeData(const mjModel* m) {
 // copy mjData, if dest==NULL create new data
 mjData* mj_copyData(mjData* dest, const mjModel* m, const mjData* src) {
   void* save_buffer;
-  mjtNum* save_stack;
+  void* save_arena;
 
   // allocate new data if needed
   if (!dest) {
@@ -921,11 +922,22 @@ mjData* mj_copyData(mjData* dest, const mjModel* m, const mjData* src) {
 
   // save pointers, copy everything, restore pointers
   save_buffer = dest->buffer;
-  save_stack = dest->stack;
+  save_arena = dest->arena;
   *dest = *src;
   dest->buffer = save_buffer;
-  dest->stack = save_stack;
+  dest->arena = save_arena;
   mj_setPtrData(m, dest);
+
+  // save plugin_data, since the X macro copying block below will override it
+  const size_t plugin_data_size = sizeof(*dest->plugin_data) * dest->nplugin;
+  uintptr_t* save_plugin_data = NULL;
+  if (plugin_data_size) {
+    save_plugin_data = (uintptr_t*)mju_malloc(plugin_data_size);
+    if (!save_plugin_data) {
+      mju_error("failed to allocate temporary memory for plugin_data");
+    }
+    memcpy(save_plugin_data, dest->plugin_data, plugin_data_size);
+  }
 
   // copy buffer
   {
@@ -936,43 +948,118 @@ mjData* mj_copyData(mjData* dest, const mjModel* m, const mjData* src) {
     #undef X
   }
 
+  // copy arena memory
+  memcpy(dest->arena, src->arena, src->nstack * sizeof(mjtNum));
+#define X(type, name, nr, nc)  \
+  dest->name = src->name ? (type*)((char*)dest->arena + PTRDIFF(src->name, src->arena)) : NULL;
+  MJDATA_ARENA_POINTERS
+#undef X
+
+  // restore contact pointer
+  dest->contact = dest->arena;
+
+  // restore plugin_data
+  if (plugin_data_size) {
+    memcpy(dest->plugin_data, save_plugin_data, plugin_data_size);
+    free(save_plugin_data);
+    save_plugin_data = NULL;
+  }
+
+  // copy plugin instances
+  dest->nplugin = m->nplugin;
+  for (int i = 0; i < m->nplugin; ++i) {
+    const mjpPlugin* plugin = mjp_getPluginAtSlot(m->plugin[i]);
+    if (plugin->copy) {
+      plugin->copy(dest, m, src, i);
+    }
+  }
+
   return dest;
+}
+
+
+
+// allocate memory from the mjData arena
+void* mj_arenaAlloc(mjData* d, int bytes, int alignment) {
+  int misalignment = d->parena % alignment;
+  int padding = misalignment ? alignment - misalignment : 0;
+
+  // check size
+  size_t bytes_available = (d->nstack - d->pstack) * sizeof(mjtNum);
+  if (d->parena + padding + bytes > bytes_available) {
+    return NULL;
+  }
+
+  // allocate, update max, return pointer to buffer
+  void* result = (char*)d->arena + d->parena + padding;
+  d->parena += padding + bytes;
+  d->maxuse_arena = mjMAX(d->maxuse_arena, d->pstack*sizeof(mjtNum) + d->parena);
+  return result;
 }
 
 
 
 // allocate size mjtNums on the mjData stack
 mjtNum* mj_stackAlloc(mjData* d, int size) {
-  mjtNum* result;
-
   // return NULL if empty
   if (!size) {
     return 0;
   }
 
   // check size
-  if (d->pstack + size > d->nstack) {
-    mju_error("Stack overflow");
+  size_t stack_available_bytes = d->nstack * sizeof(mjtNum) - d->parena;
+  size_t stack_required_bytes = (d->pstack + size) * sizeof(mjtNum);
+  if (stack_required_bytes > stack_available_bytes) {
+    char err[256];
+    mjSNPRINTF(err, "stack overflow: max = %zu, available = %zu, requested = %zu "
+                    "(ne = %d, nf = %d, nefc = %d, ncon = %d)",
+               d->nstack * sizeof(mjtNum), stack_available_bytes, stack_required_bytes,
+               d->ne, d->nf, d->nefc, d->ncon);
+    mju_error(err);
   }
 
-  // allocate, update max, return pointer to buffer
-  result = (mjtNum*)d->stack + d->pstack;
+  // allocate at end of arena
+  char* end_ptr = (char*)d->arena + d->nstack * sizeof(mjtNum);
+  char* result = end_ptr - (d->pstack + size + 1) * sizeof(mjtNum);
+
+#ifdef ADDRESS_SANITIZER
+  if ((uintptr_t)result % sizeof(mjtNum)) {
+    mju_error("mj_stackAlloc fails to align to sizeof(mjtNum)");
+  }
+#endif
+
+  // update max, return pointer to buffer
   d->pstack += size;
   d->maxuse_stack = mjMAX(d->maxuse_stack, d->pstack);
-  return result;
+  d->maxuse_arena = mjMAX(d->maxuse_arena, d->pstack*sizeof(mjtNum) + d->parena);
+  return (mjtNum*)result;
 }
 
 
 
 // clear data, set defaults
 static void _resetData(const mjModel* m, mjData* d, unsigned char debug_value) {
+  //------------------------------ save plugin state and data
+  mjtNum* plugin_state = mju_malloc(sizeof(mjtNum) * m->npluginstate);
+  memcpy(plugin_state, d->plugin_state, sizeof(mjtNum) * m->npluginstate);
+  uintptr_t* plugindata = mju_malloc(sizeof(uintptr_t) * m->nplugin);
+  memcpy(plugindata, d->plugin_data, sizeof(uintptr_t) * m->nplugin);
+
   //------------------------------ clear header
 
   // clear stack pointer
   d->pstack = 0;
 
+  // clear arena pointers
+  d->parena = 0;
+#define X(type, name, nr, nc) d->name = NULL;
+  MJDATA_ARENA_POINTERS
+#undef X
+  d->contact = d->arena;
+
   // clear memory utilization stats
   d->maxuse_stack = 0;
+  d->maxuse_arena = 0;
   d->maxuse_con = 0;
   d->maxuse_efc = 0;
 
@@ -1048,6 +1135,21 @@ static void _resetData(const mjModel* m, mjData* d, unsigned char debug_value) {
       d->mocap_quat[4*i] = 1.0;
     }
   }
+
+  // restore pluginstate and plugindata
+  memcpy(d->plugin_state, plugin_state, sizeof(mjtNum) * m->npluginstate);
+  mju_free(plugin_state);
+  memcpy(d->plugin_data, plugindata, sizeof(uintptr_t) * m->nplugin);
+  mju_free(plugindata);
+
+  // restore the plugin array back into d and reset the instances
+  for (int i = 0; i < m->nplugin; ++i) {
+    d->plugin[i] = m->plugin[i];
+    const mjpPlugin* plugin = mjp_getPluginAtSlot(m->plugin[i]);
+    if (plugin->reset) {
+      plugin->reset(m, d, i);
+    }
+  }
 }
 
 
@@ -1087,8 +1189,15 @@ void mj_resetDataKeyframe(const mjModel* m, mjData* d, int key) {
 // de-allocate mjData
 void mj_deleteData(mjData* d) {
   if (d) {
+    // destroy plugin instances
+    for (int i = 0; i < d->nplugin; ++i) {
+      const mjpPlugin* plugin = mjp_getPluginAtSlot(d->plugin[i]);
+      if (plugin->destroy) {
+        plugin->destroy(d, i);
+      }
+    }
     mju_free(d->buffer);
-    mju_free(d->stack);
+    mju_free(d->arena);
     mju_free(d);
   }
 }
@@ -1144,6 +1253,9 @@ static int sensorSize(mjtSensor sensor_type, int nuser_sensor) {
 
   case mjSENS_USER:
     return nuser_sensor;
+
+  case mjSENS_PLUGIN:
+    return -1;
 
   // don't use a 'default' case, so compiler warns about missing values
   }
@@ -1202,6 +1314,8 @@ static int numObjects(const mjModel* m, mjtObj objtype) {
       return m->ntuple;
     case mjOBJ_KEY:
       return m->nkey;
+    case mjOBJ_PLUGIN:
+      return m->nplugin;
   }
   return -2;
 }
@@ -1222,6 +1336,7 @@ const char* mj_validateReferences(const mjModel* m) {
   X(body_jntadr,        nbody,         njnt         , m->body_jntnum         ) \
   X(body_dofadr,        nbody,         nv           , m->body_dofnum         ) \
   X(body_geomadr,       nbody,         ngeom        , m->body_geomnum        ) \
+  X(body_plugin,        nbody,         nplugin      , 0                      ) \
   X(jnt_qposadr,        njnt,          nq           , 0                      ) \
   X(jnt_dofadr,         njnt,          nv           , 0                      ) \
   X(jnt_bodyid,         njnt,          nbody        , 0                      ) \
@@ -1251,6 +1366,10 @@ const char* mj_validateReferences(const mjModel* m) {
   X(skin_bonevertid,    nskinbonevert, nskinvert    , 0                      ) \
   X(pair_geom1,         npair,         ngeom        , 0                      ) \
   X(pair_geom2,         npair,         ngeom        , 0                      ) \
+  X(actuator_plugin,    nu,            nplugin      , 0                      ) \
+  X(sensor_plugin,      nsensor,       nplugin      , 0                      ) \
+  X(plugin_stateadr,    nplugin,       npluginstate , m->plugin_statenum     ) \
+  X(plugin_attradr,     nplugin,       npluginattr  , 0                      ) \
   X(tendon_adr,         ntendon,       nwrap        , m->tendon_num          ) \
   X(tendon_matid,       ntendon,       nmat         , 0                      ) \
   X(numeric_adr,        nnumeric,      nnumericdata , m->numeric_size        ) \
@@ -1459,7 +1578,17 @@ const char* mj_validateReferences(const mjModel* m) {
   }
   for (int i=0; i<m->nsensor; i++) {
     mjtSensor sensor_type = m->sensor_type[i];
-    int sensor_size = sensorSize(sensor_type, m->nuser_sensor);
+    int sensor_size;
+    if (sensor_type == mjSENS_PLUGIN) {
+      const mjpPlugin* plugin = mjp_getPluginAtSlot(m->plugin[m->sensor_plugin[i]]);
+      if (!plugin->nsensordata) {
+        mju_error_i("`nsensordata` is a null function pointer for plugin at slot %d",
+                    m->plugin[m->sensor_plugin[i]]);
+      }
+      sensor_size = plugin->nsensordata(m, m->sensor_plugin[i], i);
+    } else {
+      sensor_size = sensorSize(sensor_type, m->nuser_sensor);
+    }
     if (sensor_size < 0) {
         return "Invalid model: Bad sensor_type.";
     }

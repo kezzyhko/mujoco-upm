@@ -5,9 +5,10 @@ Unity Plug-in
 Introduction
 ------------
 
-The MuJoCo `Unity plug-in <https://github.com/deepmind/mujoco/tree/main/unity>`_ allows the Unity Editor and runtime to use the MuJoCo physics engine.  Users can import MJCF
-files and edit the models in the Editor.  The plug-in relies on Unity for most aspects -- assets, game logic, simulation
-time -- but uses MuJoCo to determine how objects move, giving the designer access to MuJoCo's full API.
+The MuJoCo `Unity plug-in <https://github.com/deepmind/mujoco/tree/main/unity>`_ allows the Unity Editor and runtime to
+use the MuJoCo physics engine.  Users can import MJCF files and edit the models in the Editor.  The plug-in relies on
+Unity for most aspects -- assets, game logic, simulation time -- but uses MuJoCo to determine how objects move, giving
+the designer access to MuJoCo's full API.
 
 .. _UInstallation:
 
@@ -29,14 +30,14 @@ _____
 
 The MuJoCo app needs to be run at least once before the native library can be used, in order to register the library as
 a trusted binary. Then, copy the dynamic library file from
-``/Applications/MuJoCo.app/Contents/Frameworks/mujoco.framework/Versions/Current/libmujoco.2.2.2.dylib`` (it can be
+``/Applications/MuJoCo.app/Contents/Frameworks/mujoco.framework/Versions/Current/libmujoco.2.3.0.dylib`` (it can be
 found by browsing the contents of ``MuJoCo.app``) and rename it as ``mujoco.dylib``.
 
 Linux
 _____
 
 Expand the ``tar.gz`` archive to ``~/.mujoco``. Then copy the dynamic library from
-``~/.mujoco/mujoco-2.2.2/lib/libmujoco.so.2.2.2`` and rename it as ``libmujoco.so``.
+``~/.mujoco/mujoco-2.3.0/lib/libmujoco.so.2.3.0`` and rename it as ``libmujoco.so``.
 
 Windows
 _______
@@ -144,7 +145,7 @@ effects:
   material assets for geom RGBA specification.
 - It allows the importer to handle :ref:`\<include\> <include>` elements without replicating MuJoCo’s file-system
   workflow.
-- The current version of MuJoCo generates MJCF files with explicit :ref:`\<inertial\> <inertial>` elements, even when
+- The current version of MuJoCo generates MJCF files with explicit :ref:`\<inertial\> <body-inertial>` elements, even when
   the original model uses geoms for implicit definition of the body inertia.  If you plan to change geom properties of
   an imported model, remove these auto-generated ``MjInertial`` components manually.  We plan to address this in a
   future release of MuJoCo.

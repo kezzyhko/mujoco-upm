@@ -41,13 +41,13 @@ Getting started
 ~~~~~~~~~~~~~~~
 
 MuJoCo is an open-source project. Pre-built dynamic libraries are available for x86_64 and arm64 machines running
-Windows, Linux, and macOS. These can be downloaded from the `GitHub Releases page <https://github.com/deepmind/mujoco/releases>`_.
-Users who do not intend to develop or modify core MuJoCo code are encouraged to use our pre-built libraries, as these
-come bundled with the same versions of dependencies that we regularly test against, and benefit from build flags
-that have been tuned for performance. Our pre-built libraries are almost entirely self-contained and do not require
-any other library to be present, outside the standard C runtime. We also hide all symbols apart from
-those that form MuJoCo's public API, thus ensuring that it can coexist with any other libraries that may be loaded into
-the process (including other versions of libraries that MuJoCo depends on).
+Windows, Linux, and macOS. These can be downloaded from the `GitHub Releases page
+<https://github.com/deepmind/mujoco/releases>`_. Users who do not intend to develop or modify core MuJoCo code are
+encouraged to use our pre-built libraries, as these come bundled with the same versions of dependencies that we
+regularly test against, and benefit from build flags that have been tuned for performance. Our pre-built libraries are
+almost entirely self-contained and do not require any other library to be present, outside the standard C runtime. We
+also hide all symbols apart from those that form MuJoCo's public API, thus ensuring that it can coexist with any other
+libraries that may be loaded into the process (including other versions of libraries that MuJoCo depends on).
 
 The pre-built distribution is a single .zip on Windows, .dmg on macOS, and .tar.gz on Linux. There is no installer.
 On Windows and Linux, simply extract the archive in a directory of your choice. From the ``bin`` subdirectory, you can
@@ -71,20 +71,22 @@ directory; it contains error and warning messages, and can be deleted at any tim
      sample  - code samples and makefile need to build them
 
 After verifying that the simulator works, you may also want to re-compile the code samples to ensure that you have a
-working development environment. We provide Makefiles for `Windows <https://github.com/deepmind/mujoco/blob/main/sample/Makefile.windows>`_,
-`macOS <https://github.com/deepmind/mujoco/blob/main/sample/Makefile.macos>`_, and
-`Linux <https://github.com/deepmind/mujoco/blob/main/sample/Makefile>`_, and also a cross-platform
-`CMake <https://github.com/deepmind/mujoco/blob/main/sample/CMakeLists.txt>`_ setup that can be used to build sample
+working development environment. We provide Makefiles for `Windows
+<https://github.com/deepmind/mujoco/blob/main/sample/Makefile.windows>`_, `macOS
+<https://github.com/deepmind/mujoco/blob/main/sample/Makefile.macos>`_, and `Linux
+<https://github.com/deepmind/mujoco/blob/main/sample/Makefile>`_, and also a cross-platform `CMake
+<https://github.com/deepmind/mujoco/blob/main/sample/CMakeLists.txt>`_ setup that can be used to build sample
 applications independently of the MuJoCo library itself. If you are using the vanilla Makefile, we assume that you are
 using Visual Studio on Windows and LLVM/Clang on Linux. On Windows, you also need to either open a Visual Studio command
 prompt with native x64 tools or call the ``vcvarsall.bat`` script that comes with your MSVC installation to set up the
 appropriate environment variables.
 
-On macOS, the DMG disk image contains ``MuJoCo.app``, which you can double-click to launch the ``simulate`` GUI.
-You can also drag ``MuJoCo.app`` into the ``/Application`` on your system, as you would to install any other app.
-While ``MuJoCo.app`` may look like a file, it is in fact an `Application Bundle <https://developer.apple.com/go/?id=bundle-structure>`_,
-which is a directory that contains executable binaries for all of MuJoCo's sample applications, along with an embedded
-`framework <https://developer.apple.com/library/archive/documentation/MacOSX/Conceptual/BPFrameworks/Concepts/WhatAreFrameworks.html>`_,
+On macOS, the DMG disk image contains ``MuJoCo.app``, which you can double-click to launch the ``simulate`` GUI. You can
+also drag ``MuJoCo.app`` into the ``/Application`` on your system, as you would to install any other app. While
+``MuJoCo.app`` may look like a file, it is in fact an `Application Bundle <https://developer.apple.com/go/?id=bundle-
+structure>`_, which is a directory that contains executable binaries for all of MuJoCo's sample applications, along with
+an embedded `framework
+<https://developer.apple.com/library/archive/documentation/MacOSX/Conceptual/BPFrameworks/Concepts/WhatAreFrameworks.html>`_,
 which is a subdirectory containing the MuJoCo dynamic library and all of its public headers. In other words,
 ``MuJoCo.app`` contains all the same files that are shipped in the archive on Windows and Linux. To see this, right
 click (or control-click) on ``MuJoCo.app`` and click "Show Package Contents".
@@ -330,10 +332,10 @@ illustration of the concepts in that guide.
 
 .. _saSimulate:
 
-`simulate.cc <https://github.com/deepmind/mujoco/blob/main/sample/simulate.cc>`_
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+`simulate.cc <https://github.com/deepmind/mujoco/blob/main/simulate>`_
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-This code sample is a full-featured interactive simulator. It opens an OpenGL window using the platform-independent
+This code sample is a fully-featured interactive simulator. It opens an OpenGL window using the platform-independent
 GLFW library, and renders the simulation state in it. There is built-in help, simulation statistics, profiler, sensor
 data plots. The model file can be specified as a command-line argument, or loaded at runtime using drag-and-drop
 functionality. As of MuJoCo 2.0, this code sample uses the native UI to render various controls, and provides an
@@ -342,10 +344,10 @@ illustration of how the new UI framework is intended to be used. Below is a scre
 ..  youtube:: 0ORsj_E17B0
     :align: center
 
-Interaction is done with the mouse; built-in help with a summary of available commands is available by pressing the 'F1'
-key. Briefly, an object is selected by left-double-click. The user can then apply forces and torques on the selected
-object by holding Ctrl and dragging the mouse. Dragging the mouse alone (without Ctrl) moves the camera. There are
-keyboard shortcuts for pausing the simulation, resetting, and re-loading the model file. The latter functionality is
+Interaction is done with the mouse; built-in help with a summary of available commands is available by pressing the
+``F1`` key. Briefly, an object is selected by left-double-click. The user can then apply forces and torques on the
+selected object by holding Ctrl and dragging the mouse. Dragging the mouse alone (without Ctrl) moves the camera. There
+are keyboard shortcuts for pausing the simulation, resetting, and re-loading the model file. The latter functionality is
 very useful while editing the model in an XML editor.
 
 The code is quite long yet reasonably commented, so it is best to just read it. Here we provide a high-level overview.
@@ -364,10 +366,9 @@ is extracted from the diagnostic fields of mjData. It is a very useful tool for 
 constraint solver algorithms. The outputs of the sensors defined in the model are visualized as a bar graph.
 
 Note that the profiler shows timing information collected with high-resolution timers. On Windows, depending on the
-power settings, the OS may reduce the CPU frequency; this is because `simulate.cc
-<https://github.com/deepmind/mujoco/blob/main/sample/simulate.cc>`_ sleeps most of the time in order to slow down to
-realtime. This results in inaccurate timings. To avoid this problem, change the Windows power plan so that the minimum
-processor state is 100%.
+power settings, the OS may reduce the CPU frequency; this is because :ref:`simulate.cc <saSimulate>` sleeps most of
+the time in order to slow down to realtime. This results in inaccurate timings. To avoid this problem, change the
+Windows power plan so that the minimum processor state is 100%.
 
 .. _saRecord:
 
@@ -376,12 +377,11 @@ processor state is 100%.
 
 This code sample simulates the passive dynamics of a given model, renders it offscreen, reads the color and depth pixel
 values, and saves them into a raw data file that can then be converted into a movie file with tools such as ffmpeg. The
-rendering is simplified compared to `simulate.cc <https://github.com/deepmind/mujoco/blob/main/sample/simulate.cc>`_
-because there is no user interaction, visualization options or timing; instead we simply render with the default
-settings as fast as possible. The dimensions and number of multi-samples for the offscreen buffer are specified in the
-MuJoCo model, while the simulation duration, frames-per-second to be rendered (usually much less than the physics
-simulation rate), and output file name are specified as command-line arguments. For example, a 5 second animation at 60
-frames per second is created with:
+rendering is simplified compared to :ref:`simulate.cc <saSimulate>` because there is no user interaction, visualization
+options or timing; instead we simply render with the default settings as fast as possible. The dimensions and number of
+multi-samples for the offscreen buffer are specified in the MuJoCo model, while the simulation duration, frames-per-
+second to be rendered (usually much less than the physics simulation rate), and output file name are specified as
+command-line arguments. For example, a 5 second animation at 60 frames per second is created with:
 
 .. code-block:: Shell
 
@@ -479,12 +479,11 @@ model, i.e., a model that is softer than desired, so as to obtain more accurate 
 uitools
 ~~~~~~~
 
-`(uitools.h) <https://github.com/deepmind/mujoco/blob/main/sample/uitools.h>`_ `(uitools.c)
-<https://github.com/deepmind/mujoco/blob/main/sample/uitools.c>`_ This is not a stand-alone code sample, but rather a
-small utility used to hook up the new UI to GLFW. It is used in `simulate.cc
-<https://github.com/deepmind/mujoco/blob/main/sample/simulate.cc>`_ and can also be used in user projects that involve
-the new UI. If GLFW is replaced with a different window library, this is the only file that would have to be changed in
-order to access the UI functionality.
+`(uitools.h) <https://github.com/deepmind/mujoco/blob/main/simulate/uitools.h>`_ `(uitools.cc)
+<https://github.com/deepmind/mujoco/blob/main/simulate/uitools.cc>`_ This is not a stand-alone code sample, but rather
+a small utility used to hook up the new UI to GLFW. It is used in :ref:`simulate.cc <saSimulate>` and can also be used
+in user projects that involve the new UI. If GLFW is replaced with a different window library, this is the only file
+that would have to be changed in order to access the UI functionality.
 
 .. _Simulation:
 
@@ -506,10 +505,10 @@ preallocated data arrays for all intermediate results, as well as an :ref:`inter
 to allocate all necessary heap memory at the beginning of the simulation, and free it after the simulation is done, so
 that we never have to call the C memory allocation and deallocation functions during the simulation. This is done for
 speed, avoidance of memory fragmentation, future GPU portability, and ease of managing the state of the entire
-simulator during a reset. It also means however that the maximal sizes :at:`njmax`, :at:`nconmax` and
-:at:`nstack` in the XML element :ref:`size <size>`, which affect the allocation of mjData, must be
-set to sufficiently large values. If these maximal sizes are exceeded during the simulation, they are not increased
-dynamically, but instead errors or warnings are generated. See also :ref:`diagnostics <siDiagnostics>` below.
+simulator during a reset. It also means however that the maximal variable-memory allocation given by the
+:at:`memory` attribute in the :ref:`size <size>` MJCF element, which affects the allocation of ``mjData``, must be
+set to a sufficiently large value. If this maximal size is exceeded during simulation, it is not increased
+dynamically, but instead an error is generated. See also :ref:`diagnostics <siDiagnostics>` below.
 
 First we must call one of the functions that allocates and initializes mjModel and returns a pointer to it. The
 available options are
@@ -631,11 +630,11 @@ control callback) would become
      mj_step(m, d);
    }
 
-Why would we not be able to compute the controls before ``mj_step`` is called? After all, isn't this what causality means?
-The answer is subtle but important, and has to do with the fact that we are simulating in discrete time. The top-level
-simulation function ``mj_step`` basically does two things: compute the :ref:`forward dynamics <siForward>` in continuous
-time, and then integrate over a time period specified by ``mjModel.opt.timestep``. Forward dynamics computes the
-acceleration ``mjData.qacc`` at time ``mjData.time``, given the :ref:`state and control <siStateControl>` at time
+Why would we not be able to compute the controls before ``mj_step`` is called? After all, isn't this what causality
+means? The answer is subtle but important, and has to do with the fact that we are simulating in discrete time. The top-
+level simulation function ``mj_step`` basically does two things: compute the :ref:`forward dynamics <siForward>` in
+continuous time, and then integrate over a time period specified by ``mjModel.opt.timestep``. Forward dynamics computes
+the acceleration ``mjData.qacc`` at time ``mjData.time``, given the :ref:`state and control <siStateControl>` at time
 ``mjData.time``. The numerical integrator then advances the state and time to ``mjData.time + mjModel.opt.timestep``.
 Now, the control is required to be a function of the state at time ``mjData.time``. However a general feedback
 controller can be a very complex function, depending on various features of the state - in particular all the features
@@ -1023,14 +1022,14 @@ management.
    for( int n=0; n<nthread; n++ )
      mj_deleteData(d[n]);
 
-Since all top-level API functions threat mjModel as ``const``, this multi-threading scheme is safe. Each thread only
+Since all top-level API functions treat mjModel as ``const``, this multi-threading scheme is safe. Each thread only
 writes to its own mjData. Therefore no further synchronization among threads is needed.
 
 The above template reflects a particular style of parallel processing. Instead of creating a large number of threads,
 one for each work item, and letting OpenMP distribute them among processors, we rely on manual scheduling. More
-precisely, we create as many threads as there are processors, and then within the ``worker`` function we distribute
-the work explicitly among threads (not shown here, but see :ref:`derivative.cc <saDerivative>` for an example). This approach is more
-efficient because the thread-specific mjData is large compared to the processor cache.
+precisely, we create as many threads as there are processors, and then within the ``worker`` function we distribute the
+work explicitly among threads (not shown here, but see :ref:`derivative.cc <saDerivative>` for an example). This
+approach is more efficient because the thread-specific mjData is large compared to the processor cache.
 
 We also use a shared mjModel for cache-efficiency. In some situations it may not be possible to use the same mjModel
 for all threads. One obvious reason is that mjModel may need to be modified within the thread function. Another reason
@@ -1068,8 +1067,8 @@ Arrays of type mjtByte can be changed safely, since they are binary indicators t
 features. The only exception here is ``mjModel.tex_rgb`` which is texture data represented as mjtByte.
 
 When changing mjModel fields that corresponds to resources uploaded to the GPU, the user must also call the
-corresponding upload function: ``mjr_uploadTexture``, ``mjr_uploadMesh``, ``mjr_uploadHField``. Otherwise the data used for
-simulation and for rendering will no longer be consistent.
+corresponding upload function: ``mjr_uploadTexture``, ``mjr_uploadMesh``, ``mjr_uploadHField``. Otherwise the data used
+for simulation and for rendering will no longer be consistent.
 
 A related consideration has to do with changing real-valued fields of mjModel that have been used by the compiler to
 compute other real-valued fields: if we make a change, we want it to propagate. That is what the function
@@ -1311,22 +1310,15 @@ termination have similar order-of-magnitude as the numbers in ``mjData.fwdinv``,
 different diagnostics.
 
 Since MuJoCo's runtime works with compiled models, memory is preallocated when a model is compiled or loaded. Recall the
-:ref:`size <size>` element in MJCF, which has the attributes :at:`njmax`, :at:`nconmax` and :at:`nstack`. They determine
-the maximum number of scalar constraints that can be active simultaneously, the maximum number of contact points that
-can be included in ``mjData.contact``, and the size of the internal stack. How is the user supposed to know what the
-appropriate settings are? If there were a reliable recipe we would have implemented it in the compiler, but there isn't
-one. The theoretical worst-case, namely all geoms contacting all other geoms, calls for huge allocation which is almost
-never needed in practice. So our approach is to provide default settings in MJCF which are sufficient for most models,
-and allow the user to adjust them manually with the above attributes. If the simulator runs out of stack space at
-runtime it will trigger an error. If it runs out of space for contacts or scalar constraints, it will trigger a warning
-and omit the contacts and constraints that do not fit in the allocated buffers. When such errors or warnings are
-triggered, the user should adjust the sizes. The fields ``mjData.maxuse_stack``, ``mjData.maxuse_con``,
-``mjData.maxuse_efc`` are designed to help with this adjustment. They keep track of the maximum stack allocation,
-number of contacts and number of scalar constraints respectively since the last reset. So one strategy is to make very
-large allocation, then monitor these ``maxuse_XXX`` statistics during typical simulations, and use them to reduce the
-allocation. Of course modern computers have so much memory that most users will not bother with such adjustment once
-they get rid of the out-of-memory errors and warnings, but nevertheless we provide this mechanism for the
-perfectionist.
+:at:`memory` attribute of the :ref:`size <size>` element in MJCF. It determines the preallocated space for dynamic
+arrays. How is the user supposed to know what the appropriate value is? If there were a reliable recipe we would have
+implemented it in the compiler, but there isn't one. The theoretical worst-case, namely all geoms contacting all other
+geoms, calls for huge allocation which is almost never needed in practice. Our approach is to provide default settings
+in MJCF which are sufficient for most models, and allow the user to adjust them manually with the above attribute. If
+the simulator runs out of dynamic memory at runtime it will trigger an error. When such errors are triggered, the user
+should increase :at:`memory`. The field ``mjData.maxuse_arena`` is designed to help with this adjustment. It keeps track
+of the maximum arena use since the last reset. So one strategy is to make very large allocation, then monitor
+``mjData.maxuse_memory`` statistics during typical simulations, and use it to reduce the allocation.
 
 The kinetic and potential energy are computed and stored in ``mjData.energy`` when the corresponding flag in
 ``mjModel.opt.enableflags`` is set. This can be used as another diagnostic. In general, simulation instability is
@@ -1391,7 +1383,7 @@ contiguous (note that one body can have multiple geoms attached to it), and the 
 that the first body acts as the major index and the second body as the minor index. Not all detected contacts are
 included in the contact force computation. When a contact is included, its mjContact.exclude field is 0, and its
 mjContact.efc_address is the address in the list of active scalar constraints. Reasons for exclusion can be the
-:at:`gap` attribute of :ref:`geom <geom>`, as well as certain kinds of internal processing that use virtual contacts
+:at:`gap` attribute of :ref:`geom <body-geom>`, as well as certain kinds of internal processing that use virtual contacts
 for intermediate computations.
 
 The list ``mjData.contact`` is generated by the position stage of both forward and inverse dynamics. This is done
@@ -1669,15 +1661,15 @@ use the hand-held controller as a "laser pointer" that can select objects.
 Perturbations
 '''''''''''''
 
-Interactive perturbations have proven very useful in exploring the model dynamics as well as probing closed-loop
-control systems. The user is free to implement any perturbation mechanism of their choice by setting
-``mjData.qfrc_applied`` or ``mjData.xfrc_applied`` to suitable forces (in generalized and Cartesian coordinates respectively).
+Interactive perturbations have proven very useful in exploring the model dynamics as well as probing closed-loop control
+systems. The user is free to implement any perturbation mechanism of their choice by setting ``mjData.qfrc_applied`` or
+``mjData.xfrc_applied`` to suitable forces (in generalized and Cartesian coordinates respectively).
 
 Prior to MuJoCo version 1.40, user code had to maintain a collection of objects in order to implement perturbations.
 All these objects are now grouped into the data structure :ref:`mjvPerturb`. Its use is illustrated in
 :ref:`simulate.cc <saSimulate>`.
 The idea is to select a MuJoCo body of interest, and provide a reference pose (i.e., a 3D position and quaternion
-orientation) for that body. These are stored in mjPerturb.respos/quat. The function :ref:`mjv_movePerturb` is a mouse
+orientation) for that body. These are stored in mjPerturb.refpos/quat. The function :ref:`mjv_movePerturb` is a mouse
 hook for controlling the reference pose with the mouse. The function :ref:`mjv_initPerturb` is used to set the
 reference pose equal to the selected body pose at the onset of perturbation, so as to avoid jumps.
 
@@ -1922,11 +1914,12 @@ can be the entire active buffer, or part of it for custom effects. A viewport co
 be obtained with the function :ref:`mjr_maxViewport`. Note that while the offscreen buffer size does not change, the
 window buffer size changes whenever the user resizes or maximizes the window. Therefore user code should not assume
 fixed viewport size. In the code sample :ref:`simulate.cc <saSimulate>` we use a callback which is triggered whenever
-the window size changes, while in :ref:`basic.cc <saBasic>` we simply check the window size every time we render. On certain scaled
-displays (only on OSX it seems) the window size and framebuffer size can be different. So if you are getting the size
-with GLFW functions, use glfwGetFramebuferSize rather than glfwGetWindowSize. On the other hand, mouse coordinates are
-returned by the operating system in window rather than framebuffer units; thus the mouse interaction functions discussed
-earlier should use glfwGetWindowSize to obtain the window height needed to normalize the mouse displacement data.
+the window size changes, while in :ref:`basic.cc <saBasic>` we simply check the window size every time we render. On
+certain scaled displays (only on OSX it seems) the window size and framebuffer size can be different. So if you are
+getting the size with GLFW functions, use glfwGetFramebuferSize rather than glfwGetWindowSize. On the other hand,
+mouse coordinates are returned by the operating system in window rather than framebuffer units; thus the mouse
+interaction functions discussed earlier should use glfwGetWindowSize to obtain the window height needed to normalize
+the mouse displacement data.
 
 mjr_render renders all mjvGeoms from the list mjvScene.geom. The abstract visualization options mjvOption are no
 longer relevant here; they are used by mjv_updateScene to determine which geoms to add, and as far as mjr_render is

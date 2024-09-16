@@ -723,7 +723,7 @@ mjtMouse
 | Defined in `mjvisualize.h <https://github.com/deepmind/mujoco/blob/main/include/mujoco/mjvisualize.h>`_
 
 | These are the mouse actions that the abstract visualizer recognizes. It is up to the user to intercept mouse events
-  and translate them into these actions, as illustrated in ``simulate.cc``.
+  and translate them into these actions, as illustrated in :ref:`simulate.cc <saSimulate>`.
 
 .. _mjtPertBit:
 
@@ -1237,6 +1237,7 @@ mjVisual
            float ipd;                  // inter-pupilary distance for free camera
            float linewidth;            // line width for wireframe and ray rendering
            float glow;                 // glow coefficient for selected body
+           float realtime;             // initial real-time factor (1: real time)
            int offwidth;               // width of offscreen buffer
            int offheight;              // height of offscreen buffer
        } global;
@@ -1402,6 +1403,8 @@ mjModel
        int ntupledata;                 // number of objects in all tuple fields
        int nkey;                       // number of keyframes
        int nmocap;                     // number of mocap bodies
+       int nplugin;                    // number of plugin instances
+       int npluginattr;                // number of chars in all plugin config attributes
        int nuser_body;                 // number of mjtNums in body_user
        int nuser_jnt;                  // number of mjtNums in jnt_user
        int nuser_geom;                 // number of mjtNums in geom_user
@@ -1414,12 +1417,14 @@ mjModel
 
        // sizes set after mjModel construction (only affect mjData)
        int nM;                         // number of non-zeros in sparse inertia matrix
+       int nD;                         // number of non-zeros in sparse derivative matrix
        int nemax;                      // number of potential equality-constraint rows
        int njmax;                      // number of available rows in constraint Jacobian
        int nconmax;                    // number of potential contacts in contact list
        int nstack;                     // number of fields in mjData stack
        int nuserdata;                  // number of extra fields in mjData
        int nsensordata;                // number of fields in sensor data vector
+       int npluginstate;               // number of fields in the plugin state vector
 
        int nbuffer;                    // number of bytes in buffer
 
@@ -1460,6 +1465,7 @@ mjModel
        mjtNum*   body_inertia;         // diagonal inertia in ipos/iquat frame     (nbody x 3)
        mjtNum*   body_invweight0;      // mean inv inert in qpos0 (trn, rot)       (nbody x 2)
        mjtNum*   body_user;            // user data                                (nbody x nuser_body)
+       int*      body_plugin;          // plugin instance id (-1 if not in use)    (nbody x 1)
 
        // joints
        int*      jnt_type;             // type of joint (mjtJoint)                 (njnt x 1)
@@ -1575,6 +1581,7 @@ mjModel
 
        // skins
        int*      skin_matid;           // skin material id; -1: none               (nskin x 1)
+       int*      skin_group;           // group for visibility                     (nskin x 1)
        float*    skin_rgba;            // skin rgba                                (nskin x 4)
        float*    skin_inflate;         // inflate skin in normal direction         (nskin x 1)
        int*      skin_vertadr;         // first vertex address                     (nskin x 1)
@@ -1678,17 +1685,20 @@ mjModel
        int*      actuator_group;       // group for visibility                     (nu x 1)
        mjtByte*  actuator_ctrllimited; // is control limited                       (nu x 1)
        mjtByte*  actuator_forcelimited;// is force limited                         (nu x 1)
+       mjtByte*  actuator_actlimited;  // is activation limited                    (nu x 1)
        mjtNum*   actuator_dynprm;      // dynamics parameters                      (nu x mjNDYN)
        mjtNum*   actuator_gainprm;     // gain parameters                          (nu x mjNGAIN)
        mjtNum*   actuator_biasprm;     // bias parameters                          (nu x mjNBIAS)
        mjtNum*   actuator_ctrlrange;   // range of controls                        (nu x 2)
        mjtNum*   actuator_forcerange;  // range of forces                          (nu x 2)
+       mjtNum*   actuator_actrange;    // range of activations                     (nu x 2)
        mjtNum*   actuator_gear;        // scale length and transmitted force       (nu x 6)
        mjtNum*   actuator_cranklength; // crank length for slider-crank            (nu x 1)
        mjtNum*   actuator_acc0;        // acceleration from unit force in qpos0    (nu x 1)
        mjtNum*   actuator_length0;     // actuator length in qpos0                 (nu x 1)
        mjtNum*   actuator_lengthrange; // feasible actuator length range           (nu x 2)
        mjtNum*   actuator_user;        // user data                                (nu x nuser_actuator)
+       int*      actuator_plugin;      // plugin instance id; -1: not a plugin     (nu x 1)
 
        // sensors
        int*      sensor_type;          // sensor type (mjtSensor)                  (nsensor x 1)
@@ -1703,6 +1713,14 @@ mjModel
        mjtNum*   sensor_cutoff;        // cutoff for real and positive; 0: ignore  (nsensor x 1)
        mjtNum*   sensor_noise;         // noise standard deviation                 (nsensor x 1)
        mjtNum*   sensor_user;          // user data                                (nsensor x nuser_sensor)
+       int*      sensor_plugin;        // plugin instance id; -1: not a plugin     (nsensor x 1)
+
+       // plugin instances
+       int*      plugin;               // globally registered plugin slot number   (nplugin x 1)
+       int*      plugin_stateadr;      // address in the plugin state array        (nplugin x 1)
+       int*      plugin_statenum;      // number of states in the plugin instance  (nplugin x 1)
+       char*     plugin_attr;          // config attributes of plugin instances    (npluginattr x 1)
+       int*      plugin_attradr;       // address to each instance's config attrib (nplugin x 1)
 
        // custom numeric fields
        int*      numeric_adr;          // address of field in numeric_data         (nnumeric x 1)
@@ -1752,6 +1770,7 @@ mjModel
        int*      name_textadr;         // text name pointers                       (ntext x 1)
        int*      name_tupleadr;        // tuple name pointers                      (ntuple x 1)
        int*      name_keyadr;          // keyframe name pointers                   (nkey x 1)
+       int*      name_pluginadr;       // plugin instance name pointers            (nplugin x 1)
        char*     names;                // names of all objects, 0-terminated       (nnames x 1)
    };
    typedef struct _mjModel mjModel;
@@ -2735,10 +2754,10 @@ X Macros
 ^^^^^^^^
 
 The X Macros are not needed in most user projects. They are used internally to allocate the model, and are also
-available for users who know how to use this programming technique. See the header file
-`mjxmacro.h <https://github.com/deepmind/mujoco/blob/main/include/mujoco/mjxmacro.h>`_ for the actual definitions. They are particularly useful in writing MuJoCo wrappers
-for scripting languages, where dynamic structures matching the MuJoCo data structures need to be constructed
-programmatically.
+available for users who know how to use this programming technique. See the header file `mjxmacro.h
+<https://github.com/deepmind/mujoco/blob/main/include/mujoco/mjxmacro.h>`_ for the actual definitions. They are
+particularly useful in writing MuJoCo wrappers for scripting languages, where dynamic structures matching the MuJoCo
+data structures need to be constructed programmatically.
 
 .. _MJOPTION_SCALARS:
 
@@ -2960,9 +2979,9 @@ mjcb_time
    extern mjfTime mjcb_time;
 
 Installing this callback enables the built-in profiler, and keeps timing statistics in ``mjData.timer``. The return type
-is mjtNum, while the time units are up to the user. ``simulate.cc`` assumes the unit is 1 millisecond. In order to be
-useful, the callback should use high-resolution timers with at least microsecond precision. This is because the
-computations being timed are very fast.
+is mjtNum, while the time units are up to the user. :ref:`simulate.cc <saSimulate>` assumes the unit is 1 millisecond.
+In order to be useful, the callback should use high-resolution timers with at least microsecond precision. This is
+because the computations being timed are very fast.
 
 .. _mjcb_act_dyn:
 
@@ -3029,8 +3048,8 @@ String constants
 ^^^^^^^^^^^^^^^^
 
 The string constants described here are provided for user convenience. They correspond to the English names of lists of
-options, and can be displayed in menus or dialogs in a GUI. The code sample :ref:`saSimulate` illustrates how they can
-be used.
+options, and can be displayed in menus or dialogs in a GUI. The code sample :ref:`simulate.cc <saSimulate>` illustrates
+how they can be used.
 
 .. _mjDISABLESTRING:
 
@@ -3104,7 +3123,7 @@ mjVISSTRING
 | [1]: the string "0" or "1" indicating if the flag is on or off by default, as set by
   :ref:`mjv_defaultOption`;
 
-| [2]: one-character string with a suggested keyboard shortcut, used in ``simulate.cc``.
+| [2]: one-character string with a suggested keyboard shortcut, used in :ref:`simulate.cc <saSimulate>`.
 
 .. _mjRNDSTRING:
 
@@ -3237,11 +3256,11 @@ Numeric constants
 API functions
 -------------
 
-The main header `mujoco.h <https://github.com/deepmind/mujoco/blob/main/include/mujoco/mujoco.h>`_ exposes a very large number
-of functions. However the functions that most users are likely to need are a small fraction. For example,
-``simulate.cc`` which is as elaborate as a MuJoCo application is likely to get, calls around 40 of these functions,
-while ``basic.cc`` calls around 20. The rest are explosed just in case someone has a use for them. This includes us as
-users of MuJoCo -- we do our own work with the public library instead of relying on internal builds.
+The main header `mujoco.h <https://github.com/deepmind/mujoco/blob/main/include/mujoco/mujoco.h>`_ exposes a very large
+number of functions. However the functions that most users are likely to need are a small fraction. For example,
+:ref:`simulate.cc <saSimulate>` which is as elaborate as a MuJoCo application is likely to get, calls around 40 of these
+functions, while ``basic.cc`` calls around 20. The rest are explosed just in case someone has a use for them. This
+includes us as users of MuJoCo -- we do our own work with the public library instead of relying on internal builds.
 
 .. _Activation:
 
@@ -4186,6 +4205,8 @@ mj_rnePostConstraint
 
 RNE with complete data: compute cacc, cfrc_ext, cfrc_int.
 
+.. _mj_collision:
+
 mj_collision
 ~~~~~~~~~~~~
 
@@ -4712,7 +4733,7 @@ Interaction
 ^^^^^^^^^^^
 
 These function implement abstract mouse interactions, allowing control over cameras and perturbations. Their use is well
-illustrated in ``simulate.cc``.
+illustrated in :ref:`simulate.cc <saSimulate>`.
 
 .. _mjv_defaultCamera:
 
@@ -4915,7 +4936,7 @@ This function is used for mouse selection. Previously selection was done via Ope
 ray intersections which are much more efficient. aspectratio is the viewport width/height. relx and rely are the
 relative coordinates of the 2D point of interest in the viewport (usually mouse cursor). The function returns the id of
 the geom under the specified 2D point, or -1 if there is no geom (note that they skybox if present is not a model geom).
-The 3D coordinates of the clicked point are returned in selpnt. See ``simulate.cc`` for an illustration.
+The 3D coordinates of the clicked point are returned in selpnt. See :ref:`simulate.cc <saSimulate>` for an illustration.
 
 .. _Visualization-api:
 
@@ -4924,7 +4945,7 @@ Visualization
 
 The functions in this section implement abstract visualization. The results are used by the OpenGL rendered, and can
 also be used by users wishing to implement their own rendered, or hook up MuJoCo to advanced rendering tools such as
-Unity or Unreal Engine. See ``simulate.cc`` for illustration of how to use these functions.
+Unity or Unreal Engine. See :ref:`simulate.cc <saSimulate>` for illustration of how to use these functions.
 
 .. _mjv_defaultOption:
 
@@ -5069,7 +5090,8 @@ Update skins.
 OpenGL rendering
 ^^^^^^^^^^^^^^^^
 
-These functions expose the OpenGL renderer. See ``simulate.cc`` for illustration of how to use these functions.
+These functions expose the OpenGL renderer. See :ref:`simulate.cc <saSimulate>` for an illustration
+of how to use these functions.
 
 .. _mjr_defaultContext:
 
@@ -6040,6 +6062,17 @@ mju_mulMatTVec
 
 Multiply transposed matrix and vector: res = mat' \* vec.
 
+.. _mju_mulVecMatVec:
+
+mju_mulVecMatVec
+~~~~~~~~~~~~~~~~
+
+.. code-block:: C
+
+   mjtNum mju_mulVecMatVec(const mjtNum* vec1, const mjtNum* mat, const mjtNum* vec2, int n);
+
+Multiply square matrix with vectors on both sides: return vec1' \* mat \* vec2.
+
 mju_transpose
 ~~~~~~~~~~~~~
 
@@ -6335,6 +6368,63 @@ mju_eig3
    int mju_eig3(mjtNum[3] eigval, mjtNum[9] eigvec, mjtNum[4] quat, const mjtNum[9] mat);
 
 Eigenvalue decomposition of symmetric 3x3 matrix.
+
+.. _mju_boxQP:
+
+mju_boxQP
+~~~~~~~~~
+
+.. code-block:: C
+
+   int mju_boxQP(mjtNum* res, mjtNum* R, int* index, const mjtNum* H, const mjtNum* g, int n,
+                 const mjtNum* lower, const mjtNum* upper);
+
+Minimize :math:`\tfrac{1}{2} x^T H x + x^T g \quad \text{s.t.} \quad l \le x \le u`, return rank or -1 if failed.
+
+inputs:
+  ``n``           - problem dimension
+
+  ``H``           - SPD matrix                ``n*n``
+
+  ``g``           - bias vector               ``n``
+
+  ``lower``       - lower bounds              ``n``
+
+  ``upper``       - upper bounds              ``n``
+
+  ``res``         - solution warmstart        ``n``
+
+return value:
+  ``nfree <= n``  - rank of unconstrained subspace, -1 if failure
+
+outputs (required):
+  ``res``         - solution                  ``n``
+
+  ``R``           - subspace Cholesky factor  ``nfree*nfree``,    allocated: ``n*(n+7)``
+
+outputs (optional):
+  ``index``       - set of free dimensions    ``nfree``,          allocated: ``n``
+
+notes:
+  The initial value of ``res`` is used to warmstart the solver.
+  ``R`` must have allocatd size ``n*(n+7)``, but only ``nfree*nfree`` values are used in output.
+  ``index`` (if given) must have allocated size ``n``, but only ``nfree`` values are used in output.
+  The convenience function :ref:`mju_boxQPmalloc` allocates the required data structures.
+  Only the lower triangles of H and R and are read from and written to, respectively.
+
+.. _mju_boxQPmalloc:
+
+mju_boxQPmalloc
+~~~~~~~~~~~~~~~
+
+.. code-block:: C
+
+   void mju_boxQPmalloc(mjtNum** res, mjtNum** R, int** index, mjtNum** H, mjtNum** g, int n,
+                        mjtNum** lower, mjtNum** upper);
+
+Allocate heap memory for box-constrained Quadratic Program.
+As in :ref:`mju_boxQP`, ``index``, ``lower``, and ``upper`` are optional.
+Free all pointers with ``mju_free()``.
 
 .. _Miscellaneous:
 
