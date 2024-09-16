@@ -55,7 +55,7 @@ include(FindOrFetch)
 
 # ==================== MUJOCO LIBRARY ==========================================
 if(NOT TARGET mujoco)
-  find_library(MUJOCO_LIBRARY mujoco mujoco.2.1.2 HINTS ${MUJOCO_LIBRARY_DIR} REQUIRED)
+  find_library(MUJOCO_LIBRARY mujoco mujoco.2.1.3 HINTS ${MUJOCO_LIBRARY_DIR} REQUIRED)
   find_path(MUJOCO_INCLUDE mujoco.h HINTS ${MUJOCO_INCLUDE_DIR} REQUIRED)
   message("MuJoCo is at ${MUJOCO_LIBRARY}")
   message("MuJoCo headers are at ${MUJOCO_INCLUDE}")
@@ -152,7 +152,7 @@ else()
     GIT_REPO
     https://github.com/pybind/pybind11
     GIT_TAG
-    4c4b33f14215f8992e2c67ace2a7a4c114c48bb9
+    08ea85b0ac0d4d46ac081ff24f481b41322d7159
     TARGETS
     pybind11::pybind11_headers
     EXCLUDE_FROM_ALL
@@ -164,7 +164,8 @@ endif()
 add_subdirectory(util)
 
 if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/enum_traits.h)
-  add_library(enum_traits INTERFACE enum_traits.h)
+  add_library(enum_traits INTERFACE)
+  target_sources(enum_traits INTERFACE enum_traits.h)
 else()
   add_custom_command(
     OUTPUT enum_traits.h
@@ -172,7 +173,8 @@ else()
             ${CMAKE_CURRENT_SOURCE_DIR}/codegen/generate_enum_traits.py > enum_traits.h
     DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/codegen/generate_enum_traits.py
   )
-  add_library(enum_traits INTERFACE enum_traits.h)
+  add_library(enum_traits INTERFACE)
+  target_sources(enum_traits INTERFACE enum_traits.h)
   target_include_directories(
     enum_traits INTERFACE ${CMAKE_CURRENT_BINARY_DIR} ${CMAKE_CURRENT_SOURCE_DIR}
   )
@@ -180,7 +182,8 @@ endif()
 target_link_libraries(enum_traits INTERFACE mujoco absl::core_headers)
 
 if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/function_traits.h)
-  add_library(function_traits INTERFACE function_traits.h)
+  add_library(function_traits INTERFACE)
+  target_sources(function_traits INTERFACE function_traits.h)
 else()
   add_custom_command(
     OUTPUT function_traits.h
@@ -188,28 +191,31 @@ else()
             ${CMAKE_CURRENT_SOURCE_DIR}/codegen/generate_function_traits.py > function_traits.h
     DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/codegen/generate_function_traits.py
   )
-  add_library(function_traits INTERFACE function_traits.h)
+  add_library(function_traits INTERFACE)
+  target_sources(function_traits INTERFACE function_traits.h)
   target_include_directories(
     function_traits INTERFACE ${CMAKE_CURRENT_BINARY_DIR} ${CMAKE_CURRENT_SOURCE_DIR}
   )
 endif()
 target_link_libraries(function_traits INTERFACE mujoco absl::core_headers)
 
-add_library(errors_header INTERFACE errors.h)
+add_library(errors_header INTERFACE)
+target_sources(errors_header INTERFACE errors.h)
 set_target_properties(errors_header PROPERTIES PUBLIC_HEADER errors.h)
 target_link_libraries(errors_header INTERFACE crossplatform func_wrap mujoco)
 
-add_library(raw INTERFACE raw.h)
+add_library(raw INTERFACE)
+target_sources(raw INTERFACE raw.h)
 set_target_properties(raw PROPERTIES PUBLIC_HEADER raw.h)
 target_link_libraries(raw INTERFACE mujoco)
 
-add_library(
+add_library(structs_header INTERFACE)
+target_sources(
   structs_header
-  INTERFACE
-  indexer_xmacro.h
-  indexers.h
-  mjdata_meta.h
-  structs.h
+  INTERFACE indexer_xmacro.h
+            indexers.h
+            mjdata_meta.h
+            structs.h
 )
 set_target_properties(structs_header PROPERTIES PUBLIC_HEADER structs.h)
 target_link_libraries(
@@ -220,7 +226,8 @@ target_link_libraries(
             raw
 )
 
-add_library(functions_header INTERFACE functions.h)
+add_library(functions_header INTERFACE)
+target_sources(functions_header INTERFACE functions.h)
 set_target_properties(functions_header PROPERTIES PUBLIC_HEADER functions.h)
 target_link_libraries(
   functions_header
