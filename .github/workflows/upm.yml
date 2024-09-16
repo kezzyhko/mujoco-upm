@@ -36,6 +36,8 @@ jobs:
         echo "MERGE_COMMIT_HASH=$(git rev-parse --verify HEAD)" >> $GITHUB_ENV
     - name: Create release
       uses: actions/create-release@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       with:
         tag_name: upm-${{ env.TAG_NAME }}
         release_name: UPM - ${{ env.TAG_NAME }}
