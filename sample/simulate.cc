@@ -19,7 +19,7 @@
 #include <string>
 #include <thread>
 
-#include <mjxmacro.h>
+#include <mujoco/mjxmacro.h>
 #include "uitools.h"
 
 #include "array_safety.h"
@@ -668,7 +668,7 @@ void makephysics(int oldstate) {
 
   mjuiDef defPhysics[] = {
     {mjITEM_SECTION,   "Physics",       oldstate, NULL,                 "AP"},
-    {mjITEM_SELECT,    "Integrator",    2, &(m->opt.integrator),        "Euler\nRK4"},
+    {mjITEM_SELECT,    "Integrator",    2, &(m->opt.integrator),        "Euler\nRK4\nimplicit"},
     {mjITEM_SELECT,    "Collision",     2, &(m->opt.collision),         "All\nPair\nDynamic"},
     {mjITEM_SELECT,    "Cone",          2, &(m->opt.cone),              "Pyramidal\nElliptic"},
     {mjITEM_SELECT,    "Jacobian",      2, &(m->opt.jacobian),          "Dense\nSparse\nAuto"},
@@ -1289,6 +1289,21 @@ void uiLayout(mjuiState* state) {
 
 
 
+// When launched via an App Bundle on macOS, the working directory is the path to the App Bundle's
+// resource directory. This causes files to be saved into the bundle, which is not the desired
+// behavior. Instead, we open a save dialog box to ask the user where to put the file.
+// Since the dialog box logic needs to be written in Objective-C, we separate it into a different
+// source file.
+#ifdef __APPLE__
+std::string getSavePath(const char* filename);
+#else
+static std::string getSavePath(const char* filename) {
+  return filename;
+}
+#endif
+
+
+
 // handle UI event
 void uiEvent(mjuiState* state) {
   int i;
@@ -1305,13 +1320,21 @@ void uiEvent(mjuiState* state) {
     if (it && it->sectionid==SECT_FILE) {
       switch (it->itemid) {
       case 0:             // Save xml
-        if (!mj_saveLastXML("mjmodel.xml", m, err, 200)) {
-          std::printf("Save XML error: %s", err);
+        {
+          const std::string path = getSavePath("mjmodel.xml");
+          if (!path.empty() && !mj_saveLastXML(path.c_str(), m, err, 200)) {
+            std::printf("Save XML error: %s", err);
+          }
         }
         break;
 
       case 1:             // Save mjb
-        mj_saveModel(m, "mjmodel.mjb", NULL, 0);
+        {
+          const std::string path = getSavePath("mjmodel.mjb");
+          if (!path.empty()) {
+            mj_saveModel(m, path.c_str(), NULL, 0);
+          }
+        }
         break;
 
       case 2:             // Print model

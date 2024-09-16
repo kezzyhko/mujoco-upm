@@ -51,7 +51,7 @@ ENUMS: Mapping[str, EnumDecl] = dict([
              ('mjENBL_ENERGY', 2),
              ('mjENBL_FWDINV', 4),
              ('mjENBL_SENSORNOISE', 8),
-             ('mjENBL_MULTICCD', 1073741824),
+             ('mjENBL_MULTICCD', 16),
              ('mjNENABLE', 5),
          ]),
      )),
@@ -118,6 +118,7 @@ ENUMS: Mapping[str, EnumDecl] = dict([
          values=dict([
              ('mjINT_EULER', 0),
              ('mjINT_RK4', 1),
+             ('mjINT_IMPLICIT', 2),
          ]),
      )),
     ('mjtCollision',

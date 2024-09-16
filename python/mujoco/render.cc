@@ -13,10 +13,11 @@
 // limitations under the License.
 
 #include <array>
+#include <cstdint>
 
 #include <Eigen/Core>
-#include <mjrender.h>
-#include <mujoco.h>
+#include <mujoco/mjrender.h>
+#include <mujoco/mujoco.h>
 #include "errors.h"
 #include "function_traits.h"
 #include "functions.h"
@@ -252,14 +253,19 @@ PYBIND11_MODULE(_render, pymodule) {
   Def<traits::mjr_uploadHField>(pymodule);
   Def<traits::mjr_restoreBuffer>(pymodule);
   Def<traits::mjr_setBuffer>(pymodule);
-  Def<traits::mjr_readPixels>(
-      pymodule, [](std::optional<py::array_t<uint8_t>> rgb,
+  DefWithGil<traits::mjr_readPixels>(
+      pymodule, [](std::optional<py::array_t<std::uint8_t>> rgb,
                    std::optional<py::array_t<float>> depth,
                    const raw::MjrRect* viewport, const raw::MjrContext* con) {
-        return InterceptMjErrors(::mjr_readPixels)(
-            rgb.has_value() ? rgb->mutable_data() : nullptr,
-            depth.has_value() ? depth->mutable_data() : nullptr, *viewport,
-            con);
+        std::uint8_t* const rgb_data =
+            rgb.has_value() ? rgb->mutable_data() : nullptr;
+        float* const depth_data =
+            depth.has_value() ? depth->mutable_data() : nullptr;
+        {
+          py::gil_scoped_release no_gil;
+          return InterceptMjErrors(::mjr_readPixels)(rgb_data, depth_data,
+                                                     *viewport, con);
+        }
       });
   Def<traits::mjr_drawPixels>(
       pymodule,
