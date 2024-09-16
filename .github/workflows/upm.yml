@@ -27,9 +27,12 @@ jobs:
         ref: upm
     - name: Setup user
       uses: fregante/setup-git-user@v2
-    - name: Merge
+    - name: Merge 1
+      continue-on-error: true
       run: |
         git merge --no-commit --no-ff ${{ env.TAG_NAME }}
+    - name: Merge 2
+      run: |
         git reset -- .github
         git commit --no-edit
         git push
