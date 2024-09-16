@@ -13,6 +13,7 @@
 // limitations under the License.
 
 #include <array>
+#include <cstdlib>
 #include <cstring>
 #include <iostream>
 #include <string>
@@ -271,7 +272,7 @@ void mjXURDF::Body(XMLElement* body_elem) {
     //  lquat = rotation from specified to default (joint/body) inertial frame
     double lquat[4] = {1, 0, 0, 0};
     double tmpquat[4] = {1, 0, 0, 0};
-    const char* altres = mjs_setFullInertia(pbody, lquat, pbody->inertia);
+    const char* altres = mjs_fullInertia(lquat, pbody->inertia, pbody->fullinertia);
 
     // inertia are sometimes 0 in URDF files: ignore error in altres, fix later
     (void) altres;
@@ -488,17 +489,23 @@ void mjXURDF::Joint(XMLElement* joint_elem) {
 
   // limit element
   if ((elem = FindSubElem(joint_elem, "limit"))) {
-    ReadAttr(elem, "lower", 1, pjoint->range, text);
-    ReadAttr(elem, "upper", 1, pjoint->range+1, text);
-    bool is_limited = mjuu_defined(pjoint->range[0]) &&
-                      mjuu_defined(pjoint->range[1]) &&
-                      pjoint->range[0] < pjoint->range[1];
-    pjoint->limited = is_limited ? mjLIMITED_TRUE : mjLIMITED_FALSE;
+    bool haslower = ReadAttr(elem, "lower", 1, pjoint->range, text);
+    bool hasupper = ReadAttr(elem, "upper", 1, pjoint->range+1, text);
+
+    // handle range mis-specification, otherwise the default mjLIMITED_AUTO will do the right thing
+    bool bad_range = (haslower != hasupper) || pjoint->range[0] > pjoint->range[1];
+    if (bad_range) {
+      pjoint->limited = mjLIMITED_FALSE;
+    }
 
     // ReadAttr(elem, "velocity", 1, &pjoint->maxvel, text); // no maxvel in MuJoCo
-    ReadAttr(elem, "effort", 1, &pjoint->urdfeffort, text);
-  } else {
-    pjoint->limited = mjLIMITED_FALSE;
+    double effort = 0;
+    ReadAttr(elem, "effort", 1, &effort, text);
+    effort = std::abs(effort);
+    if (effort > 0) {
+      pjoint->actfrcrange[0] = -effort;
+      pjoint->actfrcrange[1] = effort;
+    }
   }
 }
 
@@ -633,8 +640,9 @@ void mjXURDF::Origin(XMLElement* origin_elem, double* pos, double* quat) {
 
     // orientation
     mjsOrientation alt;
-    mjs_defaultOrientation(alt);
+    mjs_defaultOrientation(&alt);
     if (ReadAttr(temp, "rpy", 3, alt.euler, text)) {
+      alt.type = mjORIENTATION_EULER;
       mjs_resolveOrientation(quat, 0, "XYZ", &alt);
     }
   }

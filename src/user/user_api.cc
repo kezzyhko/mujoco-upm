@@ -29,6 +29,9 @@
 #include "user/user_cache.h"
 #include "xml/xml_util.h"
 
+// global cache size in bytes (default 500MB)
+static constexpr std::size_t kGlobalCacheSize = 500 * (1 << 20);
+
 
 // prepend prefix
 template <typename T>
@@ -91,10 +94,32 @@ int mjs_attachBody(mjsFrame* parent, const mjsBody* child,
 
 
 
+// attach frame to a parent body
+int mjs_attachFrame(mjsBody* parent, const mjsFrame* child,
+                    const char* prefix, const char* suffix) {
+  mjCBody* body_parent = static_cast<mjCBody*>(parent->element);
+  mjCFrame* child_frame = static_cast<mjCFrame*>(child->element);
+  *body_parent += std::string(prefix) + *child_frame + std::string(suffix);
+  return 0;
+}
+
+
+
 // get error message from model
 const char* mjs_getError(mjSpec* s) {
   mjCModel* modelC = static_cast<mjCModel*>(s->element);
   return modelC->GetError().message;
+}
+
+
+
+// Detach body from mjSpec, return 0 if success.
+int mjs_detachBody(mjSpec* s, mjsBody* b) {
+  mjCModel* model = static_cast<mjCModel*>(s->element);
+  mjCBody* body = static_cast<mjCBody*>(b->element);
+  *model -= *body;
+  mjs_deleteBody(b);
+  return 0;
 }
 
 
@@ -111,6 +136,14 @@ int mjs_isWarning(mjSpec* s) {
 void mjs_deleteSpec(mjSpec* s) {
   mjCModel* model = static_cast<mjCModel*>(s->element);
   delete model;
+}
+
+
+
+// delete body
+void mjs_deleteBody(mjsBody* b) {
+  mjCBody* body = static_cast<mjCBody*>(b->element);
+  delete body;
 }
 
 
@@ -650,10 +683,11 @@ void mjs_setActivePlugins(mjSpec* s, void* activeplugins) {
 
 
 // compute full inertia
-const char* mjs_setFullInertia(mjsBody* bodyspec, double quat[4], double inertia[3]) {
-  mjCBody* body = static_cast<mjCBody*>(bodyspec->element);
-  return body->FullInertia(quat, inertia);
+const char* mjs_fullInertia(double quat[4], double inertia[3], const double fullinertia[6]) {
+  return FullInertia(quat, inertia, fullinertia);
 }
+
+
 
 // -------------------------- GLOBAL ASSET CACHE -------------------------------
 
@@ -667,5 +701,12 @@ void mj_setCacheSize(mjCache cache, std::size_t size) {
 
 
 mjCache mj_globalCache() {
-  return NULL;  // currently disabled
+  // mjCCache is not trivially destructible and so the global cache needs to
+  // allocated on the heap
+  if constexpr (kGlobalCacheSize != 0) {
+    static mjCCache* cache = new(std::nothrow) mjCCache(kGlobalCacheSize);
+    return (mjCache) cache;
+  } else {
+    return NULL;
+  }
 }
