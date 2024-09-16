@@ -16,7 +16,6 @@
 
 from absl.testing import absltest
 import jax
-from jax import numpy as jp
 import mujoco
 from mujoco import mjx
 from mujoco.mjx._src import test_util
@@ -49,6 +48,8 @@ class SmoothTest(absltest.TestCase):
     """Tests MJX smooth functions match MuJoCo smooth functions."""
 
     m = test_util.load_test_file('pendula.xml')
+    # # force MJX sparse for testing:
+    m.opt.jacobian = mujoco.mjtJacobian.mjJAC_SPARSE
     d = mujoco.MjData(m)
     # give the system a little kick to ensure we have non-identity rotations
     d.qvel = np.random.random(m.nv)
@@ -79,8 +80,7 @@ class SmoothTest(absltest.TestCase):
     _assert_attr_eq(d, dx, 'crb')
     _assert_attr_eq(d, dx, 'qM')
     # factor_m
-    dx = mjx.put_data(m, d)
-    dx = jax.jit(mjx.factor_m)(mx, dx, dx.qM)
+    dx = jax.jit(mjx.factor_m)(mx, mjx.put_data(m, d))
     _assert_attr_eq(d, dx, 'qLD')
     _assert_attr_eq(d, dx, 'qLDiagInv')
     # com_vel
@@ -94,21 +94,6 @@ class SmoothTest(absltest.TestCase):
     dx = jax.jit(mjx.transmission)(mx, mjx.put_data(m, d))
     _assert_attr_eq(d, dx, 'actuator_length')
     _assert_attr_eq(d, dx, 'actuator_moment')
-
-  def test_mul_m(self):
-    m = test_util.load_test_file('pendula.xml')
-    d = mujoco.MjData(m)
-    # give the system a little kick to ensure we have non-identity rotations
-    d.qvel = np.random.random(m.nv)
-    mujoco.mj_step(m, d, 10)  # let dynamics get state significantly non-zero
-    mujoco.mj_forward(m, d)
-    mx = mjx.put_model(m)
-    dx = mjx.put_data(m, d)
-    vec = np.random.random(m.nv)
-    mjx_vec = jax.jit(mjx.mul_m)(mx, dx, jp.array(vec))
-    mj_vec = np.zeros(m.nv)
-    mujoco.mj_mulM(m, d, mj_vec, vec)
-    _assert_eq(mj_vec, mjx_vec, 'mul_m')
 
   def test_disable_gravity(self):
     m = mujoco.MjModel.from_xml_string("""
@@ -131,6 +116,46 @@ class SmoothTest(absltest.TestCase):
 
     dx = jax.jit(mjx.rne)(mx, dx)
     np.testing.assert_allclose(dx.qfrc_bias, 0)
+
+  def test_site_transmission(self):
+    m = mujoco.MjModel.from_xml_string("""
+        <mujoco>
+        <compiler autolimits="true"/>
+        <worldbody>
+          <body>
+            <joint type="free"/>
+            <geom type="box" size=".05 .05 .05" mass="1"/>
+            <site name="site1"/>
+            <body>
+              <joint type="hinge"/>
+              <geom size="0.1" mass="1"/>
+              <site name="site2" pos="0.1 0.2 0.3"/>
+            </body>
+          </body>
+          <body pos="1 0 0">
+            <joint name="slide" type="hinge"/>
+            <geom type="box" size=".05 .05 .05" mass="1"/>
+          </body>
+        </worldbody>
+        <actuator>
+          <position site="site1" kv="0.1" gear="1 2 3 0 0 0"/>
+          <position site="site1" kv="0.2" gear="0 0 0 1 2 3"/>
+          <position site="site2" kv="0.3" gear="0 3 0 0 0 1"/>
+          <position joint="slide" kv="0.05" />
+          <position site="site2" refsite="site1" gear="1 2 3 0.5 0.4 0.6"/>
+        </actuator>
+        </mujoco>
+      """)
+    d = mujoco.MjData(m)
+    mujoco.mj_forward(m, d)
+    mx = mjx.put_model(m)
+    dx = mjx.put_data(m, d)
+
+    mujoco.mj_transmission(m, d)
+    dx = jax.jit(mjx.transmission)(mx, dx)
+    _assert_attr_eq(d, dx, 'actuator_length')
+    _assert_attr_eq(d, dx, 'actuator_moment')
+
 
 if __name__ == '__main__':
   absltest.main()

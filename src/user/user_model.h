@@ -18,6 +18,7 @@
 #include <functional>
 #include <map>
 #include <string>
+#include <string_view>
 #include <utility>
 #include <vector>
 
@@ -95,6 +96,14 @@ class mjCModel {
   mjCTuple*    AddTuple(void);                         // custom tuple
   mjCKey*      AddKey(void);                           // keyframe
   mjCPlugin*   AddPlugin(void);                        // plugin instance
+
+  //------------------------ API for deleting model elements
+  template <class T>
+  void Delete(std::vector<T*>& elements,
+              const std::vector<bool>& discard);       // delete elements marked as discard=true
+
+  template <class T>
+  void DeleteAll(std::vector<T*>& elements);           // delete all elements
 
   //------------------------ API for access to model elements (outside tree)
   int         NumObjects(mjtObj type);                // number of objects in specified list
@@ -184,17 +193,20 @@ class mjCModel {
   template<class T>              // if asset name is missing, set to filename
   void SetDefaultNames(std::vector<T*>& assets);
 
+  template <class T>             // delete material from object
+  void DeleteMaterial(std::vector<T*>& list, std::string_view name = "");
+
   //------------------------ compile phases
-  void MakeLists(mjCBody* body);  // make lists of bodies, geoms, joints, sites
-  void IndexAssets(void);         // convert asset names into indices
-  void CheckEmptyNames(void);     // check empty names
-  void SetSizes(void);            // compute sizes
-  void AutoSpringDamper(mjModel*);// automatic stiffness and damping computation
-  void LengthRange(mjModel*, mjData*); // compute actuator lengthrange
-  void CopyNames(mjModel*);       // copy names, compute name addresses
-  void CopyPaths(mjModel*);       // copy paths, compute path addresses
-  void CopyObjects(mjModel*);     // copy objects outside kinematic tree
-  void CopyTree(mjModel*);        // copy objects inside kinematic tree
+  void MakeLists(mjCBody* body);        // make lists of bodies, geoms, joints, sites
+  void IndexAssets(bool discard);       // convert asset names into indices
+  void CheckEmptyNames(void);           // check empty names
+  void SetSizes(void);                  // compute sizes
+  void AutoSpringDamper(mjModel*);      // automatic stiffness and damping computation
+  void LengthRange(mjModel*, mjData*);  // compute actuator lengthrange
+  void CopyNames(mjModel*);             // copy names, compute name addresses
+  void CopyPaths(mjModel*);             // copy paths, compute path addresses
+  void CopyObjects(mjModel*);           // copy objects outside kinematic tree
+  void CopyTree(mjModel*);              // copy objects inside kinematic tree
 
   //------------------------ sizes
   // sizes set from object list lengths

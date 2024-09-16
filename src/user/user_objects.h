@@ -16,12 +16,17 @@
 #define MUJOCO_SRC_USER_USER_OBJECTS_H_
 
 #include <array>
+#include <functional>
 #include <map>
 #include <optional>
 #include <string>
+#include <string_view>
+#include <utility>
 #include <vector>
 
 #include "lodepng.h"
+
+#include <mujoco/mjtnum.h>
 #include <mujoco/mjmodel.h>
 #include <mujoco/mjplugin.h>
 
@@ -36,6 +41,7 @@ class mjCGeom;
 class mjCSite;
 class mjCCamera;
 class mjCLight;
+class mjCHField;
 class mjCFlex;                        // defined in user_mesh
 class mjCMesh;                        // defined in user_mesh
 class mjCSkin;                        // defined in user_mesh
@@ -124,14 +130,21 @@ class mjCAlternative {
 // bounding volume
 class mjCBoundingVolume {
  public:
-  mjCBoundingVolume() = default;
+  mjCBoundingVolume() { id_ = nullptr; };
 
-  int id;                       // object id
   int contype;                  // contact type
   int conaffinity;              // contact affinity
   const mjtNum* aabb;           // axis-aligned bounding box (center, size)
   const mjtNum* pos;            // position (set by user or Compile1)
   const mjtNum* quat;           // orientation (set by user or Compile1)
+
+  const int* GetId() const { if (id_) return id_; else return &idval_; }
+  void SetId(const int* id) { id_ = id; }
+  void SetId(int val) { idval_ = val; }
+
+ private:
+  int idval_;                   // local id copy for nodes not storing their id's (e.g. faces)
+  const int* id_;               // pointer to object id
 };
 
 
@@ -143,16 +156,18 @@ class mjCBoundingVolumeHierarchy {
   int nbvh;
   std::vector<mjtNum> bvh;            // bounding boxes                                (nbvh x 6)
   std::vector<int> child;             // children of each node                         (nbvh x 2)
-  std::vector<int> nodeid;            // geom of elem id contained by the node         (nbvh x 1)
+  std::vector<int*> nodeid;           // geom of elem id contained by the node         (nbvh x 1)
   std::vector<int> level;             // levels of each node                           (nbvh x 1)
 
   // make bounding volume hierarchy
   void CreateBVH(void);
   void Set(mjtNum ipos_element[3], mjtNum iquat_element[4]);
-  void AddBoundingVolume(const mjCBoundingVolume& bv);
+  void AllocateBoundingVolumes(int nbvh);
+  void RemoveInactiveVolumes(int nmax);
+  mjCBoundingVolume* GetBoundingVolume(int id);
 
  private:
-  int MakeBVH(std::vector<mjCBoundingVolume>& elements, int lev = 0);
+  int MakeBVH(std::vector<const mjCBoundingVolume*>& elements, int lev = 0);
 
   std::vector<mjCBoundingVolume> bvh_;
   std::string name_;
@@ -183,7 +198,7 @@ class mjCBase {
   std::string name;               // object name
   std::string classname;          // defaults class name
   int id;                         // object id
-  int xmlpos[2];                  // row and column in xml file
+  std::string info;               // error message info set by the user
   mjCDef* def;                    // defaults class used to init this object
   mjCModel* model;                // pointer to model that created object
   mjCFrame* frame;                // pointer to frame transformation
@@ -321,37 +336,38 @@ class mjCJoint : public mjCBase {
 
  public:
   // variables set by user: joint properties
-  mjtJoint type;                  // type of Joint
-  int group;                      // used for rendering
-  int limited;                    // does joint have limits: 0 false, 1 true, 2 auto
-  int actfrclimited;              // are actuator forces on joints limited: 0 false, 1 true, 2 auto
-  double pos[3];                  // anchor position
-  double axis[3];                 // joint axis
-  double stiffness;               // stiffness coefficient
-  double springdamper[2];         // timeconst, dampratio
-  double range[2];                // joint limits
-  double actfrcrange[2];          // actuator force limits
-  mjtNum solref_limit[mjNREF];    // solver reference: joint limits
-  mjtNum solimp_limit[mjNIMP];    // solver impedance: joint limits
-  mjtNum solref_friction[mjNREF]; // solver reference: dof friction
-  mjtNum solimp_friction[mjNIMP]; // solver impedance: dof friction
-  double margin;                  // margin value for joint limit detection
-  double ref;                     // value at reference configuration: qpos0
-  double springref;               // spring reference value: qpos_spring
-  std::vector<double> userdata;   // user data
+  mjtJoint type;                   // type of Joint
+  int group;                       // used for rendering
+  int limited;                     // does joint have limits: 0 false, 1 true, 2 auto
+  int actfrclimited;               // are actuator forces on joints limited: 0 false, 1 true, 2 auto
+  double pos[3];                   // anchor position
+  double axis[3];                  // joint axis
+  double stiffness;                // stiffness coefficient
+  double springdamper[2];          // timeconst, dampratio
+  double range[2];                 // joint limits
+  double actfrcrange[2];           // actuator force limits
+  mjtNum solref_limit[mjNREF];     // solver reference: joint limits
+  mjtNum solimp_limit[mjNIMP];     // solver impedance: joint limits
+  mjtNum solref_friction[mjNREF];  // solver reference: dof friction
+  mjtNum solimp_friction[mjNIMP];  // solver impedance: dof friction
+  double margin;                   // margin value for joint limit detection
+  double ref;                      // value at reference configuration: qpos0
+  double springref;                // spring reference value: qpos_spring
+  std::vector<double> userdata;    // user data
 
   // variables set by user: dof properties
-  double armature;                // armature inertia (mass for slider)
-  double damping;                 // damping coefficient
-  double frictionloss;            // friction loss
+  double armature;                 // armature inertia (mass for slider)
+  double damping;                  // damping coefficient
+  double frictionloss;             // friction loss
 
-  double urdfeffort;              // store effort field from urdf
+  double urdfeffort;               // store effort field from urdf
 
  private:
-  mjCJoint(mjCModel* = 0, mjCDef* = 0);// constructor
-  int Compile(void);                  // compiler; return dofnum
+  mjCJoint(mjCModel* = 0, mjCDef* = 0);
 
-  mjCBody* body;                  // joint's body
+  int Compile(void);               // compiler; return dofnum
+
+  mjCBody* body;                   // joint's body
 };
 
 
@@ -371,14 +387,19 @@ class mjCGeom : public mjCBase {
  public:
   double GetVolume(void);             // compute geom volume
   void SetInertia(void);              // compute and set geom inertia
+  bool IsVisual(void) const { return visual_; }
+  void SetNotVisual(void) { visual_ = false; }
+
+  void set_material(std::string _material) { material_ = _material; }
+  std::string& get_material() { return material_; }
 
   // Compute all coefs modeling the interaction with the surrounding fluid.
   void SetFluidCoefs(void);
   // Compute the kappa coefs of the added inertia due to the surrounding fluid.
   double GetAddedMassKappa(double dx, double dy, double dz);
 
-  // returns a bounding volume
-  mjCBoundingVolume GetBoundingVolume() const;
+  // sets properties of a bounding volume
+  void SetBoundingVolume(mjCBoundingVolume* bv) const;
 
   // variables set by user and copied into mjModel
   mjtGeom type;                   // geom type
@@ -397,10 +418,9 @@ class mjCGeom : public mjCBase {
   mjtNum fluid_switch;            // whether ellipsoid-fluid model is active
   mjtNum fluid_coefs[5];          // tunable ellipsoid-fluid interaction coefs
   mjtNum fluid[mjNFLUID];         // compile-time fluid-interaction parameters
-  std::string hfield;             // hfield attached to geom
-  std::string mesh;               // mesh attached to geom
+  std::string hfieldname;         // hfield attached to geom
+  std::string meshname;           // mesh attached to geom
   double fitscale;                // scale mesh uniformly
-  std::string material;           // name of material used for rendering
   std::vector<double> userdata;   // user data
   float rgba[4];                  // rgba when material is omitted
   mjtMeshType typeinertia;        // selects between surface and volume inertia
@@ -417,18 +437,20 @@ class mjCGeom : public mjCBase {
   double quat[4];                 // orientation
 
  private:
-  mjCGeom(mjCModel* = 0, mjCDef* = 0);// constructor
+  mjCGeom(mjCModel* = 0, mjCDef* = 0);
   void Compile(void);                 // compiler
   double GetRBound(void);             // compute bounding sphere radius
   void ComputeAABB(void);             // compute axis-aligned bounding box
 
-  int matid;                      // id of geom's material
-  int meshid;                     // id of geom's mesh (-1: none)
-  int hfieldid;                   // id of geom's hfield (-1: none)
-  double mass;                    // mass
-  double inertia[3];              // local diagonal inertia
-  double aabb[6];                 // axis-aligned bounding box (center, size)
-  mjCBody* body;                  // geom's body
+  std::string material_;              // name of material used for rendering
+  bool visual_;                       // true: geom does not collide and is unreferenced
+  int matid;                          // id of geom's material
+  mjCMesh* mesh;                      // geom's mesh
+  mjCHField* hfield;                  // geom's hfield
+  double mass;                        // mass
+  double inertia[3];                  // local diagonal inertia
+  double aabb[6];                     // axis-aligned bounding box (center, size)
+  mjCBody* body;                      // geom's body
 };
 
 
@@ -436,7 +458,20 @@ class mjCGeom : public mjCBase {
 //------------------------- class mjCSite ----------------------------------------------------------
 // Describes a site on a body
 
-class mjCSite : public mjCBase {
+typedef struct _mjmSite {
+  mjtGeom type;                   // geom type for rendering
+  int group;                      // group id, used for visualization
+  double size[3];                 // geom size for rendering
+  double pos[3];                  // position
+  double quat[4];                 // orientation
+  char* material;                 // name of material for rendering
+  double* userdata;               // user data
+  float rgba[4];                  // rgba when material is omitted
+  double fromto[6];               // alternative for capsule, cylinder, box, ellipsoid
+  mjCAlternative alt;             // alternative orientation specification
+} mjmSite;
+
+class mjCSite : public mjCBase, private mjmSite {
   friend class mjCDef;
   friend class mjCBody;
   friend class mjCModel;
@@ -444,22 +479,31 @@ class mjCSite : public mjCBase {
   friend class mjXURDF;
 
  public:
-  // variables set by user
-  mjtGeom type;                   // geom type for rendering
-  int group;                      // group id, used for visualization
-  double size[3];                 // geom size for rendering
-  double pos[3];                  // position
-  double quat[4];                 // orientation
-  std::string material;           // name of material for rendering
-  std::vector<double> userdata;   // user data
-  float rgba[4];                  // rgba when material is omitted
-  double fromto[6];               // alternative for capsule, cylinder, box, ellipsoid
-  mjCAlternative alt;             // alternative orientation specification
+  mjmSite spec;                   // variables set by user
+
+  void set_material(std::string _material) {
+    spec_material_ = _material;
+    spec.material = spec_material_.data();
+  }
+  void set_userdata(std::vector<double> _userdata) {
+    spec_userdata_ = _userdata;
+    spec.userdata = spec_userdata_.data();
+  }
+  std::vector<double>& get_userdata() { return userdata_; }
+  std::string& get_material() { return material_; }
 
   // variables computed by 'compile' and 'mjCBody::addSite'
  private:
   mjCSite(mjCModel* = 0, mjCDef* = 0);    // constructor
   void Compile(void);                     // compiler
+  void CopyFromSpec();                    // copy spec into attributes
+
+  // variable-size data
+  std::string material_;
+  std::vector<double> userdata_;
+
+  std::string spec_material_;
+  std::vector<double> spec_userdata_;
 
   mjCBody* body;                  // site's body
   int matid;                      // material id for rendering
@@ -550,6 +594,9 @@ class mjCFlex: public mjCBase {
   friend class mjXWriter;
 
  public:
+  void set_material(std::string _material) { material_ = _material; }
+  std::string& get_material() { return material_; }
+
   // contact properties
   int contype;                    // contact type
   int conaffinity;                // contact affinity
@@ -572,33 +619,37 @@ class mjCFlex: public mjCBase {
   int group;                      // group for visualizatioh
   double edgestiffness;           // edge stiffness
   double edgedamping;             // edge damping
-  std::string material;           // name of material used for rendering
   float rgba[4];                  // rgba when material is omitted
 
   std::vector<std::string> vertbody;  // vertex body names
   std::vector<mjtNum> vert;           // vertex positions
+  std::vector<mjtNum> elemaabb;       // element bounding volume
   std::vector<int> elem;              // element vertex ids
   std::vector<float> texcoord;        // vertex texture coordinates
 
- private:
-  mjCFlex(mjCModel* = 0);                     // constructor
-  void Compile(const mjVFS* vfs);             // compiler
-  void CreateBVH(void);                       // create flex BVH
-  void CreateShellPair(void);                 // create shells and evpairs
+  bool HasTexcoord() const;           // texcoord not null
+  void DelTexcoord();                 // delete texcoord
 
-  int nvert;                          // number of verices
-  int nedge;                          // number of edges
-  int nelem;                          // number of elements
-  int matid;                          // material id
-  bool rigid;                         // all vertices attached to the same body
-  bool centered;                      // all vertices coordinates (0,0,0)
-  std::vector<int> vertbodyid;        // vertex body ids
-  std::vector<std::pair<int,int>> edge; // edge vertex ids
-  std::vector<int> shell;             // shell fragment vertex ids (dim per fragment)
-  std::vector<int> elemlayer;         // element layer (distance from border)
-  std::vector<int> evpair;            // element-vertex pairs
-  std::vector<mjtNum> vertxpos;       // global vertex positions
-  mjCBoundingVolumeHierarchy tree;    // bounding volume hierarchy
+ private:
+  mjCFlex(mjCModel* = 0);
+  void Compile(const mjVFS* vfs);         // compiler
+  void CreateBVH(void);                   // create flex BVH
+  void CreateShellPair(void);             // create shells and evpairs
+
+  int nvert;                              // number of verices
+  int nedge;                              // number of edges
+  int nelem;                              // number of elements
+  int matid;                              // material id
+  bool rigid;                             // all vertices attached to the same body
+  bool centered;                          // all vertices coordinates (0,0,0)
+  std::vector<int> vertbodyid;            // vertex body ids
+  std::vector<std::pair<int, int>> edge;  // edge vertex ids
+  std::vector<int> shell;                 // shell fragment vertex ids (dim per fragment)
+  std::vector<int> elemlayer;             // element layer (distance from border)
+  std::vector<int> evpair;                // element-vertex pairs
+  std::vector<mjtNum> vertxpos;           // global vertex positions
+  mjCBoundingVolumeHierarchy tree;        // bounding volume hierarchy
+  std::string material_;                  // name of material used for rendering
 };
 
 
@@ -607,7 +658,7 @@ class mjCFlex: public mjCBase {
 // Describes a mesh
 
 class mjCMesh: public mjCBase {
- friend class mjCFlexcomp;
+  friend class mjCFlexcomp;
  public:
   mjCMesh(mjCModel* = 0, mjCDef* = 0);
   ~mjCMesh();
@@ -627,7 +678,7 @@ class mjCMesh: public mjCBase {
   const std::vector<float>& usertexcoord() const { return usertexcoord_; }
   const std::vector<int>& userface() const { return userface_; }
 
-  // mesh properites computed by Compile
+  // mesh properties computed by Compile
   const double* aamm() const { return aamm_; }
 
   // number of vertices, normals, texture coordinates, and faces
@@ -669,6 +720,9 @@ class mjCMesh: public mjCBase {
   double& GetVolumeRef(mjtMeshType type);           // get volume
   void FitGeom(mjCGeom* geom, double* meshpos);     // approximate mesh with simple geom
   bool HasTexcoord() const;                         // texcoord not null
+  void DelTexcoord();                               // delete texcoord
+  bool IsVisual(void) const { return visual_; }     // is geom visual
+  void SetNotVisual(void) { visual_ = false; }      // mark mesh as not visual
 
   void CopyVert(float* arr) const;                  // copy vert data into array
   void CopyNormal(float* arr) const;                // copy normal data into array
@@ -678,10 +732,11 @@ class mjCMesh: public mjCBase {
   void CopyTexcoord(float* arr) const;              // copy texcoord data into array
   void CopyGraph(int* arr) const;                   // copy graph data into array
 
-  // returns a bounding volume given a face
-  mjCBoundingVolume GetBoundingVolume(int faceid);
+  // sets properties of a bounding volume given a face id
+  void SetBoundingVolume(int faceid);
 
  private:
+  bool visual_;                       // true: the mesh is only visual
   std::string content_type_;          // content type of file
   std::string file_;                  // mesh file
   double refpos_[3];                  // reference position (translate)
@@ -768,9 +823,10 @@ class mjCSkin: public mjCBase {
 
  public:
   std::string get_file() const { return file; }
+  void set_material(std::string _material) { material_ = _material; }
+  std::string& get_material() { return material_; }
 
   std::string file;                   // skin file
-  std::string material;               // name of material used for rendering
   float rgba[4];                      // rgba when material is omitted
   float inflate;                      // inflate in normal direction
   int group;                          // group for visualization
@@ -793,6 +849,7 @@ class mjCSkin: public mjCBase {
   void Compile(const mjVFS* vfs);             // compiler
   void LoadSKN(mjResource* resource);         // load skin in SKN BIN format
 
+  std::string material_;              // name of material used for rendering
   int matid;                          // material id
   std::vector<int> bodyid;            // body ids
 };
@@ -816,9 +873,16 @@ class mjCHField : public mjCBase {
   int ncol;                       // number of columns
   float* data;                    // elevation data, row-major format
 
+  // getter for user data
+  std::vector<float>& userdata() { return userdata_; }
+
+  // setter for user data
+  void set_userdata(std::optional<std::vector<float>>&& userdata);
+
  private:
   mjCHField(mjCModel* model);             // constructor
   ~mjCHField();                           // destructor
+  std::vector<float> userdata_;           // user-provided elevation data
   void Compile(const mjVFS* vfs);         // compiler
 
   void LoadCustom(mjResource* resource);  // load from custom format
@@ -836,6 +900,8 @@ class mjCTexture : public mjCBase {
   friend class mjXWriter;
 
  public:
+  ~mjCTexture();                  // destructor
+
   std::string get_file() const { return file; }
 
   mjtTexture type;                // texture type
@@ -865,16 +931,15 @@ class mjCTexture : public mjCBase {
 
  private:
   mjCTexture(mjCModel*);                  // constructor
-  ~mjCTexture();                          // destructior
   void Compile(const mjVFS* vfs);         // compiler
 
   void Builtin2D(void);                   // make builtin 2D
   void BuiltinCube(void);                 // make builtin cube
-  void Load2D(std::string filename, const mjVFS* vfs);         // load 2D from file
-  void LoadCubeSingle(std::string filename, const mjVFS* vfs); // load cube from single file
-  void LoadCubeSeparate(const mjVFS* vfs);                     // load cube from separate files
+  void Load2D(std::string filename, const mjVFS* vfs);          // load 2D from file
+  void LoadCubeSingle(std::string filename, const mjVFS* vfs);  // load cube from single file
+  void LoadCubeSeparate(const mjVFS* vfs);                      // load cube from separate files
 
-  void LoadFlip(std::string filename, const mjVFS* vfs,        // load and flip
+  void LoadFlip(std::string filename, const mjVFS* vfs,         // load and flip
                 std::vector<unsigned char>& image,
                 unsigned int& w, unsigned int& h);
 
@@ -948,8 +1013,8 @@ class mjCPair : public mjCBase {
   mjCPair(mjCModel* = 0, mjCDef* = 0);  // constructor
   void Compile(void);                   // compiler
 
-  int geom1;                      // id of geom1
-  int geom2;                      // id of geom2
+  mjCGeom* geom1;                 // geom1
+  mjCGeom* geom2;                 // geom2
   int signature;                  // body1<<16 + body2
 };
 
@@ -1020,11 +1085,14 @@ class mjCTendon : public mjCBase {
   friend class mjXWriter;
 
  public:
+  void set_material(std::string _material) { material_ = _material; }
+  std::string& get_material() { return material_; }
+
   // API for adding wrapping objects
-  void WrapSite(std::string name, int row=-1, int col=-1);                    // site
-  void WrapGeom(std::string name, std::string side, int row=-1, int col=-1);  // geom
-  void WrapJoint(std::string name, double coef, int row=-1, int col=-1);      // joint
-  void WrapPulley(double divisor, int row=-1, int col=-1);                    // pulley
+  void WrapSite(std::string name, std::string_view info = "");                    // site
+  void WrapGeom(std::string name, std::string side, std::string_view info = "");  // geom
+  void WrapJoint(std::string name, double coef, std::string_view info = "");      // joint
+  void WrapPulley(double divisor, std::string_view info = "");                    // pulley
 
   // API for access to wrapping objects
   int NumWraps(void);                         // number of wraps
@@ -1032,7 +1100,6 @@ class mjCTendon : public mjCBase {
 
   // variables set by user
   int group;                       // group for visualization
-  std::string material;            // name of material for rendering
   int limited;                     // does tendon have limits: 0 false, 1 true, 2 auto
   double width;                    // width for rendering
   mjtNum solref_limit[mjNREF];     // solver reference: tendon limits
@@ -1053,6 +1120,7 @@ class mjCTendon : public mjCBase {
   ~mjCTendon();                               // destructor
   void Compile(void);                         // compiler
 
+  std::string material_;          // name of material for rendering
   int matid;                      // material id for rendering
   std::vector<mjCWrap*> path;     // wrapping objects
 };
@@ -1068,7 +1136,7 @@ class mjCWrap : public mjCBase {
 
  public:
   mjtWrap type;                   // wrap object type
-  int objid;                      // wrap object id (in array corresponding to type)
+  mjCBase* obj;                   // wrap object pointer
   int sideid;                     // side site id; -1 if not applicable
   double prm;                     // parameter: divisor, coefficient
   std::string sidesite;           // name of side site
@@ -1178,7 +1246,7 @@ class mjCSensor : public mjCBase {
   mjCSensor(mjCModel*);           // constructor
   void Compile(void);             // compiler
 
-  int objid;                      // id of sensorized object
+  mjCBase* obj;                   // sensorized object
   int refid;                      // id of reference frame
 };
 
@@ -1238,7 +1306,7 @@ class mjCTuple : public mjCBase {
   ~mjCTuple();                    // destructor
   void Compile(void);             // compiler
 
-  std::vector<int> objid;         // object ids
+  std::vector<mjCBase*> obj;         // object pointers
 };
 
 

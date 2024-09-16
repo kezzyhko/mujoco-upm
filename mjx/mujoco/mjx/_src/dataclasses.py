@@ -45,6 +45,7 @@ def dataclass(clz: _T) -> _T:
         field.type is jax.Array,
         dataclasses.is_dataclass(field.type),
         jax.Array in typing.get_args(field.type),
+        any(dataclasses.is_dataclass(a) for a in typing.get_args(field.type)),
     )):
       data_fields.append(field)
     else:
@@ -62,7 +63,7 @@ def dataclass(clz: _T) -> _T:
 
     def to_meta(field, obj):
       val = getattr(obj, field.name)
-      return to_tup(val) if isinstance(val, np.ndarray) else val
+      return (to_tup(val), val.dtype) if isinstance(val, np.ndarray) else val
 
     def to_data(field, obj):
       return (jax.tree_util.GetAttrKey(field.name), getattr(obj, field.name))
@@ -75,7 +76,7 @@ def dataclass(clz: _T) -> _T:
 
     def from_meta(field, meta):
       if field.type is np.ndarray:
-        return (field.name, np.array(meta))
+        return (field.name, np.array(meta[0], dtype=meta[1]))
       else:
         return (field.name, meta)
 

@@ -181,9 +181,9 @@ The following features are **fully supported** in MJX:
    * - :ref:`Joint <mjtJoint>`
      - ``FREE``, ``BALL``, ``SLIDE``, ``HINGE``
    * - :ref:`Transmission <mjtTrn>`
-     - ``TRN_JOINT``
+     - ``TRN_JOINT``, ``TRN_SITE``
    * - :ref:`Actuator Dynamics <mjtDyn>`
-     - ``NONE``, ``INTEGRATOR``, ``FILTER``
+     - ``NONE``, ``INTEGRATOR``, ``FILTER``, ``FILTEREXACT``
    * - :ref:`Actuator Gain <mjtGain>`
      - ``FIXED``, ``AFFINE``
    * - :ref:`Actuator Bias <mjtBias>`
@@ -230,7 +230,7 @@ The following features are **in development** and coming soon:
    * - :ref:`Geom <mjtGeom>`
      - ``HFIELD``, ``ELLIPSOID``, ``CYLINDER``
    * - :ref:`Constraint <mjtConstraint>`
-     - ``CONTACT_FRICTIONLESS``, ``CONTACT_ELLIPTIC``, ``FRICTION_DOF``
+     - :ref:`Frictionloss <coFriction>`, ``CONTACT_FRICTIONLESS``, ``CONTACT_ELLIPTIC``, ``FRICTION_DOF``
    * - :ref:`Integrator <mjtIntegrator>`
      - ``IMPLICIT``, ``IMPLICITFAST``
    * - :ref:`Cone <mjtCone>`
@@ -257,9 +257,9 @@ The following features are **unsupported**:
    * - Category
      - Feature
    * - :ref:`Transmission <mjtTrn>`
-     - ``TRN_JOINTINPARENT``, ``TRN_SLIDERCRANK``, ``TRN_SITE``, ``TRN_BODY``
+     - ``TRN_JOINTINPARENT``, ``TRN_SLIDERCRANK``, ``TRN_BODY``
    * - :ref:`Actuator Dynamics <mjtDyn>`
-     - ``FILTEREXACT``, ``USER``
+     - ``USER``
    * - :ref:`Actuator Gain <mjtGain>`
      - ``USER``
    * - :ref:`Actuator Bias <mjtBias>`
@@ -288,6 +288,22 @@ Single scene simulation
   Simulating a single scene (1 instance of :ref:`mjData`), MJX can be **10x** slower than MuJoCo, which has been
   carefully optimized for CPU.  MJX works best when simulating thousands or tens of thousands of scenes in parallel.
 
+Collisions between large meshes
+  MJX supports collisions between convex mesh geometries. However the convex collision algorithms
+  in MJX are implemented differently than in MuJoCo. MJX uses a branchless version of the
+  `Separating Axis Test <https://ubm-twvideo01.s3.amazonaws.com/o1/vault/gdc2013/slides/822403Gregorius_Dirk_TheSeparatingAxisTest.pdf>`__
+  (SAT) to determine if geometries are colliding with convex meshes, while MuJoCo uses the Minkowski Portal Refinement (MPR)
+  algorithm as implemented in `libccd <https://github.com/danfis/libccd>`__.
+  SAT works well for smaller meshes but suffers in both runtime and memory for larger meshes.
+
+  For
+  collisions between convex meshes and primitives (spheres, capsules, planes), use **3000 vertices or less** for your convex meshes.
+  For collisions between convex meshes and other convex meshes, use **30 vertices or less**.
+  With careful
+  tuning, MJX can simulate scenes with mesh collisions -- see the MJX
+  `shadow hand <https://github.com/google-deepmind/mujoco/tree/main/mjx/mujoco/mjx/benchmark/model/shadow_hand>`__
+  config for an example. Speeding up mesh collision detection is an active area of development for MJX.
+
 Large, complex scenes with many contacts
   Accelerators exhibit poor performance for
   `branching code <https://aschrein.github.io/jekyll/update/2019/06/13/whatsup-with-my-branches-on-gpu.html#tldr>`__.
@@ -309,14 +325,6 @@ Large, complex scenes with many contacts
   The values for a single humanoid (leftmost datapoints) for the four timed architectures are **650K**, **1.8M**,
   **950K** and **2.7M** steps per second, respectively. Note that as we increase the number of humanoids (which
   increases the number of potential contacts in a scene), MJX throughput decreases more rapidly than MuJoCo.
-
-Scenes with collisions between meshes with many vertices
-  MJX supports mesh geometries and can determine if two meshes are colliding using branchless versions of
-  `mesh collision algorithms <https://ubm-twvideo01.s3.amazonaws.com/o1/vault/gdc2013/slides/822403Gregorius_Dirk_TheSeparatingAxisTest.pdf>`__.
-  These algorithms work well for smaller meshes (with hundreds of vertices) but suffer with large meshes. With careful
-  tuning, MJX can simulate scenes with mesh collisions well -- see the MJX
-  `shadow hand <https://github.com/google-deepmind/mujoco/tree/main/mjx/mujoco/mjx/benchmark/model/shadow_hand>`__
-  config for an example.
 
 .. _MjxPerformance:
 
@@ -341,3 +349,11 @@ For MJX to perform well, some configuration parameters should be adjusted from t
 
 :ref:`option-flag` element
   Disabling ``eulerdamp`` can help performance and is often not needed for stability.
+
+:ref:`option-jacobian` element
+  Explicitly setting "dense" or "sparse" may speed up simulation depending on your device. Modern TPUs have specialized
+  hardware for rapidly operating over sparse matrices, whereas GPUs tend to be faster with dense matrices as long as
+  they fit onto the device. As such, the behavior in MJX for the default "auto" setting is sparse if ``nv`` is 60 or
+  greater, or if MJX detects a TPU as the default backend, otherwise "dense". For TPU, using "sparse" with the
+  Newton solver can speed up simulation by 2x to 3x. For GPU, choosing "dense" may impart a more modest speedup of 10%
+  to 20%, as long as the dense matrices can fit on the device.

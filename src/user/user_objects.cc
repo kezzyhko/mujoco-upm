@@ -20,9 +20,11 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <optional>
 #include <sstream>
 #include <string>
 #include <string_view>
+#include <utility>
 #include <vector>
 
 #include "lodepng.h"
@@ -112,9 +114,9 @@ mjCError::mjCError(const mjCBase* obj, const char* msg, const char* str, int pos
   // append info from mjCBase object
   if (obj) {
     // with or without xml position
-    if (obj->xmlpos[0]>= 0) {
-      mju::sprintf_arr(temp, "Object name = %s, id = %d, line = %d, column = %d",
-                       obj->name.c_str(), obj->id, obj->xmlpos[0], obj->xmlpos[1]);
+    if (!obj->info.empty()) {
+      mju::sprintf_arr(temp, "Object name = %s, id = %d, %s",
+                       obj->name.c_str(), obj->id, obj->info.c_str());
     } else {
       mju::sprintf_arr(temp, "Object name = %s, id = %d", obj->name.c_str(), obj->id);
     }
@@ -282,24 +284,39 @@ void mjCBoundingVolumeHierarchy::Set(mjtNum ipos_element[3], mjtNum iquat_elemen
 }
 
 
-// add geom to bvh
-void mjCBoundingVolumeHierarchy::AddBoundingVolume(const mjCBoundingVolume& bv) {
-  bvh_.push_back(bv);
+
+void mjCBoundingVolumeHierarchy::AllocateBoundingVolumes(int nbvh) {
+  bvh_.resize(nbvh);
+}
+
+
+void mjCBoundingVolumeHierarchy::RemoveInactiveVolumes(int nmax) {
+  bvh_.erase(bvh_.begin() + nmax, bvh_.end());
+}
+
+
+mjCBoundingVolume* mjCBoundingVolumeHierarchy::GetBoundingVolume(int id) {
+  return bvh_.data() + id;
 }
 
 
 // create bounding volume hierarchy
 void mjCBoundingVolumeHierarchy::CreateBVH() {
-  MakeBVH(bvh_);
+  std::vector<const mjCBoundingVolume*> elements(bvh_.size());
+  for (int i=0; i<bvh_.size(); i++) {
+    elements[i] = bvh_.data() + i;
+  }
+  MakeBVH(elements);
 }
 
 
 // compute bounding volume hierarchy
-int mjCBoundingVolumeHierarchy::MakeBVH(std::vector<mjCBoundingVolume>& elements, int lev) {
+int mjCBoundingVolumeHierarchy::MakeBVH(std::vector<const mjCBoundingVolume*>& elements, int lev) {
   if (elements.empty()) {
     return -1;
   }
 
+  bool is_visual = true;
   int nelements = elements.size();
   mjtNum AAMM[6] = {mjMAXVAL, mjMAXVAL, mjMAXVAL, -mjMAXVAL, -mjMAXVAL, -mjMAXVAL};
 
@@ -309,17 +326,19 @@ int mjCBoundingVolumeHierarchy::MakeBVH(std::vector<mjCBoundingVolume>& elements
   // accumulate AAMM over elements
   for (int i=0; i<nelements; i++) {
     // skip visual objects
-    if (elements[i].conaffinity==0 && elements[i].contype==0) {
+    if (elements[i]->conaffinity==0 && elements[i]->contype==0) {
       continue;
+    } else {
+      is_visual = false;
     }
 
     // transform element aabb to aamm format
-    mjtNum aamm[6] = {elements[i].aabb[0] - elements[i].aabb[3],
-                      elements[i].aabb[1] - elements[i].aabb[4],
-                      elements[i].aabb[2] - elements[i].aabb[5],
-                      elements[i].aabb[0] + elements[i].aabb[3],
-                      elements[i].aabb[1] + elements[i].aabb[4],
-                      elements[i].aabb[2] + elements[i].aabb[5]};
+    mjtNum aamm[6] = {elements[i]->aabb[0] - elements[i]->aabb[3],
+                      elements[i]->aabb[1] - elements[i]->aabb[4],
+                      elements[i]->aabb[2] - elements[i]->aabb[5],
+                      elements[i]->aabb[0] + elements[i]->aabb[3],
+                      elements[i]->aabb[1] + elements[i]->aabb[4],
+                      elements[i]->aabb[2] + elements[i]->aabb[5]};
 
     // update node AAMM
     for (int v=0; v<8; v++) {
@@ -329,11 +348,11 @@ int mjCBoundingVolumeHierarchy::MakeBVH(std::vector<mjCBoundingVolume>& elements
       vert[2] = (v&4 ? aamm[5] : aamm[2]);
 
       // rotate to the body inertial frame if specified
-      if (elements[i].quat) {
-        mju_rotVecQuat(box, vert, elements[i].quat);
-        box[0] += elements[i].pos[0] - ipos_[0];
-        box[1] += elements[i].pos[1] - ipos_[1];
-        box[2] += elements[i].pos[2] - ipos_[2];
+      if (elements[i]->quat) {
+        mju_rotVecQuat(box, vert, elements[i]->quat);
+        box[0] += elements[i]->pos[0] - ipos_[0];
+        box[1] += elements[i]->pos[1] - ipos_[1];
+        box[2] += elements[i]->pos[2] - ipos_[2];
         mju_rotVecQuat(vert, box, qinv);
       }
 
@@ -344,6 +363,11 @@ int mjCBoundingVolumeHierarchy::MakeBVH(std::vector<mjCBoundingVolume>& elements
       AAMM[4] = mjMAX(AAMM[4], vert[1]);
       AAMM[5] = mjMAX(AAMM[5], vert[2]);
     }
+  }
+
+  // a body with only visual geoms does not have a bvh
+  if (is_visual) {
+    return nbvh;
   }
 
   // inflate flat AABBs
@@ -358,7 +382,7 @@ int mjCBoundingVolumeHierarchy::MakeBVH(std::vector<mjCBoundingVolume>& elements
   int index = nbvh++;
   child.push_back(-1);
   child.push_back(-1);
-  nodeid.push_back(-1);
+  nodeid.push_back(nullptr);
   level.push_back(lev);
 
   // store bounding box of the current node
@@ -374,7 +398,7 @@ int mjCBoundingVolumeHierarchy::MakeBVH(std::vector<mjCBoundingVolume>& elements
     for (int i=0; i<2; i++) {
       child[2*index+i] = -1;
     }
-    nodeid[index] = elements[0].id;
+    nodeid[index] = (int*)elements[0]->GetId();
     return index;
   }
 
@@ -388,9 +412,9 @@ int mjCBoundingVolumeHierarchy::MakeBVH(std::vector<mjCBoundingVolume>& elements
 
   for (int i=0; i<nelements; i++) {
     // get position in the body inertial frame
-    mjtNum vert[3] = {elements[i].pos[0] - ipos_[0],
-                      elements[i].pos[1] - ipos_[1],
-                      elements[i].pos[2] - ipos_[2]};
+    mjtNum vert[3] = {elements[i]->pos[0] - ipos_[0],
+                      elements[i]->pos[1] - ipos_[1],
+                      elements[i]->pos[2] - ipos_[2]};
     mjtNum lpos[3];
     mju_rotVecQuat(lpos, vert, qinv);
     pos[i] = lpos[axis];
@@ -401,20 +425,20 @@ int mjCBoundingVolumeHierarchy::MakeBVH(std::vector<mjCBoundingVolume>& elements
   mjtNum threshold = pos[m];
 
   // split using median
-  std::vector<mjCBoundingVolume> left;
-  std::vector<mjCBoundingVolume> right;
+  std::vector<const mjCBoundingVolume*> left;
+  std::vector<const mjCBoundingVolume*> right;
   int skipped = 0;
 
   for (int i=0; i<nelements; i++) {
     // get position in the body inertial frame
-    mjtNum vert[3] = {elements[i].pos[0] - ipos_[0],
-                      elements[i].pos[1] - ipos_[1],
-                      elements[i].pos[2] - ipos_[2]};
+    mjtNum vert[3] = {elements[i]->pos[0] - ipos_[0],
+                      elements[i]->pos[1] - ipos_[1],
+                      elements[i]->pos[2] - ipos_[2]};
     mjtNum lpos[3];
     mju_rotVecQuat(lpos, vert, qinv);
 
     // skip visual objects
-    if (elements[i].conaffinity==0 && elements[i].contype==0) {
+    if (elements[i]->conaffinity==0 && elements[i]->contype==0) {
       skipped++;
       continue;
     }
@@ -473,7 +497,7 @@ void mjCDef::Compile(const mjCModel* model) {
   // enforce length of all default userdata arrays
   joint.userdata.resize(model->nuser_jnt);
   geom.userdata.resize(model->nuser_geom);
-  site.userdata.resize(model->nuser_site);
+  site.userdata_.resize(model->nuser_site);
   camera.userdata.resize(model->nuser_cam);
   tendon.userdata.resize(model->nuser_tendon);
   actuator.userdata.resize(model->nuser_actuator);
@@ -488,7 +512,7 @@ mjCBase::mjCBase() {
   name.clear();
   classname.clear();
   id = -1;
-  xmlpos[0] = xmlpos[1] = -1;
+  info = "";
   model = 0;
   def = 0;
   frame = nullptr;
@@ -1008,8 +1032,9 @@ void mjCBody::Compile(void) {
   // compute bounding volume hierarchy
   if (!geoms.empty()) {
     tree.Set(ipos, iquat);
+    tree.AllocateBoundingVolumes(geoms.size());
     for (int i=0; i<geoms.size(); i++) {
-      tree.AddBoundingVolume(geoms[i]->GetBoundingVolume());
+      geoms[i]->SetBoundingVolume(tree.GetBoundingVolume(i));
     }
     tree.CreateBVH();
   }
@@ -1071,6 +1096,18 @@ void mjCBody::Compile(void) {
     const mjpPlugin* plugin = mjp_getPluginAtSlot(plugin_instance->plugin_slot);
     if (!(plugin->capabilityflags & mjPLUGIN_PASSIVE)) {
       throw mjCError(this, "plugin '%s' does not support passive forces", plugin->name);
+    }
+  }
+
+  if (!model->discardvisual) {
+    return;
+  }
+
+  // set inertial to explicit for bodies containing visual geoms
+  for (int j=0; j<geoms.size(); j++) {
+    if (geoms[j]->IsVisual()) {
+      explicitinertial = true;
+      break;
     }
   }
 }
@@ -1317,9 +1354,9 @@ mjCGeom::mjCGeom(mjCModel* _model, mjCDef* _def) {
     fluid[i] = 0;
   }
   density = 1000;             // water density (1000 kg / m^3)
-  mesh.clear();
+  meshname.clear();
   fitscale = 1;
-  material.clear();
+  material_.clear();
   rgba[0] = rgba[1] = rgba[2] = 0.5f;
   rgba[3] = 1.0f;
   userdata.clear();
@@ -1333,8 +1370,9 @@ mjCGeom::mjCGeom(mjCModel* _model, mjCDef* _def) {
   mjuu_setvec(inertia, 0, 0, 0);
   body = 0;
   matid = -1;
-  meshid = -1;
-  hfieldid = -1;
+  mesh = nullptr;
+  hfield = nullptr;
+  visual_ = false;
 
   // reset to default if given
   if (_def) {
@@ -1360,12 +1398,11 @@ double mjCGeom::GetVolume(void) {
 
   // get from mesh
   if (type==mjGEOM_MESH || type==mjGEOM_SDF) {
-    if (meshid<0 || meshid>=(int)model->meshes.size()) {
-      throw mjCError(this, "invalid meshid in mesh geom '%s' (id = %d)", name.c_str(), id);
+    if (mesh->id<0 || !((std::size_t) mesh->id <= model->meshes.size())) {
+      throw mjCError(this, "invalid mesh id in mesh geom '%s' (id = %d)", name.c_str(), id);
     }
 
-    mjCMesh* pmesh = model->meshes[meshid];
-    return pmesh->GetVolumeRef(typeinertia);
+    return mesh->GetVolumeRef(typeinertia);
   }
 
   // compute from geom shape
@@ -1397,15 +1434,13 @@ double mjCGeom::GetVolume(void) {
 
 
 
-mjCBoundingVolume mjCGeom::GetBoundingVolume() const {
-  mjCBoundingVolume bv;
-  bv.id = id;
-  bv.contype = contype;
-  bv.conaffinity = conaffinity;
-  bv.aabb = aabb;
-  bv.pos = pos;
-  bv.quat = quat;
-  return bv;
+void mjCGeom::SetBoundingVolume(mjCBoundingVolume* bv) const {
+  bv->SetId(&id);
+  bv->contype = contype;
+  bv->conaffinity = conaffinity;
+  bv->aabb = aabb;
+  bv->pos = pos;
+  bv->quat = quat;
 }
 
 
@@ -1416,12 +1451,11 @@ void mjCGeom::SetInertia(void) {
 
   // get from mesh
   if (type==mjGEOM_MESH || type==mjGEOM_SDF) {
-    if (meshid<0 || meshid>=(int)model->meshes.size()) {
-      throw mjCError(this, "invalid meshid in mesh geom '%s' (id = %d)", name.c_str(), id);
+    if (mesh->id<0 || !((std::size_t) mesh->id <= model->meshes.size())) {
+      throw mjCError(this, "invalid mesh id in mesh geom '%s' (id = %d)", name.c_str(), id);
     }
 
-    mjCMesh* pmesh = model->meshes[meshid];
-    double* boxsz = pmesh->GetInertiaBoxPtr(typeinertia);
+    double* boxsz = mesh->GetInertiaBoxPtr(typeinertia);
     inertia[0] = mass*(boxsz[1]*boxsz[1] + boxsz[2]*boxsz[2]) / 3;
     inertia[1] = mass*(boxsz[0]*boxsz[0] + boxsz[2]*boxsz[2]) / 3;
     inertia[2] = mass*(boxsz[0]*boxsz[0] + boxsz[1]*boxsz[1]) / 3;
@@ -1488,7 +1522,7 @@ double mjCGeom::GetRBound(void) {
 
   switch (type) {
   case mjGEOM_HFIELD:
-    hsize = model->hfields[hfieldid]->size;
+    hsize = hfield->size;
     return sqrt(hsize[0]*hsize[0] + hsize[1]*hsize[1] +
                 mjMAX(hsize[2]*hsize[2], hsize[3]*hsize[3]));
 
@@ -1509,7 +1543,7 @@ double mjCGeom::GetRBound(void) {
 
   case mjGEOM_MESH:
   case mjGEOM_SDF:
-    aamm = model->meshes[meshid]->aamm();
+    aamm = mesh->aamm();
     haabb[0] = mju_max(fabs(aamm[0]), fabs(aamm[3]));
     haabb[1] = mju_max(fabs(aamm[1]), fabs(aamm[4]));
     haabb[2] = mju_max(fabs(aamm[2]), fabs(aamm[5]));
@@ -1638,12 +1672,12 @@ void mjCGeom::ComputeAABB(void) {
   double aamm[6]; // axis-aligned bounding box in (min, max) format
   switch (type) {
   case mjGEOM_HFIELD:
-    aamm[0] = -model->hfields[hfieldid]->size[0];
-    aamm[1] = -model->hfields[hfieldid]->size[1];
-    aamm[2] = -model->hfields[hfieldid]->size[3];
-    aamm[3] = model->hfields[hfieldid]->size[0];
-    aamm[4] = model->hfields[hfieldid]->size[1];
-    aamm[5] = model->hfields[hfieldid]->size[2];
+    aamm[0] = -hfield->size[0];
+    aamm[1] = -hfield->size[1];
+    aamm[2] = -hfield->size[3];
+    aamm[3] = hfield->size[0];
+    aamm[4] = hfield->size[1];
+    aamm[5] = hfield->size[2];
     break;
 
   case mjGEOM_SPHERE:
@@ -1665,7 +1699,7 @@ void mjCGeom::ComputeAABB(void) {
 
   case mjGEOM_MESH:
   case mjGEOM_SDF:
-    mjuu_copyvec(aamm, model->meshes[meshid]->aamm(), 6);
+    mjuu_copyvec(aamm, mesh->aamm(), 6);
     break;
 
   case mjGEOM_PLANE:
@@ -1711,12 +1745,12 @@ void mjCGeom::Compile(void) {
   }
 
   // check mesh
-  if ((type==mjGEOM_MESH || type==mjGEOM_SDF) && meshid<0) {
+  if ((type==mjGEOM_MESH || type==mjGEOM_SDF) && !mesh) {
     throw mjCError(this, "mesh geom '%s' (id = %d) must have valid meshid", name.c_str(), id);
   }
 
   // check hfield
-  if ((type==mjGEOM_HFIELD && hfieldid<0) || (type!=mjGEOM_HFIELD && hfieldid>=0)) {
+  if ((type==mjGEOM_HFIELD && !hfield) || (type!=mjGEOM_HFIELD && hfield)) {
     throw mjCError(this, "hfield geom '%s' (id = %d) must have valid hfieldid", name.c_str(), id);
   }
 
@@ -1725,6 +1759,9 @@ void mjCGeom::Compile(void) {
     throw mjCError(this, "plane only allowed in static bodies: geom '%s' (id = %d)",
                    name.c_str(), id);
   }
+
+  // check if can collide
+  visual_ = !contype && !conaffinity;
 
   // normalize quaternion
   mjuu_normvec(quat, 4);
@@ -1783,25 +1820,25 @@ void mjCGeom::Compile(void) {
   }
 
   // mesh: accumulate frame, fit geom if needed
-  if (meshid!=-1) {
+  if (mesh) {
     // check for inapplicable fromto
     if (mjuu_defined(fromto[0])) {
       throw mjCError(this, "fromto cannot be used with mesh geom '%s' (id = %d)", name.c_str(), id);
     }
 
-    // get associated mesh
-    mjCMesh* pmesh = model->meshes[meshid];
+    // save reference in case this is not an mjGEOM_MESH
+    mjCMesh* pmesh = mesh;
 
     // fit geom if type is not mjGEOM_MESH
     double meshpos[3];
     if (type!=mjGEOM_MESH && type!=mjGEOM_SDF) {
-      pmesh->FitGeom(this, meshpos);
+      mesh->FitGeom(this, meshpos);
 
       // remove reference to mesh
-      mesh.clear();
-      meshid = -1;
+      meshname.clear();
+      mesh = nullptr;
     } else {
-      mjuu_copyvec(meshpos, pmesh->GetPosPtr(typeinertia), 3);
+      mjuu_copyvec(meshpos, mesh->GetPosPtr(typeinertia), 3);
     }
 
     // apply geom pos/quat as offset
@@ -1815,12 +1852,12 @@ void mjCGeom::Compile(void) {
 
   // set hfield sizes in geom.size
   if (type==mjGEOM_HFIELD) {
-    size[0] = model->hfields[hfieldid]->size[0];
-    size[1] = model->hfields[hfieldid]->size[1];
-    size[2] = 0.5*(0.5*model->hfields[hfieldid]->size[2] +
-                   model->hfields[hfieldid]->size[3]);
+    size[0] = hfield->size[0];
+    size[1] = hfield->size[1];
+    size[2] = 0.5*(0.5*hfield->size[2] +
+                   hfield->size[3]);
   } else if (type==mjGEOM_MESH || type==mjGEOM_SDF) {
-    const double* aamm = model->meshes[meshid]->aamm();
+    const double* aamm = mesh->aamm();
     size[0] = mju_max(fabs(aamm[0]), fabs(aamm[3]));
     size[1] = mju_max(fabs(aamm[1]), fabs(aamm[4]));
     size[2] = mju_max(fabs(aamm[2]), fabs(aamm[5]));
@@ -1889,24 +1926,27 @@ void mjCGeom::Compile(void) {
 // initialize default site
 mjCSite::mjCSite(mjCModel* _model, mjCDef* _def) {
   // set defaults
-  type = mjGEOM_SPHERE;
-  mjuu_setvec(size, 0.005, 0.005, 0.005);
-  group = 0;
-  mjuu_setvec(quat, 1, 0, 0, 0);
-  mjuu_setvec(pos, 0, 0, 0);
-  material.clear();
-  rgba[0] = rgba[1] = rgba[2] = 0.5f;
-  rgba[3] = 1.0f;
-  fromto[0] = mjNAN;
-  userdata.clear();
+  spec.type = mjGEOM_SPHERE;
+  mjuu_setvec(spec.size, 0.005, 0.005, 0.005);
+  spec.group = 0;
+  mjuu_setvec(spec.quat, 1, 0, 0, 0);
+  mjuu_setvec(spec.pos, 0, 0, 0);
+  spec.material = nullptr;
+  spec.rgba[0] = spec.rgba[1] = spec.rgba[2] = 0.5f;
+  spec.rgba[3] = 1.0f;
+  spec.fromto[0] = mjNAN;
+  spec.userdata = nullptr;
 
   // clear internal variables
-  material.clear();
   body = 0;
   matid = -1;
 
+  // initialize private attributes
+  CopyFromSpec();
+
   // reset to default if given
   if (_def) {
+    _def->site.CopyFromSpec();
     *this = _def->site;
   }
 
@@ -1917,14 +1957,26 @@ mjCSite::mjCSite(mjCModel* _model, mjCDef* _def) {
 
 
 
+void mjCSite::CopyFromSpec() {
+  *static_cast<mjmSite*>(this) = spec;
+  userdata_ = spec_userdata_;
+  material_ = spec_material_;
+  userdata = userdata_.data();
+  material = material_.data();
+}
+
+
+
 // compiler
 void mjCSite::Compile(void) {
+  CopyFromSpec();
+
   // resize userdata
-  if (userdata.size() > model->nuser_site) {
+  if (userdata_.size() > model->nuser_site) {
     throw mjCError(this, "user has more values than nuser_site in site '%s' (id = %d)",
                    name.c_str(), id);
   }
-  userdata.resize(model->nuser_site);
+  userdata_.resize(model->nuser_site);
 
   // check type
   if (type<0 || type>=mjNGEOMTYPES) {
@@ -2198,6 +2250,7 @@ mjCHField::mjCHField(mjCModel* _model) {
   nrow = 0;
   ncol = 0;
   data = 0;
+  userdata_.clear();
 }
 
 
@@ -2298,6 +2351,14 @@ void mjCHField::LoadPNG(mjResource* resource) {
   image.clear();
 }
 
+
+
+// user data setter
+void mjCHField::set_userdata(std::optional<std::vector<float>>&& userdata) {
+  if (userdata.has_value()) {
+    userdata_ = std::move(userdata.value());
+  }
+}
 
 
 // compiler
@@ -3134,7 +3195,9 @@ mjCPair::mjCPair(mjCModel* _model, mjCDef* _def) {
   friction[4] = 0.0001;
 
   // clear internal variables
-  geom1 = geom2 = signature = -1;
+  geom1 = nullptr;
+  geom2 = nullptr;
+  signature = -1;
 
   // reset to default if given
   if (_def) {
@@ -3156,46 +3219,48 @@ void mjCPair::Compile(void) {
   }
 
   // find geom 1
-  mjCGeom* pg1 = (mjCGeom*)model->FindObject(mjOBJ_GEOM, geomname1);
-  if (!pg1) {
+  geom1 = (mjCGeom*)model->FindObject(mjOBJ_GEOM, geomname1);
+  if (!geom1) {
     throw mjCError(this, "geom '%s' not found in collision %d", geomname1.c_str(), id);
   }
 
   // find geom 2
-  mjCGeom* pg2 = (mjCGeom*)model->FindObject(mjOBJ_GEOM, geomname2);
-  if (!pg2) {
+  geom2 = (mjCGeom*)model->FindObject(mjOBJ_GEOM, geomname2);
+  if (!geom2) {
     throw mjCError(this, "geom '%s' not found in collision %d", geomname2.c_str(), id);
   }
 
+  // mark geoms as not visual
+  geom1->SetNotVisual();
+  geom2->SetNotVisual();
+
   // swap if body1 > body2
-  if (pg1->body->id > pg2->body->id) {
+  if (geom1->body->id > geom2->body->id) {
     string nametmp = geomname1;
     geomname1 = geomname2;
     geomname2 = nametmp;
 
-    mjCGeom* geomtmp = pg1;
-    pg1 = pg2;
-    pg2 = geomtmp;
+    mjCGeom* geomtmp = geom1;
+    geom1 = geom2;
+    geom2 = geomtmp;
   }
 
   // get geom ids and body signature
-  geom1 = pg1->id;
-  geom2 = pg2->id;
-  signature = ((pg1->body->id)<<16) + pg2->body->id;
+  signature = ((geom1->body->id)<<16) + geom2->body->id;
 
   // set undefined margin: max
   if (!mjuu_defined(margin)) {
-    margin = mjMAX(pg1->margin, pg2->margin);
+    margin = mjMAX(geom1->margin, geom2->margin);
   }
 
   // set undefined gap: max
   if (!mjuu_defined(gap)) {
-    gap = mjMAX(pg1->gap, pg2->gap);
+    gap = mjMAX(geom1->gap, geom2->gap);
   }
 
   // set undefined condim, friction, solref, solimp: different priority
-  if (pg1->priority!=pg2->priority) {
-    mjCGeom* pgh = (pg1->priority>pg2->priority ? pg1 : pg2);
+  if (geom1->priority!=geom2->priority) {
+    mjCGeom* pgh = (geom1->priority>geom2->priority ? geom1 : geom2);
 
     // condim
     if (condim<0) {
@@ -3228,23 +3293,23 @@ void mjCPair::Compile(void) {
   else {
     // condim: max
     if (condim<0) {
-      condim = mjMAX(pg1->condim, pg2->condim);
+      condim = mjMAX(geom1->condim, geom2->condim);
     }
 
     // friction: max
     if (!mjuu_defined(friction[0])) {
-      friction[0] = friction[1] = mju_max(pg1->friction[0], pg2->friction[0]);
-      friction[2] =               mju_max(pg1->friction[1], pg2->friction[1]);
-      friction[3] = friction[4] = mju_max(pg1->friction[2], pg2->friction[2]);
+      friction[0] = friction[1] = mju_max(geom1->friction[0], geom2->friction[0]);
+      friction[2] =               mju_max(geom1->friction[1], geom2->friction[1]);
+      friction[3] = friction[4] = mju_max(geom1->friction[2], geom2->friction[2]);
     }
 
     // solver mix factor
     double mix;
-    if (pg1->solmix>=mjMINVAL && pg2->solmix>=mjMINVAL) {
-      mix = pg1->solmix / (pg1->solmix + pg2->solmix);
-    } else if (pg1->solmix<mjMINVAL && pg2->solmix<mjMINVAL) {
+    if (geom1->solmix>=mjMINVAL && geom2->solmix>=mjMINVAL) {
+      mix = geom1->solmix / (geom1->solmix + geom2->solmix);
+    } else if (geom1->solmix<mjMINVAL && geom2->solmix<mjMINVAL) {
       mix = 0.5;
-    } else if (pg1->solmix<mjMINVAL) {
+    } else if (geom1->solmix<mjMINVAL) {
       mix = 0.0;
     } else {
       mix = 1.0;
@@ -3255,14 +3320,14 @@ void mjCPair::Compile(void) {
       // standard: mix
       if (solref[0]>0) {
         for (int i=0; i<mjNREF; i++) {
-          solref[i] = mix*pg1->solref[i] + (1-mix)*pg2->solref[i];
+          solref[i] = mix*geom1->solref[i] + (1-mix)*geom2->solref[i];
         }
       }
 
       // direct: min
       else {
         for (int i=0; i<mjNREF; i++) {
-          solref[i] = mju_min(pg1->solref[i], pg2->solref[i]);
+          solref[i] = mju_min(geom1->solref[i], geom2->solref[i]);
         }
       }
     }
@@ -3270,7 +3335,7 @@ void mjCPair::Compile(void) {
     // impedance
     if (!mjuu_defined(solimp[0])) {
       for (int i=0; i<mjNIMP; i++) {
-        solimp[i] = mix*pg1->solimp[i] + (1-mix)*pg2->solimp[i];
+        solimp[i] = mix*geom1->solimp[i] + (1-mix)*geom2->solimp[i];
       }
     }
   }
@@ -3438,7 +3503,7 @@ void mjCEquality::Compile(void) {
 mjCTendon::mjCTendon(mjCModel* _model, mjCDef* _def) {
   // tendon defaults
   group = 0;
-  material.clear();
+  material_.clear();
   width = 0.003;
   limited = 2;
   range[0] = 0;
@@ -3483,11 +3548,10 @@ mjCTendon::~mjCTendon() {
 
 
 // add site as wrap object
-void mjCTendon::WrapSite(string name, int row, int col) {
+void mjCTendon::WrapSite(string name, std::string_view info) {
   // create wrap object
   mjCWrap* wrap = new mjCWrap(model, this);
-  wrap->xmlpos[0] = row;
-  wrap->xmlpos[1] = col;
+  wrap->info = info;
 
   // set parameters, add to path
   wrap->type = mjWRAP_SITE;
@@ -3499,11 +3563,10 @@ void mjCTendon::WrapSite(string name, int row, int col) {
 
 
 // add geom (with side site) as wrap object
-void mjCTendon::WrapGeom(string name, string sidesite, int row, int col) {
+void mjCTendon::WrapGeom(string name, string sidesite, std::string_view info) {
   // create wrap object
   mjCWrap* wrap = new mjCWrap(model, this);
-  wrap->xmlpos[0] = row;
-  wrap->xmlpos[1] = col;
+  wrap->info = info;
 
   // set parameters, add to path
   wrap->type = mjWRAP_SPHERE;         // replace with cylinder later if needed
@@ -3516,11 +3579,10 @@ void mjCTendon::WrapGeom(string name, string sidesite, int row, int col) {
 
 
 // add joint as wrap object
-void mjCTendon::WrapJoint(string name, double coef, int row, int col) {
+void mjCTendon::WrapJoint(string name, double coef, std::string_view info) {
   // create wrap object
   mjCWrap* wrap = new mjCWrap(model, this);
-  wrap->xmlpos[0] = row;
-  wrap->xmlpos[1] = col;
+  wrap->info = info;
 
   // set parameters, add to path
   wrap->type = mjWRAP_JOINT;
@@ -3533,11 +3595,10 @@ void mjCTendon::WrapJoint(string name, double coef, int row, int col) {
 
 
 // add pulley
-void mjCTendon::WrapPulley(double divisor, int row, int col) {
+void mjCTendon::WrapPulley(double divisor, std::string_view info) {
   // create wrap object
   mjCWrap* wrap = new mjCWrap(model, this);
-  wrap->xmlpos[0] = row;
-  wrap->xmlpos[1] = col;
+  wrap->info = info;
 
   // set parameters, add to path
   wrap->type = mjWRAP_PULLEY;
@@ -3639,7 +3700,7 @@ void mjCTendon::Compile(void) {
         }
 
         // site cannot be repeated
-        if (i<sz-1 && path[i+1]->type==mjWRAP_SITE && path[i]->objid==path[i+1]->objid) {
+        if (i<sz-1 && path[i+1]->type==mjWRAP_SITE && path[i]->obj->id==path[i+1]->obj->id) {
           throw mjCError(this,
                          "tendon '%s' (id = %d): site %d is repeated",
                          name.c_str(), id, i);
@@ -3655,6 +3716,9 @@ void mjCTendon::Compile(void) {
                          "tendon '%s' (id = %d): geom at pos %d not bracketed by sites",
                          name.c_str(), id, i);
         }
+
+        // mark geoms as non visual
+        model->geoms[path[i]->obj->id]->SetNotVisual();
         break;
 
       case mjWRAP_JOINT:
@@ -3700,7 +3764,7 @@ mjCWrap::mjCWrap(mjCModel* _model, mjCTendon* _tendon) {
 
   // clear variables
   type = mjWRAP_NONE;
-  objid = -1;
+  obj = nullptr;
   sideid = -1;
   prm = 0;
   sidesite.clear();
@@ -3710,14 +3774,14 @@ mjCWrap::mjCWrap(mjCModel* _model, mjCTendon* _tendon) {
 
 // compiler
 void mjCWrap::Compile(void) {
-  mjCBase *ptr = 0, *pside;
+  mjCBase *pside;
 
   // handle wrap object types
   switch (type) {
   case mjWRAP_JOINT:                          // joint
     // find joint by name
-    ptr = model->FindObject(mjOBJ_JOINT, name);
-    if (!ptr) {
+    obj = model->FindObject(mjOBJ_JOINT, name);
+    if (!obj) {
       throw mjCError(this,
                      "joint '%s' not found in tendon %d, wrap %d",
                      name.c_str(), tendon->id, id);
@@ -3727,17 +3791,17 @@ void mjCWrap::Compile(void) {
 
   case mjWRAP_SPHERE:                         // geom (cylinder type set here)
     // find geom by name
-    ptr = model->FindObject(mjOBJ_GEOM, name);
-    if (!ptr) {
+    obj = model->FindObject(mjOBJ_GEOM, name);
+    if (!obj) {
       throw mjCError(this,
                      "geom '%s' not found in tendon %d, wrap %d",
                      name.c_str(), tendon->id, id);
     }
 
     // set/check geom type
-    if (((mjCGeom*)ptr)->type == mjGEOM_CYLINDER) {
+    if (((mjCGeom*)obj)->type == mjGEOM_CYLINDER) {
       type = mjWRAP_CYLINDER;
-    } else if (((mjCGeom*)ptr)->type != mjGEOM_SPHERE) {
+    } else if (((mjCGeom*)obj)->type != mjGEOM_SPHERE) {
       throw mjCError(this,
                      "geom '%s' in tendon %d, wrap %d is not sphere or cylinder",
                      name.c_str(), tendon->id, id);
@@ -3770,19 +3834,14 @@ void mjCWrap::Compile(void) {
 
   case mjWRAP_SITE:                           // site
     // find site by name
-    ptr = model->FindObject(mjOBJ_SITE, name);
-    if (!ptr) {
+    obj = model->FindObject(mjOBJ_SITE, name);
+    if (!obj) {
       throw mjCError(this, "site '%s' not found in wrap %d", name.c_str(), id);
     }
     break;
 
   default:                                    // SHOULD NOT OCCUR
     throw mjCError(this, "unknown wrap type in tendon %d, wrap %d", 0, tendon->id, id);
-  }
-
-  // set object id
-  if (ptr) {
-    objid = ptr->id;
   }
 }
 
@@ -4055,7 +4114,7 @@ mjCSensor::mjCSensor(mjCModel* _model) {
   dim = 0;
 
   // clear private variables
-  objid = -1;
+  obj = nullptr;
   refid = -1;
 
   plugin_instance = nullptr;
@@ -4067,8 +4126,6 @@ mjCSensor::mjCSensor(mjCModel* _model) {
 
 // compiler
 void mjCSensor::Compile(void) {
-  const mjCBase* pobj;
-
   // resize userdata
   if (userdata.size() > model->nuser_sensor) {
     throw mjCError(this, "user has more values than nuser_sensor in sensor '%s' (id = %d)",
@@ -4096,15 +4153,19 @@ void mjCSensor::Compile(void) {
     }
 
     // find name
-    pobj = model->FindObject(objtype, objname);
-    if (!pobj) {
+    obj = model->FindObject(objtype, objname);
+    if (!obj) {
       throw mjCError(this,
                      "unrecognized name of sensorized object in sensor '%s' (id = %d)",
                      name.c_str(), id);
     }
 
+    // if geom mark it as non visual
+    if (objtype == mjOBJ_GEOM) {
+      ((mjCGeom*)obj)->SetNotVisual();
+    }
+
     // get sensorized object id
-    objid = pobj->id;
   } else if (type != mjSENS_CLOCK && type != mjSENS_PLUGIN && type != mjSENS_USER) {
     throw mjCError(this, "invalid type in sensor '%s' (id = %d)", name.c_str(), id);
   }
@@ -4197,7 +4258,7 @@ void mjCSensor::Compile(void) {
     }
 
     // make sure joint is slide or hinge
-    if (((mjCJoint*)pobj)->type!=mjJNT_SLIDE && ((mjCJoint*)pobj)->type!=mjJNT_HINGE) {
+    if (((mjCJoint*)obj)->type!=mjJNT_SLIDE && ((mjCJoint*)obj)->type!=mjJNT_HINGE) {
       throw mjCError(this,
                      "joint must be slide or hinge in sensor '%s' (id = %d)", name.c_str(), id);
     }
@@ -4262,7 +4323,7 @@ void mjCSensor::Compile(void) {
     }
 
     // make sure joint is ball
-    if (((mjCJoint*)pobj)->type!=mjJNT_BALL) {
+    if (((mjCJoint*)obj)->type!=mjJNT_BALL) {
       throw mjCError(this,
                      "joint must be ball in sensor '%s' (id = %d)", name.c_str(), id);
     }
@@ -4289,7 +4350,7 @@ void mjCSensor::Compile(void) {
     }
 
     // make sure joint has limit
-    if (!((mjCJoint*)pobj)->limited) {
+    if (!((mjCJoint*)obj)->limited) {
       throw mjCError(this, "joint must be limited in sensor '%s' (id = %d)", name.c_str(), id);
     }
 
@@ -4315,7 +4376,7 @@ void mjCSensor::Compile(void) {
     }
 
     // make sure tendon has limit
-    if (!((mjCTendon*)pobj)->limited) {
+    if (!((mjCTendon*)obj)->limited) {
       throw mjCError(this, "tendon must be limited in sensor '%s' (id = %d)", name.c_str(), id);
     }
 
@@ -4537,7 +4598,7 @@ mjCTuple::mjCTuple(mjCModel* _model) {
   objtype.clear();
   objname.clear();
   objprm.clear();
-  objid.clear();
+  obj.clear();
 }
 
 
@@ -4547,7 +4608,7 @@ mjCTuple::~mjCTuple() {
   objtype.clear();
   objname.clear();
   objprm.clear();
-  objid.clear();
+  obj.clear();
 }
 
 
@@ -4566,7 +4627,7 @@ void mjCTuple::Compile(void) {
   }
 
   // resize objid to correct size
-  objid.resize(objtype.size());
+  obj.resize(objtype.size());
 
   // find objects, fill in ids
   for (int i=0; i<objtype.size(); i++) {
@@ -4576,8 +4637,13 @@ void mjCTuple::Compile(void) {
       throw mjCError(this, "unrecognized object '%s' in tuple %d", objname[i].c_str(), id);
     }
 
+    // if geom mark it as non visual
+    if (objtype[i] == mjOBJ_GEOM) {
+      ((mjCGeom*)res)->SetNotVisual();
+    }
+
     // assign id
-    objid[i] = res->id;
+    obj[i] = res;
   }
 }
 
@@ -4732,6 +4798,6 @@ void mjCPlugin::Compile(void) {
     std::string error =
         "unrecognized attribute 'plugin:" + config_attribs.begin()->first +
         "' for plugin " + std::string(plugin->name) + "'";
-    throw mjCError(parent, error.c_str());
+    throw mjCError(parent, "%s", error.c_str());
   }
 }

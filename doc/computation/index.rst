@@ -296,9 +296,9 @@ is attached; the possible attachment object types are :at:`joint`, :at:`tendon`,
 :at:`slider-crank`
    :at:`slider-crank` `transmissions <https://en.wikipedia.org/wiki/Slider-crank_linkage>`_ transform a linear force to
    a torque, as in a piston-driven combustion engine. `This model
-   <https://github.com/google-deepmind/mujoco/tree/main/model/slider_crank>`_ contains pedagogical examples.
-   Slider-cranks can also be modeled explicitly by creating MuJoCo bodies and coupling them with equality constraints to
-   the rest of the system, but that would be less efficient.
+   <https://github.com/google-deepmind/mujoco/blob/main/model/slider_crank/slider_crank.xml>`__ contains pedagogical
+   examples. Slider-cranks can also be modeled explicitly by creating MuJoCo bodies and coupling them with equality
+   constraints, but that is both less efficient and less stable.
 
 :at:`body`
    :el:`body` transmission corresponds to applying forces at contact points belonging to a body, in
@@ -966,6 +966,12 @@ is :math:`E f`. The matrix of basis vectors is constructed as follows.
 .. image:: ../images/computation/contact_frame.svg
    :width: 700px
    :align: center
+   :class: only-light
+
+.. image:: ../images/computation/contact_frame_dark.svg
+   :width: 700px
+   :align: center
+   :class: only-dark
 
 The figure illustrates the full basis set corresponding to the case :math:`n = 6`. Otherwise we use only the first
 :math:`n` or :math:`2(n-1)` columns depending on the cone type. Elliptic cones are easier to understand. Since the
@@ -1325,6 +1331,12 @@ representations of the constraint Jacobian and related matrices.
    .. image:: ../images/computation/gPGS.svg
       :width: 500px
       :align: center
+      :class: only-light
+
+   .. image:: ../images/computation/gPGS_dark.svg
+      :width: 500px
+      :align: center
+      :class: only-dark
 
    When using pyramidal friction cones, the problem involves box constraints to which PGS has traditionally been
    applied. If we applied PGS directly to the conic constraints resulting from elliptic friction cones, it would get
@@ -1424,12 +1436,18 @@ approximations, no matter how accurate the approximation is. The figure below il
 where the pyramid is not even an approximation, but represents the same constraint set as the elliptic cone. We plot the
 contours of the penalty/shadow for the pyramidal (red) and elliptic (dashed blue) cones, for different friction
 coefficients varying from left to right. Mathematically, the penalty in the pyramidal case is a quadratic spline, while
-the penalty in the elliptic case contains pieces that are quadratics minus square roots of quadratics - allowing
+the penalty in the elliptic case contains pieces that are quadratics minus square roots of quadratics -- allowing
 circular contours around the tip of the cone.
 
 .. image:: ../images/computation/softcontact.png
    :width: 600px
    :align: center
+   :class: only-light
+
+.. image:: ../images/computation/softcontact_dark.png
+   :width: 600px
+   :align: center
+   :class: only-dark
 
 In summary, elliptic and pyramidal friction cones define different soft-contact dynamics (although they are usually very
 close). The elliptic model is more principled and more consistent with physical intuition, and the corresponding solvers
@@ -1517,12 +1535,12 @@ convex hull implicitly, however pre-computing that hull can substantially improv
 model compiler does that by default, using the `qhull <http://www.qhull.org/>`__ library.
 
 In order to model a non-convex object other than a height field, the user must decompose it into a union of convex geoms
-(which can be primitive shapes or meshes) and attach them to the same body. Tools such as the
-`HACD <https://github.com/kmammou/v-hacd>`__ library can be used outside MuJoCo to automate this process. Finally, all
-built-in collision functions can be replaced with custom callbacks. This can be used to incorporate a general-purpose
-"triangle soup" collision detector for example. However we do not recommend such an approach. Pre-processing the
-geometry and representing it as a union of convex geoms takes some work, but it pays off at runtime and yields both
-faster and more stable simulation.
+(which can be primitive shapes or meshes) and attach them to the same body. Open tools like the `CoACD library
+<https://github.com/SarahWeiii/CoACD>`__ can be used outside MuJoCo to automate this process. Finally, all built-in
+collision functions can be replaced with custom callbacks. This can be used to incorporate a general-purpose "triangle
+soup" collision detector for example. However we do not recommend such an approach. Pre-processing the geometry and
+representing it as a union of convex geoms takes some work, but it pays off at runtime and yields both faster and more
+stable simulation.
 
 .. _Pipeline:
 

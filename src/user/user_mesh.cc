@@ -166,6 +166,7 @@ mjCMesh::mjCMesh(mjCModel* _model, mjCDef* _def) {
   valideigenvalue_ = true;
   validinequality_ = true;
   processed_ = false;
+  visual_ = true;
 
   // reset to default if given
   if (_def) {
@@ -462,6 +463,12 @@ void mjCMesh::Compile(const mjVFS* vfs) {
       throw mjCError(this, "texcoord must be a multiple of 2");
     }
 
+    // check size if no face texcoord indices are given
+    if (usertexcoord_.size() != 2*nvert_ && userfacetexcoord_.empty()) {
+      throw mjCError(this,
+          "texcoord must be 2*nv if face texcoord indices are not provided in an OBJ file");
+    }
+
     // copy from user
     ntexcoord_ = (int)usertexcoord_.size()/2;
     texcoord_ = VecToArray(usertexcoord_, !file_.empty());
@@ -569,6 +576,12 @@ void mjCMesh::Compile(const mjVFS* vfs) {
     facetexcoord_ = VecToArray(userfacetexcoord_, !file_.empty());
   }
 
+  // no facetexcoord: copy from faces
+  if (!facetexcoord_ && texcoord_) {
+    facetexcoord_ = (int*) mju_malloc(3*nface_*sizeof(int));
+    memcpy(facetexcoord_, face_, 3*nface_*sizeof(int));
+  }
+
   // facenormal might not exist if usernormal was specified
   if (!facenormal_) {
     facenormal_ = (int*) mju_malloc(3*nface_*sizeof(int));
@@ -587,8 +600,9 @@ void mjCMesh::Compile(const mjVFS* vfs) {
   // make bounding volume hierarchy
   if (tree_.bvh.empty()) {
     face_aabb_.assign(6*nface_, 0);
+    tree_.AllocateBoundingVolumes(nface_);
     for (int i=0; i<nface_; i++) {
-      tree_.AddBoundingVolume(GetBoundingVolume(i));
+      SetBoundingVolume(i);
     }
     tree_.CreateBVH();
   }
@@ -597,13 +611,13 @@ void mjCMesh::Compile(const mjVFS* vfs) {
 
 
 // get bounding volume
-mjCBoundingVolume mjCMesh::GetBoundingVolume(int faceid) {
-  mjCBoundingVolume node;
-  node.id = faceid;
-  node.conaffinity = 1;
-  node.contype = 1;
-  node.pos = center_ + 3*faceid;
-  node.quat = NULL;
+void mjCMesh::SetBoundingVolume(int faceid) {
+  mjCBoundingVolume* node = tree_.GetBoundingVolume(faceid);
+  node->SetId(faceid);
+  node->conaffinity = 1;
+  node->contype = 1;
+  node->pos = center_ + 3*faceid;
+  node->quat = NULL;
   mjtNum face_aamm[6] = {1E+10, 1E+10, 1E+10, -1E+10, -1E+10, -1E+10};
   for (int j=0; j<3; j++) {
     int vertid = face_[3*faceid+j];
@@ -620,8 +634,7 @@ mjCBoundingVolume mjCMesh::GetBoundingVolume(int faceid) {
   face_aabb_[6*faceid+3] = .5 * (face_aamm[3] - face_aamm[0]);
   face_aabb_[6*faceid+4] = .5 * (face_aamm[4] - face_aamm[1]);
   face_aabb_[6*faceid+5] = .5 * (face_aamm[5] - face_aamm[2]);
-  node.aabb = face_aabb_.data() + 6*faceid;
-  return node;
+  node->aabb = face_aabb_.data() + 6*faceid;
 }
 
 
@@ -704,6 +717,13 @@ void mjCMesh::CopyTexcoord(float* arr) const {
 
 void mjCMesh::CopyGraph(int* arr) const {
   std::copy(graph_, graph_+szgraph_, arr);
+}
+
+
+
+void mjCMesh::DelTexcoord() {
+  if (texcoord_) mju_free(texcoord_);
+  ntexcoord_ = 0;
 }
 
 
@@ -1486,6 +1506,10 @@ void mjCMesh::MakeGraph(void) {
     throw mjCError(this, "could not allocate data for qhull");
   }
   for (int i=0; i<3*nvert_; i++) {
+    if (!std::isfinite(vert_[i])) {
+      mju_free(data);
+      throw mjCError(this, "vertex coordinate %d is not finite", NULL, i);
+    }
     data[i] = (double)vert_[i];
   }
 
@@ -1854,7 +1878,7 @@ mjCSkin::mjCSkin(mjCModel* _model) {
 
   // clear data
   file.clear();
-  material.clear();
+  material_.clear();
   rgba[0] = rgba[1] = rgba[2] = 0.5f;
   rgba[3] = 1.0f;
   inflate = 0;
@@ -1879,7 +1903,7 @@ mjCSkin::mjCSkin(mjCModel* _model) {
 // destructor
 mjCSkin::~mjCSkin() {
   file.clear();
-  material.clear();
+  material_.clear();
   vert.clear();
   texcoord.clear();
   face.clear();
@@ -1981,11 +2005,11 @@ void mjCSkin::Compile(const mjVFS* vfs) {
   }
 
   // resolve material name
-  mjCBase* pmat = model->FindObject(mjOBJ_MATERIAL, material);
+  mjCBase* pmat = model->FindObject(mjOBJ_MATERIAL, material_);
   if (pmat) {
     matid = pmat->id;
-  } else if (!material.empty()) {
-      throw mjCError(this, "unkown material '%s' in skin", material.c_str());
+  } else if (!material_.empty()) {
+      throw mjCError(this, "unkown material '%s' in skin", material_.c_str());
   }
 
   // set total vertex weights to 0
@@ -2215,7 +2239,7 @@ mjCFlex::mjCFlex(mjCModel* _model) {
   group = 0;
   edgestiffness = 0;
   edgedamping = 0;
-  material.clear();
+  material_.clear();
   rgba[0] = rgba[1] = rgba[2] = 0.5f;
   rgba[3] = 1.0f;
 
@@ -2228,6 +2252,15 @@ mjCFlex::mjCFlex(mjCModel* _model) {
   centered = false;
 }
 
+
+bool mjCFlex::HasTexcoord() const {
+  return !texcoord.empty();
+}
+
+
+void mjCFlex::DelTexcoord() {
+  texcoord.clear();
+}
 
 
 // compiler
@@ -2281,11 +2314,11 @@ void mjCFlex::Compile(const mjVFS* vfs) {
   }
 
   // resolve material name
-  mjCBase* pmat = model->FindObject(mjOBJ_MATERIAL, material);
+  mjCBase* pmat = model->FindObject(mjOBJ_MATERIAL, material_);
   if (pmat) {
     matid = pmat->id;
-  } else if (!material.empty()) {
-      throw mjCError(this, "unkown material '%s' in flex", material.c_str());
+  } else if (!material_.empty()) {
+      throw mjCError(this, "unkown material '%s' in flex", material_.c_str());
   }
 
   // resolve body ids
@@ -2428,14 +2461,11 @@ void mjCFlex::Compile(const mjVFS* vfs) {
 
 // create flex BVH
 void mjCFlex::CreateBVH(void) {
-  // init bounding volume object
-  mjCBoundingVolume bv;
-  bv.contype = contype;
-  bv.conaffinity = conaffinity;
-  bv.quat = NULL;
+  int nbvh = 0;
 
   // allocate element bounding boxes
-  vector<mjtNum> elemaabb(6*nelem);
+  elemaabb.resize(6*nelem);
+  tree.AllocateBoundingVolumes(nelem);
 
   // construct element bounding boxes, add to hierarchy
   for (int e=0; e<nelem; e++) {
@@ -2466,13 +2496,17 @@ void mjCFlex::CreateBVH(void) {
     elemaabb[6*e+5] = 0.5*(xmax[2]-xmin[2]) + radius;
 
     // add bounding volume for this element
-    bv.id = e;
-    bv.aabb = elemaabb.data() + 6*e;
-    bv.pos = bv.aabb;
-    tree.AddBoundingVolume(bv);
+    mjCBoundingVolume* bv = tree.GetBoundingVolume(nbvh++);
+    bv->contype = contype;
+    bv->conaffinity = conaffinity;
+    bv->quat = NULL;
+    bv->SetId(e);
+    bv->aabb = elemaabb.data() + 6*e;
+    bv->pos = bv->aabb;
   }
 
   // create hierarchy
+  tree.RemoveInactiveVolumes(nbvh);
   tree.CreateBVH();
 }
 

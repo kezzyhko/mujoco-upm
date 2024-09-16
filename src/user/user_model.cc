@@ -17,6 +17,7 @@
 #include <algorithm>
 #include <csetjmp>
 #include <cstddef>
+#include <cstdint>
 #include <cstdlib>
 #include <cstring>
 #include <map>
@@ -27,6 +28,7 @@
 #include <mujoco/mjdata.h>
 #include <mujoco/mjmacro.h>
 #include <mujoco/mjmodel.h>
+#include <mujoco/mjtnum.h>
 #include <mujoco/mjplugin.h>
 #include <mujoco/mjvisualize.h>
 #include "cc/array_safety.h"
@@ -647,40 +649,170 @@ void mjCModel::MakeLists(mjCBody* body) {
 }
 
 
+// delete material with given name or all materials if the name is omitted
+template <class T>
+void mjCModel::DeleteMaterial(std::vector<T*>& list, std::string_view name) {
+  for (T* plist : list) {
+    if (name.empty() || plist->material_ == name) {
+      plist->material_.clear();
+    }
+  }
+}
+
+
+
+// delete texture with given name or all textures if the name is omitted
+template <class T>
+static void DeleteTexture(std::vector<T*>& list, std::string_view name = "") {
+  for (T* plist : list) {
+    if (name.empty() || plist->texture == name) {
+      plist->texture.clear();
+    }
+  }
+}
+
+
+// delete all texture coordinates
+template <class T>
+static void DeleteTexcoord(std::vector<T*>& list) {
+  for (T* plist : list) {
+    if (plist->HasTexcoord()) {
+      plist->DelTexcoord();
+    }
+  }
+}
+
+
+// returns a vector that stores the reference correction for each entry
+template <class T>
+static void DeleteElements(std::vector<T*>& elements,
+                                       const std::vector<bool>& discard) {
+  if (elements.empty()) {
+    return;
+  }
+
+  std::vector<int> ndiscard(elements.size(), 0);
+
+  int i = 0;
+  for (int j=0; j<elements.size(); j++) {
+    if (discard[j]) {
+      delete elements[j];
+    } else {
+      elements[i] = elements[j];
+      i++;
+    }
+  }
+
+  // count cumulative discarded elements
+  for (int i=0; i<elements.size()-1; i++) {
+    ndiscard[i+1] = ndiscard[i] + discard[i];
+  }
+
+  // erase elements from vector
+  if (i < elements.size()) {
+    elements.erase(elements.begin() + i, elements.end());
+  }
+
+  // update elements
+  for (T* element : elements) {
+    if (element->id > 0) {
+      element->id -= ndiscard[element->id];
+    }
+  }
+}
+
+
+template <>
+void mjCModel::Delete<mjCGeom>(std::vector<mjCGeom*>& elements,
+                               const std::vector<bool>& discard) {
+  // update bodies
+  for (mjCBody* body : bodies) {
+    body->geoms.erase(
+        std::remove_if(body->geoms.begin(), body->geoms.end(),
+                       [&discard](mjCGeom* geom) { return discard[geom->id]; }),
+        body->geoms.end());
+  }
+
+  // remove geoms from the main vector
+  DeleteElements(elements, discard);
+}
+
+
+template <>
+void mjCModel::Delete<mjCMesh>(std::vector<mjCMesh*>& elements,
+                               const std::vector<bool>& discard) {
+  DeleteElements(elements, discard);
+}
+
+
+template <>
+void mjCModel::DeleteAll<mjCMaterial>(std::vector<mjCMaterial*>& elements) {
+  DeleteMaterial(geoms);
+  DeleteMaterial(skins);
+  DeleteMaterial(sites);
+  DeleteMaterial(tendons);
+  for (mjCMaterial* element : elements) {
+    delete element;
+  }
+  elements.clear();
+}
+
+
+template <>
+void mjCModel::DeleteAll<mjCTexture>(std::vector<mjCTexture*>& elements) {
+  DeleteTexture(materials);
+  for (mjCTexture* element : elements) {
+    delete element;
+  }
+  elements.clear();
+}
+
 
 // index assets
-void mjCModel::IndexAssets(void) {
+void mjCModel::IndexAssets(bool discard) {
   // assets referenced in geoms
   for (int i=0; i<geoms.size(); i++) {
     mjCGeom* pgeom = geoms[i];
 
     // find material by name
-    if (!pgeom->material.empty()) {
-      mjCBase* m = FindObject(mjOBJ_MATERIAL, pgeom->material);
+    if (!pgeom->material_.empty()) {
+      mjCBase* m = FindObject(mjOBJ_MATERIAL, pgeom->material_);
       if (m) {
         pgeom->matid = m->id;
       } else {
-        throw mjCError(pgeom, "material '%s' not found in geom %d", pgeom->material.c_str(), i);
+        throw mjCError(pgeom, "material '%s' not found in geom %d", pgeom->material_.c_str(), i);
       }
     }
 
     // find mesh by name
-    if (!pgeom->mesh.empty()) {
-      mjCBase* m = FindObject(mjOBJ_MESH, pgeom->mesh);
+    if (!pgeom->meshname.empty()) {
+      mjCBase* m = FindObject(mjOBJ_MESH, pgeom->meshname);
       if (m) {
-        pgeom->meshid = m->id;
+        if (discard && geoms[i]->visual_) {
+          // do not associate with a mesh
+          pgeom->mesh = nullptr;
+        } else {
+          // associate mesh with geom
+          pgeom->mesh = (mjCMesh*)m;
+
+          // mark mesh as not visual
+          // this is irreversible so only performed when IndexAssets is called with discard
+          if (discard) {
+            pgeom->mesh->SetNotVisual();
+          }
+        }
       } else {
-        throw mjCError(pgeom, "mesh '%s' not found in geom %d", pgeom->mesh.c_str(), i);
+        throw mjCError(pgeom, "mesh '%s' not found in geom %d", pgeom->meshname.c_str(), i);
       }
     }
 
     // find hfield by name
-    if (!pgeom->hfield.empty()) {
-      mjCBase* m = FindObject(mjOBJ_HFIELD, pgeom->hfield);
+    if (!pgeom->hfieldname.empty()) {
+      mjCBase* m = FindObject(mjOBJ_HFIELD, pgeom->hfieldname);
       if (m) {
-        pgeom->hfieldid = m->id;
+        pgeom->hfield = (mjCHField*)m;
       } else {
-        throw mjCError(pgeom, "hfield '%s' not found in geom %d", pgeom->hfield.c_str(), i);
+        throw mjCError(pgeom, "hfield '%s' not found in geom %d", pgeom->hfieldname.c_str(), i);
       }
     }
   }
@@ -690,12 +822,12 @@ void mjCModel::IndexAssets(void) {
     mjCSkin* pskin = skins[i];
 
     // find material by name
-    if (!pskin->material.empty()) {
-      mjCBase* m = FindObject(mjOBJ_MATERIAL, pskin->material);
+    if (!pskin->material_.empty()) {
+      mjCBase* m = FindObject(mjOBJ_MATERIAL, pskin->material_);
       if (m) {
         pskin->matid = m->id;
       } else {
-        throw mjCError(pskin, "material '%s' not found in skin %d", pskin->material.c_str(), i);
+        throw mjCError(pskin, "material '%s' not found in skin %d", pskin->material_.c_str(), i);
       }
     }
   }
@@ -705,12 +837,12 @@ void mjCModel::IndexAssets(void) {
     mjCSite* psite = sites[i];
 
     // find material by name
-    if (!psite->material.empty()) {
-      mjCBase* m = FindObject(mjOBJ_MATERIAL, psite->material);
+    if (!psite->material_.empty()) {
+      mjCBase* m = FindObject(mjOBJ_MATERIAL, psite->get_material());
       if (m) {
         psite->matid = m->id;
       } else {
-        throw mjCError(psite, "material '%s' not found in site %d", psite->material.c_str(), i);
+        throw mjCError(psite, "material '%s' not found in site %d", psite->material_.c_str(), i);
       }
     }
   }
@@ -720,12 +852,12 @@ void mjCModel::IndexAssets(void) {
     mjCTendon* pten = tendons[i];
 
     // find material by name
-    if (!pten->material.empty()) {
-      mjCBase* m = FindObject(mjOBJ_MATERIAL, pten->material);
+    if (!pten->material_.empty()) {
+      mjCBase* m = FindObject(mjOBJ_MATERIAL, pten->material_);
       if (m) {
         pten->matid = m->id;
       } else {
-        throw mjCError(pten, "material '%s' not found in tendon %d", pten->material.c_str(), i);
+        throw mjCError(pten, "material '%s' not found in tendon %d", pten->material_.c_str(), i);
       }
     }
   }
@@ -743,6 +875,20 @@ void mjCModel::IndexAssets(void) {
         throw mjCError(pmat, "texture '%s' not found in material %d", pmat->texture.c_str(), i);
       }
     }
+  }
+
+  // discard visual meshes and geoms
+  if (discard) {
+    std::vector<bool> discard_mesh(meshes.size(), false);
+    std::vector<bool> discard_geom(geoms.size(), false);
+
+    std::transform(meshes.begin(), meshes.end(), discard_mesh.begin(),
+                  [](const mjCMesh* mesh) { return mesh->IsVisual(); });
+    std::transform(geoms.begin(), geoms.end(), discard_geom.begin(),
+                  [](const mjCGeom* geom) { return geom->IsVisual(); });
+
+    Delete(meshes, discard_mesh);
+    Delete(geoms, discard_geom);
   }
 }
 
@@ -1087,7 +1233,7 @@ void mjCModel::LengthRange(mjModel* m, mjData* data) {
     char err[200];
     for (int i=0; i<m->nu; i++) {
       if (!mj_setLengthRange(m, data, i, &LRopt, err, 200)) {
-        throw mjCError(0, err);
+        throw mjCError(0, "%s", err);
       }
     }
   }
@@ -1150,7 +1296,7 @@ void mjCModel::LengthRange(mjModel* m, mjData* data) {
     // report first error
     for (int i=0; i<nthread; i++) {
       if (err[i][0]) {
-        throw mjCError(0, err[i]);
+        throw mjCError(0, "%s", err[i]);
       }
     }
   }
@@ -1356,8 +1502,10 @@ void mjCModel::CopyTree(mjModel* m) {
     if (pb->tree.nbvh) {
       memcpy(m->bvh_aabb + 6*bvh_adr, pb->tree.bvh.data(), 6*pb->tree.nbvh*sizeof(mjtNum));
       memcpy(m->bvh_child + 2*bvh_adr, pb->tree.child.data(), 2*pb->tree.nbvh*sizeof(int));
-      memcpy(m->bvh_nodeid + bvh_adr, pb->tree.nodeid.data(), pb->tree.nbvh*sizeof(int));
       memcpy(m->bvh_depth + bvh_adr, pb->tree.level.data(), pb->tree.nbvh*sizeof(int));
+      for (int i=0; i<pb->tree.nbvh; i++) {
+        m->bvh_nodeid[i + bvh_adr] = pb->tree.nodeid[i] ? *(pb->tree.nodeid[i]) : -1;
+      }
     }
     bvh_adr += pb->tree.nbvh;
 
@@ -1513,10 +1661,10 @@ void mjCModel::CopyTree(mjModel* m) {
       m->geom_conaffinity[gid] = pg->conaffinity;
       m->geom_condim[gid] = pg->condim;
       m->geom_bodyid[gid] = pg->body->id;
-      if (pg->meshid>=0) {
-        m->geom_dataid[gid] = pg->meshid;
-      } else if (pg->hfieldid>=0) {
-        m->geom_dataid[gid] = pg->hfieldid;
+      if (pg->mesh) {
+        m->geom_dataid[gid] = pg->mesh->id;
+      } else if (pg->hfield) {
+        m->geom_dataid[gid] = pg->hfield->id;
       } else {
         m->geom_dataid[gid] = -1;
       }
@@ -1570,7 +1718,7 @@ void mjCModel::CopyTree(mjModel* m) {
       copyvec(m->site_size+3*sid, ps->size, 3);
       copyvec(m->site_pos+3*sid, ps->pos, 3);
       copyvec(m->site_quat+4*sid, ps->quat, 4);
-      copyvec(m->site_user+nuser_site*sid, ps->userdata.data(), nuser_site);
+      copyvec(m->site_user+nuser_site*sid, ps->userdata_.data(), nuser_site);
       copyvec(m->site_rgba+4*sid, ps->rgba, 4);
 
       // determine sameframe
@@ -1785,7 +1933,9 @@ void mjCModel::CopyObjects(mjModel* m) {
       memcpy(m->bvh_aabb + 6*bvh_adr, pme->tree().bvh.data(), 6*pme->tree().nbvh*sizeof(mjtNum));
       memcpy(m->bvh_child + 2*bvh_adr, pme->tree().child.data(), 2*pme->tree().nbvh*sizeof(int));
       memcpy(m->bvh_depth + bvh_adr, pme->tree().level.data(), pme->tree().nbvh*sizeof(int));
-      memcpy(m->bvh_nodeid + bvh_adr, pme->tree().nodeid.data(), pme->tree().nbvh*sizeof(int));
+      for (int j=0; j<pme->tree().nbvh; j++) {
+        m->bvh_nodeid[j + bvh_adr] = pme->tree().nodeid[j] ? *(pme->tree().nodeid[j]) : -1;
+      }
     }
 
     // advance counters
@@ -1880,7 +2030,9 @@ void mjCModel::CopyObjects(mjModel* m) {
     if (pfl->tree.nbvh) {
       memcpy(m->bvh_child + 2*bvh_adr, pfl->tree.child.data(), 2*pfl->tree.nbvh*sizeof(int));
       memcpy(m->bvh_depth + bvh_adr, pfl->tree.level.data(), pfl->tree.nbvh*sizeof(int));
-      memcpy(m->bvh_nodeid + bvh_adr, pfl->tree.nodeid.data(), pfl->tree.nbvh*sizeof(int));
+      for (int i=0; i<pfl->tree.nbvh; i++) {
+        m->bvh_nodeid[i+ bvh_adr] = pfl->tree.nodeid[i] ? *(pfl->tree.nodeid[i]) : -1;
+      }
     }
 
     // copy or set vert
@@ -2041,8 +2193,8 @@ void mjCModel::CopyObjects(mjModel* m) {
   // geom pairs to include
   for (int i=0; i<npair; i++) {
     m->pair_dim[i] = pairs[i]->condim;
-    m->pair_geom1[i] = pairs[i]->geom1;
-    m->pair_geom2[i] = pairs[i]->geom2;
+    m->pair_geom1[i] = pairs[i]->geom1->id;
+    m->pair_geom2[i] = pairs[i]->geom2->id;
     m->pair_signature[i] = pairs[i]->signature;
     copyvec(m->pair_solref+mjNREF*i, pairs[i]->solref, mjNREF);
     copyvec(m->pair_solreffriction+mjNREF*i, pairs[i]->solreffriction, mjNREF);
@@ -2103,7 +2255,7 @@ void mjCModel::CopyObjects(mjModel* m) {
     // set wraps
     for (int j=0; j<(int)pte->path.size(); j++) {
       m->wrap_type[adr+j] = pte->path[j]->type;
-      m->wrap_objid[adr+j] = pte->path[j]->objid;
+      m->wrap_objid[adr+j] = pte->path[j]->obj ? pte->path[j]->obj->id : -1;
       m->wrap_prm[adr+j] = (mjtNum)pte->path[j]->prm;
       if (pte->path[j]->type==mjWRAP_SPHERE || pte->path[j]->type==mjWRAP_CYLINDER) {
         m->wrap_prm[adr+j] = (mjtNum)pte->path[j]->sideid;
@@ -2158,7 +2310,7 @@ void mjCModel::CopyObjects(mjModel* m) {
     m->sensor_datatype[i] = psen->datatype;
     m->sensor_needstage[i] = psen->needstage;
     m->sensor_objtype[i] = psen->objtype;
-    m->sensor_objid[i] = psen->objid;
+    m->sensor_objid[i] = psen->obj ? psen->obj->id : -1;
     m->sensor_reftype[i] = psen->reftype;
     m->sensor_refid[i] = psen->refid;
     m->sensor_dim[i] = psen->dim;
@@ -2217,7 +2369,7 @@ void mjCModel::CopyObjects(mjModel* m) {
     m->tuple_size[i] = (int)ptu->objtype.size();
     for (int j=0; j<m->tuple_size[i]; j++) {
       m->tuple_objtype[adr+j] = (int)ptu->objtype[j];
-      m->tuple_objid[adr+j] = ptu->objid[j];
+      m->tuple_objid[adr+j] = ptu->obj[j]->id;
       m->tuple_objprm[adr+j] = (mjtNum)ptu->objprm[j];
     }
 
@@ -2564,7 +2716,7 @@ static void processlist(mjListKeyMap& ids, vector<T*>& list,
       auto adjacent = std::adjacent_find(allnames.begin(), allnames.end());
       if (adjacent != allnames.end()) {
         string msg = "repeated name '" + *adjacent + "' in " + mju_type2Str(type);
-        throw mjCError(NULL, msg.c_str());
+        throw mjCError(NULL, "%s", msg.c_str());
       }
     }
   }
@@ -2703,14 +2855,22 @@ void mjCModel::TryCompile(mjModel*& m, mjData*& d, const mjVFS* vfs) {
     }
   }
 
+  // delete visual assets
+  if (discardvisual) {
+    DeleteAll(materials);
+    DeleteTexcoord(flexes);
+    DeleteTexcoord(meshes);
+    DeleteAll(textures);
+  }
+
   // convert names into indices
-  IndexAssets();
+  IndexAssets(false);
 
   // mark meshes that need convex hull
   for (int i=0; i<geoms.size(); i++) {
-    if (geoms[i]->meshid>=0 && geoms[i]->type==mjGEOM_MESH &&
+    if (geoms[i]->mesh && geoms[i]->type==mjGEOM_MESH &&
         (geoms[i]->contype || geoms[i]->conaffinity)) {
-      meshes[geoms[i]->meshid]->set_needhull(true);
+      geoms[i]->mesh->set_needhull(true);
     }
   }
 
@@ -2741,7 +2901,7 @@ void mjCModel::TryCompile(mjModel*& m, mjData*& d, const mjVFS* vfs) {
   if (nuser_site == -1) {
     nuser_site = 0;
     for (int i=0; i<sites.size(); i++) {
-      nuser_site = mjMAX(nuser_site, sites[i]->userdata.size());
+      nuser_site = mjMAX(nuser_site, sites[i]->spec_userdata_.size());
     }
   }
   if (nuser_cam == -1) {
@@ -2803,7 +2963,7 @@ void mjCModel::TryCompile(mjModel*& m, mjData*& d, const mjVFS* vfs) {
   reassignid(excludes);
 
   // resolve asset references, compute sizes
-  IndexAssets();
+  IndexAssets(discardvisual);
   SetSizes();
   // fuse static if enabled
   if (fusestatic) {
@@ -3052,7 +3212,7 @@ void mjCModel::TryCompile(mjModel*& m, mjData*& d, const mjVFS* vfs) {
   if (validationerr) {  // SHOULD NOT OCCUR
     mj_deleteData(d);
     mj_deleteModel(m);
-    throw mjCError(0, validationerr);
+    throw mjCError(0, "%s", validationerr);
   }
 
   // delete partial mjData (no plugins), make a complete one
@@ -3217,9 +3377,26 @@ bool mjCModel::CopyBack(const mjModel* m) {
   mjCMesh* pm;
   for (int i=0; i<nmesh; i++) {
     pm = meshes[i];
-
     copyvec(pm->GetOffsetPosPtr(), m->mesh_pos+3*i, 3);
     copyvec(pm->GetOffsetQuatPtr(), m->mesh_quat+4*i, 4);
+  }
+
+  // heightfield
+  mjCHField* phf;
+  for (int i=0; i<nhfield; i++) {
+    phf = hfields[i];
+    int size = phf->userdata().size();
+    if (size) {
+      int nrow = m->hfield_nrow[i];
+      int ncol = m->hfield_ncol[i];
+      float* userdata = phf->userdata().data();
+      float* modeldata = m->hfield_data + m->hfield_adr[i];
+      // copy back in reverse row order
+      for (int j=0; j<nrow; j++) {
+        int flip = nrow-1-j;
+        copyvec(userdata + flip*ncol, modeldata+j*ncol, ncol);
+      }
+    }
   }
 
   // sites
@@ -3230,7 +3407,7 @@ bool mjCModel::CopyBack(const mjModel* m) {
     copyvec(sites[i]->rgba, m->site_rgba+4*i, 4);
 
     if (nuser_site) {
-      copyvec(sites[i]->userdata.data(), m->site_user + nuser_site*i, nuser_site);
+      copyvec(sites[i]->userdata_.data(), m->site_user + nuser_site*i, nuser_site);
     }
   }
 

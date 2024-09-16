@@ -90,8 +90,8 @@ void mjXWriter::OneFlex(XMLElement* elem, mjCFlex* pflex) {
   // common attributes
   WriteAttrTxt(elem, "name", pflex->name);
   WriteAttr(elem, "radius", 1, &pflex->radius, &defflex.radius);
-  if (pflex->material != defflex.material) {
-    WriteAttrTxt(elem, "material", pflex->material);
+  if (pflex->get_material() != defflex.get_material()) {
+    WriteAttrTxt(elem, "material", pflex->get_material());
   }
   WriteAttr(elem, "rgba", 4, pflex->rgba, defflex.rgba);
   WriteAttrKey(elem, "flatskin", bool_map, 2, pflex->flatskin, defflex.flatskin);
@@ -204,7 +204,7 @@ void mjXWriter::OneSkin(XMLElement* elem, mjCSkin* pskin) {
   // write attributes
   WriteAttrTxt(elem, "name", pskin->name);
   WriteAttrTxt(elem, "file", pskin->file);
-  WriteAttrTxt(elem, "material", pskin->material);
+  WriteAttrTxt(elem, "material", pskin->get_material());
   WriteAttrInt(elem, "group", pskin->group, 0);
   WriteAttr(elem, "rgba", 4, pskin->rgba, mydef.geom.rgba);
   WriteAttr(elem, "inflate", 1, &pskin->inflate, &zero);
@@ -347,7 +347,7 @@ void mjXWriter::OneGeom(XMLElement* elem, mjCGeom* pgeom, mjCDef* def) {
 
     // mesh geom
     if (pgeom->type==mjGEOM_MESH || pgeom->type==mjGEOM_SDF) {
-      mjCMesh* pmesh = model->meshes[pgeom->meshid];
+      mjCMesh* pmesh = pgeom->mesh;
 
       // write pos/quat if there is a difference
       if (!SameVector(pgeom->pos, pmesh->GetPosPtr(pgeom->typeinertia), 3) ||
@@ -396,17 +396,17 @@ void mjXWriter::OneGeom(XMLElement* elem, mjCGeom* pgeom, mjCDef* def) {
   } else {
     WriteAttr(elem, "density", 1, &pgeom->density, &def->geom.density);
   }
-  if (pgeom->material != def->geom.material) {
-    WriteAttrTxt(elem, "material", pgeom->material);
+  if (pgeom->get_material() != def->geom.get_material()) {
+    WriteAttrTxt(elem, "material", pgeom->get_material());
   }
   WriteAttr(elem, "rgba", 4, pgeom->rgba, def->geom.rgba);
 
   // hfield and mesh attributes
   if (pgeom->type==mjGEOM_HFIELD) {
-    WriteAttrTxt(elem, "hfield", pgeom->hfield);
+    WriteAttrTxt(elem, "hfield", pgeom->hfieldname);
   }
   if (pgeom->type==mjGEOM_MESH || pgeom->type==mjGEOM_SDF) {
-    WriteAttrTxt(elem, "mesh", pgeom->mesh);
+    WriteAttrTxt(elem, "mesh", pgeom->meshname);
   }
 
   // userdata
@@ -444,16 +444,16 @@ void mjXWriter::OneSite(XMLElement* elem, mjCSite* psite, mjCDef* def) {
   // defaults and regular
   WriteAttrInt(elem, "group", psite->group, def->site.group);
   WriteAttrKey(elem, "type", geom_map, mjNGEOMTYPES, psite->type, def->site.type);
-  if (psite->material != def->site.material) {
-    WriteAttrTxt(elem, "material", psite->material);
+  if (psite->get_material() != def->site.get_material()) {
+    WriteAttrTxt(elem, "material", psite->get_material());
   }
   WriteAttr(elem, "rgba", 4, psite->rgba, def->site.rgba);
 
   // userdata
   if (writingdefaults) {
-    WriteVector(elem, "user", psite->userdata);
+    WriteVector(elem, "user", psite->get_userdata());
   } else {
-    WriteVector(elem, "user", psite->userdata, def->site.userdata);
+    WriteVector(elem, "user", psite->get_userdata(), def->site.get_userdata());
   }
 }
 
@@ -636,8 +636,8 @@ void mjXWriter::OneTendon(XMLElement* elem, mjCTendon* pten, mjCDef* def) {
   }
   // spatial only
   if (!fixed) {
-    if (pten->material!=def->tendon.material) {
-      WriteAttrTxt(elem, "material", pten->material);
+    if (pten->get_material()!=def->tendon.get_material()) {
+      WriteAttrTxt(elem, "material", pten->get_material());
     }
     WriteAttr(elem, "width", 1, &pten->width, &def->tendon.width);
     WriteAttr(elem, "rgba", 4, pten->rgba, def->tendon.rgba);
@@ -1030,6 +1030,7 @@ void mjXWriter::Visual(XMLElement* root) {
   WriteAttrInt(elem, "offwidth",       vis->global.offwidth,    visdef.global.offwidth);
   WriteAttrInt(elem, "offheight",      vis->global.offheight,   visdef.global.offheight);
   WriteAttrKey(elem, "ellipsoidinertia", bool_map, 2, vis->global.ellipsoidinertia, visdef.global.ellipsoidinertia);
+  WriteAttrKey(elem, "bvactive", bool_map, 2, vis->global.bvactive, visdef.global.bvactive);
   if (!elem->FirstAttribute()) {
     section->DeleteChild(elem);
   }
@@ -1122,6 +1123,8 @@ void mjXWriter::Visual(XMLElement* root) {
   WriteAttr(elem, "slidercrank",      4, vis->rgba.slidercrank,      visdef.rgba.slidercrank);
   WriteAttr(elem, "crankbroken",      4, vis->rgba.crankbroken,      visdef.rgba.crankbroken);
   WriteAttr(elem, "frustum",          4, vis->rgba.frustum,          visdef.rgba.frustum);
+  WriteAttr(elem, "bv",               4, vis->rgba.bv,               visdef.rgba.bv);
+  WriteAttr(elem, "bvactive",         4, vis->rgba.bvactive,         visdef.rgba.bvactive);
   if (!elem->FirstAttribute()) {
     section->DeleteChild(elem);
   }
@@ -1446,6 +1449,11 @@ void mjXWriter::Asset(XMLElement* root) {
     } else {
       WriteAttrInt(elem, "nrow", phf->nrow);
       WriteAttrInt(elem, "ncol", phf->ncol);
+      if (!phf->userdata().empty()) {
+        string text;
+        Vector2String(text, phf->userdata(), phf->ncol);
+        WriteAttrTxt(elem, "elevation", text);
+      }
     }
   }
 }
@@ -1648,34 +1656,27 @@ void mjXWriter::Tendon(XMLElement* root) {
     OneTendon(elem, pten, pten->def);
 
     // write wraps
-    mjCBase* pobj;
     XMLElement* wrap;
     for (int j=0; j<pten->NumWraps(); j++) {
       mjCWrap* pw = pten->GetWrap(j);
       switch (pw->type) {
       case mjWRAP_JOINT:
-        if ((pobj = model->GetObject(mjOBJ_JOINT, pw->objid))) {
-          wrap = InsertEnd(elem, "joint");
-          WriteAttrTxt(wrap, "joint", pobj->name);
-          WriteAttr(wrap, "coef", 1, &pw->prm);
-        }
+        wrap = InsertEnd(elem, "joint");
+        WriteAttrTxt(wrap, "joint", pw->obj->name);
+        WriteAttr(wrap, "coef", 1, &pw->prm);
         break;
 
       case mjWRAP_SITE:
-        if ((pobj = model->GetObject(mjOBJ_SITE, pw->objid))) {
-          wrap = InsertEnd(elem, "site");
-          WriteAttrTxt(wrap, "site", pobj->name);
-        }
+        wrap = InsertEnd(elem, "site");
+        WriteAttrTxt(wrap, "site", pw->obj->name);
         break;
 
       case mjWRAP_SPHERE:
       case mjWRAP_CYLINDER:
-        if ((pobj = model->GetObject(mjOBJ_GEOM, pw->objid))) {
-          wrap = InsertEnd(elem, "geom");
-          WriteAttrTxt(wrap, "geom", pobj->name);
-          if (!pw->sidesite.empty()) {
-            WriteAttrTxt(wrap, "sidesite", pw->sidesite);
-          }
+        wrap = InsertEnd(elem, "geom");
+        WriteAttrTxt(wrap, "geom", pw->obj->name);
+        if (!pw->sidesite.empty()) {
+          WriteAttrTxt(wrap, "sidesite", pw->sidesite);
         }
         break;
 
