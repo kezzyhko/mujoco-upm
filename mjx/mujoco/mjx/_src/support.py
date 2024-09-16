@@ -19,6 +19,7 @@ from typing import Optional, Tuple, Union
 import jax
 from jax import numpy as jp
 import mujoco
+from mujoco.mjx._src import math
 from mujoco.mjx._src import scan
 # pylint: disable=g-importing-member
 from mujoco.mjx._src.types import Data
@@ -186,3 +187,25 @@ def xfrc_accumulate(m: Model, d: Data) -> jax.Array:
       jp.arange(m.nbody),
   )
   return jp.sum(qfrc, axis=0)
+
+
+def local_to_global(
+    world_pos: jax.Array,
+    world_quat: jax.Array,
+    local_pos: jax.Array,
+    local_quat: jax.Array,
+) -> Tuple[jax.Array, jax.Array]:
+  """Converts local position/orientation to world frame."""
+  pos = world_pos + math.rotate(local_pos, world_quat)
+  mat = math.quat_to_mat(math.quat_mul(world_quat, local_quat))
+  return pos, mat
+
+
+def get_custom_numeric(m: Union[Model, mujoco.MjModel], name: str) -> float:
+  """Returns a custom numeric given an MjModel or mjx.Model."""
+  for i in range(m.nnumeric):
+    name_ = m.names[m.name_numericadr[i] :].decode('utf-8').split('\x00', 1)[0]
+    if name_ == name:
+      return m.numeric_data[m.numeric_adr[i]]
+
+  return -1

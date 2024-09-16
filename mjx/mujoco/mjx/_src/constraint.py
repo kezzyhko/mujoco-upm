@@ -297,7 +297,7 @@ def _instantiate_contact(m: Model, d: Data) -> Optional[_Efc]:
     for diff_tan, friction in zip(diff_con[1:], c.friction[:2]):
       for f in (friction, -friction):
         js.append(diff_con[0] + diff_tan * f)
-        invweights.append((t + f * f * t) * 2 * f * f)
+        invweights.append((t + f * f * t) * 2 * f * f / m.opt.impratio)
 
     active = dist < 0
     j, invweight = jp.stack(js) * active, jp.stack(invweights)
@@ -315,7 +315,7 @@ def _instantiate_contact(m: Model, d: Data) -> Optional[_Efc]:
 
 
 def count_constraints(
-    m: Union[Model, mujoco.MjModel]
+    m: Union[Model, mujoco.MjModel], d: Optional[Data] = None
 ) -> Tuple[int, int, int, int]:
   """Returns equality, friction, limit, and contact constraint counts."""
   if m.opt.disableflags & DisableBit.CONSTRAINT:
@@ -336,7 +336,10 @@ def count_constraints(
   else:
     nl = int(m.jnt_limited.sum())
 
-  nc = collision_driver.ncon(m) * 4
+  if d is None:
+    nc = collision_driver.ncon(m) * 4
+  else:
+    nc = d.efc_J.shape[-2] - ne - nf - nl
 
   return ne, nf, nl, nc
 

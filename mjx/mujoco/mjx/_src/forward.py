@@ -65,6 +65,7 @@ def fwd_position(m: Model, d: Data) -> Data:
   # TODO(robotics-simulation): tendon
   d = smooth.kinematics(m, d)
   d = smooth.com_pos(m, d)
+  d = smooth.camlight(m, d)
   d = smooth.crb(m, d)
   d = smooth.factor_m(m, d)
   d = collision_driver.collision(m, d)
@@ -287,8 +288,10 @@ def euler(m: Model, d: Data) -> Data:
   # integrate damping implicitly
   qacc = d.qacc
   if not m.opt.disableflags & DisableBit.EULERDAMP:
-    # TODO(robotics-simulation): can this be done with a smaller perf hit
-    dh = d.replace(qM=d.qM.at[m.dof_Madr].add(m.opt.timestep * m.dof_damping))
+    if support.is_sparse(m):
+      dh = d.replace(qM=d.qM.at[m.dof_Madr].add(m.opt.timestep * m.dof_damping))
+    else:
+      dh = d.replace(qM=d.qM + jp.diag(m.opt.timestep * m.dof_damping))
     dh = smooth.factor_m(m, dh)
     qfrc = d.qfrc_smooth + d.qfrc_constraint
     qacc = smooth.solve_m(m, dh, qfrc)

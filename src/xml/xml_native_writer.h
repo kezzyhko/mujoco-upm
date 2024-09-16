@@ -18,6 +18,8 @@
 #include <cstdlib>
 #include <string>
 
+#include "user/user_api.h"
+#include "user/user_objects.h"
 #include "xml/xml_base.h"
 #include "tinyxml2.h"
 
@@ -25,6 +27,7 @@ class mjXWriter : public mjXBase {
  public:
   mjXWriter();                                        // constructor
   virtual ~mjXWriter() = default;                     // destructor
+  void SetModel(mjmModel* modelspec);
 
   // write XML document to string
   std::string Write(char *error, std::size_t error_sz);
@@ -32,6 +35,9 @@ class mjXWriter : public mjXBase {
  private:
   // insert end child with given name, return child
   tinyxml2::XMLElement* InsertEnd(tinyxml2::XMLElement* parent, const char* name);
+
+  // compiled model
+  mjCModel* model = 0;
 
   // XML section writers
   void Compiler(tinyxml2::XMLElement* root);                    // compiler section
@@ -66,7 +72,7 @@ class mjXWriter : public mjXBase {
   void OneEquality(tinyxml2::XMLElement* elem,  mjCEquality* pequality, mjCDef* def);
   void OneTendon(tinyxml2::XMLElement* elem,    mjCTendon* ptendon,     mjCDef* def);
   void OneActuator(tinyxml2::XMLElement* elem,  mjCActuator* pactuator, mjCDef* def);
-  void OnePlugin(tinyxml2::XMLElement* elem,    mjCBase* object);
+  void OnePlugin(tinyxml2::XMLElement* elem,    mjmPlugin* plugin);
 
   bool writingdefaults;                       // true during defaults write
 };

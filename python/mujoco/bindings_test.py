@@ -529,6 +529,7 @@ class MuJoCoBindingsTest(parameterized.TestCase):
     expected_ncon = 4
     mujoco.mj_forward(self.model, self.data)
     self.assertLen(self.data.contact, expected_ncon)
+    np.testing.assert_array_equal(self.data.contact.geom, [[0, 1]] * 4)
 
     expected_pos = []
     for contact in self.data.contact:
@@ -550,6 +551,13 @@ class MuJoCoBindingsTest(parameterized.TestCase):
       contact.H = expected_H[-1]
     self.assertLen(expected_H, expected_ncon)
     np.testing.assert_array_equal(self.data.contact.H, expected_H)
+
+    expected_geom = []
+    for i, contact in enumerate(self.data.contact):
+      expected_geom.append([i, i + 1])
+      contact.geom = expected_geom[-1]
+    self.assertLen(expected_geom, expected_ncon)
+    np.testing.assert_array_equal(self.data.contact.geom, expected_geom)
 
   def test_realloc_con_efc(self):
     self.assertEmpty(self.data.contact)
@@ -735,6 +743,16 @@ class MuJoCoBindingsTest(parameterized.TestCase):
 
     # Expect next states to be equal.
     np.testing.assert_array_equal(state1a, state1b)
+
+  def test_mj_angmomMat(self):  # pylint: disable=invalid-name
+    self.data.qvel = np.ones(self.model.nv, np.float64)
+    mujoco.mj_forward(self.model, self.data)
+    mujoco.mj_subtreeVel(self.model, self.data)
+
+    mat = np.empty((3, 10), np.float64)
+    mujoco.mj_angmomMat(self.model, self.data, mat, 0)
+    np.testing.assert_almost_equal(mat @ self.data.qvel,
+                                   self.data.subtree_angmom[0, :])
 
   def test_mj_jacSite(self):  # pylint: disable=invalid-name
     mujoco.mj_forward(self.model, self.data)
@@ -1197,10 +1215,16 @@ Euler integrator, semi-implicit in velocity.
 
   def test_mjd_sub_quat(self):
     quat1 = np.array((0.2, 0.3, 0.3, 0.4))
-    quat2 = np.array((0.2, 0.3, 0.3, 0.4))
+    quat2 = np.array((0.1, 0.2, 0.4, 0.5))
     d1 = np.empty(9, np.float64)
     d2 = np.empty(9, np.float64)
     mujoco.mjd_subQuat(quat1, quat2, d1, d2)
+    d3 = np.empty((3, 3), np.float64)
+    d4 = np.empty((3, 3), np.float64)
+    mujoco.mjd_subQuat(quat1, quat2, None, d3)
+    mujoco.mjd_subQuat(quat1, quat2, d4, None)
+    np.testing.assert_array_equal(d2, d3.flatten())
+    np.testing.assert_array_equal(d1, d4.flatten())
 
   def test_mjd_quat_intergrate(self):
     scale = 0.1

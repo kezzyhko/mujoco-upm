@@ -173,7 +173,7 @@ def _manifold_points(
   bp = b - poly
   dist_bp = jp.abs(bp.dot(bc)) + dist_mask
   dist_ap = jp.abs(ap.dot(ac)) + dist_mask
-  d_idx = jp.concatenate([dist_bp, dist_ap]).argmax() % poly.shape[0]
+  d_idx = (dist_bp + dist_ap).argmax() % poly.shape[0]
   return jp.array([a_idx, b_idx, c_idx, d_idx])
 
 
@@ -514,12 +514,13 @@ def plane_convex(plane: GeomInfo, convex: GeomInfo) -> Contact:
   frame = jp.stack([math.make_frame(n)] * 4, axis=0)
   unique = jp.tril(idx == idx[:, None]).sum(axis=1) == 1
   dist = jp.where(unique, -support[idx], 1)
+  pos = pos - 0.5 * dist[:, None] * n
   return dist, pos, frame
 
 
 def sphere_convex(sphere: GeomInfo, convex: GeomInfo) -> Contact:
   """Calculates contact between a sphere and a convex object."""
-  faces = jp.take(convex.vert, convex.face, axis=0)
+  faces = convex.face
   normals = convex.facenorm
 
   # Put sphere in convex frame.
@@ -582,7 +583,7 @@ def sphere_convex(sphere: GeomInfo, convex: GeomInfo) -> Contact:
 def capsule_convex(cap: GeomInfo, convex: GeomInfo) -> Contact:
   """Calculates contacts between a capsule and a convex object."""
   # Get convex transformed normals, faces, and vertices.
-  faces = jp.take(convex.vert, convex.face, axis=0)
+  faces = convex.face
   normals = convex.facenorm
 
   # Put capsule in convex frame.
@@ -668,12 +669,13 @@ def convex_convex(c1: GeomInfo, c2: GeomInfo) -> Contact:
   if c1.face is None or c2.face is None or c1.vert is None or c2.vert is None:
     raise AssertionError('Mesh info missing.')
   # pad face vertices so that we can broadcast between geom1 and geom2
-  s1, s2 = c1.face.shape[-1], c2.face.shape[-1]
-  if s1 < s2:
-    face = jp.pad(c1.face, ((0, 0), (0, s2 - s1)), 'edge')
+  # face has shape (n_face, n_vert, 3)
+  nvert1, nvert2 = c1.face.shape[1], c2.face.shape[1]
+  if nvert1 < nvert2:
+    face = jp.pad(c1.face, ((0, 0), (0, nvert2 - nvert1), (0, 0)), 'edge')
     c1 = c1.replace(face=face)
-  elif s2 < s1:
-    face = jp.pad(c2.face, ((0, 0), (0, s1 - s2)), 'edge')
+  elif nvert2 < nvert1:
+    face = jp.pad(c2.face, ((0, 0), (0, nvert1 - nvert2), (0, 0)), 'edge')
     c2 = c2.replace(face=face)
 
   # ensure that the first object has fewer verts
@@ -681,8 +683,8 @@ def convex_convex(c1: GeomInfo, c2: GeomInfo) -> Contact:
   if swapped:
     c1, c2 = c2, c1
 
-  faces1 = jp.take(c1.vert, c1.face, axis=0)
-  faces2 = jp.take(c2.vert, c2.face, axis=0)
+  faces1 = c1.face
+  faces2 = c2.face
 
   to_local_pos = c2.mat.T @ (c1.pos - c2.pos)
   to_local_mat = c2.mat.T @ c1.mat

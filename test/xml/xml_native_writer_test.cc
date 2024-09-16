@@ -14,7 +14,6 @@
 
 // Tests for xml/xml_native_writer.cc.
 
-#include <type_traits>
 #if defined(__unix__) || (defined(__APPLE__) && defined(__MACH__))
 #include <unistd.h>
 #endif
@@ -31,7 +30,6 @@
 #include <absl/strings/match.h>
 #include <mujoco/mjmodel.h>
 #include <mujoco/mjtnum.h>
-#include <mujoco/mjxmacro.h>
 #include <mujoco/mujoco.h>
 #include "src/cc/array_safety.h"
 #include "src/xml/xml_numeric_format.h"
@@ -290,7 +288,7 @@ TEST_F(XMLWriterTest, DoesNotKeepInferredJointLimited) {
   mj_deleteModel(model);
 }
 
-TEST_F(XMLWriterTest, DoesNotKeepExplicitJointLimitedIfAutoLimits) {
+TEST_F(XMLWriterTest, KeepsExplicitJointLimited) {
   static constexpr char xml[] = R"(
   <mujoco>
     <compiler angle="radian" autolimits="true" />
@@ -307,7 +305,7 @@ TEST_F(XMLWriterTest, DoesNotKeepExplicitJointLimitedIfAutoLimits) {
   std::string saved_xml = SaveAndReadXml(model);
   EXPECT_THAT(saved_xml, Not(HasSubstr("autolimits=\"true\"")));
   EXPECT_THAT(saved_xml, HasSubstr("range=\"-1 1\""));
-  EXPECT_THAT(saved_xml, Not(HasSubstr("limited=\"true\"")));
+  EXPECT_THAT(saved_xml, HasSubstr("limited=\"true\""));
   mj_deleteModel(model);
 }
 
@@ -359,7 +357,7 @@ TEST_F(XMLWriterTest, DoesNotKeepInferredTendonLimited) {
   mj_deleteModel(model);
 }
 
-TEST_F(XMLWriterTest, DoesNotKeepExplicitTendonLimitedIfAutoLimits) {
+TEST_F(XMLWriterTest, KeepsExplicitTendonLimitedIfAutoLimits) {
   static constexpr char xml[] = R"(
   <mujoco>
     <compiler angle="radian" autolimits="true" />
@@ -384,7 +382,7 @@ TEST_F(XMLWriterTest, DoesNotKeepExplicitTendonLimitedIfAutoLimits) {
   std::string saved_xml = SaveAndReadXml(model);
   EXPECT_THAT(saved_xml, Not(HasSubstr("autolimits=\"true\"")));
   EXPECT_THAT(saved_xml, HasSubstr("range=\"-1 1\""));
-  EXPECT_THAT(saved_xml, Not(HasSubstr("limited=\"true\"")));
+  EXPECT_THAT(saved_xml, HasSubstr("limited=\"true\""));
   mj_deleteModel(model);
 }
 
@@ -439,7 +437,7 @@ TEST_F(XMLWriterTest, DoesNotKeepInferredActlimited) {
   mj_deleteModel(model);
 }
 
-TEST_F(XMLWriterTest, DoesNotKeepExplicitActlimitedIfAutoLimits) {
+TEST_F(XMLWriterTest, KeepsExplicitActlimitedIfAutoLimits) {
   static constexpr char xml[] = R"(
   <mujoco>
     <compiler autolimits="true" />
@@ -459,7 +457,7 @@ TEST_F(XMLWriterTest, DoesNotKeepExplicitActlimitedIfAutoLimits) {
   std::string saved_xml = SaveAndReadXml(model);
   EXPECT_THAT(saved_xml, Not(HasSubstr("autolimits=\"true\"")));
   EXPECT_THAT(saved_xml, HasSubstr("actrange=\"-1 1\""));
-  EXPECT_THAT(saved_xml, Not(HasSubstr("actlimited=\"true\"")));
+  EXPECT_THAT(saved_xml, HasSubstr("actlimited=\"true\""));
   mj_deleteModel(model);
 }
 
@@ -508,7 +506,7 @@ TEST_F(XMLWriterTest, DoesNotKeepInferredCtrllimited) {
   mj_deleteModel(model);
 }
 
-TEST_F(XMLWriterTest, DoesNotKeepExplicitCtrllimitedIfAutoLimits) {
+TEST_F(XMLWriterTest, KeepsExplicitCtrllimitedIfAutoLimits) {
   static constexpr char xml[] = R"(
   <mujoco>
     <compiler autolimits="true" />
@@ -527,7 +525,7 @@ TEST_F(XMLWriterTest, DoesNotKeepExplicitCtrllimitedIfAutoLimits) {
   ASSERT_THAT(model, NotNull());
   std::string saved_xml = SaveAndReadXml(model);
   EXPECT_THAT(saved_xml, HasSubstr("ctrlrange=\"-1 1\""));
-  EXPECT_THAT(saved_xml, Not(HasSubstr("ctrllimited=\"true\"")));
+  EXPECT_THAT(saved_xml, HasSubstr("ctrllimited=\"true\""));
   mj_deleteModel(model);
 }
 
@@ -576,7 +574,7 @@ TEST_F(XMLWriterTest, DoesNotKeepInferredForcelimited) {
   mj_deleteModel(model);
 }
 
-TEST_F(XMLWriterTest, DoesNotKeepExplicitForcelimited) {
+TEST_F(XMLWriterTest, KeepsExplicitForcelimited) {
   static constexpr char xml[] = R"(
   <mujoco>
     <worldbody>
@@ -595,7 +593,7 @@ TEST_F(XMLWriterTest, DoesNotKeepExplicitForcelimited) {
   std::string saved_xml = SaveAndReadXml(model);
   EXPECT_THAT(saved_xml, Not(HasSubstr("autolimits=\"true\"")));
   EXPECT_THAT(saved_xml, HasSubstr("forcerange=\"-1 1\""));
-  EXPECT_THAT(saved_xml, Not(HasSubstr("forcelimited=\"true\"")));
+  EXPECT_THAT(saved_xml, HasSubstr("forcelimited=\"true\""));
   mj_deleteModel(model);
 }
 
@@ -691,6 +689,38 @@ TEST_F(XMLWriterTest, WritesDefaults) {
   std::string saved_xml = SaveAndReadXml(model);
   EXPECT_THAT(saved_xml, Not(HasSubstr("mass")));
   EXPECT_THAT(saved_xml, HasSubstr("<geom density=\"100\"/>"));
+  mj_deleteModel(model);
+}
+
+TEST_F(XMLWriterTest, WritesActuatorDefaults) {
+  static constexpr char xml[] = R"(
+  <mujoco>
+    <default>
+      <default class="position">
+        <position kp="3" kv="4" />
+      </default>
+      <default class="intvelocity">
+        <intvelocity kp="5" kv="6" />
+      </default>
+    </default>
+    <worldbody>
+      <body>
+        <geom size="1"/>
+        <joint name="jnt" type="slide" axis="1 0 0" range="0 2"/>
+      </body>
+    </worldbody>
+    <actuator>
+      <position joint="jnt" class="position"/>
+      <intvelocity joint="jnt" actrange="-1 1"/>
+    </actuator>
+  </mujoco>
+  )";
+  mjModel* model = LoadModelFromString(xml);
+  ASSERT_THAT(model, NotNull());
+  std::string saved_xml = SaveAndReadXml(model);
+  EXPECT_THAT(saved_xml, Not(HasSubstr("mass")));
+  EXPECT_THAT(saved_xml, HasSubstr(
+      "<general biastype=\"affine\" gainprm=\"3\""));
   mj_deleteModel(model);
 }
 
@@ -967,6 +997,92 @@ TEST_F(XMLWriterTest, ActdimDefaults) {
   mj_deleteModel(model);
 }
 
+TEST_F(XMLWriterTest, TrimsDefaults) {
+  static constexpr char xml[] = R"(
+  <mujoco>
+    <worldbody>
+      <body>
+        <geom size="1" friction="0.9" solref="0.1" solimp="0.1 0.2"/>
+        <joint name="jnt" type="slide" axis="1 0 0" range="0 2"/>
+      </body>
+    </worldbody>
+    <actuator>
+      <position joint="jnt" kp="3" kv="4"/>
+      <damper joint="jnt" kv="10" ctrlrange="0 1"/>
+    </actuator>
+  </mujoco>
+  )";
+  mjModel* model = LoadModelFromString(xml);
+  ASSERT_THAT(model, NotNull());
+  std::string saved_xml = SaveAndReadXml(model);
+  EXPECT_THAT(saved_xml, HasSubstr("friction=\"0.9\""));
+  EXPECT_THAT(saved_xml, HasSubstr("solref=\"0.1\""));
+  EXPECT_THAT(saved_xml, HasSubstr("solimp=\"0.1 0.2\""));
+  EXPECT_THAT(saved_xml, HasSubstr("gainprm=\"3\" biasprm=\"0 -3 -4\""));
+  EXPECT_THAT(saved_xml, HasSubstr("gainprm=\"0 0 -10\""));
+  mj_deleteModel(model);
+}
+
+TEST_F(XMLWriterTest, InheritrangeSavedAsRange) {
+  static constexpr char xml[] = R"(
+  <mujoco>
+    <compiler angle="radian"/>
+    <worldbody>
+      <body>
+        <geom size="1"/>
+        <joint name="slide" type="slide" range="0 2"/>
+      </body>
+      <body>
+        <geom size="1"/>
+        <joint name="hinge" type="hinge" range="-2 0"/>
+      </body>
+    </worldbody>
+    <actuator>
+      <position joint="slide" inheritrange="2"/>
+      <intvelocity joint="hinge" inheritrange="0.5"/>
+    </actuator>
+  </mujoco>
+  )";
+  mjModel* model = LoadModelFromString(xml);
+  ASSERT_THAT(model, NotNull());
+  std::string saved_xml = SaveAndReadXml(model);
+  EXPECT_THAT(saved_xml, HasSubstr("ctrlrange=\"-1 3\""));
+  EXPECT_THAT(saved_xml, HasSubstr("actrange=\"-1.5 -0.5\""));
+  mj_deleteModel(model);
+}
+
+TEST_F(XMLWriterTest, InheritedInheritrangeSavedAsRange) {
+  static constexpr char xml[] = R"(
+  <mujoco>
+    <default>
+      <default class="position">
+        <position kp="3" kv="4" inheritrange="2"/>
+      </default>
+      <default class="intvelocity">
+        <intvelocity kp="5" kv="6" inheritrange="0.5"/>
+      </default>
+    </default>
+    <worldbody>
+      <body>
+        <geom size="1"/>
+        <joint name="jnt" type="slide" range="0 2"/>
+      </body>
+    </worldbody>
+    <actuator>
+      <position joint="jnt" class="position"/>
+      <intvelocity joint="jnt" class="intvelocity"/>
+    </actuator>
+  </mujoco>
+  )";
+  mjModel* model = LoadModelFromString(xml);
+  ASSERT_THAT(model, NotNull());
+  std::string saved_xml = SaveAndReadXml(model);
+  EXPECT_THAT(saved_xml, Not(HasSubstr("inheritrange")));
+  EXPECT_THAT(saved_xml, HasSubstr("ctrlrange=\"-1 3\""));
+  EXPECT_THAT(saved_xml, HasSubstr("actrange=\"0.5 1.5\""));
+  mj_deleteModel(model);
+}
+
 // check that no precision is lost when saving XMLs with FullFloatPrecision
 TEST_F(XMLWriterTest, SetPrecision) {
   static constexpr char xml[] = R"(
@@ -1038,74 +1154,6 @@ TEST_F(XMLWriterLocaleTest, IgnoresLocale) {
 
 
 // ------------------- test loading and saving multiple files ------------------
-namespace mju = ::mujoco::util;
-static constexpr int kFieldSize = 500;
-
-// The maximum spacing between a normalised floating point number x and an
-// adjacent normalised number is 2 epsilon |x|; a factor 10 is added accounting
-// for losses during non-idempotent operations such as vector normalizations.
-template <typename T>
-auto Compare(T val1, T val2) {
-  using ReturnType =
-      std::conditional_t<std::is_same_v<T, float>, float, double>;
-  ReturnType error;
-  if (mju_abs(val1) <= 1 || mju_abs(val2) <= 1) {
-      // Absolute precision for small numbers
-      error = mju_abs(val1-val2);
-  } else {
-    // Relative precision for larger numbers
-    ReturnType magnitude = mju_abs(val1) + mju_abs(val2);
-    error = mju_abs(val1/magnitude - val2/magnitude) / magnitude;
-  }
-  ReturnType safety_factor = 10;
-  return error < safety_factor * std::numeric_limits<ReturnType>::epsilon()
-             ? 0
-             : error;
-}
-
-mjtNum CompareModel(const mjModel* m1, const mjModel* m2,
-                    char (&field)[kFieldSize]) {
-  mjtNum dif, maxdif = 0.0;
-
-  // define symbols corresponding to number of columns
-  // (needed in MJMODEL_POINTERS)
-  MJMODEL_POINTERS_PREAMBLE(m1);
-
-  // compare ints
-  #define X(name) \
-    if (m1->name != m2->name) {maxdif = 1.0; mju::strcpy_arr(field, #name);}
-    MJMODEL_INTS
-  #undef X
-  if (maxdif > 0) return maxdif;
-
-  // compare arrays
-  #define X(type, name, nr, nc)                                    \
-    for (int r=0; r < m1->nr; r++)                                 \
-      for (int c=0; c < nc; c++) {                                 \
-        dif = Compare(m1->name[r*nc+c], m2->name[r*nc+c]);  \
-        if (dif > maxdif) { maxdif = dif; mju::strcpy_arr(field, #name);} }
-    MJMODEL_POINTERS
-  #undef X
-
-  // compare scalars in mjOption
-  #define X(type, name)                                            \
-    dif = Compare(m1->opt.name, m2->opt.name);                     \
-    if (dif > maxdif) {maxdif = dif; mju::strcpy_arr(field, #name);}
-    MJOPTION_SCALARS
-  #undef X
-
-  // compare arrays in mjOption
-  #define X(name, n)                                             \
-    for (int c=0; c < n; c++) {                                  \
-      dif = Compare(m1->opt.name[c], m2->opt.name[c]);           \
-      if (dif > maxdif) {maxdif = dif; mju::strcpy_arr(field, #name);} }
-    MJOPTION_VECTORS
-  #undef X
-
-  // Return largest difference and field name
-  return maxdif;
-}
-
 TEST_F(XMLWriterTest, WriteReadCompare) {
   // full precision float printing
   FullFloatPrecision increase_precision;
@@ -1152,7 +1200,7 @@ TEST_F(XMLWriterTest, WriteReadCompare) {
               absl::StrContains(p.path().string(), "belt.xml") ? 1e-13 : 0;
 
           // compare and delete
-          char field[kFieldSize] = "";
+          std::string field = "";
           mjtNum result = CompareModel(m, mtemp, field);
           EXPECT_LE(result, tol)
               << "Loaded and saved models are different!\n"
