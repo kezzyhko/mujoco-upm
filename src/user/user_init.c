@@ -104,6 +104,7 @@ void mjs_defaultJoint(mjsJoint* joint) {
   joint->axis[2] = 1;
   joint->limited = mjLIMITED_AUTO;
   joint->actfrclimited = mjLIMITED_AUTO;
+  joint->align = mjALIGNFREE_AUTO;
   mj_defaultSolRefImp(joint->solref_limit, joint->solimp_limit);
   mj_defaultSolRefImp(joint->solref_friction, joint->solimp_friction);
 }
@@ -235,6 +236,7 @@ void mjs_defaultFlex(mjsFlex* flex) {
   flex->activelayers = 1;
   flex->rgba[0] = flex->rgba[1] = flex->rgba[2] = 0.5f;
   flex->rgba[3] = 1.0f;
+  flex->thickness = -1;
 }
 
 

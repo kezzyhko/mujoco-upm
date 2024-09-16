@@ -33,28 +33,6 @@ struct PairHash
     }
 };
 
-inline mjtNum SquaredDist3(const mjtNum pos1[3], const mjtNum pos2[3]) {
-  mjtNum dif[3] = {pos1[0]-pos2[0], pos1[1]-pos2[1], pos1[2]-pos2[2]};
-  return dif[0]*dif[0] + dif[1]*dif[1] + dif[2]*dif[2];
-}
-
-inline void UpdateSquaredLengths(std::vector<mjtNum>& len,
-                                 const std::vector<std::pair<int, int> >& edges,
-                                 const mjtNum* x) {
-  for (int e = 0; e < len.size(); e++) {
-    const mjtNum* p0 = x + 3*edges[e].first;
-    const mjtNum* p1 = x + 3*edges[e].second;
-    len[e] = SquaredDist3(p0, p1);
-  }
-}
-
-inline void UpdateSquaredLengthsFlex(std::vector<mjtNum>& len,
-                                     const mjtNum* flexedge_length) {
-  for (int e = 0; e < len.size(); e++) {
-    len[e] = flexedge_length[e]*flexedge_length[e];
-  }
-}
-
 struct Stencil2D {
   static constexpr int kNumEdges = 3;
   static constexpr int kNumVerts = 3;
@@ -87,15 +65,19 @@ void inline GradSquaredLengths(mjtNum gradient[T::kNumEdges][2][3],
 
 template <typename T>
 inline void ComputeForce(std::vector<mjtNum>& qfrc_passive,
-                         const std::vector<T>& elements,
-                         const std::vector<mjtNum>& metric,
                          const std::vector<mjtNum>& elongationglob,
-                         const mjModel* m,
+                         const mjModel* m, int flex,
                          const mjtNum* xpos) {
   mju_zero(qfrc_passive.data(), qfrc_passive.size());
+  mjtNum* k = m->flex_stiffness + 21 * m->flex_elemadr[flex];
 
-  for (int t = 0; t < elements.size(); t++)  {
-    const int* v = elements[t].vertices;
+  int dim = m->flex_dim[flex];
+  const int* elem = m->flex_elem + m->flex_elemdataadr[flex];
+  const int* edgeelem = m->flex_elemedge + m->flex_elemedgeadr[flex];
+
+  // compute force element-by-element
+  for (int t = 0; t < m->flex_elemnum[flex]; t++)  {
+    const int* v = elem + (dim+1) * t;
 
     // compute length gradient with respect to dofs
     mjtNum gradient[T::kNumEdges][2][3];
@@ -104,8 +86,19 @@ inline void ComputeForce(std::vector<mjtNum>& qfrc_passive,
     // extract elongation of edges belonging to this element
     mjtNum elongation[T::kNumEdges];
     for (int e = 0; e < T::kNumEdges; e++) {
-      int idx = elements[t].edges[e];
+      int idx = edgeelem[t * T::kNumEdges + e];
       elongation[e] = elongationglob[idx];
+    }
+
+    // unpack triangular representation
+    mjtNum metric[T::kNumEdges*T::kNumEdges];
+
+    int id = 0;
+    for (int ed1 = 0; ed1 < T::kNumEdges; ed1++) {
+      for (int ed2 = ed1; ed2 < T::kNumEdges; ed2++) {
+        metric[T::kNumEdges*ed1 + ed2] = k[21*t + id];
+        metric[T::kNumEdges*ed2 + ed1] = k[21*t + id++];
+      }
     }
 
     // we now multiply the elongations by the precomputed metric tensor,
@@ -114,14 +107,13 @@ inline void ComputeForce(std::vector<mjtNum>& qfrc_passive,
 
     // compute local force
     mjtNum force[T::kNumVerts*3] = {0};
-    int offset = T::kNumEdges*T::kNumEdges;
     for (int ed1 = 0; ed1 < T::kNumEdges; ed1++) {
       for (int ed2 = 0; ed2 < T::kNumEdges; ed2++) {
         for (int i = 0; i < 2; i++) {
           for (int x = 0; x < 3; x++) {
             force[3 * T::edge[ed2][i] + x] -=
                 elongation[ed1] * gradient[ed2][i][x] *
-                metric[offset * t + T::kNumEdges * ed1 + ed2];
+                metric[T::kNumEdges * ed1 + ed2];
           }
         }
       }
@@ -161,10 +153,11 @@ inline void AddFlexForce(mjtNum* qfrc,
 
 // compute metric tensor of edge lengths inner product
 template <typename T>
-void inline MetricTensor(std::vector<mjtNum>& metric, int idx, mjtNum mu,
+void inline MetricTensor(mjtNum* metric, int idx, mjtNum mu,
                          mjtNum la, const mjtNum basis[T::kNumEdges][9]) {
   mjtNum trE[T::kNumEdges] = {0};
   mjtNum trEE[T::kNumEdges*T::kNumEdges] = {0};
+  mjtNum k[T::kNumEdges*T::kNumEdges];
 
   // compute first invariant i.e. trace(strain)
   for (int e = 0; e < T::kNumEdges; e++) {
@@ -187,10 +180,21 @@ void inline MetricTensor(std::vector<mjtNum>& metric, int idx, mjtNum mu,
   // assembly of strain metric tensor
   for (int ed1 = 0; ed1 < T::kNumEdges; ed1++) {
     for (int ed2 = 0; ed2 < T::kNumEdges; ed2++) {
-      int index = T::kNumEdges*T::kNumEdges*idx + T::kNumEdges*ed1 + ed2;
-      metric[index] = mu * trEE[T::kNumEdges * ed1 + ed2] +
-                      la * trE[ed2] * trE[ed1];
+      k[T::kNumEdges*ed1 + ed2] = mu * trEE[T::kNumEdges * ed1 + ed2] +
+                                  la * trE[ed2] * trE[ed1];
     }
+  }
+
+  // copy to triangular representation
+  int id = 0;
+  for (int ed1 = 0; ed1 < T::kNumEdges; ed1++) {
+    for (int ed2 = ed1; ed2 < T::kNumEdges; ed2++) {
+      metric[21*idx + id++] = k[T::kNumEdges*ed1 + ed2];
+    }
+  }
+
+  if (id != T::kNumEdges*(T::kNumEdges+1)/2) {
+    mju_error("incorrect stiffness matrix size");
   }
 }
 

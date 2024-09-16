@@ -345,7 +345,13 @@ static raw::MjModel* LoadModelFileImpl(
       const int vfs_error = InterceptMjErrors(mj_addBufferVFS)(
           vfs_ptr, buffer_name.c_str(), asset.content, asset.content_size);
       if (vfs_error) {
-        throw py::value_error("assets dict is too big");
+        mj_deleteVFS(vfs_ptr);
+        if (vfs_error == 2) {
+          throw py::value_error("Repeated file name in assets dict: " +
+                                buffer_name);
+        } else {
+          throw py::value_error("Asset failed to load: " + buffer_name);
+        }
       }
     }
   }
@@ -456,7 +462,9 @@ py::tuple RecompileSpec(raw::MjSpec* spec, const MjModelWrapper& old_m,
   raw::MjModel* m = static_cast<raw::MjModel*>(mju_malloc(sizeof(mjModel)));
   m->buffer = nullptr;
   raw::MjData* d = mj_copyData(nullptr, old_m.get(), old_d.get());
-  mj_recompile(spec, nullptr, m, d);
+  if (mj_recompile(spec, nullptr, m, d)) {
+    throw py::value_error(mjs_getError(spec));
+  }
 
   py::object m_pyobj = py::cast((MjModelWrapper(m)));
   py::object d_pyobj =

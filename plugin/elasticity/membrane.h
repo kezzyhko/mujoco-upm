@@ -44,18 +44,10 @@ class Membrane {
   int i0;  // index of first body
   int nc;  // number of quads in the grid
   int nv;  // number of vertices (bodies) in the Membrane
-  int nt;  // number of area elements (triangles)
   int ne;  // number of edges in the Membrane
 
-  // connectivity info for mapping tetrahedra to edges and vertices
-  std::vector<Stencil2D> elements;          // triangles              (nt x 6)
-  std::vector<std::pair<int, int> > edges;  // edge to vertex map     (ne x 2)
-
   // precomputed quantities
-  std::vector<mjtNum> metric;               // geom-induced metric    (nt x 9)
-  std::vector<mjtNum> reference;            // reference lengths      (ne x 1)
-  std::vector<mjtNum> deformed;             // deformed lengths       (ne x 1)
-  std::vector<mjtNum> previous;             // previous-step lengths  (ne x 1)
+  std::vector<mjtNum> prev;                 // previous-step lengths  (ne x 1)
   std::vector<mjtNum> elongation;           // edge elongation        (ne x 1)
   std::vector<mjtNum> force;                // force at all vertices  (nv x 3)
 
@@ -64,8 +56,7 @@ class Membrane {
 
  private:
   Membrane(const mjModel* m, mjData* d, int instance, mjtNum nu, mjtNum E,
-           mjtNum thick, mjtNum damp, const std::vector<int>& simplex,
-           const std::vector<int>& edgeidx);
+           mjtNum thick, mjtNum damp);
 };
 
 }  // namespace mujoco::plugin::elasticity

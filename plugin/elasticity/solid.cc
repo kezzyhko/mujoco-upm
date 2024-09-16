@@ -16,6 +16,7 @@
 #include <cassert>
 #include <cstdint>
 #include <cstdlib>
+#include <cstring>
 #include <optional>
 #include <utility>
 #include <vector>
@@ -92,10 +93,7 @@ std::optional<Solid> Solid::Create(const mjModel* m, mjData* d, int instance) {
         mjtNum E = strtod(mj_getPluginConfig(m, instance, "young"), nullptr);
         mjtNum damp =
             strtod(mj_getPluginConfig(m, instance, "damping"), nullptr);
-        std::vector<int> face, edge;
-        String2Vector(mj_getPluginConfig(m, instance, "face"), face);
-        String2Vector(mj_getPluginConfig(m, instance, "edge"), edge);
-        return Solid(m, d, instance, nu, E, damp, face, edge);
+        return Solid(m, d, instance, nu, E, damp);
     } else {
         mju_warning("Invalid parameter specification in solid plugin");
         return std::nullopt;
@@ -104,8 +102,7 @@ std::optional<Solid> Solid::Create(const mjModel* m, mjData* d, int instance) {
 
 // plugin constructor
 Solid::Solid(const mjModel* m, mjData* d, int instance, mjtNum nu, mjtNum E,
-             mjtNum damp, const std::vector<int>& simplex,
-             const std::vector<int>& edgeidx)
+             mjtNum damp)
     : f0(-1), damping(damp) {
   // count plugin bodies
   nv = ne = 0;
@@ -131,20 +128,14 @@ Solid::Solid(const mjModel* m, mjData* d, int instance, mjtNum nu, mjtNum E,
   }
 
   // vertex positions
-  mjtNum* body_pos =
-      f0 < 0 ? m->body_pos + 3*i0 : m->flex_xvert0 + 3*m->flex_vertadr[f0];
-
-  // generate tetrahedra from the vertices
-  nt = CreateStencils<Stencil3D>(elements, edges, simplex, edgeidx);
-
-  // allocate arrays
-  metric.assign(kNumEdges*kNumEdges*nt, 0);
+  mjtNum* body_pos = m->flex_xvert0 + 3*m->flex_vertadr[f0];
 
   // loop over all tetrahedra
-  for (int t = 0; t < nt; t++) {
-    int* v = elements[t].vertices;
+  const int* elem = m->flex_elem + m->flex_elemdataadr[f0];
+  for (int t = 0; t < m->flex_elemnum[f0]; t++) {
+    const int* v = elem + (m->flex_dim[f0]+1) * t;
     for (int i = 0; i < kNumVerts; i++) {
-      int bi = f0 < 0 ? i0+v[i] : m->flex_vertbodyid[m->flex_vertadr[f0]+v[i]];
+      int bi = m->flex_vertbodyid[m->flex_vertadr[f0]+v[i]];
       if (bi && m->body_plugin[bi] != instance) {
         mju_error("Body %d does not have plugin instance %d", bi, instance);
       }
@@ -167,33 +158,28 @@ Solid::Solid(const mjModel* m, mjData* d, int instance, mjtNum nu, mjtNum E,
     mjtNum la = E*nu / ((1+nu)*(1-2*nu)) * volume;
 
     // compute metric tensor
-    MetricTensor<Stencil3D>(metric, t, mu, la, basis);
+    // TODO: do not write in a const mjModel
+    MetricTensor<Stencil3D>(m->flex_stiffness + 21 * m->flex_elemadr[f0], t, mu,
+                            la, basis);
   }
 
   // allocate array
-  ne = edges.size();
-  reference.assign(ne, 0);
-  deformed.assign(ne, 0);
-  previous.assign(ne, 0);
+  ne = m->flex_edgenum[f0];
   elongation.assign(ne, 0);
   force.assign(3*nv, 0);
-
-  // compute edge lengths at equilibrium (m->flexedge_length0 not yet available)
-  UpdateSquaredLengths(reference, edges, body_pos);
-
-  // save previous lengths
-  previous = reference;
 }
 
 void Solid::Compute(const mjModel* m, mjData* d, int instance) {
   mjtNum kD = damping / m->opt.timestep;
 
-  // update edge lengths
-  if (f0 < 0) {
-    UpdateSquaredLengths(deformed, edges, d->xpos+3*i0);
-  } else {
-    UpdateSquaredLengthsFlex(deformed,
-                             d->flexedge_length + m->flex_edgeadr[f0]);
+  // read edge lengths
+  mjtNum* deformed = d->flexedge_length + m->flex_edgeadr[f0];
+  mjtNum* ref = m->flexedge_length0 + m->flex_edgeadr[f0];
+
+  // m->flexedge_length0 is not initialized when the plugin is constructed
+  if (prev.empty()) {
+    prev.assign(ne, 0);
+    memcpy(prev.data(), ref, sizeof(mjtNum) * ne);
   }
 
   // we add generalized Rayleigh damping as decribed in Section 5.2 of
@@ -201,27 +187,23 @@ void Solid::Compute(const mjModel* m, mjData* d, int instance) {
   // Animation" http://multires.caltech.edu/pubs/DiscreteLagrangian.pdf
 
   for (int idx = 0; idx < ne; idx++) {
-    elongation[idx] = deformed[idx] - reference[idx] +
-                    ( deformed[idx] -  previous[idx] ) * kD;
+    elongation[idx] = deformed[idx]*deformed[idx] - ref[idx]*ref[idx] +
+                    ( deformed[idx]*deformed[idx] - prev[idx]*prev[idx] ) * kD;
   }
 
   // compute gradient of elastic energy and insert into passive force
-  int flex_vertadr = f0 < 0 ? -1 : m->flex_vertadr[f0];
-  mjtNum* xpos = f0 < 0 ? d->xpos + 3*i0 : d->flexvert_xpos + 3*flex_vertadr;
-  mjtNum* qfrc = d->qfrc_passive + (f0 < 0 ? m->body_dofadr[i0] : 0);
+  int flex_vertadr = m->flex_vertadr[f0];
+  mjtNum* xpos = d->flexvert_xpos + 3*flex_vertadr;
+  mjtNum* qfrc = d->qfrc_passive;
 
-  ComputeForce<Stencil3D>(force, elements, metric, elongation, m, xpos);
+  ComputeForce<Stencil3D>(force, elongation, m, f0, xpos);
 
   // insert into passive force
-  if (f0 < 0) {
-    mju_addTo(qfrc, force.data(), force.size());
-  } else {
-    AddFlexForce(qfrc, force, m, d, xpos, f0);
-  }
+  AddFlexForce(qfrc, force, m, d, xpos, f0);
 
   // update stored lengths
   if (kD > 0) {
-    previous = deformed;
+    memcpy(prev.data(), deformed, sizeof(mjtNum) * ne);
   }
 }
 
@@ -234,7 +216,7 @@ void Solid::RegisterPlugin() {
   plugin.name = "mujoco.elasticity.solid";
   plugin.capabilityflags |= mjPLUGIN_PASSIVE;
 
-  const char* attributes[] = {"face", "edge", "young", "poisson", "damping"};
+  const char* attributes[] = {"face", "edge", "young", "poisson", "damping", "thickness"};
   plugin.nattribute = sizeof(attributes) / sizeof(attributes[0]);
   plugin.attributes = attributes;
   plugin.nstate = +[](const mjModel* m, int instance) { return 0; };

@@ -14,8 +14,10 @@
 
 #include "user/user_api.h"
 
+#include <algorithm>
 #include <cstddef>
 #include <functional>
+#include <iterator>
 #include <map>
 #include <new>
 #include <string>
@@ -88,17 +90,28 @@ mjModel* mj_compile(mjSpec* s, const mjVFS* vfs) {
 
 
 
-// recompile spec into existing model and data while preserving the state
-void mj_recompile(mjSpec* s, const mjVFS* vfs, mjModel* m, mjData* d) {
+// recompile spec to model, preserving the state, return 0 on success
+[[nodiscard]] int mj_recompile(mjSpec* s, const mjVFS* vfs, mjModel* m, mjData* d) {
   mjCModel* modelC = static_cast<mjCModel*>(s->element);
+  std::string state_name = "state";
+  mjtNum time = 0;
   if (d) {
-    modelC->SaveState(d->qpos, d->qvel, d->act);
+    time = d->time;
+    modelC->SaveState(state_name, d->qpos, d->qvel, d->act, d->ctrl, d->mocap_pos, d->mocap_quat);
   }
-  modelC->Compile(vfs, &m);
+  if (!modelC->Compile(vfs, &m)) {
+    if (d) {
+      mj_deleteData(d);
+    }
+    return -1;
+  };
   if (d) {
     modelC->MakeData(m, &d);
-    modelC->RestoreState(d->qpos, d->qvel, d->act);
+    modelC->RestoreState(state_name, m->qpos0, m->body_pos, m->body_quat, d->qpos, d->qvel,
+                         d->act, d->ctrl, d->mocap_pos, d->mocap_quat);
+    d->time = time;
   }
+  return 0;
 }
 
 
@@ -529,14 +542,30 @@ mjsDefault* mjs_getSpecDefault(mjSpec* s) {
 
 // find body in model by name
 mjsBody* mjs_findBody(mjSpec* s, const char* name) {
-  mjCModel* model = static_cast<mjCModel*>(s->element);
-  mjCBase* body = 0;
-  if (model->IsCompiled()) {
-    body = model->FindObject(mjOBJ_BODY, std::string(name));  // fast lookup
-  } else {
-    body = model->FindBody(model->GetWorld(), std::string(name));  // recursive search
-  }
+  mjsElement* body = mjs_findElement(s, mjOBJ_BODY, name);
   return body ? &(static_cast<mjCBody*>(body)->spec) : nullptr;
+}
+
+
+
+// find element in spec by name
+mjsElement* mjs_findElement(mjSpec* s, mjtObj type, const char* name) {
+  mjCModel* model = static_cast<mjCModel*>(s->element);
+  if (model->IsCompiled()) {
+    return model->FindObject(type, std::string(name));  // fast lookup
+  }
+  switch (type) {
+    case mjOBJ_BODY:
+    case mjOBJ_SITE:
+    case mjOBJ_GEOM:
+    case mjOBJ_JOINT:
+    case mjOBJ_CAMERA:
+    case mjOBJ_LIGHT:
+    case mjOBJ_FRAME:
+      return model->FindTree(model->GetWorld(), type, std::string(name));  // recursive search
+    default:
+      return model->FindObject(type, std::string(name));  // always available
+  }
 }
 
 
@@ -550,29 +579,10 @@ mjsBody* mjs_findChild(mjsBody* bodyspec, const char* name) {
 
 
 
-// find mesh by name
-mjsMesh* mjs_findMesh(mjSpec* s, const char* name) {
-  mjCModel* model = static_cast<mjCModel*>(s->element);
-  mjCMesh* mesh = (mjCMesh*)model->FindObject(mjOBJ_MESH, std::string(name));
-  return mesh ? &(static_cast<mjCMesh*>(mesh)->spec) : nullptr;
-}
-
-
-
 // find frame by name
 mjsFrame* mjs_findFrame(mjSpec* s, const char* name) {
-  mjCModel* model = static_cast<mjCModel*>(s->element);
-  mjCFrame* frame = (mjCFrame*)model->FindFrame(model->GetWorld(), std::string(name));
+  mjsElement* frame = mjs_findElement(s, mjOBJ_FRAME, name);
   return frame ? &(static_cast<mjCFrame*>(frame)->spec) : nullptr;
-}
-
-
-
-// find keyframe by name
-mjsKey* mjs_findKeyframe(mjSpec* s, const char* name) {
-  mjCModel* model = static_cast<mjCModel*>(s->element);
-  mjCKey* key = (mjCKey*)model->FindObject(mjOBJ_KEY, std::string(name));
-  return key ? &(static_cast<mjCKey*>(key)->spec) : nullptr;
 }
 
 
@@ -599,6 +609,9 @@ const char* mjs_resolveOrientation(double quat[4], mjtByte degree, const char* s
 
 // get id
 int mjs_getId(mjsElement* element) {
+  if (!element) {
+    return -1;
+  }
   return static_cast<mjCBase*>(element)->id;
 }
 
@@ -870,6 +883,16 @@ mjsMaterial* mjs_asMaterial(mjsElement* element) {
     return &(static_cast<mjCMaterial*>(element)->spec);
   }
   return nullptr;
+}
+
+
+
+// copy buffer to destination buffer
+void mjs_setBuffer(mjByteVec* dest, const void* array, int size) {
+  const std::byte* buffer = static_cast<const std::byte*>(array);
+  dest->clear();
+  dest->reserve(size);
+  std::copy_n(buffer, size, std::back_inserter(*dest));
 }
 
 

@@ -27,6 +27,7 @@ from mujoco.mjx._src.types import DisableBit
 from mujoco.mjx._src.types import JointType
 from mujoco.mjx._src.types import Model
 from mujoco.mjx._src.types import TrnType
+from mujoco.mjx._src.types import WrapType
 # pylint: enable=g-importing-member
 import numpy as np
 
@@ -427,6 +428,99 @@ def com_vel(m: Model, d: Data) -> Data:
   return d
 
 
+def subtree_vel(m: Model, d: Data) -> Data:
+  """Subtree linear velocity and angular momentum."""
+
+  # bodywise quantities
+  def _forward(cvel, xipos, ximat, subtree_com_root, mass, inertia):
+    ang, lin = jp.split(cvel, 2)
+
+    # update linear velocity
+    lin = lin - jp.cross(xipos - subtree_com_root, ang)
+
+    subtree_linvel = mass * lin
+    subtree_angmom = inertia * ximat @ ximat.T @ ang
+    body_vel = jp.concatenate([ang, lin])
+
+    return body_vel, subtree_linvel, subtree_angmom
+
+  body_vel, subtree_linvel, subtree_angmom = jax.vmap(_forward)(
+      d.cvel,
+      d.xipos,
+      d.ximat,
+      d.subtree_com[m.body_rootid],
+      m.body_mass,
+      m.body_inertia,
+  )
+
+  # sum body linear momentum recursively up the kinematic tree
+  subtree_linvel = scan.body_tree(
+      m,
+      lambda x, y: y if x is None else x + y,
+      'bb',
+      'b',
+      subtree_linvel,
+      reverse=True,
+  )
+
+  subtree_linvel /= jp.maximum(mujoco.mjMINVAL, m.body_subtreemass)[:, None]
+
+  def _subtree_angmom(
+      carry,
+      angmom,
+      com,
+      com_parent,
+      linvel,
+      linvel_parent,
+      subtreemass,
+      xipos,
+      vel,
+      mass,
+      mask,
+  ):
+
+    def _momentum(x0, x1, v0, v1, m):
+      dx = x0 - x1
+      dv = v0 - v1
+      dp = dv * m
+      return jp.cross(dx, dp)
+
+    # momentum wrt current body
+    mom = mask * _momentum(xipos, com, vel[3:], linvel, mass)
+
+    # momentum wrt parent
+    mom_parent = mask * _momentum(
+        com, com_parent, linvel, linvel_parent, subtreemass
+    )
+
+    if carry is None:
+      return angmom + mom, mom_parent
+    else:
+      angmom_child, mom_parent_child = carry
+      return angmom + mom + angmom_child + mom_parent_child, mom_parent
+
+
+  subtree_angmom, _ = scan.body_tree(
+      m,
+      _subtree_angmom,
+      'bbbbbbbbbb',
+      'bb',
+      subtree_angmom,
+      d.subtree_com,
+      d.subtree_com[m.body_parentid],
+      subtree_linvel,
+      subtree_linvel[m.body_parentid],
+      m.body_subtreemass,
+      d.xipos,
+      body_vel,
+      m.body_mass,
+      jp.ones(m.nbody).at[0].set(0),
+      reverse=True,
+  )
+
+  return d.replace(subtree_linvel=subtree_linvel, subtree_angmom=subtree_angmom)
+
+
 def rne(m: Model, d: Data) -> Data:
   """Computes inverse dynamics using the recursive Newton-Euler algorithm."""
   # forward scan over tree: accumulate link center of mass acceleration
@@ -465,18 +559,234 @@ def rne(m: Model, d: Data) -> Data:
   return d
 
 
+def rne_postconstraint(m: Model, d: Data) -> Data:
+  """RNE with complete data: compute cacc, cfrc_ext, cfrc_int."""
+
+  def _transform_force(frc, offset):
+    force, torque = jp.split(frc, 2)
+    torque -= jp.cross(offset, force)
+    # spatial motion vector layout is flipped: (torque, force)
+    return jp.concatenate([torque, force])
+
+  # cfrc_ext = perturb
+  cfrc_ext = jp.vstack([
+      jp.zeros((1, 6)),  # world body
+      jax.vmap(_transform_force)(
+          d.xfrc_applied[1:], d.subtree_com[m.body_rootid][1:] - d.xipos[1:]
+      ),
+  ])
+
+  # cfrc_ext += contacts
+
+  # compute contact forces for each condim
+  forces = []
+  condim_idx = []
+  for dim in set(d.contact.dim):
+    force, idx = support.contact_force_dim(m, d, dim)
+    forces.append(force)
+    condim_idx.append(idx)
+
+  # update cfrc_ext with contact forces
+  if forces:
+
+    @jax.vmap
+    def _contact_force_to_cfrc_ext(force, pos, frame, id1, id2, com1, com2):
+      # force: contact to world frame
+      force = force.reshape((-1, 3)) @ frame
+      force = force.reshape(-1)
+
+      # contact force on bodies
+      cfrc_com1 = _transform_force(force, com1 - pos)
+      cfrc_com2 = _transform_force(force, com2 - pos)
+
+      # mask
+      mask1 = id1 != 0
+      mask2 = id2 != 0
+
+      return jp.vstack([-1 * cfrc_com1 * mask1, cfrc_com2 * mask2]), jp.array(
+          [id1, id2]
+      )
+
+    condim_idx = jp.concatenate(condim_idx)
+    frame = d.contact.frame[condim_idx]
+    pos = d.contact.pos[condim_idx]
+    id1 = jp.array(m.geom_bodyid)[d.contact.geom[condim_idx, 0]]
+    id2 = jp.array(m.geom_bodyid)[d.contact.geom[condim_idx, 1]]
+    com1 = d.subtree_com[jp.array(m.body_rootid)][id1]
+    com2 = d.subtree_com[jp.array(m.body_rootid)][id2]
+
+    cfrc_contact, cfrc_idx = _contact_force_to_cfrc_ext(
+        jp.concatenate(forces), pos, frame, id1, id2, com1, com2
+    )
+
+    cfrc_ext = cfrc_ext.at[cfrc_idx.reshape(-1)].add(
+        cfrc_contact.reshape((-1, 6))
+    )
+
+  # TODO(taylorhowell): connect and weld constraints
+
+  # forward pass over bodies: compute cacc, cfrc_int
+  def _forward(carry, cfrc_ext, cinert, cvel, body_dofadr, body_dofnum):
+    if carry is None:
+      if m.opt.disableflags & DisableBit.GRAVITY:
+        cacc0 = jp.zeros(6)
+      else:
+        cacc0 = jp.concatenate((jp.zeros(3), -m.opt.gravity))
+      return cacc0, jp.zeros(6)
+    else:
+      cacc_parent, _ = carry
+
+    # create dof mask
+    indices = jp.arange(m.nv)
+    mask = jp.logical_and(
+        indices >= body_dofadr, indices < body_dofadr + body_dofnum
+    )
+
+    # cacc = cacc_parent + cdofdot * qvel + cdof * qacc
+    cacc_vel = d.cdof_dot.T @ (mask * d.qvel)
+    cacc_acc = d.cdof.T @ (mask * d.qacc)
+    cacc = cacc_parent + cacc_vel + cacc_acc
+
+    # cfrc_body = cinert * cacc + cvel x (cinert * cvel)
+    cfrc_body = math.inert_mul(cinert, cacc)
+    cfrc_corr = math.inert_mul(cinert, cvel)
+    cfrc = math.motion_cross_force(cvel, cfrc_corr)
+    cfrc_body = cfrc_body + cfrc
+    cfrc_int = cfrc_body - cfrc_ext
+
+    return cacc, cfrc_int
+
+  cacc, cfrc_int = scan.body_tree(
+      m,
+      _forward,
+      'bbbbb',
+      'bb',
+      cfrc_ext,
+      d.cinert,
+      d.cvel,
+      jp.array(m.body_dofadr),
+      jp.array(m.body_dofnum),
+  )
+
+  # backward pass over bodies: accumulate cfrc_int from children
+  cfrc_int = scan.body_tree(
+      m,
+      lambda c, p: p + c if c is not None else p,  # add child to parent
+      'b',
+      'b',
+      cfrc_int,
+      reverse=True,
+  )
+
+  # update data
+  return d.replace(cacc=cacc, cfrc_int=cfrc_int, cfrc_ext=cfrc_ext)
+
+
 def tendon(m: Model, d: Data) -> Data:
   """Computes tendon lengths and moments."""
   if not m.ntendon:
     return d
 
-  ten_id = np.repeat(np.arange(m.ntendon), m.tendon_num)
-  length = m.wrap_prm * d.qpos[m.jnt_qposadr[m.wrap_objid]]
-  ten_length = jax.ops.segment_sum(length, ten_id, m.ntendon)
-  ten_j = jp.zeros((m.ntendon, m.nv))
-  ten_j = ten_j.at[ten_id, m.jnt_dofadr[m.wrap_objid]].set(m.wrap_prm)
+  # process joint tendons
+  (wrap_id_jnt,) = np.nonzero(m.wrap_type == WrapType.JOINT)
+  (tendon_id_jnt,) = np.nonzero(np.isin(m.tendon_adr, wrap_id_jnt))
 
-  return d.replace(ten_length=ten_length, ten_J=ten_j)
+  ntendon_jnt = tendon_id_jnt.size
+  wrap_objid_jnt = m.wrap_objid[wrap_id_jnt]
+  tendon_num_jnt = m.tendon_num[tendon_id_jnt]
+
+  moment_jnt = m.wrap_prm[wrap_id_jnt]
+  length_jnt = jax.ops.segment_sum(
+      moment_jnt * d.qpos[m.jnt_qposadr[wrap_objid_jnt]],
+      np.repeat(np.arange(ntendon_jnt), tendon_num_jnt),
+      ntendon_jnt,
+  )
+
+  adr_moment_jnt = np.repeat(tendon_id_jnt, tendon_num_jnt)
+  dofadr_moment_jnt = m.jnt_dofadr[wrap_objid_jnt]
+
+  # process spatial tendon sites
+  (wrap_id_site,) = np.nonzero(m.wrap_type == WrapType.SITE)
+  nwrap_site = wrap_id_site.size
+
+  # find consecutive sites, skipping tendon transitions
+  (pair_id,) = np.nonzero(np.diff(wrap_id_site) == 1)
+  wrap_id_site_pair = np.setdiff1d(wrap_id_site[pair_id], m.tendon_adr[1:] - 1)
+  (tendon_id_site,) = np.nonzero(np.isin(m.tendon_adr, wrap_id_site_pair))
+
+  id0 = m.wrap_objid[wrap_id_site_pair]
+  id1 = m.wrap_objid[wrap_id_site_pair + 1]
+
+  @jax.vmap
+  def _length_moment(pnt0, pnt1, body0, body1):
+    dif = pnt1 - pnt0
+    length = jp.linalg.norm(dif)
+    vec = jp.where(
+        length < mujoco.mjMINVAL, jp.array([1.0, 0.0, 0.0]), dif / length
+    )
+
+    jacp1, _ = support.jac(m, d, pnt0, body0)
+    jacp2, _ = support.jac(m, d, pnt1, body1)
+    jacdif = jacp2 - jacp1
+    moment = jp.where(body0 != body1, jacdif @ vec, jp.zeros(m.nv))
+
+    return length, moment
+
+  lengths_site, moments_site = _length_moment(
+      d.site_xpos[id0], d.site_xpos[id1], m.site_bodyid[id0], m.site_bodyid[id1]
+  )
+
+  tendon_nsite = np.array([
+      sum((wrap_id_site_pair >= adr) & (wrap_id_site_pair < adr + num))
+      for adr, num in zip(m.tendon_adr, m.tendon_num)
+  ])
+  tendon_nsite = tendon_nsite[tendon_nsite > 0]
+  tendon_wrapnum_site = tendon_nsite + 1
+  tendon_with_site = sum([s > 0 for s in tendon_nsite])
+  ten_site_id = np.repeat(np.arange(tendon_with_site), tendon_nsite)
+
+  length_site = jax.ops.segment_sum(lengths_site, ten_site_id, tendon_with_site)
+  moment_site = jax.ops.segment_sum(moments_site, ten_site_id, tendon_with_site)
+
+  # assemble length and moment
+  ten_length = (
+      jp.zeros_like(d.ten_length)
+      .at[np.concatenate([tendon_id_jnt, tendon_id_site])]
+      .set(jp.concatenate([length_jnt, length_site]))
+  )
+  ten_moment = (
+      jp.zeros_like(d.ten_J)
+      .at[adr_moment_jnt, dofadr_moment_jnt]
+      .set(moment_jnt)
+  )
+  ten_moment = ten_moment.at[tendon_id_site].set(moment_site)
+
+  # wrap
+  wrap_xpos = jp.concatenate([
+      d.site_xpos[m.wrap_objid[wrap_id_site]],
+      jp.zeros((2 * m.nwrap - nwrap_site, 3)),
+  ]).reshape((m.nwrap, 6))
+
+  ten_wrapnum = np.zeros(m.ntendon)
+  ten_wrapnum[tendon_id_site] = tendon_wrapnum_site
+
+  ten_wrapadr = [0]
+  for wn in ten_wrapnum[:-1]:
+    ten_wrapadr.append(ten_wrapadr[-1] + wn)
+  ten_wrapadr = np.array(ten_wrapadr).astype(int)
+
+  wrap_obj = np.zeros(m.nwrap * 2, dtype=int)
+  wrap_obj[:nwrap_site] = -1
+  wrap_obj = wrap_obj.reshape((-1, 2))
+
+  return d.replace(
+      ten_length=ten_length,
+      ten_J=ten_moment,
+      ten_wrapadr=jp.array(ten_wrapadr),
+      ten_wrapnum=jp.array(ten_wrapnum),
+      wrap_xpos=wrap_xpos,
+      wrap_obj=jp.array(wrap_obj),
+  )
 
 
 def _site_dof_mask(m: Model) -> np.ndarray:

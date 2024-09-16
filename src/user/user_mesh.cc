@@ -22,12 +22,12 @@
 #include <functional>
 #include <memory>
 #include <string>
+#include <string_view>
 #include <unordered_map>
 #include <utility>
 #include <vector>
 
 #include <mujoco/mjspec.h>
-#include <mujoco/mujoco.h>
 #include "user/user_api.h"
 
 #ifdef MUJOCO_TINYOBJLOADER_IMPL
@@ -56,6 +56,7 @@
 #include "engine/engine_crossplatform.h"
 #include "engine/engine_io.h"
 #include "engine/engine_plugin.h"
+#include "engine/engine_sort.h"
 #include "engine/engine_util_errmem.h"
 #include "user/user_cache.h"
 #include "user/user_model.h"
@@ -70,6 +71,9 @@ extern "C" {
 
 namespace {
   using mujoco::user::VectorToString;
+  using mujoco::user::FilePath;
+  using std::max;
+  using std::min;
 }  // namespace
 
 // compute triangle area, surface normal, center
@@ -216,6 +220,18 @@ void mjCMesh::PointToLocal() {
 
 
 
+void mjCMesh::NameSpace(const mjCModel* m) {
+  mjCBase::NameSpace(m);
+  if (modelfiledir_.empty()) {
+    modelfiledir_ = FilePath(m->spec_modelfiledir_);
+  }
+  if (meshdir_.empty()) {
+    meshdir_ = FilePath(m->spec_meshdir_);
+  }
+}
+
+
+
 void mjCMesh::CopyFromSpec() {
   *static_cast<mjsMesh*>(this) = spec;
   file_ = spec_file_;
@@ -244,12 +260,6 @@ void mjCMesh::CopyFromSpec() {
 mjCMesh::~mjCMesh() {
   if (center_) mju_free(center_);
   if (graph_) mju_free(graph_);
-}
-
-
-
-void mjCMesh::set_needhull(bool needhull) {
-  needhull_ = needhull;
 }
 
 
@@ -337,8 +347,10 @@ void mjCMesh::LoadSDF() {
   delete[] field;
 }
 
-void mjCMesh::CacheOBJ(mjCCache* cache, const mjResource* resource) {
+void mjCMesh::CacheMesh(mjCCache* cache, const mjResource* resource,
+                        std::string_view asset_type) {
   if (cache == nullptr) return;
+  if (asset_type != "model/obj") return;  // only OBJ files are cached
 
   // cache mesh data into new mesh object
   mjCMesh *mesh =  new mjCMesh();
@@ -378,6 +390,8 @@ void mjCMesh::Compile(const mjVFS* vfs) {
   CopyFromSpec();
   visual_ = true;
   std::string asset_type = GetAssetContentType(file_, content_type_);
+  mjResource* resource = nullptr;
+  mjCCache *cache = reinterpret_cast<mjCCache*>(mj_globalCache());
 
   // load file
   if (!file_.empty()) {
@@ -387,6 +401,14 @@ void mjCMesh::Compile(const mjVFS* vfs) {
     texcoord_.clear();
     facenormal_.clear();
     facetexcoord_.clear();
+
+    // copy paths from model if not already defined
+    if (modelfiledir_.empty()) {
+      modelfiledir_ = FilePath(model->modelfiledir_);
+    }
+    if (meshdir_.empty()) {
+      meshdir_ = FilePath(model->meshdir_);
+    }
 
     // remove path from file if necessary
     if (model->strippath) {
@@ -402,26 +424,31 @@ void mjCMesh::Compile(const mjVFS* vfs) {
       throw mjCError(this, "unsupported content type: '%s'", asset_type.c_str());
     }
 
-    std::string filename = mjuu_combinePaths(model->meshdir_, file_);
-    mjResource* resource = LoadResource(model->modelfiledir_, filename, vfs);
+    FilePath filename = meshdir_ + FilePath(file_);
+    resource = LoadResource(modelfiledir_.Str(), filename.Str(), vfs);
 
-    try {
-      if (asset_type == "model/stl") {
-        LoadSTL(resource);
-      } else if (asset_type == "model/obj") {
-        // try loading from cache
-        mjCCache *cache = reinterpret_cast<mjCCache*>(mj_globalCache());
-        if (!cache || !LoadCachedOBJ(cache, resource)) {
+    // try loading from cache
+    if (cache != nullptr && LoadCachedMesh(cache, resource)) {
+      mju_closeResource(resource);
+      resource = nullptr;
+    }
+
+    if (resource != nullptr) {
+      try {
+        if (asset_type == "model/stl") {
+          LoadSTL(resource);
+        } else if (asset_type == "model/obj"){
           LoadOBJ(resource);
-          CacheOBJ(cache, resource);
+        } else {
+          LoadMSH(resource);
         }
-      } else {
-        LoadMSH(resource);
+      } catch (mjCError err) {
+        mju_closeResource(resource);
+        throw err;
       }
+
+      CacheMesh(cache, resource, asset_type);
       mju_closeResource(resource);
-    } catch (mjCError err) {
-      mju_closeResource(resource);
-      throw err;
     }
 
     // check repeated mesh data
@@ -455,19 +482,16 @@ void mjCMesh::Compile(const mjVFS* vfs) {
     } else if (facetexcoord_.empty()) {
       facetexcoord_ = spec_facetexcoord_;
     }
-  }
-
-  // create using marching cubes
-  else if (plugin.active) {
-    LoadSDF();
+  } else if (plugin.active) {
+    LoadSDF();  // create using marching cubes
   }
 
   // check sizes
-  if (vert_.size()<12) throw mjCError(this, "at least 4 vertices required");
-  if (vert_.size()%3) throw mjCError(this, "vertex data must be a multiple of 3");
-  if (normal_.size()%3) throw mjCError(this, "normal data must be a multiple of 3");
-  if (texcoord_.size()%2) throw mjCError(this, "texcoord must be a multiple of 2");
-  if (face_.size()%3) throw mjCError(this, "face data must be a multiple of 3");
+  if (vert_.size() < 12) throw mjCError(this, "at least 4 vertices required");
+  if (vert_.size() % 3) throw mjCError(this, "vertex data must be a multiple of 3");
+  if (normal_.size() % 3) throw mjCError(this, "normal data must be a multiple of 3");
+  if (texcoord_.size() % 2) throw mjCError(this, "texcoord must be a multiple of 2");
+  if (face_.size() % 3) throw mjCError(this, "face data must be a multiple of 3");
 
   // check texcoord size if no face texcoord indices are given
   if (!texcoord_.empty() && texcoord_.size() != 2 * nvert() &&
@@ -566,7 +590,7 @@ void mjCMesh::Compile(const mjVFS* vfs) {
   }
 
   // make bounding volume hierarchy
-  if (tree_.bvh.empty()) {
+  if (tree_.Bvh().empty()) {
     face_aabb_.assign(6*nface(), 0);
     tree_.AllocateBoundingVolumes(nface());
     for (int i=0; i < nface(); i++) {
@@ -711,7 +735,7 @@ void mjCMesh::FitGeom(mjCGeom* geom, double* meshpos) {
 
     case mjGEOM_CAPSULE:
       geom->size[0] = (boxsz[0] + boxsz[1])/2;
-      geom->size[1] = mju_max(0, boxsz[2] - geom->size[0]/2);
+      geom->size[1] = max(0.0, boxsz[2] - geom->size[0]/2);
       break;
 
     case mjGEOM_CYLINDER:
@@ -749,7 +773,7 @@ void mjCMesh::FitGeom(mjCGeom* geom, double* meshpos) {
       for (int i=0; i < nvert(); i++) {
         double v[3] = {vert_[3*i], vert_[3*i+1], vert_[3*i+2]};
         double dst = mjuu_dist3(v, cen);
-        geom->size[0] = mju_max(geom->size[0], dst);
+        geom->size[0] = max(geom->size[0], dst);
       }
       break;
 
@@ -762,11 +786,11 @@ void mjCMesh::FitGeom(mjCGeom* geom, double* meshpos) {
         double v[3] = {vert_[3*i], vert_[3*i+1], vert_[3*i+2]};
         double dst = sqrt((v[0]-cen[0])*(v[0]-cen[0]) +
                           (v[1]-cen[1])*(v[1]-cen[1]));
-        geom->size[0] = mju_max(geom->size[0], dst);
+        geom->size[0] = max(geom->size[0], dst);
 
         // proceed with z: valid for cylinder
-        double dst2 = fabs(v[2]-cen[2]);
-        geom->size[1] = mju_max(geom->size[1], dst2);
+        double dst2 = abs(v[2]-cen[2]);
+        geom->size[1] = max(geom->size[1], dst2);
       }
 
       // special handling of capsule: consider curved cap
@@ -777,11 +801,11 @@ void mjCMesh::FitGeom(mjCGeom* geom, double* meshpos) {
           double v[3] = {vert_[3*i], vert_[3*i+1], vert_[3*i+2]};
           double dst = sqrt((v[0]-cen[0])*(v[0]-cen[0]) +
                             (v[1]-cen[1])*(v[1]-cen[1]));
-          double dst2 = fabs(v[2]-cen[2]);
+          double dst2 = abs(v[2]-cen[2]);
 
           // get spherical elevation at horizontal distance dst
           double h = geom->size[0] * sin(acos(dst/geom->size[0]));
-          geom->size[1] = mju_max(geom->size[1], dst2-h);
+          geom->size[1] = max(geom->size[1], dst2-h);
         }
       }
       break;
@@ -980,7 +1004,7 @@ void mjCMesh::LoadOBJ(mjResource* resource) {
 
 
 // load OBJ from cached asset, return true on success
-bool mjCMesh::LoadCachedOBJ(mjCCache *cache, const mjResource* resource) {
+bool mjCMesh::LoadCachedMesh(mjCCache *cache, const mjResource* resource) {
   // check that asset has all data
   if (!cache->PopulateData(resource, [&](const void* data) {
     const mjCMesh* mesh = static_cast<const mjCMesh*>(data);
@@ -1101,7 +1125,7 @@ void mjCMesh::LoadSTL(mjResource* resource) {
                          resource->name);
         }
         // check if vertex coordinates can be cast to an int safely
-        if (fabs(v[k])>pow(2, 30)) {
+        if (fabs(v[k]) > pow(2, 30)) {
           throw mjCError(this,
                         "vertex coordinates in STL file '%s' exceed maximum bounds",
                         resource->name);
@@ -1230,7 +1254,7 @@ void mjCMesh::ComputeVolume(double CoM[3], mjtGeomInertia type,
 
     // if legacy computation requested, then always positive
     if (!exactmeshinertia && type==mjINERTIA_VOLUME) {
-      vol = fabs(vol);
+      vol = abs(vol);
     }
 
     // add pyramid com
@@ -1422,7 +1446,7 @@ void mjCMesh::Process() {
 
       // if legacy computation requested, then always positive
       if (!exactmeshinertia && type==mjINERTIA_VOLUME) {
-        vol = fabs(vol);
+        vol = abs(vol);
       }
 
       // apply formula, accumulate
@@ -1496,8 +1520,8 @@ void mjCMesh::Process() {
         vert_[3*i+j] = (float) res[j];
 
         // axis-aligned bounding box
-        aamm_[j+0] = mju_min(aamm_[j+0], res[j]);
-        aamm_[j+3] = mju_max(aamm_[j+3], res[j]);
+        aamm_[j+0] = min(aamm_[j+0], res[j]);
+        aamm_[j+3] = max(aamm_[j+3], res[j]);
       }
     }
     for (int i=0; i < nnormal(); i++) {
@@ -1913,7 +1937,7 @@ void mjCMesh::MakeCenter(void) {
     // compute circumradius
     double norm_a_2 = mjuu_dot3(a, a);
     double norm_b_2 = mjuu_dot3(b, b);
-    double area = mjuu_normvec(nrm, 3);
+    double area = sqrt(mjuu_dot3(nrm, nrm));
 
     // compute circumcenter
     double res[3], vec[3] = {
@@ -2014,6 +2038,12 @@ void mjCSkin::NameSpace(const mjCModel* m) {
   for (auto& name : spec_bodyname_) {
     name = m->prefix + name + m->suffix;
   }
+  if (modelfiledir_.empty()) {
+    modelfiledir_ = FilePath(m->spec_modelfiledir_);
+  }
+  if (meshdir_.empty()) {
+    meshdir_ = FilePath(m->spec_meshdir_);
+  }
 }
 
 
@@ -2095,8 +2125,16 @@ void mjCSkin::Compile(const mjVFS* vfs) {
       throw mjCError(this, "Unknown skin file type: %s", file_.c_str());
     }
 
-    std::string filename = mjuu_combinePaths(model->meshdir_, file_);
-    mjResource* resource = LoadResource(model->modelfiledir_, filename, vfs);
+    // copy paths from model if not already defined
+    if (modelfiledir_.empty()) {
+      modelfiledir_ = FilePath(model->modelfiledir_);
+    }
+    if (meshdir_.empty()) {
+      meshdir_ = FilePath(model->meshdir_);
+    }
+
+    FilePath filename = meshdir_ + FilePath(file_);
+    mjResource* resource = LoadResource(modelfiledir_.Str(), filename.Str(), vfs);
 
     try {
       LoadSKN(resource);
@@ -2348,7 +2386,6 @@ struct PairHash
 };
 
 // simplex connectivity
-constexpr int kNumEdges[3] = {1, 3, 6};
 constexpr int eledge[3][6][2] = {{{ 0,  1}, {-1, -1}, {-1, -1},
                                   {-1, -1}, {-1, -1}, {-1, -1}},
                                  {{ 1,  2}, { 2,  0}, { 0,  1},
@@ -2599,7 +2636,7 @@ void mjCFlex::Compile(const mjVFS* vfs) {
   }
 
   // create edges
-  std::vector<int> edgeidx(elem_.size()*kNumEdges[dim-1]);
+  edgeidx_.assign(elem_.size()*kNumEdges[dim-1]/(dim+1), 0);
 
   // map from edge vertices to their index in `edges` vector
   std::unordered_map<std::pair<int, int>, int, PairHash> edge_indices;
@@ -2609,8 +2646,8 @@ void mjCFlex::Compile(const mjVFS* vfs) {
     int* v = elem_.data() + f*(dim+1);
     for (int e = 0; e < kNumEdges[dim-1]; e++) {
       auto pair = std::pair(
-        std::min(v[eledge[dim-1][e][0]], v[eledge[dim-1][e][1]]),
-        std::max(v[eledge[dim-1][e][0]], v[eledge[dim-1][e][1]])
+        min(v[eledge[dim-1][e][0]], v[eledge[dim-1][e][1]]),
+        max(v[eledge[dim-1][e][0]], v[eledge[dim-1][e][1]])
       );
 
       // if edge is already present in the vector only store its index
@@ -2618,9 +2655,9 @@ void mjCFlex::Compile(const mjVFS* vfs) {
 
       if (inserted) {
         edge.push_back(pair);
-        edgeidx[f*kNumEdges[dim-1]+e] = nedge++;
+        edgeidx_[f*kNumEdges[dim-1]+e] = nedge++;
       } else {
-        edgeidx[f*kNumEdges[dim-1]+e] = it->second;
+        edgeidx_[f*kNumEdges[dim-1]+e] = it->second;
       }
     }
   }
@@ -2631,12 +2668,24 @@ void mjCFlex::Compile(const mjVFS* vfs) {
   // add plugins
   std::string userface, useredge;
   userface = VectorToString(elem_);
-  useredge = VectorToString(edgeidx);
+  useredge = VectorToString(edgeidx_);
 
   for (const auto& vbodyid : vertbodyid) {
     if (model->Bodies()[vbodyid]->plugin.instance) {
       mjCPlugin* plugin_instance =
           static_cast<mjCPlugin*>(model->Bodies()[vbodyid]->plugin.instance);
+      if (young > 0) {
+        plugin_instance->config_attribs["young"] = std::to_string(young);
+      }
+      if (poisson > 0) {
+        plugin_instance->config_attribs["poisson"] = std::to_string(poisson);
+      }
+      if (thickness > 0) {
+        plugin_instance->config_attribs["thickness"] = std::to_string(thickness);
+      }
+      if (damping > 0) {
+        plugin_instance->config_attribs["damping"] = std::to_string(damping);
+      }
       plugin_instance->config_attribs["face"] = userface;
       plugin_instance->config_attribs["edge"] = useredge;
     }

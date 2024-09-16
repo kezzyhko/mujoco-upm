@@ -16,7 +16,7 @@
 #define MUJOCO_MUJOCO_H_
 
 // header version; should match the library version as returned by mj_version()
-#define mjVERSION_HEADER 322
+#define mjVERSION_HEADER 323
 
 // needed to define size_t, fabs and log10
 #include <stdlib.h>
@@ -29,6 +29,7 @@
 #include <mujoco/mjmacro.h>
 #include <mujoco/mjplugin.h>
 #include <mujoco/mjrender.h>
+#include <mujoco/mjsan.h>
 #include <mujoco/mjspec.h>
 #include <mujoco/mjthread.h>
 #include <mujoco/mjtnum.h>
@@ -77,10 +78,10 @@ MJAPI extern const char* mjRNDSTRING[mjNRNDFLAG][3];
 // Initialize an empty VFS, mj_deleteVFS must be called to deallocate the VFS.
 MJAPI void mj_defaultVFS(mjVFS* vfs);
 
-// Add file to VFS, return 0: success, 1: full, 2: repeated name, -1: failed to load.
+// Add file to VFS, return 0: success, 2: repeated name, -1: failed to load.
 MJAPI int mj_addFileVFS(mjVFS* vfs, const char* directory, const char* filename);
 
-// Add file to VFS from buffer, return 0: success, 1: full, 2: repeated name, -1: failed to load.
+// Add file to VFS from buffer, return 0: success, 2: repeated name, -1: failed to load.
 MJAPI int mj_addBufferVFS(mjVFS* vfs, const char* name, const void* buffer, int nbuffer);
 
 // Delete file from VFS, return 0: success, -1: not found in VFS.
@@ -106,8 +107,8 @@ MJAPI mjSpec* mj_parseXMLString(const char* xml, const mjVFS* vfs, char* error, 
 // Compile spec to model.
 MJAPI mjModel* mj_compile(mjSpec* s, const mjVFS* vfs);
 
-// Recompile spec to model, preserving the state.
-MJAPI void mj_recompile(mjSpec* s, const mjVFS* vfs, mjModel* m, mjData* d);
+// Recompile spec to model, preserving the state, return 0 on success.
+MJAPI int mj_recompile(mjSpec* s, const mjVFS* vfs, mjModel* m, mjData* d);
 
 // Update XML data structures with info from low-level model, save as MJCF.
 // If error is not NULL, it must have size error_sz.
@@ -197,7 +198,7 @@ MJAPI void mj_resetDataDebug(const mjModel* m, mjData* d, unsigned char debug_va
 // Reset data. If 0 <= key < nkey, set fields from specified keyframe.
 MJAPI void mj_resetDataKeyframe(const mjModel* m, mjData* d, int key);
 
-#ifndef ADDRESS_SANITIZER
+#ifndef ADDRESS_SANITIZER  // Stack management functions declared in mjsan.h if ASAN is active.
 
 // Mark a new frame on the mjData stack.
 MJAPI void mj_markStack(mjData* d);
@@ -456,6 +457,10 @@ MJAPI void mj_jacSite(const mjModel* m, const mjData* d, mjtNum* jacp, mjtNum* j
 MJAPI void mj_jacPointAxis(const mjModel* m, mjData* d, mjtNum* jacPoint, mjtNum* jacAxis,
                            const mjtNum point[3], const mjtNum axis[3], int body);
 
+// Compute 3/6-by-nv Jacobian time derivative of global point attached to given body.
+MJAPI void mj_jacDot(const mjModel* m, const mjData* d, mjtNum* jacp, mjtNum* jacr,
+                     const mjtNum point[3], int body);
+
 // Compute subtree angular momentum matrix.
 MJAPI void mj_angmomMat(const mjModel* m, mjData* d, mjtNum* mat, int body);
 
@@ -507,7 +512,7 @@ MJAPI void mj_integratePos(const mjModel* m, mjtNum* qpos, const mjtNum* qvel, m
 // Normalize all quaternions in qpos-type vector.
 MJAPI void mj_normalizeQuat(const mjModel* m, mjtNum* qpos);
 
-// Map from body local to global Cartesian coordinates.
+// Map from body local to global Cartesian coordinates, sameframe takes values from mjtSameFrame.
 MJAPI void mj_local2Global(mjData* d, mjtNum xpos[3], mjtNum xmat[9], const mjtNum pos[3],
                            const mjtNum quat[4], int body, mjtByte sameframe);
 
@@ -1518,20 +1523,17 @@ MJAPI mjsMaterial* mjs_addMaterial(mjSpec* s, mjsDefault* def);
 // Get spec from body.
 MJAPI mjSpec* mjs_getSpec(mjsBody* body);
 
-// Find body in model by name.
+// Find body in spec by name.
 MJAPI mjsBody* mjs_findBody(mjSpec* s, const char* name);
+
+// Find element in spec by name.
+MJAPI mjsElement* mjs_findElement(mjSpec* s, mjtObj type, const char* name);
 
 // Find child body by name.
 MJAPI mjsBody* mjs_findChild(mjsBody* body, const char* name);
 
-// Find mesh by name.
-MJAPI mjsMesh* mjs_findMesh(mjSpec* s, const char* name);
-
 // Find frame by name.
 MJAPI mjsFrame* mjs_findFrame(mjSpec* s, const char* name);
-
-// Find keyframe by name.
-MJAPI mjsKey* mjs_findKeyframe(mjSpec* s, const char* name);
 
 // Get default corresponding to an element.
 MJAPI mjsDefault* mjs_getDefault(mjsElement* element);
@@ -1628,6 +1630,9 @@ MJAPI mjsMaterial* mjs_asMaterial(mjsElement* element);
 
 
 //---------------------------------- Attribute setters ---------------------------------------------
+
+// Copy buffer.
+MJAPI void mjs_setBuffer(mjByteVec* dest, const void* array, int size);
 
 // Copy text to string.
 MJAPI void mjs_setString(mjString* dest, const char* text);
@@ -1761,35 +1766,6 @@ MJAPI void mjs_defaultKey(mjsKey* key);
 
 // Default plugin attributes.
 MJAPI void mjs_defaultPlugin(mjsPlugin* plugin);
-
-
-//---------------------------------- Sanitizer instrumentation -------------------------------------
-
-// Most users can ignore these functions, the following comments are primarily for developers.
-//
-// When built and run under address sanitizer (asan), mj_markStack and mj_freeStack are instrumented
-// to detect leakage of mjData stack frames. When the compiler inlines several callees that call
-// into mark/free into the same function, this instrumentation requires that the compiler retains
-// separate mark/free calls for each original callee. The memory-clobbered asm blocks act as a
-// barrier to prevent mark/free calls from being combined under optimization.
-
-#ifdef ADDRESS_SANITIZER
-
-void mj__markStack(mjData*) __attribute__((noinline));
-static inline void mj_markStack(mjData* d) __attribute__((always_inline)) {
-  asm volatile("" ::: "memory");
-  mj__markStack(d);
-  asm volatile("" ::: "memory");
-}
-
-void mj__freeStack(mjData*) __attribute__((noinline));
-static inline void mj_freeStack(mjData* d) __attribute__((always_inline)) {
-  asm volatile("" ::: "memory");
-  mj__freeStack(d);
-  asm volatile("" ::: "memory");
-}
-
-#endif  // ADDRESS_SANITIZER
 
 #ifdef __cplusplus
 }

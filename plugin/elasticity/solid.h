@@ -42,18 +42,10 @@ class Solid {
   int i0;  // index of first body
   int nc;  // number of cubes in the grid
   int nv;  // number of vertices (bodies) in the solid
-  int nt;  // number of volumetric elements (tetrahedra)
   int ne;  // number of edges in the solid
 
-  // connectivity info for mapping tetrahedra to edges and vertices
-  std::vector<Stencil3D> elements;          // 4 vertices and 6 edges (nt x 10)
-  std::vector<std::pair<int, int> > edges;  // edge to vertex map     (ne x 2)
-
   // precomputed quantities
-  std::vector<mjtNum> metric;               // geom-induced metric    (nt x 36)
-  std::vector<mjtNum> reference;            // reference lengths      (ne x 1)
-  std::vector<mjtNum> deformed;             // deformed lengths       (ne x 1)
-  std::vector<mjtNum> previous;             // previous-step lengths  (ne x 1)
+  std::vector<mjtNum> prev;                 // previous-step lengths  (ne x 1)
   std::vector<mjtNum> elongation;           // edge elongation        (ne x 1)
   std::vector<mjtNum> force;                // force at all vertices  (nv x 3)
 
@@ -61,8 +53,7 @@ class Solid {
 
  private:
   Solid(const mjModel* m, mjData* d, int instance, mjtNum nu, mjtNum E,
-        mjtNum damp, const std::vector<int>& simplex,
-        const std::vector<int>& edgeidx);
+        mjtNum damp);
 };
 
 }  // namespace mujoco::plugin::elasticity

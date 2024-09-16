@@ -168,6 +168,7 @@ class ModelIOTest(parameterized.TestCase):
           <tendon>
             <spatial name="rope" range="0 .35">
               <site site="slider"/>
+              <geom geom="shoulder"/>
               <site site="arm"/>
             </spatial>
           </tendon>
@@ -208,6 +209,14 @@ class ModelIOTest(parameterized.TestCase):
           </worldbody>
         </mujoco>"""))
 
+  def test_implicitfast_fluid_not_implemented(self):
+    with self.assertRaises(NotImplementedError):
+      mjx.put_model(mujoco.MjModel.from_xml_string("""
+        <mujoco>
+          <option viscosity="3.0" integrator="implicitfast"/>
+          <worldbody/>
+        </mujoco>"""))
+
 
 class DataIOTest(parameterized.TestCase):
   """IO tests for mjx.Data."""
@@ -221,6 +230,7 @@ class DataIOTest(parameterized.TestCase):
     nq = 22
     nbody = 5
     ncon = 46
+    nm = 64
     nv = 19
     nefc = 185
 
@@ -275,6 +285,13 @@ class DataIOTest(parameterized.TestCase):
     self.assertEqual(d.qfrc_constraint.shape, (nv,))
     self.assertEqual(d.qfrc_inverse.shape, (nv,))
     self.assertEqual(d.efc_force.shape, (nefc,))
+
+    # test sparse
+    m.opt.jacobian = mujoco.mjtJacobian.mjJAC_SPARSE
+    d = mjx.make_data(m)
+    self.assertEqual(d.qM.shape, (nm,))
+    self.assertEqual(d.qLD.shape, (nm,))
+    self.assertEqual(d.qLDiagInv.shape, (nv,))
 
   def test_put_data(self):
     """Test that put_data puts the correct data for dense and sparse."""

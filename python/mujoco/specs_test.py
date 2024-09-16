@@ -98,6 +98,88 @@ class SpecsTest(absltest.TestCase):
         </mujoco>
     """),)
 
+  def test_kwarg(self):
+    # Create a spec.
+    spec = mujoco.MjSpec()
+
+    # Add a body.
+    body = spec.worldbody.add_body(
+        name='body', pos=[1, 2, 3], quat=[0, 0, 0, 1]
+    )
+    self.assertEqual(body.name, 'body')
+    np.testing.assert_array_equal(body.pos, [1, 2, 3])
+    np.testing.assert_array_equal(body.quat, [0, 0, 0, 1])
+
+    # Add a geom.
+    geom = body.add_geom(
+        name='geom',
+        pos=[3, 2, 1],
+        fromto=[1, 2, 3, 4, 5, 6],
+        contype=3,
+    )
+
+    self.assertEqual(geom.name, 'geom')
+    np.testing.assert_array_equal(geom.pos, [3, 2, 1])
+    np.testing.assert_array_equal(geom.fromto, [1, 2, 3, 4, 5, 6])
+    self.assertEqual(geom.contype, 3)
+
+    # Add a site to the body with user data and read it back.
+    site = body.add_site(
+        name='sitename',
+        pos=[0, 1, 2],
+        quat=[1, 0, 0, 0],
+        fromto=[0, 1, 2, 3, 4, 5],
+        size=[3, 2, 1],
+        type=mujoco.mjtGeom.mjGEOM_BOX,
+        material='material',
+        group=7,
+        rgba=[1, 1, 1, 0.5],
+        userdata=[1, 2, 3, 4, 5, 6],
+        info='info',
+    )
+    self.assertEqual(site.name, 'sitename')
+    np.testing.assert_array_equal(site.pos, [0, 1, 2])
+    np.testing.assert_array_equal(site.quat, [1, 0, 0, 0])
+    np.testing.assert_array_equal(site.fromto, [0, 1, 2, 3, 4, 5])
+    np.testing.assert_array_equal(site.size, [3, 2, 1])
+    self.assertEqual(site.type, mujoco.mjtGeom.mjGEOM_BOX)
+    self.assertEqual(site.material, 'material')
+    self.assertEqual(site.group, 7)
+    np.testing.assert_array_equal(site.rgba, [1, 1, 1, 0.5])
+    np.testing.assert_array_equal(site.userdata, [1, 2, 3, 4, 5, 6])
+    self.assertEqual(site.info, 'info')
+
+    # Add camera.
+    cam = body.add_camera(orthographic=1, resolution=[10, 20])
+    self.assertEqual(cam.orthographic, 1)
+    np.testing.assert_array_equal(cam.resolution, [10, 20])
+
+    # Add joint.
+    jnt = body.add_joint(type=mujoco.mjtJoint.mjJNT_HINGE, axis=[0, 1, 0])
+    self.assertEqual(jnt.type, mujoco.mjtJoint.mjJNT_HINGE)
+    np.testing.assert_array_equal(jnt.axis, [0, 1, 0])
+
+    # Add light.
+    light = body.add_light(attenuation=[1, 2, 3])
+    np.testing.assert_array_equal(light.attenuation, [1, 2, 3])
+
+    # Invalid input for valid keyword argument.
+    with self.assertRaises(ValueError):
+      body.add_geom(pos='pos')  # wrong type for array
+
+    with self.assertRaises(ValueError):
+      body.add_geom(pos=[0, 1])  # wrong size
+
+    with self.assertRaises(ValueError):
+      body.add_geom(type='type')  # wrong type for value
+
+    with self.assertRaises(ValueError):
+      body.add_geom(userdata='')  # wrong type of vector
+
+    # Invalid keyword argument.
+    with self.assertRaises(TypeError):
+      body.add_geom(vel='vel')
+
   def test_load_xml(self):
     filename = '../../test/testdata/model.xml'
     state_type = mujoco.mjtState.mjSTATE_INTEGRATION
@@ -321,6 +403,60 @@ class SpecsTest(absltest.TestCase):
     self.assertIsNotNone(model)
     self.assertEqual(model.nsite, 10)
     self.assertEqual(model.nsensor, 9)
+
+  def test_plugin(self):
+    xml = """
+    <mujoco>
+      <extension>
+        <plugin plugin="mujoco.elasticity.cable"/>
+      </extension>
+    </mujoco>
+    """
+
+    spec = mujoco.MjSpec()
+    spec.from_string(xml)
+    self.assertIsNotNone(spec.worldbody)
+
+    body = spec.worldbody.add_body()
+    body.plugin.name = 'mujoco.elasticity.cable'
+    body.plugin.id = spec.add_plugin()
+    body.plugin.active = True
+    self.assertEqual(body.plugin.id, 0)
+
+    geom = body.add_geom()
+    geom.type = mujoco.mjtGeom.mjGEOM_BOX
+    geom.size[0] = 1
+    geom.size[1] = 1
+    geom.size[2] = 1
+
+    model = spec.compile()
+    self.assertIsNotNone(model)
+    self.assertEqual(model.nplugin, 1)
+    self.assertEqual(model.body_plugin[1], 0)
+
+  def test_recompile_error(self):
+    main_xml = """
+    <mujoco>
+      <worldbody>
+        <body>
+          <geom size="0.1"/>
+        </body>
+      </worldbody>
+    </mujoco>
+    """
+
+    spec = mujoco.MjSpec()
+    spec.from_string(main_xml)
+    model = spec.compile()
+    data = mujoco.MjData(model)
+
+    spec.add_material().name = 'yellow'
+    spec.add_material().name = 'yellow'
+
+    with self.assertRaisesRegex(
+        ValueError, "Error: repeated name 'yellow' in material"
+    ):
+      spec.recompile(model, data)
 
 if __name__ == '__main__':
   absltest.main()

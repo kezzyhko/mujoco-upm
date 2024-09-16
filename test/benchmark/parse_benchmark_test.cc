@@ -70,7 +70,7 @@ static void run_parse_benchmark(const std::string xml_path,
 // run_parse_benchmark).
 
 void ABSL_ATTRIBUTE_NO_TAIL_CALL BM_ParseFlagPlugin(benchmark::State& state) {
-  run_parse_benchmark(GetModelPath("plugin/elasticity/flag.xml"), state);
+  run_parse_benchmark(GetModelPath("plugin/elasticity/flag_flex.xml"), state);
 }
 BENCHMARK(BM_ParseFlagPlugin);
 
@@ -86,7 +86,7 @@ void ABSL_ATTRIBUTE_NO_TAIL_CALL BM_ParseHumanoid(benchmark::State& state) {
 BENCHMARK(BM_ParseHumanoid);
 
 void ABSL_ATTRIBUTE_NO_TAIL_CALL BM_ParseHumanoid100(benchmark::State& state) {
-  run_parse_benchmark(GetModelPath("humanoid100/humanoid100.xml"), state);
+  run_parse_benchmark(GetModelPath("humanoid/humanoid100.xml"), state);
 }
 BENCHMARK(BM_ParseHumanoid100);
 
