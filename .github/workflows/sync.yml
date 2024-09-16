@@ -2,23 +2,26 @@ name: 'Upstream Sync'
 
 on:
   schedule:
-    - cron:  '0 */12 * * *'
+    - cron: '0 */12 * * *'
   workflow_dispatch:
 
 jobs:
   sync_with_upstream:
     runs-on: ubuntu-latest
+    environment: OpenUPM workflows
     name: Sync main with upstream latest
     
-    # Steps represent a sequence of tasks that will be executed as part of the job
     steps:
       - name: Checkout master
         uses: actions/checkout@v4
         with:
+          persist-credentials: false
           ref: main
     
       - name: Sync master with upstream latest
         uses: aormsby/Fork-Sync-With-Upstream-action@v2.3
+        env:
+          GITHUB_TOKEN: ${{ secrets.ACCESS_TOKEN }}
         with:
           upstream_repository: google-deepmind/mujoco
           upstream_branch: main

@@ -15,7 +15,6 @@ on:
 jobs:
   sync-to-upm:
     runs-on: ubuntu-latest
-    environment: OpenUPM workflows
     steps:
     - name: Set environment variables
       run: |
