@@ -326,6 +326,7 @@ mjCBody::mjCBody(mjCModel* _model) {
   weldid = -1;
   dofnum = 0;
   lastdof = -1;
+  gravcomp = 0;
   userdata.clear();
 
   // plugin variables
@@ -701,8 +702,10 @@ void mjCBody::Compile(void) {
 
   // compile all geoms, phase 1
   for (i=0; i<geoms.size(); i++) {
-    geoms[i]->inferinertia = id>0 && (!explicitinertial ||
-                                      model->inertiafromgeom==mjINERTIAFROMGEOM_TRUE);
+    geoms[i]->inferinertia = id>0 &&
+      (!explicitinertial || model->inertiafromgeom == mjINERTIAFROMGEOM_TRUE) &&
+      geoms[i]->group >= model->inertiagrouprange[0] &&
+      geoms[i]->group <= model->inertiagrouprange[1];
     geoms[i]->Compile();
   }
 
@@ -3039,7 +3042,7 @@ mjCTendon::mjCTendon(mjCModel* _model, mjCDef* _def) {
   stiffness = 0;
   damping = 0;
   frictionloss = 0;
-  springlength = -1;
+  springlength[0] = springlength[1] = -1;
   rgba[0] = rgba[1] = rgba[2] = 0.5f;
   rgba[3] = 1.0f;
   userdata.clear();
@@ -3271,6 +3274,11 @@ void mjCTendon::Compile(void) {
   if (range[0]>=range[1] && limited) {
     throw mjCError(this, "invalid limits in tendon '%s (id = %d)'", name.c_str(), id);
   }
+
+  // check springlength
+  if (springlength[0] > springlength[1]) {
+    throw mjCError(this, "invalid springlength in tendon '%s (id = %d)'", name.c_str(), id);
+  }
 }
 
 
@@ -3382,6 +3390,7 @@ mjCActuator::mjCActuator(mjCModel* _model, mjCDef* _def) {
   ctrllimited = 2;
   forcelimited = 2;
   actlimited = 2;
+  actdim = -1;
   trntype = mjTRN_UNDEFINED;
   dyntype = mjDYN_NONE;
   gaintype = mjGAIN_FIXED;
@@ -3464,6 +3473,23 @@ void mjCActuator::Compile(void) {
   if (actlimited && dyntype == mjDYN_NONE) {
     throw mjCError(this, "actrange specified but dyntype is 'none' in actuator '%s' (id = %d)",
                    name.c_str(), id);
+  }
+
+  // check and set actdim
+  if (actdim > 1 && dyntype != mjDYN_USER) {
+    throw mjCError(this, "actdim > 1 is only allowed for dyntype 'user' in actuator '%s' (id = %d)",
+                   name.c_str(), id);
+  }
+  if (actdim == 1 && dyntype == mjDYN_NONE) {
+    throw mjCError(this, "invalid actdim 1 in stateless actuator '%s' (id = %d)", name.c_str(), id);
+  }
+  if (actdim == 0 && dyntype != mjDYN_NONE) {
+    throw mjCError(this, "invalid actdim 0 in stateful actuator '%s' (id = %d)", name.c_str(), id);
+  }
+
+  // set actdim
+  if (actdim < 0) {
+    actdim = (dyntype != mjDYN_NONE);
   }
 
   // check muscle parameters
@@ -3671,7 +3697,7 @@ void mjCSensor::Compile(void) {
 
     // get sensorized object id
     objid = pobj->id;
-  } else if (type != mjSENS_CLOCK && type != mjSENS_PLUGIN) {
+  } else if (type != mjSENS_CLOCK && type != mjSENS_PLUGIN && type != mjSENS_USER) {
     throw mjCError(this, "invalid type in sensor '%s' (id = %d)", name.c_str(), id);
   }
 
@@ -3753,7 +3779,7 @@ void mjCSensor::Compile(void) {
                      "joint must be slide or hinge in sensor '%s' (id = %d)", name.c_str(), id);
     }
 
-    //set
+    // set
     dim = 1;
     datatype = mjDATATYPE_REAL;
     if (type==mjSENS_JOINTPOS) {

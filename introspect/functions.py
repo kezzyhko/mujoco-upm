@@ -2698,6 +2698,38 @@ FUNCTIONS: Mapping[str, FunctionDecl] = dict([
          ),
          doc='Return a config attribute value of a plugin instance; NULL: invalid plugin instance ID or attribute name',  # pylint: disable=line-too-long
      )),
+    ('mj_loadPluginLibrary',
+     FunctionDecl(
+         name='mj_loadPluginLibrary',
+         return_type=ValueType(name='void'),
+         parameters=(
+             FunctionParameterDecl(
+                 name='path',
+                 type=PointerType(
+                     inner_type=ValueType(name='char', is_const=True),
+                 ),
+             ),
+         ),
+         doc='Load a dynamic library. The dynamic library is assumed to register one or more plugins.',  # pylint: disable=line-too-long
+     )),
+    ('mj_loadAllPluginLibraries',
+     FunctionDecl(
+         name='mj_loadAllPluginLibraries',
+         return_type=ValueType(name='void'),
+         parameters=(
+             FunctionParameterDecl(
+                 name='directory',
+                 type=PointerType(
+                     inner_type=ValueType(name='char', is_const=True),
+                 ),
+             ),
+             FunctionParameterDecl(
+                 name='callback',
+                 type=ValueType(name='mjfPluginLibraryLoadCallback'),
+             ),
+         ),
+         doc='Scan a directory and load all dynamic libraries. Dynamic libraries in the specified directory are assumed to register one or more plugins. Optionally, if a callback is specified, it is called for each dynamic library encountered that registers plugins.',  # pylint: disable=line-too-long
+     )),
     ('mj_version',
      FunctionDecl(
          name='mj_version',
@@ -5284,6 +5316,28 @@ FUNCTIONS: Mapping[str, FunctionDecl] = dict([
          ),
          doc='Set res = 0.',
      )),
+    ('mju_fill',
+     FunctionDecl(
+         name='mju_fill',
+         return_type=ValueType(name='void'),
+         parameters=(
+             FunctionParameterDecl(
+                 name='res',
+                 type=PointerType(
+                     inner_type=ValueType(name='mjtNum'),
+                 ),
+             ),
+             FunctionParameterDecl(
+                 name='val',
+                 type=ValueType(name='mjtNum'),
+             ),
+             FunctionParameterDecl(
+                 name='n',
+                 type=ValueType(name='int'),
+             ),
+         ),
+         doc='Set res = val.',
+     )),
     ('mju_copy',
      FunctionDecl(
          name='mju_copy',
@@ -5698,7 +5752,7 @@ FUNCTIONS: Mapping[str, FunctionDecl] = dict([
                  type=ValueType(name='int'),
              ),
          ),
-         doc="Multiply square matrix with vectors on both sides: returns vec1'*mat*vec2.",  # pylint: disable=line-too-long
+         doc="Multiply square matrix with vectors on both sides: returns vec1' * mat * vec2.",  # pylint: disable=line-too-long
      )),
     ('mju_transpose',
      FunctionDecl(
@@ -5727,6 +5781,48 @@ FUNCTIONS: Mapping[str, FunctionDecl] = dict([
              ),
          ),
          doc="Transpose matrix: res = mat'.",
+     )),
+    ('mju_symmetrize',
+     FunctionDecl(
+         name='mju_symmetrize',
+         return_type=ValueType(name='void'),
+         parameters=(
+             FunctionParameterDecl(
+                 name='res',
+                 type=PointerType(
+                     inner_type=ValueType(name='mjtNum'),
+                 ),
+             ),
+             FunctionParameterDecl(
+                 name='mat',
+                 type=PointerType(
+                     inner_type=ValueType(name='mjtNum', is_const=True),
+                 ),
+             ),
+             FunctionParameterDecl(
+                 name='n',
+                 type=ValueType(name='int'),
+             ),
+         ),
+         doc="Symmetrize square matrix res = (mat + mat')/2.",
+     )),
+    ('mju_eye',
+     FunctionDecl(
+         name='mju_eye',
+         return_type=ValueType(name='void'),
+         parameters=(
+             FunctionParameterDecl(
+                 name='mat',
+                 type=PointerType(
+                     inner_type=ValueType(name='mjtNum'),
+                 ),
+             ),
+             FunctionParameterDecl(
+                 name='n',
+                 type=ValueType(name='int'),
+             ),
+         ),
+         doc='Set mat to the identity matrix.',
      )),
     ('mju_mulMatMat',
      FunctionDecl(
@@ -6872,6 +6968,20 @@ FUNCTIONS: Mapping[str, FunctionDecl] = dict([
              ),
          ),
          doc='Convert type name to type id (mjtObj).',
+     )),
+    ('mju_writeNumBytes',
+     FunctionDecl(
+         name='mju_writeNumBytes',
+         return_type=PointerType(
+             inner_type=ValueType(name='char', is_const=True),
+         ),
+         parameters=(
+             FunctionParameterDecl(
+                 name='nbytes',
+                 type=ValueType(name='size_t', is_const=True),
+             ),
+         ),
+         doc='Return human readable number of bytes using standard letter suffix.',  # pylint: disable=line-too-long
      )),
     ('mju_warningText',
      FunctionDecl(

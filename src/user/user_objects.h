@@ -186,6 +186,7 @@ class mjCBody : public mjCBase {
   double iquat[4];                // inertial frame orientation
   double mass;                    // mass
   double inertia[3];              // diagonal inertia (in i-frame)
+  double gravcomp;                // gravity compensation
   std::vector<double> userdata;   // user data
   mjCAlternative alt;             // alternative orientation specification
   mjCAlternative ialt;            // alternative for inertial frame
@@ -490,7 +491,6 @@ class mjCMesh: public mjCBase {
   void MakeNormal(void);                      // compute vertex normals
   void Process();                             // apply transformations
   void RemoveRepeated(void);                  // remove repeated vertices
-  void ComputeInertia(mjtMeshType type);      // compute inertia
   void CheckMesh(void);                       // check if the mesh is valid
 
   // mesh properties that indicate a well-formed mesh
@@ -803,7 +803,7 @@ class mjCTendon : public mjCBase {
   double stiffness;               // stiffness coefficient
   double damping;                 // damping coefficient
   double frictionloss;            // friction loss
-  double springlength;            // spring length; -1: use qpos_spring
+  double springlength[2];         // spring resting length; {-1, -1}: use qpos_spring
   std::vector<double> userdata;   // user data
   float rgba[4];                  // rgba when material is omitted
 
@@ -873,9 +873,10 @@ class mjCActuator : public mjCBase {
  public:
   // variables set by user or API
   int group;                      // group for visualization
-  int ctrllimited;               // are control limits defined: 0 false, 1 true, 2 auto
-  int forcelimited;              // are force limits defined: 0 false, 1 true, 2 auto
-  int actlimited;                // are activation limits defined: 0 false, 1 true, 2 auto
+  int ctrllimited;                // are control limits defined: 0 false, 1 true, 2 auto
+  int forcelimited;               // are force limits defined: 0 false, 1 true, 2 auto
+  int actlimited;                 // are activation limits defined: 0 false, 1 true, 2 auto
+  int actdim;                     // dimension of associated activations
   mjtDyn dyntype;                 // dynamics type
   mjtTrn trntype;                 // transmission type
   mjtGain gaintype;               // gain type

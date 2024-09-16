@@ -170,6 +170,7 @@
     X( mjtNum,  body_subtreemass,      nbody,         1                    ) \
     X( mjtNum,  body_inertia,          nbody,         3                    ) \
     X( mjtNum,  body_invweight0,       nbody,         2                    ) \
+    X( mjtNum,  body_gravcomp,         nbody,         1                    ) \
     X( mjtNum,  body_user,             nbody,         MJ_M(nuser_body)     ) \
     X( int,     body_plugin,           nbody,         1                    ) \
     X( int,     jnt_type,              njnt,          1                    ) \
@@ -341,7 +342,7 @@
     X( mjtNum,  tendon_stiffness,      ntendon,       1                    ) \
     X( mjtNum,  tendon_damping,        ntendon,       1                    ) \
     X( mjtNum,  tendon_frictionloss,   ntendon,       1                    ) \
-    X( mjtNum,  tendon_lengthspring,   ntendon,       1                    ) \
+    X( mjtNum,  tendon_lengthspring,   ntendon,       2                    ) \
     X( mjtNum,  tendon_length0,        ntendon,       1                    ) \
     X( mjtNum,  tendon_invweight0,     ntendon,       1                    ) \
     X( mjtNum,  tendon_user,           ntendon,       MJ_M(nuser_tendon)   ) \
@@ -354,6 +355,8 @@
     X( int,     actuator_gaintype,     nu,            1                    ) \
     X( int,     actuator_biastype,     nu,            1                    ) \
     X( int,     actuator_trnid,        nu,            2                    ) \
+    X( int,     actuator_actadr,       nu,            1                    ) \
+    X( int,     actuator_actnum,       nu,            1                    ) \
     X( int,     actuator_group,        nu,            1                    ) \
     X( mjtByte, actuator_ctrllimited,  nu,            1                    ) \
     X( mjtByte, actuator_forcelimited, nu,            1                    ) \

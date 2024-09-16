@@ -23,6 +23,7 @@
 #include <mujoco/mjvisualize.h>
 #include "engine/engine_array_safety.h"
 #include "engine/engine_macro.h"
+#include "engine/engine_plugin.h"
 #include "engine/engine_support.h"
 #include "engine/engine_util_blas.h"
 #include "engine/engine_util_errmem.h"
@@ -566,10 +567,14 @@ void mjv_addGeoms(const mjModel* m, mjData* d, const mjvOption* vopt,
     if ((pert->active | pert->active2) & mjPERT_TRANSLATE) {
       START
 
+      // compute selection point in world coordinates
+      mju_rotVecMat(selpos, pert->localpos, d->xmat+9*pert->select);
+      mju_addTo3(selpos, d->xpos+3*pert->select);
+
       // construct geom
       sz[0] = scl * m->vis.scale.constraint;
       mjv_makeConnector(thisgeom, mjGEOM_CAPSULE, sz[0],
-                        d->xipos[3*i], d->xipos[3*i+1], d->xipos[3*i+2],
+                        selpos[0], selpos[1], selpos[2],
                         pert->refpos[0], pert->refpos[1], pert->refpos[2]);
 
       // prepare color
@@ -666,6 +671,7 @@ void mjv_addGeoms(const mjModel* m, mjData* d, const mjvOption* vopt,
   category = mjCAT_DECOR;
   if ((category & catmask) && pert->select>0 && vopt->flags[mjVIS_SELECT]) {
     int i=0;
+
     // compute selection point in world coordinates
     mju_rotVecMat(selpos, pert->localpos, d->xmat+9*pert->select);
     mju_addTo3(selpos, d->xpos+3*pert->select);
@@ -776,7 +782,7 @@ void mjv_addGeoms(const mjModel* m, mjData* d, const mjvOption* vopt,
       if (vopt->actuatorgroup[mjMAX(0, mjMIN(mjNGROUP-1, m->actuator_group[i]))]) {
         // determine extended range
         mjtNum rng[3] = {-1, 0, +1};
-        mjtNum rmin = -1, rmax = 1, act;
+        mjtNum rmin = -1, rmax = 1, act = 0;
         if (m->actuator_ctrllimited[i]) {
           rmin = m->actuator_ctrlrange[2*i];
           rmax = m->actuator_ctrlrange[2*i+1];
@@ -808,7 +814,7 @@ void mjv_addGeoms(const mjModel* m, mjData* d, const mjvOption* vopt,
 
         // clamp act to extended range
         if (vopt->flags[mjVIS_ACTIVATION] && m->actuator_dyntype[i]) {
-          act = mju_clip(d->act[i-(m->nu-m->na)], rng[0], rng[2]);
+          act = mju_clip(d->act[m->actuator_actadr[i] + m->actuator_actnum[i] - 1], rng[0], rng[2]);
         } else {
           act = mju_clip(d->ctrl[i], rng[0], rng[2]);
         }
@@ -1350,14 +1356,24 @@ void mjv_addGeoms(const mjModel* m, mjData* d, const mjvOption* vopt,
   if (vopt->flags[mjVIS_TENDON] && (category & catmask)) {
     for (int i=0; i<m->ntendon; i++) {
       if (vopt->tendongroup[mjMAX(0, mjMIN(mjNGROUP-1, m->tendon_group[i]))]) {
+        // stiff tendon has a deadband spring
+        int limitedspring =
+            m->tendon_stiffness[i] > 0            &&  // positive stiffness
+            m->tendon_lengthspring[2*i] == 0      &&  // range lower-bound is 0
+            m->tendon_lengthspring[2*i+1] > 0;        // range upper-bound is positive
+
+        // non-stiff tendon has a length constraint
+        int limitedconstraint =
+            m->tendon_stiffness[i] == 0           &&  // zero stiffness
+            m->tendon_limited[i] == 1             &&  // limited length range
+            m->tendon_range[2*i] == 0;                // range lower-bound is 0
+
         // conditions for drawing a catenary
         int draw_catenary =
             !mjDISABLED(mjDSBL_GRAVITY)           &&  // gravity enabled
             mju_norm3(m->opt.gravity) > mjMINVAL  &&  // gravity strictly nonzero
             m->tendon_num[i] == 2                 &&  // only two sites on the tendon
-            m->tendon_limited[i] == 1             &&  // limited length range
-            m->tendon_range[2*i] == 0             &&  // range lower-bound is 0
-            m->tendon_stiffness[i] == 0           &&  // no stiffness
+            (limitedspring || limitedconstraint)  &&  // either spring or constraint length limits
             m->tendon_damping[i] == 0             &&  // no damping
             m->tendon_frictionloss[i] == 0;           // no frictionloss
 
@@ -1400,7 +1416,12 @@ void mjv_addGeoms(const mjModel* m, mjData* d, const mjvOption* vopt,
           mju_copy3(x1, d->wrap_xpos + 3*d->ten_wrapadr[i] + 3);
 
           // length of the tendon
-          mjtNum length = m->tendon_range[2*i+1];
+          mjtNum length;
+          if (limitedconstraint) {
+            length = m->tendon_range[2*i+1];
+          } else {
+            length = m->tendon_lengthspring[2*i+1];
+          }
 
           // points along catenary path
           int npoints = mjv_catenary(x0, x1, m->opt.gravity, length, catenary);
@@ -1999,6 +2020,22 @@ void mjv_updateScene(const mjModel* m, mjData* d, const mjvOption* opt,
   // update skins
   if (opt->flags[mjVIS_SKIN]) {
     mjv_updateActiveSkin(m, d, scn, opt);
+  }
+
+  // update plugin
+  if (m->nplugin) {
+    const int nslot = mjp_pluginCount();
+    // iterate over plugins, call visualize if defined
+    for (int i=0; i<m->nplugin; i++) {
+      const int slot = m->plugin[i];
+      const mjpPlugin* plugin = mjp_getPluginAtSlotUnsafe(slot, nslot);
+      if (!plugin) {
+        mju_error_i("invalid plugin slot: %d", slot);
+      }
+      if (plugin->visualize) {
+        plugin->visualize(m, d, scn, i);
+      }
+    }
   }
 }
 

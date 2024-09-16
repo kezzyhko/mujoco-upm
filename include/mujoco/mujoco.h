@@ -24,7 +24,7 @@ extern "C" {
 #endif
 
 // header version; should match the library version as returned by mj_version()
-#define mjVERSION_HEADER 230
+#define mjVERSION_HEADER 231
 
 // needed to define size_t, fabs and log10
 #include <stdlib.h>
@@ -458,6 +458,14 @@ MJAPI void mj_setTotalmass(mjModel* m, mjtNum newmass);
 // NULL: invalid plugin instance ID or attribute name
 MJAPI const char* mj_getPluginConfig(const mjModel* m, int plugin_id, const char* attrib);
 
+// Load a dynamic library. The dynamic library is assumed to register one or more plugins.
+MJAPI void mj_loadPluginLibrary(const char* path);
+
+// Scan a directory and load all dynamic libraries. Dynamic libraries in the specified directory
+// are assumed to register one or more plugins. Optionally, if a callback is specified, it is called
+// for each dynamic library encountered that registers plugins.
+MJAPI void mj_loadAllPluginLibraries(const char* directory, mjfPluginLibraryLoadCallback callback);
+
 // Return version number: 1.0.2 is encoded as 102.
 MJAPI int mj_version(void);
 
@@ -871,6 +879,9 @@ MJAPI mjtNum mju_normalize4(mjtNum res[4]);
 // Set res = 0.
 MJAPI void mju_zero(mjtNum* res, int n);
 
+// Set res = val.
+MJAPI void mju_fill(mjtNum* res, mjtNum val, int n);
+
 // Set res = vec.
 MJAPI void mju_copy(mjtNum* res, const mjtNum* data, int n);
 
@@ -916,11 +927,17 @@ MJAPI void mju_mulMatVec(mjtNum* res, const mjtNum* mat, const mjtNum* vec, int 
 // Multiply transposed matrix and vector: res = mat' * vec.
 MJAPI void mju_mulMatTVec(mjtNum* res, const mjtNum* mat, const mjtNum* vec, int nr, int nc);
 
-// Multiply square matrix with vectors on both sides: returns vec1'*mat*vec2.
+// Multiply square matrix with vectors on both sides: returns vec1' * mat * vec2.
 MJAPI mjtNum mju_mulVecMatVec(const mjtNum* vec1, const mjtNum* mat, const mjtNum* vec2, int n);
 
 // Transpose matrix: res = mat'.
 MJAPI void mju_transpose(mjtNum* res, const mjtNum* mat, int nr, int nc);
+
+// Symmetrize square matrix res = (mat + mat')/2.
+MJAPI void mju_symmetrize(mjtNum* res, const mjtNum* mat, int n);
+
+// Set mat to the identity matrix.
+MJAPI void mju_eye(mjtNum* mat, int n);
 
 // Multiply matrices: res = mat1 * mat2.
 MJAPI void mju_mulMatMat(mjtNum* res, const mjtNum* mat1, const mjtNum* mat2,
@@ -1085,6 +1102,9 @@ MJAPI const char* mju_type2Str(int type);
 
 // Convert type name to type id (mjtObj).
 MJAPI int mju_str2Type(const char* str);
+
+// Return human readable number of bytes using standard letter suffix.
+MJAPI const char* mju_writeNumBytes(const size_t nbytes);
 
 // Construct a warning message given the warning type and info.
 MJAPI const char* mju_warningText(int warning, size_t info);

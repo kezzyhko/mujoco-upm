@@ -159,8 +159,8 @@ static const char* MJCF[nMJCF][mjXATTRNUM] = {
             "solreflimit", "solimplimit", "solreffriction", "solimpfriction",
             "frictionloss", "springlength", "width", "material",
             "margin", "stiffness", "damping", "rgba", "user"},
-        {"general", "?", "16", "ctrllimited", "forcelimited", "actlimited", "ctrlrange",
-            "forcerange", "actrange", "gear", "cranklength", "user", "group",
+        {"general", "?", "17", "ctrllimited", "forcelimited", "actlimited", "ctrlrange",
+            "forcerange", "actrange", "gear", "cranklength", "user", "group", "actdim",
             "dyntype", "gaintype", "biastype", "dynprm", "gainprm", "biasprm"},
         {"motor", "?", "8", "ctrllimited", "forcelimited", "ctrlrange", "forcerange",
             "gear", "cranklength", "user", "group"},
@@ -227,8 +227,8 @@ static const char* MJCF[nMJCF][mjXATTRNUM] = {
             "emission", "specular", "shininess", "reflectance", "rgba"},
     {">"},
 
-    {"body", "R", "10", "name", "childclass", "pos", "quat", "mocap",
-        "axisangle", "xyaxes", "zaxis", "euler", "user"},
+    {"body", "R", "11", "name", "childclass", "pos", "quat", "mocap",
+        "axisangle", "xyaxes", "zaxis", "euler", "gravcomp", "user"},
     {"<"},
         {"plugin", "*", "3", "name", "plugin", "instance"},
         {"<"},
@@ -255,16 +255,16 @@ static const char* MJCF[nMJCF][mjXATTRNUM] = {
         {"light", "*", "15", "name", "class", "directional", "castshadow", "active",
             "pos", "dir", "attenuation", "cutoff", "exponent", "ambient", "diffuse", "specular",
             "mode", "target"},
-        {"composite", "*", "13", "prefix", "type", "count", "spacing", "offset",
+        {"composite", "*", "12", "prefix", "type", "count", "spacing", "offset",
             "flatinertia", "solrefsmooth", "solimpsmooth", "vertex",
-            "flat", "initial", "curve", "size"},
+            "initial", "curve", "size"},
         {"<"},
             {"plugin", "*", "3", "name", "plugin", "instance"},
             {"<"},
               {"config", "*", "2", "key", "value"},
             {">"},
-            {"joint", "*", "15", "kind", "group", "stiffness", "damping", "armature",
-                "solreffix", "solimpfix",
+            {"joint", "*", "17", "kind", "group", "stiffness", "damping", "armature",
+                "solreffix", "solimpfix", "type", "axis",
                 "limited", "range", "margin", "solreflimit", "solimplimit",
                 "frictionloss", "solreffriction", "solimpfriction"},
             {"tendon", "*", "17", "kind", "group", "stiffness", "damping",
@@ -323,11 +323,11 @@ static const char* MJCF[nMJCF][mjXATTRNUM] = {
 
     {"actuator", "*", "0"},
     {"<"},
-        {"general", "*", "27", "name", "class", "group",
+        {"general", "*", "28", "name", "class", "group",
             "ctrllimited", "forcelimited", "actlimited", "ctrlrange", "forcerange", "actrange",
             "lengthrange", "gear", "cranklength", "user",
             "joint", "jointinparent", "tendon", "slidersite", "cranksite", "site", "refsite",
-            "body", "dyntype", "gaintype", "biastype", "dynprm", "gainprm", "biasprm"},
+            "body", "actdim", "dyntype", "gaintype", "biastype", "dynprm", "gainprm", "biasprm"},
         {"motor", "*", "18", "name", "class", "group",
             "ctrllimited", "forcelimited", "ctrlrange", "forcerange",
             "lengthrange", "gear", "cranklength", "user",
@@ -670,10 +670,11 @@ const mjMap comp_map[mjNCOMPTYPES] = {
 
 
 // composite joint kind
-const mjMap jkind_map[3] = {
+const mjMap jkind_map[4] = {
   {"main",        mjCOMPKIND_JOINT},
   {"twist",       mjCOMPKIND_TWIST},
-  {"stretch",     mjCOMPKIND_STRETCH}
+  {"stretch",     mjCOMPKIND_STRETCH},
+  {"particle",    mjCOMPKIND_PARTICLE}
 };
 
 
@@ -1588,7 +1589,10 @@ void mjXReader::OneTendon(XMLElement* elem, mjCTendon* pten) {
   ReadAttr(elem, "stiffness", 1, &pten->stiffness, text);
   ReadAttr(elem, "damping", 1, &pten->damping, text);
   ReadAttr(elem, "frictionloss", 1, &pten->frictionloss, text);
-  ReadAttr(elem, "springlength", 1, &pten->springlength, text);
+  // read springlength, either one or two values; if one, copy to second value
+  if (ReadAttr(elem, "springlength", 2, pten->springlength, text, false, false) == 1) {
+    pten->springlength[1] = pten->springlength[0];
+  }
   ReadAttr(elem, "rgba", 4, pten->rgba, text);
 
   // read userdata
@@ -1680,6 +1684,7 @@ void mjXReader::OneActuator(XMLElement* elem, mjCActuator* pact) {
     ReadAttr(elem, "dynprm", mjNDYN, pact->dynprm, text, false, false);
     ReadAttr(elem, "gainprm", mjNGAIN, pact->gainprm, text, false, false);
     ReadAttr(elem, "biasprm", mjNBIAS, pact->biasprm, text, false, false);
+    ReadAttrInt(elem, "actdim", &pact->actdim);
   }
 
   // direct drive motor
@@ -1906,6 +1911,9 @@ void mjXReader::OneComposite(XMLElement* elem, mjCBody* pbody, mjCDef* def) {
   int i = 0;
   while (iss) {
     iss >> text;
+    if (i>2) {
+      throw mjXError(elem, "The curve array must have a maximum of 3 components");
+    }
     comp.curve[i++] = (mjtCompShape)FindKey(shape_map, mjNCOMPSHAPES, text);
     if (iss.eof()){
       break;
@@ -1974,28 +1982,45 @@ void mjXReader::OneComposite(XMLElement* elem, mjCBody* pbody, mjCDef* def) {
   while (ejnt) {
     // kind
     int kind;
-    MapValue(ejnt, "kind", &kind, jkind_map, 3, true);
+    MapValue(ejnt, "kind", &kind, jkind_map, 4, true);
+
+    // create a new element if this kind already exists
+    if (comp.add[kind]) {
+      char error[200];
+      if (!comp.AddDefaultJoint(error, 200)) {
+        throw mjXError(elem, error);
+      }
+    }
     comp.add[kind] = true;
 
+    // get element
+    mjCDef *el = &comp.defjoint[(mjtCompKind)kind].back();
+
+    // particle joint
+    if (MapValue(ejnt, "type", &n, joint_map, joint_sz)) {
+      el->joint.type = (mjtJoint)n;
+    }
+    ReadAttr(ejnt, "axis", 3, el->joint.axis, text);
+
     // solreffix, solimpfix
-    ReadAttr(ejnt, "solreffix", mjNREF, comp.def[kind].equality.solref, text, false, false);
-    ReadAttr(ejnt, "solimpfix", mjNIMP, comp.def[kind].equality.solimp, text, false, false);
+    ReadAttr(ejnt, "solreffix", mjNREF, el->equality.solref, text, false, false);
+    ReadAttr(ejnt, "solimpfix", mjNIMP, el->equality.solimp, text, false, false);
 
     // joint attributes
-    MapValue(elem, "limited", &comp.def[kind].joint.limited, TFAuto_map, 3);
-    ReadAttrInt(ejnt, "group", &comp.def[kind].joint.group);
-    ReadAttr(ejnt, "solreflimit", mjNREF, comp.def[kind].joint.solref_limit, text, false, false);
-    ReadAttr(ejnt, "solimplimit", mjNIMP, comp.def[kind].joint.solimp_limit, text, false, false);
+    MapValue(elem, "limited", &el->joint.limited, TFAuto_map, 3);
+    ReadAttrInt(ejnt, "group", &el->joint.group);
+    ReadAttr(ejnt, "solreflimit", mjNREF, el->joint.solref_limit, text, false, false);
+    ReadAttr(ejnt, "solimplimit", mjNIMP, el->joint.solimp_limit, text, false, false);
     ReadAttr(ejnt,
-             "solreffriction", mjNREF, comp.def[kind].joint.solref_friction, text, false, false);
+             "solreffriction", mjNREF, el->joint.solref_friction, text, false, false);
     ReadAttr(ejnt,
-             "solimpfriction", mjNIMP, comp.def[kind].joint.solimp_friction, text, false, false);
-    ReadAttr(ejnt, "stiffness", 1, &comp.def[kind].joint.stiffness, text);
-    ReadAttr(ejnt, "range", 2, comp.def[kind].joint.range, text);
-    ReadAttr(ejnt, "margin", 1, &comp.def[kind].joint.margin, text);
-    ReadAttr(ejnt, "armature", 1, &comp.def[kind].joint.armature, text);
-    ReadAttr(ejnt, "damping", 1, &comp.def[kind].joint.damping, text);
-    ReadAttr(ejnt, "frictionloss", 1, &comp.def[kind].joint.frictionloss, text);
+             "solimpfriction", mjNIMP, el->joint.solimp_friction, text, false, false);
+    ReadAttr(ejnt, "stiffness", 1, &el->joint.stiffness, text);
+    ReadAttr(ejnt, "range", 2, el->joint.range, text);
+    ReadAttr(ejnt, "margin", 1, &el->joint.margin, text);
+    ReadAttr(ejnt, "armature", 1, &el->joint.armature, text);
+    ReadAttr(ejnt, "damping", 1, &el->joint.damping, text);
+    ReadAttr(ejnt, "frictionloss", 1, &el->joint.frictionloss, text);
 
     // advance
     ejnt = ejnt->NextSiblingElement("joint");
@@ -2711,6 +2736,9 @@ void mjXReader::Body(XMLElement* section, mjCBody* pbody) {
       }
       ReadAlternative(elem, pchild->alt);
 
+      // read gravcomp
+      ReadAttr(elem, "gravcomp", 1, &pchild->gravcomp, text);
+
       // read userdata
       ReadVector(elem, "user", pchild->userdata, text);
 
@@ -3119,16 +3147,24 @@ void mjXReader::Sensor(XMLElement* section) {
     // user-defined sensor
     else if (type=="user") {
       psen->type = mjSENS_USER;
-      ReadAttrTxt(elem, "objtype", text, true);
-      psen->objtype = (mjtObj)mju_str2Type(text.c_str());
-      ReadAttrTxt(elem, "objname", psen->objname, true);
+      bool objname_given = ReadAttrTxt(elem, "objname", psen->objname);
+      if (ReadAttrTxt(elem, "objtype", text)) {
+        if (!objname_given) {
+          throw mjXError(elem, "objtype '%s' given but objname is missing", text.c_str());
+        }
+        psen->objtype = (mjtObj)mju_str2Type(text.c_str());
+      } else if (objname_given) {
+        throw mjXError(elem, "objname '%s' given but objtype is missing", psen->objname.c_str());
+      }
       ReadAttrInt(elem, "dim", &psen->dim, true);
 
       // keywords
-      MapValue(elem, "needstage", &n, stage_map, stage_sz, true);
-      psen->needstage = (mjtStage)n;
-      MapValue(elem, "datatype", &n, datatype_map, datatype_sz, true);
-      psen->datatype = (mjtDataType)n;
+      if (MapValue(elem, "needstage", &n, stage_map, stage_sz)) {
+        psen->needstage = (mjtStage)n;
+      }
+      if (MapValue(elem, "datatype", &n, datatype_map, datatype_sz)) {
+       psen->datatype = (mjtDataType)n;
+      }
     }
 
     else if (type=="plugin") {

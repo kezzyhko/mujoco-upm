@@ -71,7 +71,7 @@ and the resulting equations of motion are difficult to characterize. To be fair,
 worst-case performance and does not mean that solving the LCP quickly is impossible in practice. Still, convex
 optimization has well-established advantages. In MuJoCo we have observed that for typical robotic models, 10 sweeps of a
 projected Gauss-Seidel method (PGS) yield solutions which for practical purposes are indistinguishable from the global
-minimum. Of course there are problems that are much harder to solve numerically, even though the are convex, and for
+minimum. Of course there are problems that are much harder to solve numerically, even though they are convex, and for
 such problems we have conjugate gradient solvers with higher-order convergence.
 
 The requirements for computational efficiency are different depending on the use case. If all we need is real-time
@@ -359,17 +359,22 @@ by MuJoCo are also passive in the sense of physics, i.e., they do not increase e
 callback :ref:`mjcb_passive` and add forces to ``mjData.qfrc_passive`` that may increase energy. This will not interfere
 with MuJoCo's operation as long as such user forces depend only on position and velocity.
 
-MuJoCo can compute two types of passive forces: spring-dampers in joints and tendons, and fluid dynamics. When Euler
-integration is used, joint damping is integrated implicitly (by modifying the inertia matrix internally) which
-significantly increases stability. Thus, even though damping can be alternatively modeled as an actuator property, it is
-better to model it as a joint property. Note also the XML :ref:`joint <body-joint>` attribute springdamper which
-automates the creation of mass-spring-dampers with desired time constants and damping ratios; in that case the compiler
-computes the stiffness and damping coefficients of the joint by taking the joint inertia into account.
+MuJoCo can compute three types of passive forces: spring-dampers in joints and tendons, gravity compensation forces, and
+fluid dynamics.
+
+When Euler or the implicit integator are used, joint damping is integrated implicitly which significantly increases
+stability. Thus, even though damping can be modeled as an actuator property, it is better to model it as a joint
+property. Note also the XML :ref:`joint <body-joint>` attribute springdamper which automates the creation of mass-
+spring-dampers with desired time constants and damping ratios; in that case the compiler computes the stiffness and
+damping coefficients of the joint by taking the joint inertia into account.
+
+Gravity compensation is a force applied to a body's center of mass opposing gravity, see :ref:`body gravcomp<body>` for
+details.
 
 Proper simulation of fluid dynamics is beyond the scope of MuJoCo, and would be too slow for the applications we aim to
 facilitate. Nevertheless we provide a phenomenological model which is sufficient for simulating behaviors such as flying
 and swimming. It is enabled by setting ``mjModel.opt.viscosity`` and ``mjModel.opt.density`` to positive values (they
-are zero by default.) These parameters specify the viscosity :math:`\beta` and density :math:`\rho` of the medium and
+are zero by default). These parameters specify the viscosity :math:`\beta` and density :math:`\rho` of the medium and
 apply to all bodies. The shape of each body for fluid dynamics purposes is assumed to be the equivalent inertia box,
 which can also be visualized. Each forward-facing (relative to the linear velocity) face of the box experiences force
 along its normal direction. All faces also experience torque due to the angular velocity; this torque is obtained by
@@ -570,7 +575,8 @@ Physics state
 
 User inputs
 ^^^^^^^^^^^
-These input fields are set by the user and affect the physics simulation, but are untouched by the simulator.
+These input fields are set by the user and affect the physics simulation, but are untouched by the simulator. All input
+fields except for MoCap poses default to 0.
 
   Controls: ``ctrl``
     Controls are defined by the :ref:`actuator<actuator>` section of the XML. ``mjData.ctrl`` values either produce
@@ -587,7 +593,8 @@ These input fields are set by the user and affect the physics simulation, but ar
   MoCap poses: ``mocap_pos`` and ``mocap_quat``
     ``mjData.mocap_pos`` and ``mjData.mocap_quat`` are special optional kinematic states :ref:`described here<CMocap>`,
     which allow the user to set the positions and orientations of static bodies in real-time, for example when streaming
-    6D poses from a motion-capture device.
+    6D poses from a motion-capture device. The default values set by :ref:`mj_resetData` are the poses of the bodies at
+    the default configuration.
 
   User data: ``userdata``
     ``mjData.userdata`` acts as a user-defined memory space untouched by the engine. For example it can be used by
@@ -617,6 +624,9 @@ Integration state
 The *integration state* is the union of all the above ``mjData`` fields and constitutes the entire set of inputs to
 the *forward dynamics*. In the case of *inverse dynamics*, ``mjData.qacc`` is also treated as an input variable. All
 other ``mjData`` fields are functions of the integration state.
+|br| When saving the integration state in order to reload it elsewhere, it is sensible to avoid saving unused fields
+that always remain in their default values. Specifically, ``xfrc_applied`` can be quite large (``6 x nbody``) yet is
+often unused.
 
 .. _geSimulationState:
 

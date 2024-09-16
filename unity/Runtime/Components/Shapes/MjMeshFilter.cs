@@ -32,6 +32,7 @@ public class MjMeshFilter : MonoBehaviour {
     _geom = GetComponent<MjShapeComponent>();
     _shapeChangeStamp = new Vector4(0, 0, 0, -1);
     _meshFilter = GetComponent<MeshFilter>();
+    _meshFilter.mesh = new Mesh();
   }
 
   protected void Update() {
@@ -55,6 +56,12 @@ public class MjMeshFilter : MonoBehaviour {
     _meshFilter.sharedMesh = mesh;
     mesh.vertices = meshData.Item1;
     mesh.triangles = meshData.Item2;
+    Vector2[] uvs = new Vector2[mesh.vertices.Length];
+    for (int i = 0; i < uvs.Length; i++){
+      uvs[i] = new Vector2(mesh.vertices[i].x, mesh.vertices[i].z);
+    }
+    mesh.uv = uvs;
+    
     mesh.RecalculateNormals();
     mesh.RecalculateTangents();
   }

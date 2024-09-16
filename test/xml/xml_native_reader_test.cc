@@ -877,7 +877,7 @@ TEST_F(ActuatorParseTest, DampersDontRequireRange) {
   mj_deleteModel(model);
 }
 
-// make sure range requirement is not enforced at parse time
+// adhesion actuators inherit from general defaults
 TEST_F(ActuatorParseTest, AdhesionInheritsFromGeneral) {
   static constexpr char xml[] = R"(
   <mujoco>
@@ -909,6 +909,82 @@ TEST_F(ActuatorParseTest, AdhesionInheritsFromGeneral) {
   mj_deleteModel(model);
 }
 
+TEST_F(ActuatorParseTest, ActdimDefaultsPropagate) {
+  static constexpr char xml[] = R"(
+  <mujoco>
+    <default>
+      <general actdim="2"/>
+    </default>
+    <worldbody>
+      <body>
+        <geom size="1"/>
+        <joint name="hinge"/>
+      </body>
+    </worldbody>
+    <actuator>
+      <general joint="hinge" dyntype="user"/>
+    </actuator>
+  </mujoco>
+  )";
+  std::array<char, 1024> error;
+  mjModel* model = LoadModelFromString(xml, error.data(), error.size());
+  ASSERT_THAT(model, NotNull()) << error.data();
+
+  // expect that actdim was inherited from the general default
+  EXPECT_EQ(model->actuator_actnum[0], 2);
+  mj_deleteModel(model);
+}
+
+// ------------- test sensor parsing -------------------------------------------
+
+using SensorParseTest = MujocoTest;
+
+TEST_F(SensorParseTest, UserObjTypeNoName) {
+  static constexpr char xml[] = R"(
+  <mujoco>
+    <sensor>
+      <user dim="1" needstage="vel" objtype="site"/>
+    </sensor>
+  </mujoco>
+  )";
+  std::array<char, 1024> error;
+  mjModel* model = LoadModelFromString(xml, error.data(), error.size());
+  ASSERT_THAT(model, IsNull());
+  EXPECT_THAT(error.data(), HasSubstr("objtype 'site' given but"));
+}
+
+TEST_F(SensorParseTest, UserObjNameNoType) {
+  static constexpr char xml[] = R"(
+  <mujoco>
+    <sensor>
+      <user dim="1" needstage="vel" objname="kevin"/>
+    </sensor>
+  </mujoco>
+  )";
+  std::array<char, 1024> error;
+  mjModel* model = LoadModelFromString(xml, error.data(), error.size());
+  ASSERT_THAT(model, IsNull());
+  EXPECT_THAT(error.data(), HasSubstr("objname 'kevin' given but"));
+}
+
+TEST_F(SensorParseTest, UserNeedstageAcc) {
+  static constexpr char xml[] = R"(
+  <mujoco>
+    <sensor>
+      <user dim="1" needstage="vel"/>
+      <user dim="1"/>
+      <user dim="1" needstage="pos"/>
+    </sensor>
+  </mujoco>
+  )";
+  std::array<char, 1024> error;
+  mjModel* model = LoadModelFromString(xml, error.data(), error.size());
+  ASSERT_THAT(model, NotNull()) << error.data();
+  EXPECT_EQ(model->sensor_needstage[0], mjSTAGE_VEL);
+  EXPECT_EQ(model->sensor_needstage[1], mjSTAGE_ACC);
+  EXPECT_EQ(model->sensor_needstage[2], mjSTAGE_POS);
+  mj_deleteModel(model);
+}
 
 // ------------- test general parsing ------------------------------------------
 

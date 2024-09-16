@@ -12,6 +12,10 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-mujoco_test(cable_test)
-target_link_libraries(cable_test fixture gmock cable)
-
+mujoco_test(
+  elasticity_test
+  PROPERTIES
+  ENVIRONMENT
+  "MUJOCO_PLUGIN_DIR=$<TARGET_FILE_DIR:elasticity>"
+)
+target_link_libraries(elasticity_test fixture gmock)

@@ -30,7 +30,7 @@ from setuptools import find_packages
 from setuptools import setup
 from setuptools.command import build_ext
 
-__version__ = '2.3.0'
+__version__ = '2.3.1'
 
 MUJOCO_CMAKE = 'MUJOCO_CMAKE'
 MUJOCO_CMAKE_ARGS = 'MUJOCO_CMAKE_ARGS'
@@ -69,7 +69,6 @@ def get_external_lib_patterns():
     return ['libmujoco.*.dylib']
   else:
     return ['libmujoco.so.*']
-
 
 def get_plugin_lib_patterns():
   if platform.system() == 'Windows':
@@ -310,6 +309,7 @@ setup(
         'Programming Language :: Python :: 3.8',
         'Programming Language :: Python :: 3.9',
         'Programming Language :: Python :: 3.10',
+        'Programming Language :: Python :: 3.11',
         'Topic :: Scientific/Engineering',
     ],
     cmdclass=dict(build_ext=BuildCMakeExtension),
@@ -321,6 +321,7 @@ setup(
         CMakeExtension('mujoco._functions'),
         CMakeExtension('mujoco._render'),
         CMakeExtension('mujoco._rollout'),
+        CMakeExtension('mujoco._simulate'),
         CMakeExtension('mujoco._structs'),
     ],
     python_requires='>=3.7',

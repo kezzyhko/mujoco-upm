@@ -23,6 +23,18 @@ import subprocess
 _SYSTEM = platform.system()
 if _SYSTEM == 'Windows':
   ctypes.WinDLL(os.path.join(os.path.dirname(__file__), 'mujoco.dll'))
+elif _SYSTEM == 'Darwin':
+  proc_translated = subprocess.run(
+      ['sysctl', '-n', 'sysctl.proc_translated'], capture_output=True).stdout
+  try:
+    is_rosetta = bool(int(proc_translated))
+  except ValueError:
+    is_rosetta = False
+  if is_rosetta and platform.machine() == 'x86_64':
+    raise ImportError(
+        'You are running an x86_64 build of Python on an Apple Silicon '
+        'machine. This is not supported by MuJoCo. Please install and run a '
+        'native, arm64 build of Python.')
 
 from mujoco._callbacks import *
 from mujoco._constants import *
@@ -31,27 +43,8 @@ from mujoco._errors import *
 from mujoco._functions import *
 from mujoco._render import *
 from mujoco._structs import *
-
-# pylint: disable=g-import-not-at-top
-_MUJOCO_GL = os.environ.get('MUJOCO_GL', '').lower().strip()
-if _MUJOCO_GL not in ('disable', 'disabled', 'off', 'false', '0'):
-  _VALID_MUJOCO_GL = ('enable', 'enabled', 'on', 'true', '1' , 'glfw', '')
-  if _SYSTEM == 'Linux':
-    _VALID_MUJOCO_GL += ('glx', 'egl', 'osmesa')
-  elif _SYSTEM == 'Windows':
-    _VALID_MUJOCO_GL += ('wgl',)
-  elif _SYSTEM == 'Darwin':
-    _VALID_MUJOCO_GL += ('cgl',)
-  if _MUJOCO_GL not in _VALID_MUJOCO_GL:
-    raise RuntimeError(
-        f'invalid value for environment variable MUJOCO_GL: {_MUJOCO_GL}')
-
-  if _SYSTEM == 'Linux' and _MUJOCO_GL == 'osmesa':
-    from mujoco.osmesa import GLContext
-  elif _SYSTEM == 'Linux' and _MUJOCO_GL == 'egl':
-    from mujoco.egl import GLContext
-  else:
-    from mujoco.glfw import GLContext
+from mujoco.gl_context import *
+from mujoco.renderer import Renderer
 
 HEADERS_DIR = os.path.join(os.path.dirname(__file__), 'include/mujoco')
 PLUGINS_DIR = os.path.join(os.path.dirname(__file__), 'plugin')

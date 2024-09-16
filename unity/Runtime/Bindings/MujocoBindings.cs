@@ -50,6 +50,7 @@ public const int mjNREF = 2;
 public const int mjNIMP = 5;
 public const int mjNSOLVER = 1000;
 public const bool THIRD_PARTY_MUJOCO_INCLUDE_MJPLUGIN_H_ = true;
+public const bool mjEXTERNC = true;
 public const bool THIRD_PARTY_MUJOCO_MJRENDER_H_ = true;
 public const int mjNAUX = 10;
 public const int mjMAXTEXTURE = 1000;
@@ -100,7 +101,7 @@ public const int mjMAXLINEPNT = 1000;
 public const int mjMAXPLANEGRID = 200;
 public const bool THIRD_PARTY_MUJOCO_MJXMACRO_H_ = true;
 public const bool THIRD_PARTY_MUJOCO_MUJOCO_H_ = true;
-public const int mjVERSION_HEADER = 230;
+public const int mjVERSION_HEADER = 231;
 
 
 // ------------------------------------Enums------------------------------------
@@ -1945,6 +1946,7 @@ public unsafe struct mjModel_ {
   public double* body_subtreemass;
   public double* body_inertia;
   public double* body_invweight0;
+  public double* body_gravcomp;
   public double* body_user;
   public int* body_plugin;
   public int* jnt_type;
@@ -2129,6 +2131,8 @@ public unsafe struct mjModel_ {
   public int* actuator_gaintype;
   public int* actuator_biastype;
   public int* actuator_trnid;
+  public int* actuator_actadr;
+  public int* actuator_actnum;
   public int* actuator_group;
   public byte* actuator_ctrllimited;
   public byte* actuator_forcelimited;
@@ -3032,6 +3036,9 @@ public static unsafe extern void mj_setTotalmass(mjModel_* m, double newmass);
 public static unsafe extern string mj_getPluginConfig(mjModel_* m, int plugin_id, [MarshalAs(UnmanagedType.LPStr)]string attrib);
 
 [DllImport("mujoco", CallingConvention = CallingConvention.Cdecl)]
+public static unsafe extern void mj_loadPluginLibrary([MarshalAs(UnmanagedType.LPStr)]string path);
+
+[DllImport("mujoco", CallingConvention = CallingConvention.Cdecl)]
 public static unsafe extern int mj_version();
 
 [DllImport("mujoco", CallingConvention = CallingConvention.Cdecl)]
@@ -3338,6 +3345,9 @@ public static unsafe extern double mju_normalize4(double* res);
 public static unsafe extern void mju_zero(double* res, int n);
 
 [DllImport("mujoco", CallingConvention = CallingConvention.Cdecl)]
+public static unsafe extern void mju_fill(double* res, double val, int n);
+
+[DllImport("mujoco", CallingConvention = CallingConvention.Cdecl)]
 public static unsafe extern void mju_copy(double* res, double* data, int n);
 
 [DllImport("mujoco", CallingConvention = CallingConvention.Cdecl)]
@@ -3387,6 +3397,12 @@ public static unsafe extern double mju_mulVecMatVec(double* vec1, double* mat, d
 
 [DllImport("mujoco", CallingConvention = CallingConvention.Cdecl)]
 public static unsafe extern void mju_transpose(double* res, double* mat, int nr, int nc);
+
+[DllImport("mujoco", CallingConvention = CallingConvention.Cdecl)]
+public static unsafe extern void mju_symmetrize(double* res, double* mat, int n);
+
+[DllImport("mujoco", CallingConvention = CallingConvention.Cdecl)]
+public static unsafe extern void mju_eye(double* mat, int n);
 
 [DllImport("mujoco", CallingConvention = CallingConvention.Cdecl)]
 public static unsafe extern void mju_mulMatMat(double* res, double* mat1, double* mat2, int r1, int c1, int c2);
@@ -3502,6 +3518,10 @@ public static unsafe extern string mju_type2Str(int type);
 
 [DllImport("mujoco", CallingConvention = CallingConvention.Cdecl)]
 public static unsafe extern int mju_str2Type([MarshalAs(UnmanagedType.LPStr)]string str);
+
+[DllImport("mujoco", CallingConvention = CallingConvention.Cdecl)]
+[return: MarshalAs(UnmanagedType.LPStr)]
+public static unsafe extern string mju_writeNumBytes(UIntPtr nbytes);
 
 [DllImport("mujoco", CallingConvention = CallingConvention.Cdecl)]
 [return: MarshalAs(UnmanagedType.LPStr)]

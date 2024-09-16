@@ -29,6 +29,7 @@
 #include <mujoco/mjtnum.h>
 #include <mujoco/mjvisualize.h>
 #include <mujoco/mjxmacro.h>
+#include <mujoco/mujoco.h>
 #include "glfw_dispatch.h"
 #include "uitools.h"
 #include "array_safety.h"
@@ -39,9 +40,9 @@
 // Since the dialog box logic needs to be written in Objective-C, we separate it into a different
 // source file.
 #ifdef __APPLE__
-std::string getSavePath(const char* filename);
+std::string GetSavePath(const char* filename);
 #else
-static std::string getSavePath(const char* filename) {
+static std::string GetSavePath(const char* filename) {
   return filename;
 }
 #endif
@@ -83,7 +84,7 @@ const mjuiDef defFile[] = {
   {mjITEM_BUTTON,    "Print model",   2, nullptr,                    "CM"},
   {mjITEM_BUTTON,    "Print data",    2, nullptr,                    "CD"},
   {mjITEM_BUTTON,    "Quit",          1, nullptr,                    "CQ"},
-  {mjITEM_BUTTON,    "Screenshot",    2, NULL,                       "CP"},
+  {mjITEM_BUTTON,    "Screenshot",    2, nullptr,                    "CP"},
   {mjITEM_END}
 };
 
@@ -478,7 +479,7 @@ void infotext(mj::Simulate* sim,
   // prepare info text
   mju::strcpy_arr(title, "Time\nSize\nCPU\nSolver   \nFPS\nMemory");
   mju::sprintf_arr(content,
-                   "%-9.3f\n%d  (%d con)\n%.3f\n%.1f  (%d it)\n%.0f\n%.3f",
+                   "%-9.3f\n%d  (%d con)\n%.3f\n%.1f  (%d it)\n%.0f\n%.2g of %s",
                    d->time,
                    d->nefc, d->ncon,
                    sim->run ?
@@ -486,7 +487,8 @@ void infotext(mj::Simulate* sim,
                    d->timer[mjTIMER_FORWARD].duration / mjMAX(1, d->timer[mjTIMER_FORWARD].number),
                    solerr, d->solver_iter,
                    1/interval,
-                   d->maxuse_arena/(double)(d->nstack * sizeof(mjtNum)));
+                   d->maxuse_arena/(double)(d->nstack * sizeof(mjtNum)),
+                   mju_writeNumBytes(d->nstack * sizeof(mjtNum)));
 
   // add Energy if enabled
   {
@@ -1075,7 +1077,7 @@ void uiEvent(mjuiState* state) {
       switch (it->itemid) {
       case 0:             // Save xml
         {
-          const std::string path = getSavePath("mjmodel.xml");
+          const std::string path = GetSavePath("mjmodel.xml");
           if (!path.empty() && !mj_saveLastXML(path.c_str(), m, err, 200)) {
             std::printf("Save XML error: %s", err);
           }
@@ -1084,9 +1086,9 @@ void uiEvent(mjuiState* state) {
 
       case 1:             // Save mjb
         {
-          const std::string path = getSavePath("mjmodel.mjb");
+          const std::string path = GetSavePath("mjmodel.mjb");
           if (!path.empty()) {
-            mj_saveModel(m, path.c_str(), NULL, 0);
+            mj_saveModel(m, path.c_str(), nullptr, 0);
           }
         }
         break;
@@ -1573,11 +1575,9 @@ void Simulate::applyforceperturbations() {
 //------------------------- Tell the render thread to load a file and wait -------------------------
 void Simulate::load(const char* file,
                     mjModel* mnew,
-                    mjData* dnew,
-                    bool delete_old_m_d) {
+                    mjData* dnew) {
   this->mnew = mnew;
   this->dnew = dnew;
-  this->delete_old_m_d = delete_old_m_d;
   mju::strcpy_arr(this->filename, file);
 
   {
@@ -1593,16 +1593,6 @@ void Simulate::load(const char* file,
 
 //------------------------------------- load mjb or xml model --------------------------------------
 void Simulate::loadmodel() {
-  if (this->delete_old_m_d) {
-    // delete old model if requested
-    if (this->d) {
-      mj_deleteData(d);
-    }
-    if (this->m) {
-      mj_deleteModel(m);
-    }
-  }
-
   this->m = this->mnew;
   this->d = this->dnew;
 
@@ -1616,7 +1606,8 @@ void Simulate::loadmodel() {
   this->pert.skinselect = -1;
 
   // align and scale view unless reloading the same file
-  if (mju::strcmp_arr(this->filename, this->previous_filename)) {
+  if (this->filename[0] &&
+      mju::strcmp_arr(this->filename, this->previous_filename)) {
     alignscale(this);
     mju::strcpy_arr(this->previous_filename, this->filename);
   }
@@ -1770,10 +1761,10 @@ void Simulate::render() {
     mjr_overlay(mjFONT_NORMAL, mjGRID_BOTTOMLEFT, rect, this->loadError, 0, &this->con);
   }
 
-  // show pause/loading label
+  // make pause/loading label
+  std::string pauseloadlabel;
   if (!this->run || this->loadrequest) {
-    mjr_overlay(mjFONT_BIG, mjGRID_TOPRIGHT, smallrect,
-                this->loadrequest ? "loading" : "pause", nullptr, &this->con);
+    pauseloadlabel = this->loadrequest ? "loading" : "pause";
   }
 
   // get desired and actual percent-of-real-time
@@ -1784,20 +1775,26 @@ void Simulate::render() {
   float realtime_offset = mju_abs(actualRealtime - desiredRealtime);
   bool misaligned = this->run && realtime_offset > 0.1 * desiredRealtime;
 
-  // draw realtime overlay
+  // make realtime overlay label
+  char rtlabel[30] = {'\0'};
   if (desiredRealtime != 100.0 || misaligned) {
-    char rtlabel[30];
-
     // print desired realtime
-    int labelsize = std::snprintf(rtlabel, sizeof(rtlabel), "%g%%", desiredRealtime);
+    int labelsize = std::snprintf(rtlabel,
+                                  sizeof(rtlabel), "%g%%", desiredRealtime);
 
     // if misaligned, append to label
     if (misaligned) {
-      std::snprintf(rtlabel+labelsize, sizeof(rtlabel)-labelsize, " (%-4.1f%%)", actualRealtime);
+      std::snprintf(rtlabel+labelsize,
+                    sizeof(rtlabel)-labelsize, " (%-4.1f%%)", actualRealtime);
     }
+  }
 
-    // draw overlay
-    mjr_overlay(mjFONT_BIG, mjGRID_TOPLEFT, smallrect, rtlabel, nullptr, &this->con);
+  // draw top left overlay
+  if (!pauseloadlabel.empty() || rtlabel[0]) {
+    std::string newline = !pauseloadlabel.empty() && rtlabel[0] ? "\n" : "";
+    std::string topleftlabel = rtlabel + newline + pauseloadlabel;
+    mjr_overlay(mjFONT_BIG, mjGRID_TOPLEFT, smallrect,
+                topleftlabel.c_str(), nullptr, &this->con);
   }
 
 
@@ -1839,7 +1836,7 @@ void Simulate::render() {
     if (!rgb) {
       mju_error("could not allocate buffer for screenshot");
     }
-    mjr_readPixels(rgb.get(), NULL, uistate.rect[0], &con);
+    mjr_readPixels(rgb.get(), nullptr, uistate.rect[0], &con);
 
     // flip up-down
     for (int r = 0; r < h/2; ++r) {
@@ -1853,7 +1850,7 @@ void Simulate::render() {
     // Unfortunately, if we just yank ".xml"/".mjb" from the filename and append .PNG, the macOS
     // file dialog does not automatically open that location. Thus, we defer to a default
     // "screenshot.png" for now.
-    const std::string path = getSavePath("screenshot.png");
+    const std::string path = GetSavePath("screenshot.png");
     if (!path.empty()) {
       if (lodepng::encode(path, rgb.get(), w, h, LCT_RGB)) {
         mju_error("could not save screenshot");
@@ -1978,6 +1975,13 @@ void Simulate::renderloop() {
   this->clearcallback();
   mjv_freeScene(&this->scn);
   mjr_freeContext(&this->con);
+
+  Glfw().glfwDestroyWindow(this->window);
+}
+
+//------------------------------------ setup the glfw dispatch table -------------------------------
+void setglfwdlhandle(void* dlhandle) {
+  Glfw(dlhandle);
 }
 
 }  // namespace mujoco

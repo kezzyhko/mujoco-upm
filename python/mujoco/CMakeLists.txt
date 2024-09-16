@@ -46,6 +46,12 @@ elseif(CMAKE_CXX_COMPILER_ID STREQUAL "GNU" OR CMAKE_CXX_COMPILER_ID MATCHES "Cl
   add_compile_options(-fdata-sections -ffunction-sections)
 endif()
 
+if(CMAKE_CXX_COMPILER_ID MATCHES "Clang" AND CMAKE_CXX_COMPILER_VERSION VERSION_GREATER_EQUAL "15.0.0")
+  # Needed for https://github.com/abseil/abseil-cpp/issues/1201, until a new
+  # version of abseil is released with the fix.
+  add_compile_options(-Wno-deprecated-builtins)
+endif()
+
 include(MujocoLinkOptions)
 get_mujoco_extra_link_options(EXTRA_LINK_OPTIONS)
 add_link_options(${EXTRA_LINK_OPTIONS})
@@ -67,7 +73,7 @@ include(FindOrFetch)
 
 # ==================== MUJOCO LIBRARY ==========================================
 if(NOT TARGET mujoco)
-  add_library(mujoco SHARED IMPORTED)
+  add_library(mujoco SHARED IMPORTED GLOBAL)
   if(APPLE)
     # On macOS, check if we are using mujoco.framework first.
     # Framework headers are searched differently from normal headers.
@@ -75,13 +81,13 @@ if(NOT TARGET mujoco)
     find_path(MUJOCO_FRAMEWORK mujoco.Framework HINTS ${MUJOCO_FRAMEWORK_DIR})
     if(MUJOCO_FRAMEWORK)
       message("MuJoCo framework is at ${MUJOCO_FRAMEWORK}/mujoco.framework")
-      set(MUJOCO_LIBRARY ${MUJOCO_FRAMEWORK}/mujoco.framework/Versions/A/libmujoco.2.3.0.dylib)
+      set(MUJOCO_LIBRARY ${MUJOCO_FRAMEWORK}/mujoco.framework/Versions/A/libmujoco.2.3.1.dylib)
       target_compile_options(mujoco INTERFACE -F${MUJOCO_FRAMEWORK})
     endif()
   endif()
 
   if(NOT MUJOCO_FRAMEWORK)
-    find_library(MUJOCO_LIBRARY mujoco mujoco.2.3.0 HINTS ${MUJOCO_LIBRARY_DIR} REQUIRED)
+    find_library(MUJOCO_LIBRARY mujoco mujoco.2.3.1 HINTS ${MUJOCO_LIBRARY_DIR} REQUIRED)
     find_path(MUJOCO_INCLUDE mujoco/mujoco.h HINTS ${MUJOCO_INCLUDE_DIR} REQUIRED)
     message("MuJoCo is at ${MUJOCO_LIBRARY}")
     message("MuJoCo headers are at ${MUJOCO_INCLUDE}")
@@ -113,6 +119,7 @@ if(NOT TARGET mujoco)
     )
     set_target_properties(mujoco PROPERTIES IMPORTED_SONAME "${MUJOCO_SONAME}")
   endif()
+  add_library(mujoco::mujoco ALIAS mujoco)
 endif()
 
 # ==================== ABSEIL ==================================================
@@ -177,13 +184,16 @@ findorfetch(
   GIT_REPO
   https://github.com/pybind/pybind11
   GIT_TAG
-  0aa8c9452803604b8e65a624c28f6ba89bd6499a
+  33fb7a6bd849653445b6ae37a8c274d3de9519cc
   TARGETS
   pybind11::pybind11_headers
   EXCLUDE_FROM_ALL
 )
 
 # ==================== MUJOCO PYTHON BINDINGS ==================================
+set(SIMULATE_BUILD_EXECUTABLE OFF)
+set(SIMULATE_GLFW_DYNAMIC_SYMBOLS ON)
+add_subdirectory(simulate)
 
 add_subdirectory(util)
 
@@ -370,6 +380,14 @@ target_link_libraries(
           structs_header
 )
 
+mujoco_pybind11_module(_simulate simulate.cc)
+target_link_libraries(
+  _simulate
+  PRIVATE mujoco
+          mujoco::libsimulate
+          raw
+          structs_header)
+
 set(LIBRARIES_FOR_WHEEL
     "$<TARGET_FILE:_callbacks>"
     "$<TARGET_FILE:_constants>"
@@ -378,6 +396,7 @@ set(LIBRARIES_FOR_WHEEL
     "$<TARGET_FILE:_functions>"
     "$<TARGET_FILE:_render>"
     "$<TARGET_FILE:_rollout>"
+    "$<TARGET_FILE:_simulate>"
     "$<TARGET_FILE:_structs>"
     "$<TARGET_FILE:mujoco>"
 )
@@ -405,6 +424,7 @@ if(MUJOCO_PYTHON_MAKE_WHEEL)
     _functions
     _render
     _rollout
+    _simulate
     _structs
     mujoco
   )

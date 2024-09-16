@@ -104,7 +104,7 @@ TEST_F(KeyframeTest, BadSize) {
   char error[1024];
   size_t error_sz = 1024;
   mjModel* model = LoadModelFromString(xml, error, error_sz);
-  EXPECT_THAT(model, ::testing::IsNull());
+  EXPECT_THAT(model, IsNull());
   EXPECT_THAT(error, HasSubstr("invalid qpos size, expected length 0"));
 }
 
@@ -202,6 +202,29 @@ TEST_F(RelativeFrameSensorParsingTest, BadRefType) {
   EXPECT_THAT(error.data(), HasSubstr("reference frame object must be"));
 }
 
+// ------------- sensor compilation --------------------------------------------
+
+using SensorTest = MujocoTest;
+TEST_F(SensorTest, OjbtypeParsedButNotRequired) {
+  static constexpr char xml[] = R"(
+  <mujoco>
+    <sensor>
+      <user dim="3" needstage="vel" datatype="axis"/>
+      <user dim="2" needstage="pos" objtype="body" objname="world"/>
+    </sensor>
+  </mujoco>
+  )";
+  mjModel* model = LoadModelFromString(xml, 0, 0);
+  ASSERT_THAT(model, NotNull());
+  EXPECT_EQ(model->sensor_datatype[0], mjDATATYPE_AXIS);
+  EXPECT_EQ(model->sensor_objtype[0], mjOBJ_UNKNOWN);
+  EXPECT_EQ(model->sensor_dim[0], 3);
+  EXPECT_EQ(model->sensor_datatype[1], mjDATATYPE_REAL);
+  EXPECT_EQ(model->sensor_objtype[1], mjOBJ_BODY);
+  EXPECT_EQ(model->sensor_objid[1], 0);
+  mj_deleteModel(model);
+}
+
 // ------------- test capsule inertias -----------------------------------------
 
 static const char* const kCapsuleInertiaPath =
@@ -265,6 +288,44 @@ TEST_F(MjCGeomTest, CapsuleInertiaX) {
   mj_deleteModel(model);
 }
 
+// ------------- test inertiagrouprange ----------------------------------------
+TEST_F(MjCGeomTest, IgnoreGeomOutsideInertiagrouprange) {
+  static constexpr char xml[] = R"(
+  <mujoco>
+    <compiler inertiagrouprange="0 1"/>
+    <worldbody>
+      <body>
+        <geom size="1" group="3"/>
+      </body>
+    </worldbody>
+  </mujoco>
+  )";
+  mjModel* m = LoadModelFromString(xml, nullptr, 0);
+  EXPECT_THAT(m->body_mass[1], 0);
+  mj_deleteModel(m);
+}
+
+TEST_F(MjCGeomTest, IgnoreBadGeomOutsideInertiagrouprange) {
+  static constexpr char xml[] = R"(
+  <mujoco>
+    <compiler inertiagrouprange="0 1"/>
+    <asset>
+      <mesh name="malformed_mesh"
+        vertex="0 0 0  1 0 0  0 1 0  0 0 1"
+        face="2 0 3  0 1 3  1 2 3  0 1 2" />
+    </asset>
+    <worldbody>
+      <body>
+        <geom type="mesh" mesh="malformed_mesh" group="3"/>
+      </body>
+    </worldbody>
+  </mujoco>
+  )";
+  mjModel* m = LoadModelFromString(xml, nullptr, 0);
+  EXPECT_THAT(m->body_mass[1], 0);
+  mj_deleteModel(m);
+}
+
 // ------------- test height fields --------------------------------------------
 
 using MjCHFieldTest = MujocoTest;
@@ -275,7 +336,7 @@ TEST_F(MjCHFieldTest, PngMap) {
   std::array<char, 1024> error;
   mjModel* model =
       mj_loadXML(xml_path.c_str(), nullptr, error.data(), error.size());
-  ASSERT_THAT(model, ::testing::NotNull()) << error.data();
+  ASSERT_THAT(model, NotNull()) << error.data();
   EXPECT_EQ(model->nhfield, 1);
   EXPECT_EQ(model->geom_type[0], mjGEOM_HFIELD);
   mj_deleteModel(model);
@@ -310,8 +371,8 @@ TEST_F(QuatNorm, QuatNotNormalized) {
 
 using ActuatorTest = MujocoTest;
 
-TEST_F(ActuatorTest, BadOrder) {
-  static constexpr char xml[] = R"(
+TEST_F(ActuatorTest, ActuatorOrderDoesntMatter) {
+  static constexpr char xml1[] = R"(
   <mujoco>
     <worldbody>
       <body>
@@ -325,11 +386,52 @@ TEST_F(ActuatorTest, BadOrder) {
     </actuator>
   </mujoco>
   )";
-  char error[1024];
-  size_t error_sz = 1024;
-  mjModel* model = LoadModelFromString(xml, error, error_sz);
-  EXPECT_THAT(model, ::testing::IsNull());
-  EXPECT_THAT(error, HasSubstr("stateless actuators must come before"));
+  static constexpr char xml2[] = R"(
+  <mujoco>
+    <worldbody>
+      <body>
+        <joint name="hinge"/>
+        <geom size="1"/>
+      </body>
+    </worldbody>
+    <actuator>
+      <general joint="hinge"/>
+      <general joint="hinge" dyntype="filter"/>
+    </actuator>
+  </mujoco>
+  )";
+  mjModel* model1 = LoadModelFromString(xml1, nullptr, 0);
+  mjData* data1 = mj_makeData(model1);
+  mjModel* model2 = LoadModelFromString(xml2, nullptr, 0);
+  mjData* data2 = mj_makeData(model2);
+
+  // check activation indexing
+  EXPECT_EQ(model1->actuator_actadr[0], 0);
+  EXPECT_EQ(model1->actuator_actadr[1], -1);
+  EXPECT_EQ(model2->actuator_actadr[0], -1);
+  EXPECT_EQ(model2->actuator_actadr[1], 0);
+
+  // integrate both models, flipping the controls
+  while (data1->time < 1) {
+    data1->ctrl[0] = data1->time;
+    data1->ctrl[1] = -data1->time;
+    mj_step(model1, data1);
+  }
+  while (data2->time < 1) {
+    data2->ctrl[0] = -data2->time;
+    data2->ctrl[1] = data2->time;
+    mj_step(model2, data2);
+  }
+
+  // expect states to match exactly
+  EXPECT_EQ(data1->qpos[0], data2->qpos[0]);
+  EXPECT_EQ(data1->qvel[0], data2->qvel[0]);
+  EXPECT_EQ(data1->act[0], data2->act[0]);
+
+  mj_deleteData(data2);
+  mj_deleteModel(model2);
+  mj_deleteData(data1);
+  mj_deleteModel(model1);
 }
 
 
@@ -455,6 +557,74 @@ TEST_F(ActRangeTest, ActRangeDefaultsPropagate) {
   EXPECT_THAT(model->actuator_actrange[3], 3);
 
   mj_deleteModel(model);
+}
+
+// ---------------------------- test actdim ------------------------------------
+
+using ActDimTest = MujocoTest;
+
+TEST_F(ActDimTest, BiggerThanOneOnlyForUser) {
+  static constexpr char xml[] = R"(
+  <mujoco>
+    <worldbody>
+      <body>
+        <geom size="1"/>
+        <joint name="hinge"/>
+      </body>
+    </worldbody>
+    <actuator>
+      <general joint="hinge" actdim="2"/>
+    </actuator>
+  </mujoco>
+  )";
+  std::array<char, 1024> error;
+  mjModel* model = LoadModelFromString(xml, error.data(), error.size());
+
+  ASSERT_THAT(model, IsNull());
+  EXPECT_THAT(error.data(),
+              HasSubstr("actdim > 1 is only allowed for dyntype 'user'"));
+}
+
+TEST_F(ActDimTest, NonzeroNotAllowedInStateless) {
+  static constexpr char xml[] = R"(
+  <mujoco>
+    <worldbody>
+      <body>
+        <geom size="1"/>
+        <joint name="hinge"/>
+      </body>
+    </worldbody>
+    <actuator>
+      <general joint="hinge" actdim="1"/>
+    </actuator>
+  </mujoco>
+  )";
+  std::array<char, 1024> error;
+  mjModel* model = LoadModelFromString(xml, error.data(), error.size());
+
+  ASSERT_THAT(model, IsNull());
+  EXPECT_THAT(error.data(), HasSubstr("invalid actdim 1 in stateless"));
+}
+
+TEST_F(ActDimTest, ZeroNotAllowedInStateful) {
+  static constexpr char xml[] = R"(
+  <mujoco>
+    <worldbody>
+      <body>
+        <geom size="1"/>
+        <joint name="hinge"/>
+      </body>
+    </worldbody>
+    <actuator>
+      <general joint="hinge" dyntype="filter" actdim="0"/>
+    </actuator>
+  </mujoco>
+  )";
+  std::array<char, 1024> error;
+  mjModel* model = LoadModelFromString(xml, error.data(), error.size());
+
+  ASSERT_THAT(model, IsNull());
+  EXPECT_THAT(error.data(), HasSubstr("invalid actdim 0 in stateful"));
 }
 
 // ------------- test nuser_xxx fields -----------------------------------------
@@ -600,7 +770,7 @@ TEST_F(UserDataTest, NSensorTooSmall) {
   EXPECT_THAT(error.data(), HasSubstr("nuser_sensor"));
 }
 
-// ------------- test for auto parsing of *limited fields -------------
+// ------------- test for auto parsing of *limited fields ----------------------
 
 using LimitedTest = MujocoTest;
 
@@ -710,6 +880,60 @@ TEST_F(LimitedTest, ErrorIfForceLimitedMissingOnActuator) {
   EXPECT_THAT(error.data(), HasSubstr("forcelimited"));
   EXPECT_THAT(error.data(), HasSubstr("forcerange"));
   EXPECT_THAT(error.data(), HasSubstr("actuator"));
+}
+
+// ------------- tests for tendon springrange ----------------------------------
+
+using SpringrangeTest = MujocoTest;
+
+TEST_F(SpringrangeTest, DefaultsPropagate) {
+  static constexpr char xml[] = R"(
+  <mujoco>
+    <default>
+      <tendon springlength=".2 .5"/>
+    </default>
+
+    <worldbody>
+      <site name="0"/>
+      <site name="1" pos="1 0 0"/>
+    </worldbody>
+
+    <tendon>
+      <spatial>
+        <site site="0"/>
+        <site site="1"/>
+      </spatial>
+    </tendon>
+  </mujoco>
+  )";
+  std::array<char, 1024> error;
+  mjModel* model = LoadModelFromString(xml, error.data(), error.size());
+  ASSERT_THAT(model, NotNull()) << error.data();
+  EXPECT_EQ(model->tendon_lengthspring[0], .2);
+  EXPECT_EQ(model->tendon_lengthspring[1], .5);
+  mj_deleteModel(model);
+}
+
+TEST_F(SpringrangeTest, InvalidRange) {
+  static constexpr char xml[] = R"(
+  <mujoco>
+    <worldbody>
+      <site name="0"/>
+      <site name="1" pos="1 0 0"/>
+    </worldbody>
+
+    <tendon>
+      <spatial springlength="1 0">
+        <site site="0"/>
+        <site site="1"/>
+      </spatial>
+    </tendon>
+  </mujoco>
+  )";
+  std::array<char, 1024> error;
+  mjModel* model = LoadModelFromString(xml, error.data(), error.size());
+  ASSERT_THAT(model, IsNull());
+  EXPECT_THAT(error.data(), HasSubstr("invalid springlength in tendon"));
 }
 
 }  // namespace

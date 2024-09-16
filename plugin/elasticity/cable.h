@@ -21,20 +21,24 @@
 #include <mujoco/mjdata.h>
 #include <mujoco/mjmodel.h>
 #include <mujoco/mjtnum.h>
+#include <mujoco/mjvisualize.h>
 
 
 namespace mujoco::plugin::elasticity {
 
-class Elasticity {
+class Cable {
  public:
-  // Creates a new Elasticity instance (allocated with `new`) or
+  // Creates a new Cable instance (allocated with `new`) or
   // returns null on failure.
-  static std::optional<Elasticity> Create(const mjModel* m, mjData* d,
+  static std::optional<Cable> Create(const mjModel* m, mjData* d,
                                           int instance);
-  Elasticity(Elasticity&&) = default;
-  ~Elasticity() = default;
+  Cable(Cable&&) = default;
+  ~Cable() = default;
 
   void Compute(const mjModel* m, mjData* d, int instance);
+  void Visualize(const mjModel* m, mjData* d, mjvScene* scn, int instance);
+
+  static void RegisterPlugin();
 
   int i0;                         // index of first body
   int n;                          // number of bodies in the cable
@@ -42,9 +46,11 @@ class Elasticity {
   std::vector<int> next;          // indices of next bodies       (n x 1)
   std::vector<mjtNum> stiffness;  // stiffness parameters         (n x 4)
   std::vector<mjtNum> omega0;     // reference curvature          (n x 3)
+  std::vector<mjtNum> stress;     // mechanical stress            (n x 3)
+  mjtNum vmax;                    // max value in colormap
 
  private:
-  Elasticity(const mjModel* m, mjData* d, int instance);
+  Cable(const mjModel* m, mjData* d, int instance);
 };
 
 }  // namespace mujoco::plugin::elasticity

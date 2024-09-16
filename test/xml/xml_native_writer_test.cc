@@ -129,6 +129,24 @@ TEST_F(XMLWriterTest, SavesDisableSensor) {
   mj_deleteModel(model);
 }
 
+TEST_F(XMLWriterTest, EmptyUserSensor) {
+  static constexpr char xml[] = R"(
+  <mujoco>
+    <sensor>
+      <user dim="2" needstage="vel"/>
+    </sensor>
+  </mujoco>
+  )";
+  mjModel* model = LoadModelFromString(xml);
+  std::string saved_xml = SaveAndReadXml(model);
+  EXPECT_THAT(saved_xml, HasSubstr("dim=\"2\""));
+  EXPECT_THAT(saved_xml, HasSubstr("needstage=\"vel\""));
+  EXPECT_THAT(saved_xml, HasSubstr("datatype=\"real\""));
+  EXPECT_THAT(saved_xml, Not(HasSubstr("objtype")));
+  EXPECT_THAT(saved_xml, Not(HasSubstr("objname")));
+  mj_deleteModel(model);
+}
+
 TEST_F(XMLWriterTest, KeepsEmptyClasses) {
   static constexpr char xml[] = R"(
   <mujoco>
@@ -557,6 +575,22 @@ TEST_F(XMLWriterTest, KeepsForcelimitedFalse) {
   mj_deleteModel(model);
 }
 
+TEST_F(XMLWriterTest, WritesGravComp) {
+  static constexpr char xml[] = R"(
+  <mujoco>
+    <worldbody>
+      <body gravcomp=".25">
+      </body>
+    </worldbody>
+  </mujoco>
+  )";
+  mjModel* model = LoadModelFromString(xml);
+  ASSERT_THAT(model, NotNull());
+  std::string saved_xml = SaveAndReadXml(model);
+  EXPECT_THAT(saved_xml, HasSubstr("gravcomp=\"0.25\""));
+  mj_deleteModel(model);
+}
+
 TEST_F(XMLWriterTest, UndefinedMassDensity) {
   static constexpr char xml[] = R"(
   <mujoco>
@@ -668,6 +702,31 @@ TEST_F(XMLWriterTest, OverwritesDensity) {
   mj_deleteModel(model);
 }
 
+TEST_F(XMLWriterTest, SaveDefaultMass) {
+  static constexpr char xml[] = R"(
+  <mujoco>
+    <asset>
+      <mesh name="example"
+        vertex="0 0 0  1 0 0  0 1 0  0 0 1"
+        face="2 0 3  0 1 3  1 2 3  0 2 1" />
+    </asset>
+    <default class="main">
+      <geom type="mesh" mass="1"/>
+    </default>
+    <worldbody>
+      <body>
+        <geom mesh="example" size=".1 .2 .3"/>
+      </body>
+    </worldbody>
+  </mujoco>
+  )";
+  mjModel* model = LoadModelFromString(xml);
+  EXPECT_THAT(model, NotNull());
+  std::string content = SaveAndReadXml(model);
+  EXPECT_THAT(content, HasSubstr("mass=\"1\""));
+  mj_deleteModel(model);
+}
+
 TEST_F(XMLWriterTest, UsesTwoSpaces) {
   static constexpr char xml[] = R"(
   <mujoco>
@@ -706,6 +765,97 @@ TEST_F(XMLWriterTest, WritesSkin) {
 
   mj_deleteModel(model);
   mj_deleteModel(mtemp);
+}
+
+TEST_F(XMLWriterTest, SpringlengthOneValue) {
+  static constexpr char xml[] = R"(
+  <mujoco>
+    <worldbody>
+      <site name="1"/>
+      <site name="2" pos="0 0 1"/>
+    </worldbody>
+
+    <tendon>
+      <spatial springlength="0.5">
+        <site site="1"/>
+        <site site="2"/>
+      </spatial>
+    </tendon>
+  </mujoco>
+  )";
+  mjModel* model = LoadModelFromString(xml);
+  ASSERT_THAT(model, NotNull());
+  std::string saved_xml = SaveAndReadXml(model);
+  EXPECT_THAT(saved_xml, HasSubstr("springlength=\"0.5\""));
+  mj_deleteModel(model);
+}
+
+TEST_F(XMLWriterTest, SpringlengthTwoValues) {
+  static constexpr char xml[] = R"(
+  <mujoco>
+    <worldbody>
+      <site name="1"/>
+      <site name="2" pos="0 0 1"/>
+    </worldbody>
+
+    <tendon>
+      <spatial springlength="0 0.5">
+        <site site="1"/>
+        <site site="2"/>
+      </spatial>
+    </tendon>
+  </mujoco>
+  )";
+  mjModel* model = LoadModelFromString(xml);
+  ASSERT_THAT(model, NotNull());
+  std::string saved_xml = SaveAndReadXml(model);
+  EXPECT_THAT(saved_xml, HasSubstr("springlength=\"0 0.5\""));
+  mj_deleteModel(model);
+}
+
+TEST_F(XMLWriterTest, Actdim) {
+  static constexpr char xml[] = R"(
+  <mujoco>
+    <worldbody>
+      <body>
+        <geom size="1"/>
+        <joint name="hinge"/>
+      </body>
+    </worldbody>
+    <actuator>
+      <general joint="hinge" dyntype="user" actdim="2"/>
+    </actuator>
+  </mujoco>
+  )";
+  mjModel* model = LoadModelFromString(xml);
+  ASSERT_THAT(model, NotNull());
+  std::string saved_xml = SaveAndReadXml(model);
+  EXPECT_THAT(saved_xml, HasSubstr("actdim=\"2\""));
+  mj_deleteModel(model);
+}
+
+TEST_F(XMLWriterTest, ActdimDefaults) {
+  static constexpr char xml[] = R"(
+  <mujoco>
+    <default>
+      <general actdim="2"/>
+    </default>
+    <worldbody>
+      <body>
+        <geom size="1"/>
+        <joint name="hinge"/>
+      </body>
+    </worldbody>
+    <actuator>
+      <general joint="hinge" dyntype="user"/>
+    </actuator>
+  </mujoco>
+  )";
+  mjModel* model = LoadModelFromString(xml);
+  ASSERT_THAT(model, NotNull());
+  std::string saved_xml = SaveAndReadXml(model);
+  EXPECT_THAT(saved_xml, HasSubstr("actdim=\"2\""));
+  mj_deleteModel(model);
 }
 
 // check that no precision is lost when saving XMLs with FullFloatPrecision

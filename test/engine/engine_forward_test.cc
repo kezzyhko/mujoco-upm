@@ -15,6 +15,7 @@
 // Tests for engine/engine_forward.c.
 
 #include "src/engine/engine_forward.h"
+#include <cstddef>
 
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
@@ -22,6 +23,7 @@
 #include <mujoco/mjtnum.h>
 #include <mujoco/mujoco.h>
 #include "src/cc/array_safety.h"
+#include "src/engine/engine_callback.h"
 #include "src/engine/engine_io.h"
 #include "test/fixture.h"
 
@@ -41,6 +43,7 @@ using ::testing::Pointwise;
 using ::testing::DoubleNear;
 using ::testing::Ne;
 using ::testing::HasSubstr;
+using ::testing::NotNull;
 
 // --------------------------- activation limits -------------------------------
 
@@ -274,8 +277,6 @@ TEST_F(ImplicitIntegratorTest, EnergyConservation) {
   mj_deleteModel(model);
 }
 
-// --------------------------- control clamping --------------------------------
-
 TEST_F(ForwardTest, ControlClamping) {
   static constexpr char xml[] = R"(
   <mujoco>
@@ -344,5 +345,152 @@ TEST_F(ForwardTest, ControlClamping) {
   mj_deleteModel(model);
 }
 
+void control_callback(const mjModel* m, mjData *d) {
+  d->ctrl[0] = 2;
+}
+
+TEST_F(ForwardTest, MjcbControlDisabled) {
+  static constexpr char xml[] = R"(
+  <mujoco>
+    <worldbody>
+      <body>
+        <geom size="1"/>
+        <joint name="hinge"/>
+      </body>
+    </worldbody>
+    <actuator>
+      <motor joint="hinge"/>
+    </actuator>
+  </mujoco>
+  )";
+  mjModel* model = LoadModelFromString(xml);
+  mjData* data = mj_makeData(model);
+
+  // install global control callback
+  mjcb_control = control_callback;
+
+  // call forward
+  mj_forward(model, data);
+  // expect that callback was used
+  EXPECT_EQ(data->ctrl[0], 2.0);
+
+  // reset, disable actuation, call forward
+  mj_resetData(model, data);
+  model->opt.disableflags |= mjDSBL_ACTUATION;
+  mj_forward(model, data);
+  // expect that callback was not used
+  EXPECT_EQ(data->ctrl[0], 0.0);
+
+  // remove global control callback
+  mjcb_control = nullptr;
+
+  mj_deleteData(data);
+  mj_deleteModel(model);
+}
+
+TEST_F(ForwardTest, gravcomp) {
+  static constexpr char xml[] = R"(
+  <mujoco>
+    <option gravity="0 0 -10" />
+    <worldbody>
+      <body>
+        <joint type="slide" axis="0 0 1"/>
+        <geom size="1"/>
+      </body>
+      <body pos="3 0 0" gravcomp="1">
+        <joint type="slide" axis="0 0 1"/>
+        <geom size="1"/>
+      </body>
+      <body pos="6 0 0" gravcomp="2">
+        <joint type="slide" axis="0 0 1"/>
+        <geom size="1"/>
+      </body>
+    </worldbody>
+  </mujoco>
+  )";
+  mjModel* model = LoadModelFromString(xml);
+  ASSERT_THAT(model, NotNull());
+
+  mjData* data = mj_makeData(model);
+  while(data->time < 1) { mj_step(model, data); }
+
+  mjtNum dist = 0.5*mju_norm3(model->opt.gravity)*(data->time*data->time);
+
+  // expect that body 1 moves down allowing some slack from our estimated distance moved
+  EXPECT_NEAR(data->qpos[0], -dist, 0.011);
+
+  // expect that body 2 does not move
+  EXPECT_EQ(data->qpos[1], 0.0);
+
+  // expect that body 3 moves up the same distance that body 0 moved down
+  EXPECT_EQ(data->qpos[0], -data->qpos[2]);
+
+  mj_deleteData(data);
+  mj_deleteModel(model);
+}
+
+// user defined 2nd-order activation dynamics: frequency-controlled oscillator
+//  note that scalar mjcb_act_dyn callbacks are expected to return act_dot, but
+//  since we have a vector output we write into act_dot directly
+mjtNum oscillator(const mjModel* m, const mjData *d, int id) {
+  // check that actnum == 2
+  if (m->actuator_actnum[id] != 2) {
+    mju_error("callback expected actnum == 2");
+  }
+
+  // get pointers to activations (inputs) and their derivatives (outputs)
+  mjtNum* act = d->act + m->actuator_actadr[id];
+  mjtNum* act_dot = d->act_dot + m->actuator_actadr[id];
+
+  // harmonic oscillator with controlled frequency
+  mjtNum frequency = 2*mjPI*d->ctrl[id];
+  act_dot[0] = -act[1] * frequency;
+  act_dot[1] = act[0] * frequency;
+
+  return 0;  // ignored by caller
+}
+
+TEST_F(ForwardTest, MjcbActDynSecondOrderExpectsActnum) {
+  static constexpr char xml[] = R"(
+  <mujoco>
+    <option timestep="1e-4"/>
+    <worldbody>
+      <body>
+        <geom size="1"/>
+        <joint name="hinge"/>
+      </body>
+    </worldbody>
+    <actuator>
+      <general joint="hinge" dyntype="user" actdim="2"/>
+    </actuator>
+  </mujoco>
+  )";
+  mjModel* model = LoadModelFromString(xml);
+  mjData* data = mj_makeData(model);
+
+  // install global dynamics callback
+  mjcb_act_dyn = oscillator;
+
+  // for two arbitrary frequencies, compare actuator force as output by the
+  // user-defined oscillator and analytical sine function
+  for (mjtNum frequency : {1.5, 0.7}) {
+    mj_resetData(model, data);
+    data->ctrl[0] = frequency;  // set desired oscillation frequency
+    data->act[0] = 1;  // initialise activation
+
+    // simulate and compare to sine function
+    while (data->time < 1) {
+      mjtNum expected_force = mju_sin(2*mjPI*data->time*frequency);
+      mj_step(model, data);
+      EXPECT_NEAR(data->actuator_force[0], expected_force, .01);
+    }
+  }
+
+  // uninstall global dynamics callback
+  mjcb_act_dyn = nullptr;
+
+  mj_deleteData(data);
+  mj_deleteModel(model);
+}
 }  // namespace
 }  // namespace mujoco

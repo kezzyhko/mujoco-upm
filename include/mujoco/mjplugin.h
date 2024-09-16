@@ -17,6 +17,8 @@
 
 #include <mujoco/mjdata.h>
 #include <mujoco/mjmodel.h>
+#include <mujoco/mjvisualize.h>
+
 
 typedef enum mjtPluginTypeBit_ {
   mjPLUGIN_ACTUATOR = 1<<0,
@@ -56,6 +58,9 @@ struct mjpPlugin_ {
 
   // called when time integration occurs (optional)
   void (*advance)(const mjModel* m, mjData* d, int instance);
+
+  // called by mjv_updateScene (optional)
+  void (*visualize)(const mjModel*m, mjData* d, mjvScene* scn, int instance);
 };
 typedef struct mjpPlugin_ mjpPlugin;
 
@@ -72,18 +77,29 @@ typedef struct mjpPlugin_ mjpPlugin;
 #define mjDLLMAIN DllMain
 #endif
 
+#if !defined(mjEXTERNC)
+#if defined(__cplusplus)
+#define mjEXTERNC extern "C"
+#else
+#define mjEXTERNC
+#endif  // defined(__cplusplus)
+#endif  // !defined(mjEXTERNC)
+
 // NOLINTBEGIN(runtime/int)
-#define mjPLUGIN_DYNAMIC_LIBRARY_INIT                                                 \
-  static void _mjplugin_dllmain(void);                                                \
-  static int __stdcall mjDLLMAIN(void* hinst, unsigned long reason, void* reserved) { \
-    if (reason == 1) {                                                                \
-      _mjplugin_dllmain();                                                            \
-    }                                                                                 \
-    return 1;                                                                         \
-  }                                                                                   \
+#define mjPLUGIN_DYNAMIC_LIBRARY_INIT                                                     \
+  static void _mjplugin_dllmain(void);                                                    \
+  mjEXTERNC int __stdcall mjDLLMAIN(void* hinst, unsigned long reason, void* reserved) {  \
+    if (reason == 1) {                                                                    \
+      _mjplugin_dllmain();                                                                \
+    }                                                                                     \
+    return 1;                                                                             \
+  }                                                                                       \
   static void _mjplugin_dllmain(void)
 // NOLINTEND(runtime/int)
 
 #endif  // defined(_MSC_VER)
+
+// function pointer type for mj_loadAllPluginLibraries callback
+typedef void (*mjfPluginLibraryLoadCallback)(const char* filename, int first, int count);
 
 #endif  // MUJOCO_INCLUDE_MJPLUGIN_H_

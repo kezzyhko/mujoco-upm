@@ -13,17 +13,20 @@ XML schema
 ~~~~~~~~~~
 
 The table below summarizes the XML elements and their attributes in MJCF. Note that all information in MJCF is entered
-through elements and attributes. Text content in elements is not used; if present, the parser ignores it. The symbols
-in the second column of the table have the following meaning:
+through elements and attributes. Text content in elements is not used; if present, the parser ignores it.
 
-====== ===================================================
-**!**  required element, can appear only once
-**?**  optional element, can appear only once
-**\*** optional element, can appear many times
-**R**  optional element, can appear many times recursively
-====== ===================================================
+.. collapse:: Expand schema table
 
-.. include:: XMLschema.rst
+   The symbols in the second column of the table have the following meaning:
+
+   ====== ===================================================
+   **!**  required element, can appear only once
+   **?**  optional element, can appear only once
+   **\*** optional element, can appear many times
+   **R**  optional element, can appear many times recursively
+   ====== ===================================================
+
+   .. include:: XMLschema.rst
 
 .. _CType:
 
@@ -33,7 +36,7 @@ Attribute types
 | Each attribute has a data type enforced by the parser. The available data types are:
 
 ========= ==============================================================================================
-string    An arbitrary string, usually specifying a file name or a user-defined name of a model element.
+string    An arbitrary string, usually specifying a file name or a user-defined name of a model element.
 int(N)    An array of N integers. If N is omitted it equals 1.
 real(N)   An array of N real-valued numbers. If N is omitted it equals 1.
 [...]     Keyword attribute. The list of valid keywords is given in brackets.
@@ -50,7 +53,7 @@ real(N)   An array of N real-valued numbers. If N is omitted it equals 1.
   compiler. When such attributes become relevant in a given context, they must be set to allowed values.
 
 +-------------+--------------------------------------------------------------------------------------------------+
-| required    | The attribute is required by the parser. If it is not present the parser will generate an error. |
+| required    | The attribute is required by the parser. If it is not present the parser will generate an error. |
 +-------------+--------------------------------------------------------------------------------------------------+
 | optional    | The attribute is optional. There is no internal default. The attribute is initialized in the     |
 |             | undefined state.                                                                                 |
@@ -65,7 +68,9 @@ whose value can be "radian" or "degree". It is an optional attribute and has int
 will appear in the reference documentation as
 
 :at:`angle`: :at-val:`[radian, degree], "degree"`
-   |br|
+   .. raw:: html
+
+      <p style="display: none"></p>
 
 .. _Reference:
 
@@ -1690,6 +1695,11 @@ defined. Its body name is automatically defined as "world".
    unit quaternion, thus specifying it is optional even in local coordinates. If the body frame was copied from the body
    inertial frame per the above rules, the copy operation applies to both position and orientation, and the setting of
    the orientation-related attributes is ignored.
+:at:`gravcomp`: :at-val:`real, "0"`
+  Gravity compensation force, specified as fraction of body weight. This attribute creates an upwards force applied to
+  the body's center of mass, countering the force of gravity. As an example, a value of ``1`` creates an upward force
+  equal to the body's weight and compensates for gravity exactly. Values greater than ``1`` will create a net upwards
+  force or buoyancy effect.
 :at:`user`: :at-val:`real(nbody_user), "0 0 ..."`
    See :ref:`CUser`.
 
@@ -2291,10 +2301,11 @@ coordinates results in compiler error. See :ref:`CComposite` in the modeling gui
    This attribute determines the type of composite object. The remaining attributes and sub-elements are then
    interpreted according to the type. Default settings are also adjusted depending on the type.
 
-   The **particle** type creates a 1D, 2D or 3D grid of equally-spaced bodies. Each body has a single sphere geom and 3
-   orthogonal sliding joints, allowing translation but not rotation. The geom condim and priority attributes are set to
-   1 by default. This makes the spheres have frictionless contacts with all other geoms (unless the priority of some
-   frictional geom is higher).
+   The **particle** type creates a 1D, 2D or 3D grid of equally-spaced bodies. By default, each body has a single sphere
+   geom and 3 orthogonal sliding joints, allowing translation but not rotation. The geom condim and priority attributes
+   are set to 1 by default. This makes the spheres have frictionless contacts with all other geoms (unless the priority
+   of some frictional geom is higher). The user can replace the default sliders with multiple joints of kind="particle"
+   and replace the default sphere with a custom geom.
 
    The **grid** type creates a 1D or 2D grid of bodies, each having a sphere geom, a sphere site, and 3 orthogonal
    sliding joints by default. The :el:`pin` sub-element can be used to specify that some bodies should not have joints,
@@ -2321,7 +2332,8 @@ coordinates results in compiler error. See :ref:`CComposite` in the modeling gui
    (cylinder, capsule or box). The geometry can either be defined with an array of 3D vertex coordinates :at:`vertex`
    or with prescribed functions with the option :at:`curve`. Currently, only linear and trigonometric functions are
    supported. For example, an helix can be obtained with curve="cos(s) sin(s) s". The size is set with the option
-   :at:`size`, resulting in :math:`f(s)=(size[1]*\cos(2*\pi*size[2]), size[1]*\sin(2*\pi*size[2]), size[0]*s)`.
+   :at:`size`, resulting in :math:`f(s)=\{\text{size}[1]\cdot\cos(2\pi\cdot\text{size}[2]),\;
+   \text{size}[1]\cdot\sin(2\pi\cdot\text{size}[2]),\; \text{size}[0]\cdot s\}`.
 
    The **cloth** type is a different way to model cloth, beyond type="grid". Here the elements are connected with
    universal joints and form a kinematic spanning tree. The root of the tree is the parent body, and its coordinates in
@@ -2397,7 +2409,7 @@ Depending on the composite type, some joints are created automatically (e.g. the
 joints are optional (e.g. the stretch and twist joints in rope). This sub-element is used to specify which optional
 joints should be created, as well as to adjust the attributes of both automatic and optional joints.
 
-:at:`kind`: :at-val:`[main, twist, stretch], required`
+:at:`kind`: :at-val:`[main, twist, stretch, particle], required`
    The joint kind here is orthogonal to the joint type in the rest of MJCF. The joint kind refers to the function of the
    joint within the mechanism comprising the composite body, while the joint type (hinge or slide) is implied by the
    joint kind and composite body type.
@@ -2414,6 +2426,10 @@ joints should be created, as well as to adjust the attributes of both automatic 
    The **stretch** kind corresponds to slide joints enabling rope, loop and cloth objects to stretch. These are optional
    joints and are only created if this sub-element is present. This sub-element is also used to adjust the attributes of
    the optional stretch joints. For other composite object types this sub-element has no effect.
+
+   The **particle** kind can only be used with the particle composite type. As opposed to all previous kinds, this kind
+   *replaces* the default 3 sliders with user-defined joints. User-defined joints can be repeated, for example
+   to create planar particles with two sliders and a hinge.
 :at:`solreffix`, :at:`solimpfix`
    These are the solref and solimp attributes used to equality-constrain the joint. Whether or not a given joint is
    quality-constrained depends on the joint kind and composite object type as explained above. For joints that are not
@@ -2423,7 +2439,7 @@ joints should be created, as well as to adjust the attributes of both automatic 
 
 .. |body/composite/joint attrib list| replace::
    :at:`group`, :at:`stiffness`, :at:`damping`, :at:`armature`, :at:`limited`, :at:`range`, :at:`margin`,
-   :at:`solreflimit`, :at:`solimplimit`, :at:`frictionloss`, :at:`solreffriction`, :at:`solimpfriction`
+   :at:`solreflimit`, :at:`solimplimit`, :at:`frictionloss`, :at:`solreffriction`, :at:`solimpfriction`, :at:`type`
 
 |body/composite/joint attrib list|
    Same meaning as regular :ref:`joint <body-joint>` attributes.
@@ -2788,9 +2804,16 @@ the obstacle geom.
 :at:`rgba`: :at-val:`real(4), "0.5 0.5 0.5 1"`
    Color and transparency of the tendon. When this value is different from the internal default, it overrides the
    corresponding material properties.
-:at:`springlength`: :at-val:`real, "-1"`
-   The length of the tendon corresponding to the spring resting position. If this value is negative, the tendon resting
-   length is determined from the model reference configuration in qpos0.
+:at:`springlength`: :at-val:`real(2), "-1 -1"`
+   Spring resting position, can take either one or two values. If one value is given, it corresponds to the length of
+   the tendon at rest. If it is ``-1``, the tendon resting length is determined from the model reference configuration
+   in ``mjModel.qpos0``.  |br| Note that the default value of ``-1``, which invokes the automatic length computation,
+   was designed with :ref:`spatial<tendon-spatial>` tendons in mind, which can only have nonegative length. In order to
+   set the :at:`springlength` of a :ref:`fixed<tendon-fixed>` tendon to ``-1``, use a nearby value like ``-0.99999``.
+   |br| If two non-decreasing values are given, they define a `dead-band <https://en.wikipedia.org/wiki/Deadband>`_
+   range. If the tendon length is between the two values, the force is 0. If it is outside this range, the force behaves
+   like a regular spring, with the rest-point corresponding to the nearest :at:`springlength` value. A deadband can be
+   used to define tendons whose limits are enforced by springs rather than constraints.
 :at:`stiffness`: :at-val:`real, "0"`
    Stiffness coefficient. A positive value generates a spring force (linear in position) acting along the tendon.
 :at:`damping`: :at-val:`real, "0"`
@@ -3006,6 +3029,11 @@ specify them independently.
    it is defined in the kinematic tree; its orientation cannot be changed in the actuator definition.
 :at:`user`: :at-val:`real(nuser_actuator), "0 ... 0"`
    See :ref:`CUser`.
+:at:`actdim`: :at-val:`real, "-1"`
+   Dimension of the activation state. The default value of ``-1`` instructs the compiler to set the dimension according
+   to the :at:`dyntype`. Values larger than ``1`` are only allowed for user-defined activation dynamics, as native types
+   require dimensions of only 0 or 1. For activation dimensions bigger than 1, the *last element* is used to generate
+   force.
 :at:`dyntype`: :at-val:`[none, integrator, filter, muscle, user], "none"`
    Activation dynamics type for the actuator. The available dynamics types were already described in the :ref:`Actuation
    model <geActuation>` section. Repeating that description in somewhat different notation (corresponding to the mjModel
@@ -3885,7 +3913,7 @@ at a specified body, in global coordinates.
 .. _sensor-clock:
 
 :el-prefix:`sensor/` **clock** (*)
-^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 This element creates sensor that returns the simulation time.
 
@@ -3906,16 +3934,16 @@ bodies whose center of mass is of interest.
 
 :at:`name`, :at:`noise`, :at:`cutoff`, :at:`user`
    See :ref:`CSensor`.
-:at:`objtype`: :at-val:`(any element type that can be named), required`
+:at:`objtype`: :at-val:`(any element type that can be named), optional`
    Type of the MuJoCo object to which the sensor is attached. This together with the objname attribute determines the
-   actual object.
-:at:`objname`: :at-val:`string, required`
+   actual object. If unspecified, will be :ref:`mjOBJ_UNKNOWN<mjtObj>`.
+:at:`objname`: :at-val:`string, optional`
    Name of the MuJoCo object to which the sensor is attached.
-:at:`datatype`: :at-val:`[real, positive, axis, quaternion], required`
+:at:`datatype`: :at-val:`[real, positive, axis, quaternion], "real"`
    The type of output generated by this sensor. "axis" means a unit-length 3D vector. "quat" means a unit quaternion.
    These need to be declared because when MuJoCo adds noise, it must respect the vector normalization. "real" means a
    generic array (or scalar) of real values to which noise can be added independently.
-:at:`needstage`: :at-val:`[pos, vel, acc], required`
+:at:`needstage`: :at-val:`[pos, vel, acc], "acc"`
    The MuJoCo computation stage that must be completed before the user callback mjcb_sensor() is able to evaluate the
    output of this sensor.
 :at:`dim`: :at-val:`int, required`
@@ -3924,7 +3952,7 @@ bodies whose center of mass is of interest.
 .. _keyframe:
 
 **keyframe** (*)
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+~~~~~~~~~~~~~~~~
 
 This is a grouping element for keyframe definitions. It does not have attributes. Keyframes can be used to create a
 library of states that are of interest to the user, and to initialize the simulation state to one of the states in the

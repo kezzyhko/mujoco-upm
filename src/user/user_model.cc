@@ -926,15 +926,10 @@ void mjCModel::SetSizes(void) {
   // nu, na
   for (i=0; i<(int)actuators.size(); i++) {
     if (actuators[i]->dyntype == mjDYN_NONE) {
-      //  make sure all 2nd-order come before all 3rd-order
-      if (na) {
-        throw mjCError(0, "stateless actuators must come before stateful actuators");
-      }
-
       nu++;
     } else {
       nu++;
-      na++;
+      na += actuators[i]->actdim;
     }
   }
 
@@ -1290,6 +1285,7 @@ void mjCModel::CopyTree(mjModel* m) {
     copyvec(m->body_iquat+4*i, pb->lociquat, 4);
     m->body_mass[i] = (mjtNum)pb->mass;
     copyvec(m->body_inertia+3*i, pb->inertia, 3);
+    m->body_gravcomp[i] = pb->gravcomp;
     copyvec(m->body_user+nuser_body*i, pb->userdata.data(), nuser_body);
 
     // count free joints
@@ -1806,7 +1802,8 @@ void mjCModel::CopyObjects(mjModel* m) {
     m->tendon_stiffness[i] = (mjtNum)pte->stiffness;
     m->tendon_damping[i] = (mjtNum)pte->damping;
     m->tendon_frictionloss[i] = (mjtNum)pte->frictionloss;
-    m->tendon_lengthspring[i] = (mjtNum)pte->springlength;
+    m->tendon_lengthspring[2*i] = (mjtNum)pte->springlength[0];
+    m->tendon_lengthspring[2*i+1] = (mjtNum)pte->springlength[1];
     copyvec(m->tendon_user+nuser_tendon*i, pte->userdata.data(), nuser_tendon);
     copyvec(m->tendon_rgba+4*i, pte->rgba, 4);
 
@@ -1825,6 +1822,7 @@ void mjCModel::CopyObjects(mjModel* m) {
   }
 
   // actuators
+  adr = 0;
   for (i=0; i<nu; i++) {
     // get pointer
     mjCActuator* pac = actuators[i];
@@ -1836,6 +1834,9 @@ void mjCModel::CopyObjects(mjModel* m) {
     m->actuator_biastype[i] = pac->biastype;
     m->actuator_trnid[2*i] = pac->trnid[0];
     m->actuator_trnid[2*i+1] = pac->trnid[1];
+    m->actuator_actadr[i] = pac->dyntype == mjDYN_NONE ? -1 : adr;
+    adr += pac->actdim;
+    m->actuator_actnum[i] = pac->actdim;
     m->actuator_group[i] = pac->group;
     m->actuator_ctrllimited[i] = pac->ctrllimited;
     m->actuator_forcelimited[i] = pac->forcelimited;
@@ -2688,6 +2689,12 @@ void mjCModel::TryCompile(mjModel*& m, mjData*& d, const mjVFS* vfs) {
         njmax * m->nv * (2 * sizeof(int) + 2 * sizeof(mjtNum)) +
         njmax * njmax * (sizeof(int) + sizeof(mjtNum)));
     m->nstack += (arena_bytes / sizeof(mjtNum)) + (arena_bytes % sizeof(mjtNum) ? 1 : 0);
+
+    // round up to the nearest megabyte
+    constexpr int kMegabyte = (1 << 20) / sizeof(mjtNum);  // number of mjtNum's in 1 Mb
+    int nstack_mb = m->nstack / kMegabyte;
+    int residual_mb = m->nstack % kMegabyte ? 1 : 0;
+    m->nstack = kMegabyte * (nstack_mb + residual_mb);
   }
 
   // create data
