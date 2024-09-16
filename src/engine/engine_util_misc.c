@@ -858,7 +858,7 @@ int mju_outsideBox(const mjtNum point[3], const mjtNum pos[3], const mjtNum mat[
 
   // vector from pos to point, projected to box frame
   mjtNum vec[3] = {point[0]-pos[0], point[1]-pos[1], point[2]-pos[2]};
-  mju_rotVecMatT(vec, vec, mat);
+  mju_mulMatTVec3(vec, mat, vec);
 
   // big: inflated box
   mjtNum big[3] = {size[0], size[1], size[2]};
@@ -1403,51 +1403,6 @@ char* mju_strncpy(char *dst, const char *src, int n) {
   }
 
   return dst;
-}
-
-
-
-// assemble full filename from directory and filename, return 0 on success
-int mju_makefullname(char* full, size_t nfull, const char* dir, const char* file) {
-  int dirlen = (!dir) ? 0 : strlen(dir);
-  int filelen = (!file) ? 0 : strlen(file);
-  char* filepos = full + dirlen;
-
-  // missing filename
-  if (!filelen) {
-    return -1;
-  }
-
-  // no directory then just copy filename over
-  if (!dirlen) {
-    // make sure full has space
-    if (filelen >= nfull) {
-      return -1;
-    }
-    strcpy(full, file);
-    return 0;
-  }
-
-  // make sure full has space
-  if (dirlen + filelen >= nfull) {
-    return -1;
-  }
-
-  // dir doesn't end with a slash
-  if (dir[dirlen - 1] != '\\' && dir[dirlen - 1] != '/') {
-    // need extra space for forward slash
-    if ((dirlen + filelen + 1) >= nfull) {
-      return -1;
-    }
-
-    // add forward slash
-    *filepos++ = '/';
-  }
-
-  // copy directory and file over
-  memcpy(full, dir, sizeof(char) * dirlen);
-  strcpy(filepos, file);
-  return 0;
 }
 
 

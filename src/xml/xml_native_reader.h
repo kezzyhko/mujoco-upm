@@ -21,7 +21,7 @@
 #include "tinyxml2.h"
 
 #include <mujoco/mujoco.h>
-#include "user/user_api.h"
+#include <mujoco/mjspec.h>
 #include "xml/xml_base.h"
 #include "xml/xml_util.h"
 
@@ -30,7 +30,7 @@ class mjXReader : public mjXBase {
   mjXReader();                                                         // constructor
   virtual ~mjXReader() = default;                                      // destructor
 
-  void Parse(tinyxml2::XMLElement* root);                              // parse XML document
+  void Parse(tinyxml2::XMLElement* root, const mjVFS* vfs = nullptr);  // parse XML document
   void PrintSchema(std::stringstream& str, bool html, bool pad);       // print text or HTML schema
 
   void SetModelFileDir(std::string modelfiledir);
@@ -48,12 +48,12 @@ class mjXReader : public mjXBase {
 
  private:
   // XML section specific to MJCF
-  void Default(tinyxml2::XMLElement* section,   int parentid);         // default section
+  void Default(tinyxml2::XMLElement* section, const mjsDefault* def);  // default section
   void Extension(tinyxml2::XMLElement* section);                       // extension section
   void Custom(tinyxml2::XMLElement* section);                          // custom section
   void Visual(tinyxml2::XMLElement* section);                          // visual section
   void Statistic(tinyxml2::XMLElement* section);                       // statistic section
-  void Asset(tinyxml2::XMLElement* section);                           // asset section
+  void Asset(tinyxml2::XMLElement* section, const mjVFS* vfs);         // asset section
   void Body(tinyxml2::XMLElement* section, mjsBody* pbody,
             mjsFrame* pframe);                                         // body/world section
   void Contact(tinyxml2::XMLElement* section);                         // contact section
@@ -99,7 +99,7 @@ class mjXReader : public mjXBase {
 };
 
 // MJCF schema
-#define nMJCF 230
+#define nMJCF 232
 extern const char* MJCF[nMJCF][mjXATTRNUM];
 
 #endif  // MUJOCO_SRC_XML_XML_NATIVE_READER_H_

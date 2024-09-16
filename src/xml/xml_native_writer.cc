@@ -14,19 +14,22 @@
 
 #include "xml/xml_native_writer.h"
 
+#include <array>
 #include <cstddef>
 #include <cstdio>
 #include <string>
+#include <string_view>
 #include <unordered_set>
 #include <vector>
 
 #include <mujoco/mjmodel.h>
 #include <mujoco/mjplugin.h>
+#include <mujoco/mjspec.h>
+#include <mujoco/mujoco.h>
 #include "engine/engine_io.h"
 #include "engine/engine_plugin.h"
 #include "engine/engine_util_errmem.h"
 #include "engine/engine_util_misc.h"
-#include "user/user_api.h"
 #include "user/user_model.h"
 #include "user/user_objects.h"
 #include "user/user_util.h"
@@ -68,7 +71,45 @@ static string WriteDoc(XMLDocument& doc, char *error, size_t error_sz) {
     mjCopyError(error, doc.ErrorStr(), error_sz);
     return "";
   }
-  return string(stream.CStr());
+  std::string str = string(stream.CStr());
+
+  // top level sections
+  std::array<std::string, 17> sections = {
+      "<actuator", "<asset",      "<compiler", "<contact",   "<custom",
+      "<default>", "<deformable", "<equality", "<extension", "<keyframe",
+      "<option",   "<sensor",     "<size",     "<statistic", "<tendon",
+      "<visual",   "<worldbody"};
+
+  // position of newline before first section
+  size_t first_pos = std::string::npos;
+
+  // insert newlines before section headers
+  for (const std::string& section : sections) {
+    size_t pos = 0;
+    while ((pos = str.find(section, pos)) != std::string::npos) {
+      // find newline before this section
+      size_t line_pos = str.rfind('\n', pos);
+
+      // save position of first section
+      if (line_pos < first_pos) first_pos = line_pos;
+
+      // insert another newline
+      if (line_pos != std::string::npos) {
+        str.insert(line_pos + 1, "\n");
+        pos++;  // account for inserted newline
+      }
+
+      // advance
+      pos += section.length();
+    }
+  }
+
+  // remove added newline before the first section
+  if (first_pos != std::string::npos) {
+    str.erase(first_pos, 1);
+  }
+
+  return str;
 }
 
 
@@ -158,7 +199,9 @@ void mjXWriter::OneMesh(XMLElement* elem, const mjCMesh* pmesh, mjCDef* def) {
   // regular
   if (!writingdefaults) {
     WriteAttrTxt(elem, "name", pmesh->name);
-    WriteAttrTxt(elem, "class", pmesh->classname);
+    if (pmesh->classname != "main") {
+      WriteAttrTxt(elem, "class", pmesh->classname);
+    }
     WriteAttrTxt(elem, "content_type", pmesh->get_content_type());
     WriteAttrTxt(elem, "file", pmesh->get_file());
 
@@ -255,7 +298,9 @@ void mjXWriter::OneMaterial(XMLElement* elem, const mjCMaterial* pmat, mjCDef* d
   // regular
   if (!writingdefaults) {
     WriteAttrTxt(elem, "name", pmat->name);
-    WriteAttrTxt(elem, "class", pmat->classname);
+    if (pmat->classname != "main") {
+      WriteAttrTxt(elem, "class", pmat->classname);
+    }
   }
 
   // defaults and regular
@@ -276,13 +321,16 @@ void mjXWriter::OneMaterial(XMLElement* elem, const mjCMaterial* pmat, mjCDef* d
 
 
 // write joint
-void mjXWriter::OneJoint(XMLElement* elem, const mjCJoint* pjoint, mjCDef* def) {
+void mjXWriter::OneJoint(XMLElement* elem, const mjCJoint* pjoint, mjCDef* def,
+                         std::string_view classname) {
   double zero = 0;
 
   // regular
   if (!writingdefaults) {
     WriteAttrTxt(elem, "name", pjoint->name);
-    WriteAttrTxt(elem, "class", pjoint->classname);
+    if (classname != pjoint->classname && pjoint->classname != "main") {
+      WriteAttrTxt(elem, "class", pjoint->classname);
+    }
     if (pjoint->type != mjJNT_FREE) {
       WriteAttr(elem, "pos", 3, pjoint->pos);
     }
@@ -324,17 +372,18 @@ void mjXWriter::OneJoint(XMLElement* elem, const mjCJoint* pjoint, mjCDef* def) 
   }
 }
 
-
-
 // write geom
-void mjXWriter::OneGeom(XMLElement* elem, const mjCGeom* pgeom, mjCDef* def) {
+void mjXWriter::OneGeom(XMLElement* elem, const mjCGeom* pgeom, mjCDef* def,
+                        std::string_view classname) {
   double unitq[4] = {1, 0, 0, 0};
   double mass = 0;
 
   // regular
   if (!writingdefaults) {
     WriteAttrTxt(elem, "name", pgeom->name);
-    WriteAttrTxt(elem, "class", pgeom->classname);
+    if (classname != pgeom->classname && pgeom->classname != "main") {
+      WriteAttrTxt(elem, "class", pgeom->classname);
+    }
     if (mjGEOMINFO[pgeom->type]) {
       WriteAttr(elem, "size", mjGEOMINFO[pgeom->type], pgeom->size, def->Geom().size);
     }
@@ -419,16 +468,17 @@ void mjXWriter::OneGeom(XMLElement* elem, const mjCGeom* pgeom, mjCDef* def) {
   }
 }
 
-
-
 // write site
-void mjXWriter::OneSite(XMLElement* elem, const mjCSite* psite, mjCDef* def) {
+void mjXWriter::OneSite(XMLElement* elem, const mjCSite* psite, mjCDef* def,
+                        std::string_view classname) {
   double unitq[4] = {1, 0, 0, 0};
 
   // regular
   if (!writingdefaults) {
     WriteAttrTxt(elem, "name", psite->name);
-    WriteAttrTxt(elem, "class", psite->classname);
+    if (classname != psite->classname && psite->classname != "main") {
+      WriteAttrTxt(elem, "class", psite->classname);
+    }
     WriteAttr(elem, "pos", 3, psite->pos);
     WriteAttr(elem, "quat", 4, psite->quat, unitq);
     if (mjGEOMINFO[psite->type]) {
@@ -454,16 +504,17 @@ void mjXWriter::OneSite(XMLElement* elem, const mjCSite* psite, mjCDef* def) {
   }
 }
 
-
-
 // write camera
-void mjXWriter::OneCamera(XMLElement* elem, const mjCCamera* pcam, mjCDef* def) {
+void mjXWriter::OneCamera(XMLElement* elem, const mjCCamera* pcam, mjCDef* def,
+                          std::string_view classname) {
   double unitq[4] = {1, 0, 0, 0};
 
   // regular
   if (!writingdefaults) {
     WriteAttrTxt(elem, "name", pcam->name);
-    WriteAttrTxt(elem, "class", pcam->classname);
+    if (classname != pcam->classname && pcam->classname != "main") {
+      WriteAttrTxt(elem, "class", pcam->classname);
+    }
     WriteAttrTxt(elem, "target", pcam->get_targetbody());
     WriteAttr(elem, "pos", 3, pcam->pos);
     WriteAttr(elem, "quat", 4, pcam->quat, unitq);
@@ -473,9 +524,7 @@ void mjXWriter::OneCamera(XMLElement* elem, const mjCCamera* pcam, mjCDef* def) 
   WriteAttr(elem, "ipd", 1, &pcam->ipd, &def->Camera().ipd);
   WriteAttrKey(elem, "mode", camlight_map, camlight_sz, pcam->mode, def->Camera().mode);
   WriteAttr(elem, "resolution", 2, pcam->resolution, def->Camera().resolution);
-
-  // resolution if positive
-  WriteAttr(elem, "resolution", 2, pcam->resolution, def->Camera().resolution);
+  WriteAttrKey(elem, "orthographic", bool_map, 2, pcam->orthographic, def->Camera().orthographic);
 
   // camera intrinsics if specified
   if (pcam->sensor_size[0]>0 && pcam->sensor_size[1]>0) {
@@ -496,14 +545,15 @@ void mjXWriter::OneCamera(XMLElement* elem, const mjCCamera* pcam, mjCDef* def) 
   }
 }
 
-
-
 // write light
-void mjXWriter::OneLight(XMLElement* elem, const mjCLight* plight, mjCDef* def) {
+void mjXWriter::OneLight(XMLElement* elem, const mjCLight* plight, mjCDef* def,
+                         std::string_view classname) {
   // regular
   if (!writingdefaults) {
     WriteAttrTxt(elem, "name", plight->name);
-    WriteAttrTxt(elem, "class", plight->classname);
+    if (classname != plight->classname && plight->classname != "main") {
+      WriteAttrTxt(elem, "class", plight->classname);
+    }
     WriteAttrTxt(elem, "target", plight->get_targetbody());
     WriteAttr(elem, "pos", 3, plight->pos);
     WriteAttr(elem, "dir", 3, plight->dir);
@@ -523,13 +573,13 @@ void mjXWriter::OneLight(XMLElement* elem, const mjCLight* plight, mjCDef* def) 
   WriteAttrKey(elem, "mode", camlight_map, camlight_sz, plight->mode, def->Light().mode);
 }
 
-
-
 // write pair
 void mjXWriter::OnePair(XMLElement* elem, const mjCPair* ppair, mjCDef* def) {
   // regular
   if (!writingdefaults) {
-    WriteAttrTxt(elem, "class", ppair->classname);
+    if (ppair->classname != "main") {
+      WriteAttrTxt(elem, "class", ppair->classname);
+    }
     WriteAttrTxt(elem, "geom1", ppair->get_geomname1());
     WriteAttrTxt(elem, "geom2", ppair->get_geomname2());
   }
@@ -553,7 +603,9 @@ void mjXWriter::OneEquality(XMLElement* elem, const mjCEquality* peq, mjCDef* de
   // regular
   if (!writingdefaults) {
     WriteAttrTxt(elem, "name", peq->name);
-    WriteAttrTxt(elem, "class", peq->classname);
+    if (peq->classname != "main") {
+      WriteAttrTxt(elem, "class", peq->classname);
+    }
 
     switch (peq->type) {
     case mjEQ_CONNECT:
@@ -606,7 +658,9 @@ void mjXWriter::OneTendon(XMLElement* elem, const mjCTendon* pten, mjCDef* def) 
   // regular
   if (!writingdefaults) {
     WriteAttrTxt(elem, "name", pten->name);
-    WriteAttrTxt(elem, "class", pten->classname);
+    if (pten->classname != "main") {
+      WriteAttrTxt(elem, "class", pten->classname);
+    }
   }
 
   // defaults and regular
@@ -653,7 +707,9 @@ void mjXWriter::OneActuator(XMLElement* elem, const mjCActuator* pact, mjCDef* d
   // regular
   if (!writingdefaults) {
     WriteAttrTxt(elem, "name", pact->name);
-    WriteAttrTxt(elem, "class", pact->classname);
+    if (pact->classname != "main") {
+      WriteAttrTxt(elem, "class", pact->classname);
+    }
 
     // transmission target
     switch (pact->trntype) {
@@ -701,6 +757,13 @@ void mjXWriter::OneActuator(XMLElement* elem, const mjCActuator* pact, mjCDef* d
   WriteAttr(elem, "cranklength", 1, &pact->cranklength, &def->Actuator().cranklength);
   WriteAttrKey(elem, "actearly", bool_map, 2, pact->actearly,
                def->Actuator().actearly);
+  // special handling of actdim which has default value of -1
+  if (writingdefaults) {
+    WriteAttrInt(elem, "actdim", pact->actdim, def->Actuator().actdim);
+  } else {
+    int default_actdim = pact->dyntype == mjDYN_NONE ? 0 : 1;
+    WriteAttrInt(elem, "actdim", pact->actdim, default_actdim);
+  }
   WriteAttrKey(elem, "dyntype", dyn_map, dyn_sz, pact->dyntype, def->Actuator().dyntype);
   WriteAttr(elem, "dynprm", mjNDYN, pact->dynprm, def->Actuator().dynprm);
 
@@ -711,13 +774,6 @@ void mjXWriter::OneActuator(XMLElement* elem, const mjCActuator* pact, mjCDef* d
 
   // non-plugins: write actuator parameters
   else {
-    // special handling of actdim which has default value of -1
-    if (writingdefaults) {
-      WriteAttrInt(elem, "actdim", pact->actdim, def->Actuator().actdim);
-    } else {
-      int default_actdim = pact->dyntype == mjDYN_NONE ? 0 : 1;
-      WriteAttrInt(elem, "actdim", pact->actdim, default_actdim);
-    }
     WriteAttrKey(elem, "gaintype", gain_map, gain_sz, pact->gaintype, def->Actuator().gaintype);
     WriteAttrKey(elem, "biastype", bias_map, bias_sz, pact->biastype, def->Actuator().biastype);
     WriteAttr(elem, "gainprm", mjNGAIN, pact->gainprm, def->Actuator().gainprm, true);
@@ -769,7 +825,7 @@ mjXWriter::mjXWriter(void) {
 
 
 // cast model
-void mjXWriter::SetModel(mjSpec* spec) {
+void mjXWriter::SetModel(const mjSpec* spec) {
   if (spec) {
     model = (mjCModel*)spec->element;
   }
@@ -806,12 +862,12 @@ string mjXWriter::Write(char *error, size_t error_sz) {
   Visual(root);
   Statistic(root);
   writingdefaults = true;
-  Default(root, model->Defaults(0));
+  Default(root, model->Default());
   writingdefaults = false;
   Extension(root);
   Custom(root);
   Asset(root);
-  Body(InsertEnd(root, "worldbody"), model->GetWorld());
+  Body(InsertEnd(root, "worldbody"), model->GetWorld(), nullptr);
   Contact(root);
   Deformable(root);
   Equality(root);
@@ -1011,15 +1067,16 @@ void mjXWriter::Visual(XMLElement* root) {
 
   // global
   elem = InsertEnd(section, "global");
-  WriteAttr(elem,    "fovy",      1,   &vis->global.fovy,       &visdef.global.fovy);
-  WriteAttr(elem,    "ipd",       1,   &vis->global.ipd,        &visdef.global.ipd);
-  WriteAttr(elem,    "azimuth",   1,   &vis->global.azimuth,    &visdef.global.azimuth);
-  WriteAttr(elem,    "elevation", 1,   &vis->global.elevation,  &visdef.global.elevation);
-  WriteAttr(elem,    "linewidth", 1,   &vis->global.linewidth,  &visdef.global.linewidth);
-  WriteAttr(elem,    "glow",      1,   &vis->global.glow,       &visdef.global.glow);
-  WriteAttr(elem,    "realtime",  1,   &vis->global.realtime,   &visdef.global.realtime);
-  WriteAttrInt(elem, "offwidth",       vis->global.offwidth,    visdef.global.offwidth);
-  WriteAttrInt(elem, "offheight",      vis->global.offheight,   visdef.global.offheight);
+  WriteAttrKey(elem, "orthographic", bool_map, 2, vis->global.orthographic, visdef.global.orthographic);
+  WriteAttr(elem,    "fovy",      1,   &vis->global.fovy,        &visdef.global.fovy);
+  WriteAttr(elem,    "ipd",       1,   &vis->global.ipd,         &visdef.global.ipd);
+  WriteAttr(elem,    "azimuth",   1,   &vis->global.azimuth,     &visdef.global.azimuth);
+  WriteAttr(elem,    "elevation", 1,   &vis->global.elevation,   &visdef.global.elevation);
+  WriteAttr(elem,    "linewidth", 1,   &vis->global.linewidth,   &visdef.global.linewidth);
+  WriteAttr(elem,    "glow",      1,   &vis->global.glow,        &visdef.global.glow);
+  WriteAttr(elem,    "realtime",  1,   &vis->global.realtime,    &visdef.global.realtime);
+  WriteAttrInt(elem, "offwidth",       vis->global.offwidth,     visdef.global.offwidth);
+  WriteAttrInt(elem, "offheight",      vis->global.offheight,    visdef.global.offheight);
   WriteAttrKey(elem, "ellipsoidinertia", bool_map, 2, vis->global.ellipsoidinertia, visdef.global.ellipsoidinertia);
   WriteAttrKey(elem, "bvactive", bool_map, 2, vis->global.bvactive, visdef.global.bvactive);
   if (!elem->FirstAttribute()) {
@@ -1135,15 +1192,17 @@ void mjXWriter::Default(XMLElement* root, mjCDef* def) {
 
   // pointer to parent defaults
   mjCDef* par;
-  if (def->parentid>=0) {
-    par = model->Defaults(def->parentid);
+  if (def->parent) {
+    par = def->parent;
   } else {
     par = new mjCDef;
   }
 
   // create section, write class name
   section = InsertEnd(root, "default");
-  WriteAttrTxt(section, "class", def->name);
+  if (def->name != "main") {
+    WriteAttrTxt(section, "class", def->name);
+  }
 
   // mesh
   elem = InsertEnd(section, "mesh");
@@ -1201,19 +1260,19 @@ void mjXWriter::Default(XMLElement* root, mjCDef* def) {
   if (!elem->FirstAttribute()) section->DeleteChild(elem);
 
   // if top-level class has no members or children, delete it and return
-  if (def->parentid<0 && section->NoChildren() && def->childid.empty()) {
+  if (!def->parent && section->NoChildren() && def->child.empty()) {
     root->DeleteChild(section);
     delete par;
     return;
   }
 
   // add children recursively
-  for (int i=0; i<(int)def->childid.size(); i++) {
-    Default(section, model->Defaults(def->childid[i]));
+  for (int i=0; i<(int)def->child.size(); i++) {
+    Default(section, def->child[i]);
   }
 
   // delete parent defaults if allocated here
-  if (def->parentid<0) {
+  if (!def->parent) {
     delete par;
   }
 }
@@ -1413,7 +1472,7 @@ void mjXWriter::Asset(XMLElement* root) {
     // create element and write
     mjCMaterial* pmat = (mjCMaterial*)model->GetObject(mjOBJ_MATERIAL, i);
     elem = InsertEnd(section, "material");
-    OneMaterial(elem, pmat, pmat->def);
+    OneMaterial(elem, pmat, model->def_map[pmat->classname]);
   }
 
   // write meshes
@@ -1426,7 +1485,7 @@ void mjXWriter::Asset(XMLElement* root) {
       OnePlugin(InsertEnd(elem, "plugin"), &pmesh->plugin);
     } else{
       elem = InsertEnd(section, "mesh");
-      OneMesh(elem, pmesh, pmesh->def);
+      OneMesh(elem, pmesh, model->def_map[pmesh->classname]);
     }
   }
 
@@ -1467,14 +1526,17 @@ XMLElement* mjXWriter::OneFrame(XMLElement* elem, mjCFrame* frame) {
 
   XMLElement* frame_elem = InsertEnd(elem, "frame");
   WriteAttrTxt(frame_elem, "name", frame->name);
-  WriteAttrTxt(frame_elem, "childclass", frame->classname);
+  if (frame->classname != "main") {
+    WriteAttrTxt(frame_elem, "childclass", frame->classname);
+  }
   return frame_elem;
 }
 
 
 
 // recursive body and frame writer
-void mjXWriter::Body(XMLElement* elem, mjCBody* body) {
+void mjXWriter::Body(XMLElement* elem, mjCBody* body, mjCFrame* frame,
+                     std::string_view childclass) {
   double unitq[4] = {1, 0, 0, 0};
 
   if (!body) {
@@ -1482,9 +1544,11 @@ void mjXWriter::Body(XMLElement* elem, mjCBody* body) {
   }
 
   // write body attributes and inertial
-  else if (body!=model->GetWorld()) {
+  else if (!frame && body!=model->GetWorld()) {
     WriteAttrTxt(elem, "name", body->name);
-    WriteAttrTxt(elem, "childclass", body->classname);
+    if (childclass != body->classname && body->classname != "main") {
+      WriteAttrTxt(elem, "childclass", body->classname);
+    }
 
     // write pos if it's not {0, 0, 0}
     if (body->pos[0] || body->pos[1] || body->pos[2]) {
@@ -1513,34 +1577,69 @@ void mjXWriter::Body(XMLElement* elem, mjCBody* body) {
     }
   }
 
-  // write joints
-  for (int i=0; i<body->joints.size(); i++) {
-    XMLElement* celem = OneFrame(elem, body->joints[i]->frame);
-    OneJoint(InsertEnd(celem, "joint"), body->joints[i], body->joints[i]->def);
+  // joints in this frame
+  for (int i = 0; i < body->joints.size(); i++) {
+    if (body->joints[i]->frame != frame) {
+      continue;
+    }
+    std::string classname = body->joints[i]->frame && !body->joints[i]->frame->classname.empty()
+                                ? body->joints[i]->frame->classname
+                                : body->classname;
+    OneJoint(InsertEnd(elem, "joint"), body->joints[i],
+             model->def_map[body->joints[i]->classname],
+             classname.empty() ? childclass : classname);
   }
 
-  // write geoms
-  for (int i=0; i<body->geoms.size(); i++) {
-    XMLElement* celem = OneFrame(elem, body->geoms[i]->frame);
-    OneGeom(InsertEnd(celem, "geom"), body->geoms[i], body->geoms[i]->def);
+  // geoms in this frame
+  for (int i = 0; i < body->geoms.size(); i++) {
+    if (body->geoms[i]->frame != frame) {
+      continue;
+    }
+    std::string classname = body->geoms[i]->frame && !body->geoms[i]->frame->classname.empty()
+                                ? body->geoms[i]->frame->classname
+                                : body->classname;
+    OneGeom(InsertEnd(elem, "geom"), body->geoms[i],
+            model->def_map[body->geoms[i]->classname],
+            classname.empty() ? childclass : classname);
   }
 
-  // write sites
-  for (int i=0; i<body->sites.size(); i++) {
-    XMLElement* celem = OneFrame(elem, body->sites[i]->frame);
-    OneSite(InsertEnd(celem, "site"), body->sites[i], body->sites[i]->def);
+  // sites in this frame
+  for (int i = 0; i < body->sites.size(); i++) {
+    if (body->sites[i]->frame != frame) {
+      continue;
+    }
+    std::string classname = body->sites[i]->frame && !body->sites[i]->frame->classname.empty()
+                                ? body->sites[i]->frame->classname
+                                : body->classname;
+    OneSite(InsertEnd(elem, "site"), body->sites[i],
+            model->def_map[body->sites[i]->classname],
+            classname.empty() ? childclass : classname);
   }
 
-  // write cameras
-  for (int i=0; i<body->cameras.size(); i++) {
-    XMLElement* celem = OneFrame(elem, body->cameras[i]->frame);
-    OneCamera(InsertEnd(celem, "camera"), body->cameras[i], body->cameras[i]->def);
+  // cameras in this frame
+  for (int i = 0; i < body->cameras.size(); i++) {
+    if (body->cameras[i]->frame != frame) {
+      continue;
+    }
+    std::string classname = body->cameras[i]->frame && !body->cameras[i]->frame->classname.empty()
+                                ? body->cameras[i]->frame->classname
+                                : body->classname;
+    OneCamera(InsertEnd(elem, "camera"), body->cameras[i],
+              model->def_map[body->cameras[i]->classname],
+              classname.empty() ? childclass : classname);
   }
 
-  // write lights
-  for (int i=0; i<body->lights.size(); i++) {
-    XMLElement* celem = OneFrame(elem, body->lights[i]->frame);
-    OneLight(InsertEnd(celem, "light"), body->lights[i], body->lights[i]->def);
+  // lights in this frame
+  for (int i = 0; i < body->lights.size(); i++) {
+    if (body->lights[i]->frame != frame) {
+      continue;
+    }
+    std::string classname = body->lights[i]->frame && !body->lights[i]->frame->classname.empty()
+                                ? body->lights[i]->frame->classname
+                                : body->classname;
+    OneLight(InsertEnd(elem, "light"), body->lights[i],
+             model->def_map[body->lights[i]->classname],
+             classname.empty() ? childclass : classname);
   }
 
   // write plugin
@@ -1548,10 +1647,49 @@ void mjXWriter::Body(XMLElement* elem, mjCBody* body) {
     OnePlugin(InsertEnd(elem, "plugin"), &body->plugin);
   }
 
-  // write child bodies recursively
-  for (int i=0; i<body->bodies.size(); i++) {
-    XMLElement* celem = OneFrame(elem, body->bodies[i]->frame);
-    Body(InsertEnd(celem, "body"), body->bodies[i]);
+  // write children recursively
+  int i = 0, j = 0;
+  while (i < body->bodies.size() || body->bodies.empty()) {
+    mjCFrame* bframe = body->bodies.empty() ? nullptr : body->bodies[i]->frame;
+
+    // write body if its frame matches the current frame, avoid access if there are no bodies
+    if (bframe == frame && !body->bodies.empty()) {
+      std::string classname = bframe && !bframe->classname.empty()
+                                  ? bframe->classname
+                                  : body->classname;
+      Body(InsertEnd(elem, "body"), body->bodies[i], nullptr,
+            classname.empty() ? childclass : classname);
+    }
+
+    i++;
+
+    // do not go to frames until we reach a body with a frame or we are done with bodies
+    if (!bframe && i < body->bodies.size()) {
+      continue;
+    }
+
+    // loop over the remaining frames in the current body
+    while (j < body->frames.size()) {
+      mjCFrame* fframe = body->frames[j++];
+
+      // write frame if its frame matches the current frame
+      if (fframe->frame == frame) {
+        std::string classname = fframe && !fframe->classname.empty()
+                                    ? fframe->classname
+                                    : body->classname;
+        Body(OneFrame(elem, fframe), body, fframe, childclass);
+      }
+
+      // stop if we reached the frame of the current child body, ignore if there are no bodies
+      if (bframe && bframe == fframe) {
+        break;
+      }
+    }
+
+    // if there are no bodies, we only want to run the loop once
+    if (body->bodies.empty()) {
+      break;
+    }
   }
 }
 
@@ -1578,7 +1716,7 @@ void mjXWriter::Contact(XMLElement* root) {
     // create element and write
     mjCPair* ppair = (mjCPair*)model->GetObject(mjOBJ_PAIR, i);
     elem = InsertEnd(section, "pair");
-    OnePair(elem, ppair, ppair->def);
+    OnePair(elem, ppair, model->def_map[ppair->classname]);
   }
 
   // write all exclude pairs
@@ -1611,7 +1749,7 @@ void mjXWriter::Equality(XMLElement* root) {
   for (int i=0; i<num; i++) {
     mjCEquality* peq = (mjCEquality*)model->GetObject(mjOBJ_EQUALITY, i);
     XMLElement* elem = InsertEnd(section, FindValue(equality_map, equality_sz, peq->type).c_str());
-    OneEquality(elem, peq, peq->def);
+    OneEquality(elem, peq, model->def_map[peq->classname]);
   }
 }
 
@@ -1672,7 +1810,7 @@ void mjXWriter::Tendon(XMLElement* root) {
     }
     XMLElement* elem = InsertEnd(section,
                                  pten->GetWrap(0)->type==mjWRAP_JOINT ? "fixed" : "spatial");
-    OneTendon(elem, pten, pten->def);
+    OneTendon(elem, pten, model->def_map[pten->classname]);
 
     // write wraps
     XMLElement* wrap;
@@ -1733,7 +1871,7 @@ void mjXWriter::Actuator(XMLElement* root) {
     } else {
       elem = InsertEnd(section, "general");
     }
-    OneActuator(elem, pact, pact->def);
+    OneActuator(elem, pact, model->def_map[pact->classname]);
   }
 }
 

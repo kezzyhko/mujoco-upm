@@ -182,6 +182,7 @@ static void setf4(float* rgba, float r, float g, float b, float a) {
 // set visual options to default values
 void mj_defaultVisual(mjVisual* vis) {
   // global
+  vis->global.orthographic        = 0;
   vis->global.fovy                = 45;
   vis->global.ipd                 = 0.068;
   vis->global.azimuth             = 90;
@@ -257,7 +258,7 @@ void mj_defaultVisual(mjVisual* vis) {
   setf4(vis->rgba.actuatornegative, .2, .6, .9, 1.);
   setf4(vis->rgba.actuatorpositive, .9, .4, .2, 1.);
   setf4(vis->rgba.com,              .9, .9, .9, 1.);
-  setf4(vis->rgba.camera,           .6, .9, .6, .3);
+  setf4(vis->rgba.camera,           .6, .9, .6, 1);
   setf4(vis->rgba.light,            .6, .6, .9, 1.);
   setf4(vis->rgba.selectpoint,      .9, .9, .1, 1.);
   setf4(vis->rgba.connect,          .2, .2, .8, 1.);
@@ -1093,7 +1094,7 @@ static void mj_setPtrData(const mjModel* m, mjData* d) {
 
 
 // initialize plugins, copy into d (required for deletion)
-static void _initPlugin(const mjModel* m, mjData* d) {
+void mj_initPlugin(const mjModel* m, mjData* d) {
   d->nplugin = m->nplugin;
   for (int i = 0; i < m->nplugin; ++i) {
     d->plugin[i] = m->plugin[i];
@@ -1203,7 +1204,7 @@ mjData* mj_makeData(const mjModel* m) {
   mjData* d = NULL;
   mj_makeRawData(&d, m);
   if (d) {
-    _initPlugin(m, d);
+    mj_initPlugin(m, d);
     mj_resetData(m, d);
   }
   return d;
@@ -1219,7 +1220,7 @@ mjData* mj_copyData(mjData* dest, const mjModel* m, const mjData* src) {
   // allocate new data if needed
   if (!dest) {
     mj_makeRawData(&dest, m);
-    _initPlugin(m, dest);
+    mj_initPlugin(m, dest);
   }
 
   // check sizes
@@ -1264,10 +1265,24 @@ mjData* mj_copyData(mjData* dest, const mjModel* m, const mjData* src) {
   }
 
   // copy arena memory
+#undef MJ_D
+#define MJ_D(n) (src->n)
+#undef MJ_M
+#define MJ_M(n) (m->n)
 #define X(type, name, nr, nc)  \
-  dest->name = src->name ? (type*)((char*)dest->arena + PTRDIFF(src->name, src->arena)) : NULL;
+  if (src->name) { \
+    dest->name = (type*)((char*)dest->arena + PTRDIFF(src->name, src->arena)); \
+    memcpy((char*)dest->name, (const char*)src->name, sizeof(type)*nr*nc); \
+  } else { \
+    dest->name = NULL; \
+  }
+
   MJDATA_ARENA_POINTERS
 #undef X
+#undef MJ_M
+#define MJ_M(n) n
+#undef MJ_D
+#define MJ_D(n) n
 
   // restore contact pointer
   dest->contact = dest->arena;

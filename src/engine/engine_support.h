@@ -15,8 +15,6 @@
 #ifndef MUJOCO_SRC_ENGINE_ENGINE_SUPPORT_H_
 #define MUJOCO_SRC_ENGINE_ENGINE_SUPPORT_H_
 
-#include <stdint.h>
-
 #include <mujoco/mjdata.h>
 #include <mujoco/mjexport.h>
 #include <mujoco/mjmodel.h>
@@ -43,6 +41,8 @@ MJAPI void mj_getState(const mjModel* m, const mjData* d, mjtNum* state, unsigne
 // set state
 MJAPI void mj_setState(const mjModel* m, mjData* d, const mjtNum* state, unsigned int spec);
 
+// copy current state to the k-th model keyframe
+MJAPI void mj_setKeyframe(mjModel* m, const mjData* d, int k);
 
 //-------------------------- sparse chains ---------------------------------------------------------
 
@@ -109,18 +109,6 @@ int mj_jacSum(const mjModel* m, mjData* d, int* chain,
 
 // compute subtree angular momentum matrix
 MJAPI void mj_angmomMat(const mjModel* m, mjData* d, mjtNum* mat, int body);
-
-
-//-------------------------- name functions --------------------------------------------------------
-
-// get string hash, see http://www.cse.yorku.ca/~oz/hash.html
-uint64_t mj_hashString(const char* s, uint64_t n);
-
-// get id of object with the specified mjtObj type and name, returns -1 if id not found
-MJAPI int mj_name2id(const mjModel* m, int type, const char* name);
-
-// get name of object with the specified mjtObj type and id, returns NULL if name not found
-MJAPI const char* mj_id2name(const mjModel* m, int type, int id);
 
 
 //-------------------------- inertia functions -----------------------------------------------------

@@ -52,7 +52,7 @@ static T& operator+(T& base, std::string_view suffix) {
 
 
 // create model
-mjSpec* mjs_createSpec() {
+mjSpec* mj_makeSpec() {
   mjCModel* modelC = new mjCModel;
   return &modelC->spec;
 }
@@ -60,7 +60,7 @@ mjSpec* mjs_createSpec() {
 
 
 // copy model
-mjSpec* mjs_copySpec(const mjSpec* s) {
+mjSpec* mj_copySpec(const mjSpec* s) {
   mjCModel* modelC = new mjCModel(*static_cast<mjCModel*>(s->element));
   return &modelC->spec;
 }
@@ -68,7 +68,7 @@ mjSpec* mjs_copySpec(const mjSpec* s) {
 
 
 // copy back model
-void mjs_copyBack(mjSpec* s, const mjModel* m) {
+void mj_copyBack(mjSpec* s, const mjModel* m) {
   mjCModel* modelC = static_cast<mjCModel*>(s->element);
   modelC->CopyBack(m);
 }
@@ -76,9 +76,19 @@ void mjs_copyBack(mjSpec* s, const mjModel* m) {
 
 
 // compile model
-mjModel* mjs_compile(mjSpec* s, const mjVFS* vfs) {
+mjModel* mj_compile(mjSpec* s, const mjVFS* vfs) {
   mjCModel* modelC = static_cast<mjCModel*>(s->element);
   return modelC->Compile(vfs);
+}
+
+
+
+// recompile spec into existing model and data while preserving the state
+void mj_recompile(mjSpec* s, const mjVFS* vfs, mjModel* m, mjData* d) {
+  mjCModel* modelC = static_cast<mjCModel*>(s->element);
+  modelC->SaveState(d);
+  modelC->Compile(vfs, &m);
+  modelC->RestoreState(m, &d);
 }
 
 
@@ -88,7 +98,12 @@ int mjs_attachBody(mjsFrame* parent, const mjsBody* child,
                    const char* prefix, const char* suffix) {
   mjCFrame* frame_parent = static_cast<mjCFrame*>(parent->element);
   mjCBody* child_body = static_cast<mjCBody*>(child->element);
-  *frame_parent += std::string(prefix) + *child_body + std::string(suffix);
+  try {
+    *frame_parent += std::string(prefix) + *child_body + std::string(suffix);
+  } catch (mjCError& e) {
+    frame_parent->model->SetError(e);
+    return -1;
+  }
   return 0;
 }
 
@@ -99,7 +114,12 @@ int mjs_attachFrame(mjsBody* parent, const mjsFrame* child,
                     const char* prefix, const char* suffix) {
   mjCBody* body_parent = static_cast<mjCBody*>(parent->element);
   mjCFrame* child_frame = static_cast<mjCFrame*>(child->element);
-  *body_parent += std::string(prefix) + *child_frame + std::string(suffix);
+  try {
+    *body_parent += std::string(prefix) + *child_frame + std::string(suffix);
+  } catch (mjCError& e) {
+    body_parent->model->SetError(e);
+    return -1;
+  }
   return 0;
 }
 
@@ -133,15 +153,23 @@ int mjs_isWarning(mjSpec* s) {
 
 
 // delete model
-void mjs_deleteSpec(mjSpec* s) {
+void mj_deleteSpec(mjSpec* s) {
   mjCModel* model = static_cast<mjCModel*>(s->element);
   delete model;
 }
 
 
 
+// add spec (model asset) to spec
+void mjs_addSpec(mjSpec* s, mjSpec* child) {
+  mjCModel* model = static_cast<mjCModel*>(s->element);
+  model->AppendSpec(child);
+}
+
+
+
 // delete object, it will call the appropriate destructor since ~mjCBase is virtual
-void mjs_delete(mjElement* element) {
+void mjs_delete(mjsElement* element) {
   mjCBase* object = static_cast<mjCBase*>(element);
   delete object;
 }
@@ -420,17 +448,18 @@ mjsKey* mjs_addKey(mjSpec* s) {
 mjsPlugin* mjs_addPlugin(mjSpec* s) {
   mjCModel* modelC = static_cast<mjCModel*>(s->element);
   mjCPlugin* plugin = modelC->AddPlugin();
-  plugin->spec.instance = static_cast<mjElement*>(plugin);
+  plugin->spec.instance = static_cast<mjsElement*>(plugin);
   return &plugin->spec;
 }
 
 
 
 // add default to model
-mjsDefault* mjs_addDefault(mjSpec* s, const char* classname, int parentid, int* id) {
+mjsDefault* mjs_addDefault(mjSpec* s, const char* classname, const mjsDefault* parent) {
   mjCModel* modelC = static_cast<mjCModel*>(s->element);
-  *id = (int)modelC->NumDefaults();
-  mjCDef* def = modelC->AddDefault(classname, parentid);
+  mjCDef* parentC = parent ? static_cast<mjCDef*>(parent->element) :
+                             static_cast<mjCModel*>(s->element)->Default();
+  mjCDef* def = modelC->AddDefault(classname, parentC);
   if (def) {
     return &def->spec;
   } else {
@@ -447,9 +476,19 @@ mjSpec* mjs_getSpec(mjsBody* body) {
 
 
 
+// find spec (model asset) by name
+mjSpec* mjs_findSpec(mjSpec* s, const char* name) {
+  mjCModel* model = static_cast<mjCModel*>(s->element);
+  return model->FindSpec(name);
+}
+
+
+
 // get default
-mjsDefault* mjs_getDefault(mjElement* element) {
-  return &(static_cast<mjCBase*>(element)->def->spec);
+mjsDefault* mjs_getDefault(mjsElement* element) {
+  mjCModel* model = static_cast<mjCBase*>(element)->model;
+  std::string classname = static_cast<mjCBase*>(element)->classname;
+  return &(model->def_map[classname]->spec);
 }
 
 
@@ -469,7 +508,7 @@ mjsDefault* mjs_findDefault(mjSpec* s, const char* classname) {
 // get default[0] from model
 mjsDefault* mjs_getSpecDefault(mjSpec* s) {
   mjCModel* modelC = static_cast<mjCModel*>(s->element);
-  mjCDef* def = modelC->Defaults(0);
+  mjCDef* def = modelC->Default();
   if (!def) {
     return nullptr;
   }
@@ -519,8 +558,17 @@ mjsFrame* mjs_findFrame(mjSpec* s, const char* name) {
 
 
 
+// find keyframe by name
+mjsKey* mjs_findKeyframe(mjSpec* s, const char* name) {
+  mjCModel* model = static_cast<mjCModel*>(s->element);
+  mjCKey* key = (mjCKey*)model->FindObject(mjOBJ_KEY, std::string(name));
+  return key ? &(static_cast<mjCKey*>(key)->spec) : nullptr;
+}
+
+
+
 // set frame
-void mjs_setFrame(mjElement* dest, mjsFrame* frame) {
+void mjs_setFrame(mjsElement* dest, mjsFrame* frame) {
   if (!frame) {
     return;
   }
@@ -540,22 +588,22 @@ const char* mjs_resolveOrientation(double quat[4], mjtByte degree, const char* s
 
 
 // get id
-int mjs_getId(mjElement* element) {
+int mjs_getId(mjsElement* element) {
   return static_cast<mjCBase*>(element)->id;
 }
 
 
 
 // set default
-void mjs_setDefault(mjElement* element, mjsDefault* defspec) {
+void mjs_setDefault(mjsElement* element, mjsDefault* defspec) {
   mjCBase* baseC = static_cast<mjCBase*>(element);
-  baseC->def = static_cast<mjCDef*>(defspec->element);
+  baseC->classname = static_cast<mjCDef*>(defspec->element)->name;
 }
 
 
 
 // return first child of selected type
-mjElement* mjs_firstChild(mjsBody* body, mjtObj type) {
+mjsElement* mjs_firstChild(mjsBody* body, mjtObj type) {
   mjCBody* bodyC = static_cast<mjCBody*>(body->element);
   return bodyC->NextChild(NULL, type);
 }
@@ -563,74 +611,315 @@ mjElement* mjs_firstChild(mjsBody* body, mjtObj type) {
 
 
 // return body's next child; return NULL if child is last
-mjElement* mjs_nextChild(mjsBody* body, mjElement* child) {
+mjsElement* mjs_nextChild(mjsBody* body, mjsElement* child) {
   mjCBody* bodyC = static_cast<mjCBody*>(body->element);
   return bodyC->NextChild(child);
 }
 
 
 
+// return spec's first element of selected type
+mjsElement* mjs_firstElement(mjSpec* s, mjtObj type) {
+  mjCModel* modelC = static_cast<mjCModel*>(s->element);
+  return modelC->NextObject(NULL, type);
+}
+
+
+
+// return spec's next element; return NULL if element is last
+mjsElement* mjs_nextElement(mjSpec* s, mjsElement* element) {
+  mjCModel* modelC = static_cast<mjCModel*>(s->element);
+  return modelC->NextObject(element);
+}
+
+
+
+// return body given mjsElement
+mjsBody* mjs_asBody(mjsElement* element) {
+  if (element && element->elemtype == mjOBJ_BODY) {
+    return &(static_cast<mjCBody*>(element)->spec);
+  }
+  return nullptr;
+}
+
+
+
+// return geom given mjsElement
+mjsGeom* mjs_asGeom(mjsElement* element) {
+  if (element && element->elemtype == mjOBJ_GEOM) {
+    return &(static_cast<mjCGeom*>(element)->spec);
+  }
+  return nullptr;
+}
+
+
+
+// return joint given mjsElement
+mjsJoint* mjs_asJoint(mjsElement* element) {
+  if (element && element->elemtype == mjOBJ_JOINT) {
+    return &(static_cast<mjCJoint*>(element)->spec);
+  }
+  return nullptr;
+}
+
+
+
+// Return site given mjsElement
+mjsSite* mjs_asSite(mjsElement* element) {
+  if (element && element->elemtype == mjOBJ_SITE) {
+    return &(static_cast<mjCSite*>(element)->spec);
+  }
+  return nullptr;
+}
+
+
+
+// return camera given mjsElement
+mjsCamera* mjs_asCamera(mjsElement* element) {
+  if (element && element->elemtype == mjOBJ_CAMERA) {
+    return &(static_cast<mjCCamera*>(element)->spec);
+  }
+  return nullptr;
+}
+
+
+
+// return light given mjsElement
+mjsLight* mjs_asLight(mjsElement* element) {
+  if (element && element->elemtype == mjOBJ_LIGHT) {
+    return &(static_cast<mjCLight*>(element)->spec);
+  }
+  return nullptr;
+}
+
+
+
+// return frame given mjsElement
+mjsFrame* mjs_asFrame(mjsElement* element) {
+  if (element && element->elemtype == mjOBJ_FRAME) {
+    return &(static_cast<mjCFrame*>(element)->spec);
+  }
+  return nullptr;
+}
+
+
+
+// return actuator given mjsElement
+mjsActuator* mjs_asActuator(mjsElement* element) {
+  if (element && element->elemtype == mjOBJ_ACTUATOR) {
+    return &(static_cast<mjCActuator*>(element)->spec);
+  }
+  return nullptr;
+}
+
+
+
+// return sensor given mjsElement
+mjsSensor* mjs_asSensor(mjsElement* element) {
+  if (element && element->elemtype == mjOBJ_SENSOR) {
+    return &(static_cast<mjCSensor*>(element)->spec);
+  }
+  return nullptr;
+}
+
+
+
+// return flex given mjsElement
+mjsFlex* mjs_asFlex(mjsElement* element) {
+  if (element && element->elemtype == mjOBJ_FLEX) {
+    return &(static_cast<mjCFlex*>(element)->spec);
+  }
+  return nullptr;
+}
+
+
+
+// return pair given mjsElement
+mjsPair* mjs_asPair(mjsElement* element) {
+  if (element && element->elemtype == mjOBJ_PAIR) {
+    return &(static_cast<mjCPair*>(element)->spec);
+  }
+  return nullptr;
+}
+
+
+
+// return equality given mjsElement
+mjsEquality* mjs_asEquality(mjsElement* element) {
+  if (element && element->elemtype == mjOBJ_EQUALITY) {
+    return &(static_cast<mjCEquality*>(element)->spec);
+  }
+  return nullptr;
+}
+
+
+
+// return exclude given mjsElement
+mjsExclude* mjs_asExclude(mjsElement* element) {
+  if (element && element->elemtype == mjOBJ_EXCLUDE) {
+    return &(static_cast<mjCBodyPair*>(element)->spec);
+  }
+  return nullptr;
+}
+
+
+
+// return tendon given mjsElement
+mjsTendon* mjs_asTendon(mjsElement* element) {
+  if (element && element->elemtype == mjOBJ_TENDON) {
+    return &(static_cast<mjCTendon*>(element)->spec);
+  }
+  return nullptr;
+}
+
+
+
+// return numeric given mjsElement
+mjsNumeric* mjs_asNumeric(mjsElement* element) {
+  if (element && element->elemtype == mjOBJ_NUMERIC) {
+    return &(static_cast<mjCNumeric*>(element)->spec);
+  }
+  return nullptr;
+}
+
+
+
+// return text given mjsElement
+mjsText* mjs_asText(mjsElement* element) {
+  if (element && element->elemtype == mjOBJ_TEXT) {
+    return &(static_cast<mjCText*>(element)->spec);
+  }
+  return nullptr;
+}
+
+
+
+// return tuple given mjsElement
+mjsTuple* mjs_asTuple(mjsElement* element) {
+  if (element && element->elemtype == mjOBJ_TUPLE) {
+    return &(static_cast<mjCTuple*>(element)->spec);
+  }
+  return nullptr;
+}
+
+
+
+// return key given mjsElement
+mjsKey* mjs_asKey(mjsElement* element) {
+  if (element && element->elemtype == mjOBJ_KEY) {
+    return &(static_cast<mjCKey*>(element)->spec);
+  }
+  return nullptr;
+}
+
+
+
+// return mesh given mjsElement
+mjsMesh* mjs_asMesh(mjsElement* element) {
+  if (element && element->elemtype == mjOBJ_MESH) {
+    return &(static_cast<mjCMesh*>(element)->spec);
+  }
+  return nullptr;
+}
+
+
+
+// return hfield given mjsElement
+mjsHField* mjs_asHField(mjsElement* element) {
+  if (element && element->elemtype == mjOBJ_HFIELD) {
+    return &(static_cast<mjCHField*>(element)->spec);
+  }
+  return nullptr;
+}
+
+
+
+// return skin given mjsElement
+mjsSkin* mjs_asSkin(mjsElement* element) {
+  if (element && element->elemtype == mjOBJ_SKIN) {
+    return &(static_cast<mjCSkin*>(element)->spec);
+  }
+  return nullptr;
+}
+
+
+
+// return texture given mjsElement
+mjsTexture* mjs_asTexture(mjsElement* element) {
+  if (element && element->elemtype == mjOBJ_TEXTURE) {
+    return &(static_cast<mjCTexture*>(element)->spec);
+  }
+  return nullptr;
+}
+
+
+
+// return material given mjsElement
+mjsMaterial* mjs_asMaterial(mjsElement* element) {
+  if (element && element->elemtype == mjOBJ_MATERIAL) {
+    return &(static_cast<mjCMaterial*>(element)->spec);
+  }
+  return nullptr;
+}
+
+
+
 // set string
-void mjs_setString(mjString dest, const char* text) {
-  std::string* str = reinterpret_cast<std::string*>(dest);
+void mjs_setString(mjString* dest, const char* text) {
+  std::string* str = static_cast<std::string*>(dest);
   *str = std::string(text);
 }
 
 
 
 // Set specific entry in destination string vector.
-mjtByte mjs_setInStringVec(mjStringVec dest, int i, const char* text) {
-  std::vector<std::string>* v = reinterpret_cast<std::vector<std::string>*>(dest);
-  if (v->size() <= i) {
+mjtByte mjs_setInStringVec(mjStringVec* dest, int i, const char* text) {
+  if (dest->size() <= i) {
     mju_error("Requested index in mjs_setInStringVec is out of bounds");
     return 0;
   }
-  v->at(i) = std::string(text);
+  dest->at(i) = std::string(text);
   return 1;
 }
 
 
 
 // split text and copy into string array
-void mjs_setStringVec(mjStringVec dest, const char* text) {
-  std::vector<std::string>* v = reinterpret_cast<std::vector<std::string>*>(dest);
+void mjs_setStringVec(mjStringVec* dest, const char* text) {
+  std::vector<std::string>* v = static_cast<std::vector<std::string>*>(dest);
   *v = mjXUtil::String2Vector<std::string>(text);
 }
 
 
 
 // add text entry to destination string vector
-void mjs_appendString(mjStringVec dest, const char* text) {
-  std::vector<std::string>* v = reinterpret_cast<std::vector<std::string>*>(dest);
-  v->push_back(std::string(text));
+void mjs_appendString(mjStringVec* dest, const char* text) {
+  dest->push_back(std::string(text));
 }
 
 
 // copy int array to vector
-void mjs_setInt(mjIntVec dest, const int* array, int size) {
-  std::vector<int>* v = reinterpret_cast<std::vector<int>*>(dest);
-  v->assign(size, 0.0);
+void mjs_setInt(mjIntVec* dest, const int* array, int size) {
+  dest->assign(size, 0.0);
   for (int i = 0; i < size; ++i) {
-    (*v)[i] = array[i];
+    (*dest)[i] = array[i];
   }
 }
 
 
 
 // append int array to vector of arrays
-void mjs_appendIntVec(mjIntVecVec dest, const int* array, int size) {
-  std::vector<std::vector<int>>* v = reinterpret_cast<std::vector<std::vector<int>>*>(dest);
-  v->push_back(std::vector<int>(array, array + size));
+void mjs_appendIntVec(mjIntVecVec* dest, const int* array, int size) {
+  dest->push_back(std::vector<int>(array, array + size));
 }
 
 
 
 // copy float array to vector
-void mjs_setFloat(mjFloatVec dest, const float* array, int size) {
-  std::vector<float>* v = reinterpret_cast<std::vector<float>*>(dest);
-  v->assign(size, 0.0);
+void mjs_setFloat(mjFloatVec* dest, const float* array, int size) {
+  dest->assign(size, 0.0);
   for (int i = 0; i < size; ++i) {
-    (*v)[i] = array[i];
+    (*dest)[i] = array[i];
   }
 }
 
@@ -638,42 +927,35 @@ void mjs_setFloat(mjFloatVec dest, const float* array, int size) {
 
 
 // append float array to vector of arrays
-void mjs_appendFloatVec(mjFloatVecVec dest, const float* array, int size) {
-  std::vector<std::vector<float>>* v = reinterpret_cast<std::vector<std::vector<float>>*>(dest);
-  v->push_back(std::vector<float>(array, array + size));
+void mjs_appendFloatVec(mjFloatVecVec* dest, const float* array, int size) {
+  dest->push_back(std::vector<float>(array, array + size));
 }
 
 
 
 // copy double array to vector
-void mjs_setDouble(mjDoubleVec dest, const double* array, int size) {
-  std::vector<double>* v = reinterpret_cast<std::vector<double>*>(dest);
-  v->assign(size, 0.0);
+void mjs_setDouble(mjDoubleVec* dest, const double* array, int size) {
+  dest->assign(size, 0.0);
   for (int i = 0; i < size; ++i) {
-    (*v)[i] = array[i];
+    (*dest)[i] = array[i];
   }
 }
 
 
 
 // get string
-const char* mjs_getString(const mjString source) {
-  std::string* str = reinterpret_cast<std::string*>(source);
-  if (!str) {
-    return nullptr;
-  }
-  return str->c_str();
+const char* mjs_getString(const mjString* source) {
+  return source->c_str();
 }
 
 
 
 // get double array
-const double* mjs_getDouble(const mjDoubleVec source, int* size) {
-  std::vector<double>* v = reinterpret_cast<std::vector<double>*>(source);
+const double* mjs_getDouble(const mjDoubleVec* source, int* size) {
   if (size) {
-    *size = v->size();
+    *size = source->size();
   }
-  return v->data();
+  return source->data();
 }
 
 
@@ -694,13 +976,6 @@ void mjs_setActivePlugins(mjSpec* s, void* activeplugins) {
   std::vector<std::pair<const mjpPlugin*, int>>* active_plugins =
       reinterpret_cast<std::vector<std::pair<const mjpPlugin*, int>>*>(activeplugins);
   modelC->SetActivePlugins(std::move(*active_plugins));
-}
-
-
-
-// compute full inertia
-const char* mjs_fullInertia(double quat[4], double inertia[3], const double fullinertia[6]) {
-  return FullInertia(quat, inertia, fullinertia);
 }
 
 

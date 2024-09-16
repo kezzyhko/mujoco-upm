@@ -29,6 +29,20 @@ The key function here is :ref:`mj_loadXML`. It invokes the built-in parser and c
 a valid mjModel, or NULL - in which case the user should check the error information in the user-provided string.
 The model and all files referenced in it can be loaded from disk or from a VFS when provided.
 
+.. _mj_recompile:
+
+Recompile spec to model, preserving the state. Like :ref:`mj_compile`, this function compiles an :ref:`mjSpec` to an
+:ref:`mjModel`, with two differences. First, rather than returning an entirely new model, it will
+reallocate existing :ref:`mjModel` and :ref:`mjData` instances in-place. Second, it will preserve the
+:ref:`integration state<geIntegrationState>`, as given in the provided :ref:`mjData` instance, while accounting for
+newly added or removed degrees of freedom. This allows the user to continue simulation with the same model and data
+struct pointers while editing the model programmatically.
+
+.. admonition:: Incomplete implementation
+   :class: attention
+
+   This function is currently incomplete, preserving only ``mjData.qpos`` and ``mjData.qvel``.
+
 .. _Mainsimulation:
 
 These are the main entry points to the simulator. Most users will only need to call :ref:`mj_step`, which computes
@@ -312,7 +326,7 @@ depending on which UI item was modified and what the state of that item is after
 
 This function is called in the screen refresh loop. It copies the offscreen OpenGL buffer to the window framebuffer. If
 there are multiple UIs in the application, it should be called once for each UI. Thus ``mjui_render`` is called all the
-time, while :ref:`mjui_update` is called only when changes in the UI take place.
+time, while :ref:`mjui_update` is called only when changes in the UI take place. dsffsdg
 
 
 
@@ -533,6 +547,18 @@ Symmetrize square matrix :math:`R = \frac{1}{2}(M + M^T)`.
 
 .. _Miscellaneous:
 
+.. _mju_sigmoid:
+
+Twice continuously differentiable sigmoid function using a quintic polynomial:
+
+.. math::
+   s(x) =
+   \begin{cases}
+      0,                    &       & x \le 0  \\
+      6x^5 - 15x^4 + 10x^3, & 0 \lt & x \lt 1  \\
+      1,                    & 1 \le & x \qquad
+   \end{cases}
+
 .. _Derivatives-api:
 
 The functions below provide useful derivatives of various functions, both analytic and
@@ -545,7 +571,7 @@ Finite-differenced discrete-time transition matrices.
 
 Letting :math:`x, u` denote the current :ref:`state<gePhysicsState>` and :ref:`control<geInput>`
 vector in an mjData instance, and letting :math:`y, s` denote the next state and sensor
-values, the top-level :ref:`mj_step` function computes :math:`(x,u) \rightarrow (y,s)`.
+values, the top-level :ref:`mj_step` function computes :math:`(x,u) \rightarrow (y,s)`
 :ref:`mjd_transitionFD` computes the four associated Jacobians using finite-differencing.
 These matrices and their dimensions are:
 

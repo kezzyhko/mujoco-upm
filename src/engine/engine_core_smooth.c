@@ -44,14 +44,6 @@ void mj_kinematics(const mjModel* m, mjData* d) {
   d->xmat[0] = d->xmat[4] = d->xmat[8] = 1;
   d->ximat[0] = d->ximat[4] = d->ximat[8] = 1;
 
-  // normalize all quaternions in qpos
-  mj_normalizeQuat(m, d->qpos);
-
-  // normalize mocap quaternions
-  for (int i=0; i < m->nmocap; i++) {
-    mju_normalize4(d->mocap_quat+4*i);
-  }
-
   // compute global cartesian positions and orientations of all bodies
   for (int i=1; i < m->nbody; i++) {
     mjtNum xpos[3], xquat[4];
@@ -66,6 +58,7 @@ void mj_kinematics(const mjModel* m, mjData* d) {
       // copy pos and quat from qpos
       mju_copy3(xpos, d->qpos+qadr);
       mju_copy4(xquat, d->qpos+qadr+3);
+      mju_normalize4(xquat);
 
       // assign xanchor and xaxis
       mju_copy3(d->xanchor+3*jntadr, xpos);
@@ -77,10 +70,12 @@ void mj_kinematics(const mjModel* m, mjData* d) {
       int pid = m->body_parentid[i];
 
       // get body pos and quat: from model or mocap
-      mjtNum *bodypos, *bodyquat;
+      mjtNum *bodypos, *bodyquat, quat[4];
       if (m->body_mocapid[i] >= 0) {
         bodypos = d->mocap_pos + 3*m->body_mocapid[i];
-        bodyquat = d->mocap_quat + 4*m->body_mocapid[i];
+        mju_copy4(quat, d->mocap_quat + 4*m->body_mocapid[i]);
+        mju_normalize4(quat);
+        bodyquat = quat;
       } else {
         bodypos = m->body_pos+3*i;
         bodyquat = m->body_quat+4*i;
@@ -88,7 +83,7 @@ void mj_kinematics(const mjModel* m, mjData* d) {
 
       // apply fixed translation and rotation relative to parent
       if (pid) {
-        mju_rotVecMat(xpos, bodypos, d->xmat+9*pid);
+        mju_mulMatVec3(xpos, d->xmat+9*pid, bodypos);
         mju_addTo3(xpos, d->xpos+3*pid);
         mju_mulQuat(xquat, d->xquat+4*pid, bodyquat);
       } else {
@@ -125,6 +120,7 @@ void mj_kinematics(const mjModel* m, mjData* d) {
             mjtNum qloc[4];
             if (jtype == mjJNT_BALL) {
               mju_copy4(qloc, d->qpos+qadr);
+              mju_normalize4(qloc);
             } else {
               mju_axisAngle2Quat(qloc, m->jnt_axis+3*jid, d->qpos[qadr] - m->qpos0[qadr]);
             }
@@ -464,7 +460,7 @@ void mj_flex(const mjModel* m, mjData* d) {
     // non-centered: map from local to global
     else {
       for (int i=vstart; i < vend; i++) {
-        mju_rotVecMat(d->flexvert_xpos+3*i, m->flex_vert+3*i, d->xmat+9*m->flex_vertbodyid[i]);
+        mju_mulMatVec3(d->flexvert_xpos+3*i, d->xmat+9*m->flex_vertbodyid[i], m->flex_vert+3*i);
         mju_addTo3(d->flexvert_xpos+3*i, d->xpos+3*m->flex_vertbodyid[i]);
       }
     }
@@ -890,13 +886,15 @@ void mj_transmission(const mjModel* m, mjData* d) {
         int j = m->jnt_qposadr[id];
 
         // axis: expmap representation of quaternion
-        mju_quat2Vel(axis, d->qpos+j, 1);
+        mju_copy4(quat, d->qpos+j);
+        mju_normalize4(quat);
+        mju_quat2Vel(axis, quat, 1);
 
         // gearAxis: rotate to parent frame if necessary
         if (m->actuator_trntype[i] == mjTRN_JOINT) {
           mju_copy3(gearAxis, gear);
         } else {
-          mju_negQuat(quat, d->qpos+j);
+          mju_negQuat(quat, quat);
           mju_rotVecQuat(gearAxis, gear, quat);
         }
 
@@ -923,12 +921,15 @@ void mj_transmission(const mjModel* m, mjData* d) {
 
         // axis: expmap representation of quaternion
         mju_quat2Vel(axis, d->qpos+j+3, 1);
+        mju_copy4(quat, d->qpos+j+3);
+        mju_normalize4(quat);
+        mju_quat2Vel(axis, quat, 1);
 
         // gearAxis: rotate to world frame if necessary
         if (m->actuator_trntype[i] == mjTRN_JOINT) {
           mju_copy3(gearAxis, gear+3);
         } else {
-          mju_negQuat(quat, d->qpos+j+3);
+          mju_negQuat(quat, quat);
           mju_rotVecQuat(gearAxis, gear+3, quat);
         }
 
@@ -1022,8 +1023,8 @@ void mj_transmission(const mjModel* m, mjData* d) {
       // reference site undefined
       if (m->actuator_trnid[2*i+1] == -1) {
         // wrench: gear expressed in global frame
-        mju_rotVecMat(wrench, gear, d->site_xmat+9*id);      // translation
-        mju_rotVecMat(wrench+3, gear+3, d->site_xmat+9*id);  // rotation
+        mju_mulMatVec3(wrench, d->site_xmat+9*id, gear);      // translation
+        mju_mulMatVec3(wrench+3, d->site_xmat+9*id, gear+3);  // rotation
 
         // moment: global Jacobian projected on wrench
         mju_mulMatTVec(moment+i*nv, jac, wrench, 3, nv);     // translation
@@ -1071,7 +1072,7 @@ void mj_transmission(const mjModel* m, mjData* d) {
         if (!mju_isZero(gear, 3)) {
           // vec: site position in reference site frame
           mju_sub3(vec, d->site_xpos+3*id, d->site_xpos+3*refid);
-          mju_rotVecMatT(vec, vec, d->site_xmat+9*refid);
+          mju_mulMatTVec3(vec, d->site_xmat+9*refid, vec);
 
           // length: dot product with gear
           length[i] += mju_dot3(vec, gear);
@@ -1092,7 +1093,7 @@ void mj_transmission(const mjModel* m, mjData* d) {
           }
 
           // wrench: translational gear expressed in global frame
-          mju_rotVecMat(wrench, gear, d->site_xmat+9*refid);
+          mju_mulMatVec3(wrench, d->site_xmat+9*refid, gear);
 
           // moment: global Jacobian projected on wrench
           mju_mulMatTVec(moment+i*nv, jac, wrench, 3, nv);
@@ -1128,7 +1129,7 @@ void mj_transmission(const mjModel* m, mjData* d) {
           }
 
           // wrench: rotational gear expressed in global frame
-          mju_rotVecMat(wrench, gear+3, d->site_xmat+9*refid);
+          mju_mulMatVec3(wrench, d->site_xmat+9*refid, gear+3);
 
           // moment_tmp: global Jacobian projected on wrench, add to moment
           if (!moment_tmp) moment_tmp = mj_stackAllocNum(d, nv);
@@ -1691,11 +1692,11 @@ void mj_subtreeVel(const mjModel* m, mjData* d) {
     mju_scl3(d->subtree_linvel+3*i, body_vel+6*i+3, m->body_mass[i]);
 
     // body angular momentum
-    mju_rotVecMatT(dv, body_vel+6*i, d->ximat+9*i);
+    mju_mulMatTVec3(dv, d->ximat+9*i, body_vel+6*i);
     dv[0] *= m->body_inertia[3*i];
     dv[1] *= m->body_inertia[3*i+1];
     dv[2] *= m->body_inertia[3*i+2];
-    mju_rotVecMat(d->subtree_angmom+3*i, dv, d->ximat+9*i);
+    mju_mulMatVec3(d->subtree_angmom+3*i, d->ximat+9*i, dv);
   }
 
   // subtree linvel
@@ -1838,8 +1839,8 @@ void mj_rnePostConstraint(const mjModel* m, mjData* d) {
       mj_contactForce(m, d, i, lfrc);
 
       // cfrc = world-oriented torque:force vector (swap in the process)
-      mju_rotVecMatT(cfrc, lfrc+3, con->frame);
-      mju_rotVecMatT(cfrc+3, lfrc, con->frame);
+      mju_mulMatTVec3(cfrc, con->frame, lfrc+3);
+      mju_mulMatTVec3(cfrc+3, con->frame, lfrc);
 
       // body 1
       int k;

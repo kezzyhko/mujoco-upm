@@ -24,11 +24,11 @@
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
 #include <mujoco/mjmodel.h>
+#include <mujoco/mjspec.h>
 #include <mujoco/mujoco.h>
 #include "src/cc/array_safety.h"
 #include "src/engine/engine_util_errmem.h"
-#include "src/user/user_api.h"
-#include "src/xml/xml.h"
+#include "src/xml/xml_api.h"
 #include "test/fixture.h"
 
 namespace mujoco {
@@ -464,6 +464,39 @@ TEST_F(XMLReaderTest, InvalidDoubleOrientation) {
   }
 }
 
+TEST_F(XMLReaderTest, ClassOverridesChildclass) {
+  static constexpr char xml[] = R"(
+  <mujoco>
+    <default>
+      <default class="size2">
+        <geom size="2"/>
+      </default>
+      <default class="size3">
+        <geom size="3"/>
+      </default>
+    </default>
+    <worldbody>
+      <frame childclass="size2">
+        <geom/>
+        <geom class="size3"/>
+        <body childclass="size2">
+          <geom/>
+          <geom class="size3"/>
+        </body>
+      </frame>
+    </worldbody>
+  </mujoco>
+  )";
+  std::array<char, 1024> error;
+  mjModel* model = LoadModelFromString(xml, error.data(), error.size());
+  ASSERT_THAT(model, NotNull()) << error.data();
+  EXPECT_EQ(model->geom_size[3*0], 2);
+  EXPECT_EQ(model->geom_size[3*1], 3);
+  EXPECT_EQ(model->geom_size[3*2], 2);
+  EXPECT_EQ(model->geom_size[3*3], 3);
+  mj_deleteModel(model);
+}
+
 TEST_F(XMLReaderTest, RepeatedDefaultName) {
   static constexpr char xml[] = R"(
   <mujoco>
@@ -509,6 +542,45 @@ TEST_F(XMLReaderTest, InvalidDefaultClassName) {
   EXPECT_THAT(error.data(),
               AllOf(HasSubstr("unknown default class name 'invalid'"),
                     HasSubstr("Element 'geom'"), HasSubstr("line 10")));
+}
+
+TEST_F(XMLReaderTest, InvalidTopDefaultClassName) {
+  static constexpr char xml[] = R"(
+  <mujoco>
+    <default class="sphere">
+      <geom type="sphere" size="1"/>
+    </default>
+    <worldbody>
+      <body>
+        <geom class="sphere"/>
+      </body>
+    </worldbody>
+  </mujoco>
+  )";
+  std::array<char, 1024> error;
+  mjModel* model = LoadModelFromString(xml, error.data(), error.size());
+  ASSERT_THAT(model, IsNull()) << error.data();
+  EXPECT_THAT(error.data(),
+              HasSubstr("top-level default class 'main' cannot be renamed"));
+}
+
+TEST_F(XMLReaderTest, ValidTopDefaultClassName) {
+  static constexpr char xml[] = R"(
+  <mujoco>
+    <default class="main">
+      <geom type="sphere" size="1"/>
+    </default>
+    <worldbody>
+      <body>
+        <geom class="main"/>
+      </body>
+    </worldbody>
+  </mujoco>
+  )";
+  std::array<char, 1024> error;
+  mjModel* model = LoadModelFromString(xml, error.data(), error.size());
+  ASSERT_THAT(model, NotNull()) << error.data();
+  mj_deleteModel(model);
 }
 
 // ------------------------ test including -------------------------------------
@@ -834,6 +906,47 @@ TEST_F(XMLReaderTest, IncludeAbsoluteTest) {
   mj_deleteModel(model);
 }
 
+TEST_F(XMLReaderTest, IncludeAbsoluteMeshDirTest) {
+  static constexpr char xml[] = R"(
+  <mujoco>
+    <include file="assets.xml"/>
+  </mujoco>
+  )";
+  static constexpr char assets[] = R"(
+  <mujoco>
+    <compiler meshdir="mjMock.IncludeAbsoluteMeshDirTest:/assets"/>
+    <asset>
+    <mesh file="cube.obj"/>
+  </asset>
+  </mujoco>
+  )";
+
+  static constexpr char cube[] = R"(
+  v -0.500000 -0.500000  0.500000
+  v  0.500000 -0.500000  0.500000
+  v -0.500000  0.500000  0.500000
+  v  0.500000  0.500000  0.500000
+  v -0.500000  0.500000 -0.500000
+  v  0.500000  0.500000 -0.500000
+  v -0.500000 -0.500000 -0.500000
+  v  0.500000 -0.500000 -0.500000)";
+
+  MockFilesystem fs("IncludeAbsoluteMeshDirTest");
+  fs.AddFile("/assets/cube.obj", (const unsigned char*) cube, sizeof(cube));
+  fs.AddFile("assets.xml", (const unsigned char*) assets,
+   sizeof(assets));
+  fs.AddFile("model.xml", (const unsigned char*) xml, sizeof(xml));
+  std::string modelpath = fs.FullPath("model.xml");
+
+  std::array<char, 1024> error;
+  // loading the file should be successful
+  mjModel* model = mj_loadXML(modelpath.c_str(), nullptr,
+                              error.data(), error.size());
+  ASSERT_THAT(model, NotNull()) << "Failed to load model: " << error.data();
+
+  mj_deleteModel(model);
+}
+
 TEST_F(XMLReaderTest, ParsePolycoef) {
   static constexpr char xml[] = R"(
   <mujoco>
@@ -941,6 +1054,7 @@ TEST_F(XMLReaderTest, DuplicateFrameName) {
 
 
 // ---------------------- test replicate parsing -------------------------------
+
 TEST_F(XMLReaderTest, ParseReplicate) {
   static constexpr char xml[] = R"(
   <mujoco>
@@ -1084,7 +1198,7 @@ TEST_F(XMLReaderTest, ParseReplicateDefaultPropagate) {
   </mujoco>
   )";
   std::array<char, 1024> error;
-  mjSpec* spec = ParseSpecFromString(xml, error.data(), error.size());
+  mjSpec* spec = mj_parseXMLString(xml, 0, error.data(), error.size());
   EXPECT_THAT(spec, NotNull()) << error.data();
 
   mjsBody* torso = mjs_findBody(spec, "torso-0");
@@ -1101,7 +1215,185 @@ TEST_F(XMLReaderTest, ParseReplicateDefaultPropagate) {
   EXPECT_THAT(def, NotNull());
   EXPECT_THAT(def->geom->type, mjGEOM_CAPSULE);
 
-  mjs_deleteSpec(spec);
+  mj_deleteSpec(spec);
+}
+
+TEST_F(XMLReaderTest, ParseReplicateRepeatedName) {
+  static constexpr char xml[] = R"(
+  <mujoco>
+    <compiler>
+      <lengthrange mode="all"/>
+    </compiler>
+
+    <worldbody>
+      <light pos="0 0 10"/>
+
+      <replicate offset="0 .1 0" count="2">
+        <site name="a" size=".02"/>
+        <body pos="1 0 1">
+          <joint axis="0 -1 0" range="0 90"/>
+          <geom type="capsule" size=".02" fromto="0 0 0 0 0 -1"/>
+          <site name="b" pos="0 0 -1"/>
+        </body>
+      </replicate>
+    </worldbody>
+
+    <tendon>
+      <spatial name="b">
+        <site site="a"/>
+        <site site="b"/>
+      </spatial>
+    </tendon>
+
+    <actuator>
+      <position name="b" tendon="b0" ctrlrange="0 3" kp="100" dampratio="1"/>
+      <position name="b" tendon="b1" ctrlrange="0 3" kp="100" dampratio="1"/>
+    </actuator>
+  </mujoco>
+  )";
+  std::array<char, 1024> error;
+  mjSpec* spec = mj_parseXMLString(xml, 0, error.data(), error.size());
+  EXPECT_THAT(spec, IsNull()) << error.data();
+  EXPECT_THAT(error.data(), HasSubstr("repeated name 'b' in actuator"));
+  EXPECT_THAT(error.data(), HasSubstr("Element 'replicate'"));
+}
+
+// ---------------------- test spec assets parsing -----------------------------
+
+TEST_F(XMLReaderTest, ParseSpecAssets) {
+  std::array<char, 1024> er;
+
+  static const char* const kParentPath =
+      "xml/testdata/parent.xml";
+  static const char* const kChildPath =
+      "xml/testdata/child.xml";
+
+  const std::string xml_parent = GetTestDataFilePath(kParentPath);
+  const std::string xml_child = GetTestDataFilePath(kChildPath);
+
+  mjModel* parent = mj_loadXML(xml_parent.c_str(), 0, er.data(), er.size());
+  EXPECT_THAT(parent, NotNull()) << er.data();
+
+  mjModel* child = mj_loadXML(xml_child.c_str(), 0, er.data(), er.size());
+  EXPECT_THAT(child, NotNull()) << er.data();
+
+  mj_deleteModel(parent);
+  mj_deleteModel(child);
+}
+
+TEST_F(XMLReaderTest, AttachSpecAssets) {
+  static constexpr char xml_parent[] = R"(
+  <mujoco>
+    <asset>
+      <model name="child" file="xml_child.xml"/>
+    </asset>
+    <worldbody>
+      <body name="parent">
+        <geom name="geom" size="2"/>
+        <replicate count="2" offset="0 0 1">
+          <attach model="child" body="body" prefix="other"/>
+        </replicate>
+      </body>
+    </worldbody>
+  </mujoco>
+  )";
+
+  static constexpr char xml_child[] = R"(
+  <mujoco>
+    <worldbody>
+      <body name="body">
+        <geom name="geom" size="1" pos="2 0 0"/>
+      </body>
+    </worldbody>
+  </mujoco>
+  )";
+
+  static constexpr char xml_expected[] = R"(
+  <mujoco>
+    <worldbody>
+      <body name="parent">
+        <geom name="geom" size="2"/>
+        <body name="otherbody0">
+          <geom name="othergeom0" size="1" pos="2 0 0"/>
+        </body>
+        <body name="otherbody1" pos="0 0 1">
+          <geom name="othergeom1" size="1" pos="2 0 0"/>
+        </body>
+      </body>
+    </worldbody>
+  </mujoco>
+  )";
+
+  auto vfs = std::make_unique<mjVFS>();
+  mj_defaultVFS(vfs.get());
+  mj_addBufferVFS(vfs.get(), "xml_child.xml", xml_child, sizeof(xml_child));
+
+  std::array<char, 1024> er;
+  mjModel* model =
+      LoadModelFromString(xml_parent, er.data(), er.size(), vfs.get());
+  EXPECT_THAT(model, NotNull()) << er.data();
+
+  mjModel* expected = LoadModelFromString(xml_expected, er.data(), er.size());
+  EXPECT_THAT(expected, NotNull()) << er.data();
+
+  mjtNum tol = 0;
+  std::string field = "";
+  EXPECT_LE(CompareModel(model, expected, field), tol)
+            << "Expected and attached models are different!\n"
+            << "Different field: " << field << '\n';;
+
+  mj_deleteModel(model);
+  mj_deleteModel(expected);
+  mj_deleteVFS(vfs.get());
+}
+
+TEST_F(XMLReaderTest, InvalidAttach) {
+  static constexpr char xml_parent[] = R"(
+  <mujoco>
+    <asset>
+      <model name="other" file="child.xml"/>
+    </asset>
+    <worldbody>
+      <body name="parent">
+        <joint name="joint1"/>
+        <geom size="2"/>
+        <attach model="other" body="body"/>
+      </body>
+    </worldbody>
+
+    <actuator>
+      <motor name="actuator" joint="joint1"/>
+    </actuator>
+  </mujoco>
+  )";
+
+  static constexpr char xml_child[] = R"(
+  <mujoco model="child">
+    <worldbody>
+      <body name="body">
+        <joint name="joint2"/>
+        <geom size="1" pos="2 0 0"/>
+      </body>
+    </worldbody>
+
+    <actuator>
+      <motor name="actuator" joint="joint2"/>
+    </actuator>
+  </mujoco>
+  )";
+
+  auto vfs = std::make_unique<mjVFS>();
+  mj_defaultVFS(vfs.get());
+  mj_addBufferVFS(vfs.get(), "child.xml", xml_child, sizeof(xml_child));
+
+  std::array<char, 1024> er;
+  mjModel* model =
+      LoadModelFromString(xml_parent, er.data(), er.size(), vfs.get());
+
+  EXPECT_THAT(model, IsNull()) << er.data();
+  EXPECT_THAT(er.data(), HasSubstr("repeated name 'actuator' in actuator"));
+  EXPECT_THAT(er.data(), HasSubstr("Element 'attach'"));
+  mj_deleteVFS(vfs.get());
 }
 
 // ----------------------- test camera parsing ---------------------------------
@@ -1249,6 +1541,36 @@ TEST_F(XMLReaderTest, InvalidSkinGroup) {
   EXPECT_THAT(
       error.data(),
       HasSubstr("skin group must be between 0 and 5\nElement 'skin', line 7"));
+}
+
+TEST_F(XMLReaderTest, Orthographic) {
+  static constexpr char xml[] = R"(
+  <mujoco>
+    <visual>
+      <global orthographic="true" fovy="5"/>
+      <map znear="0.01"/>
+    </visual>
+
+    <default>
+      <camera orthographic="true"/>
+    </default>
+
+    <worldbody>
+      <camera name="fovy=1" pos=".5 .5 2" orthographic="true" fovy="1"/>
+      <camera name="fovy=2" pos="0 0 2" fovy="2"/>
+    </worldbody>
+  </mujoco>
+  )";
+  std::array<char, 1024> error;
+  mjModel* model = LoadModelFromString(xml, error.data(), error.size());
+  EXPECT_THAT(model, NotNull()) << error.data();
+
+  EXPECT_EQ(model->vis.global.orthographic, 1);
+  EXPECT_EQ(model->cam_orthographic[0], 1);
+  EXPECT_EQ(model->cam_orthographic[1], 1);
+  EXPECT_EQ(model->cam_fovy[0], 1);
+  EXPECT_EQ(model->cam_fovy[1], 2);
+
   mj_deleteModel(model);
 }
 

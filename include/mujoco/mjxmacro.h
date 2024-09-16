@@ -277,16 +277,17 @@
     X   ( int,     cam_mode,              ncam,          1                    ) \
     X   ( int,     cam_bodyid,            ncam,          1                    ) \
     X   ( int,     cam_targetbodyid,      ncam,          1                    ) \
-    X   ( int,     cam_resolution,        ncam,          2                    ) \
-    XMJV( float,   cam_sensorsize,        ncam,          2                    ) \
-    XMJV( float,   cam_intrinsic,         ncam,          4                    ) \
     X   ( mjtNum,  cam_pos,               ncam,          3                    ) \
     X   ( mjtNum,  cam_quat,              ncam,          4                    ) \
     X   ( mjtNum,  cam_poscom0,           ncam,          3                    ) \
     X   ( mjtNum,  cam_pos0,              ncam,          3                    ) \
     X   ( mjtNum,  cam_mat0,              ncam,          9                    ) \
+    XMJV( int,     cam_orthographic,      ncam,          1                    ) \
     XMJV( mjtNum,  cam_fovy,              ncam,          1                    ) \
     XMJV( mjtNum,  cam_ipd,               ncam,          1                    ) \
+    XMJV( int,     cam_resolution,        ncam,          2                    ) \
+    XMJV( float,   cam_sensorsize,        ncam,          2                    ) \
+    XMJV( float,   cam_intrinsic,         ncam,          4                    ) \
     X   ( mjtNum,  cam_user,              ncam,          MJ_M(nuser_cam)      ) \
     X   ( int,     light_mode,            nlight,        1                    ) \
     X   ( int,     light_bodyid,          nlight,        1                    ) \
@@ -412,7 +413,7 @@
     X   ( int,     tex_adr,               ntex,          1                    ) \
     X   ( mjtByte, tex_rgb,               ntexdata,      1                    ) \
     XMJV( int,     tex_pathadr,           ntex,          1                    ) \
-    XMJV( int,     mat_texid,             nmat,          1                    ) \
+    XMJV( int,     mat_texid,             nmat,          mjNTEXMAT            ) \
     XMJV( mjtByte, mat_texuniform,        nmat,          1                    ) \
     XMJV( float,   mat_texrepeat,         nmat,          2                    ) \
     XMJV( float,   mat_emission,          nmat,          1                    ) \

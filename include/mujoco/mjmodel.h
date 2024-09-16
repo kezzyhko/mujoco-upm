@@ -29,8 +29,6 @@
 #define mjMAXIMP        0.9999    // maximum constraint impedance
 #define mjMAXCONPAIR    50        // maximum number of contacts per geom pair
 #define mjMAXTREEDEPTH  50        // maximum bounding volume hierarchy depth
-#define mjMAXVFS        2000      // maximum number of files in virtual file system
-#define mjMAXVFSNAME    1000      // maximum filename size in virtual file system
 
 
 //---------------------------------- sizes ---------------------------------------------------------
@@ -44,7 +42,7 @@
 #define mjNIMP          5         // number of solver impedance parameters
 #define mjNSOLVER       200       // size of one mjData.solver array
 #define mjNISLAND       20        // number of mjData.solver arrays
-
+#define mjNTEXMAT       6         // number of textures per material
 
 //---------------------------------- enum types (mjt) ----------------------------------------------
 
@@ -399,11 +397,7 @@ typedef struct mjLROpt_ mjLROpt;
 //---------------------------------- mjVFS ---------------------------------------------------------
 
 struct mjVFS_ {                               // virtual file system for loading from memory
-  int      nfile;                             // number of files present
-  char     filename[mjMAXVFS][mjMAXVFSNAME];  // file name without path
-  size_t   filesize[mjMAXVFS];                // file size in bytes
-  void*    filedata[mjMAXVFS];                // buffer with file data
-  uint64_t filestamp[mjMAXVFS];               // checksum of the file data
+  void* impl_;                                // internal pointer to VFS memory
 };
 typedef struct mjVFS_ mjVFS;
 
@@ -458,7 +452,8 @@ typedef struct mjOption_ mjOption;
 
 struct mjVisual_ {                // visualization options
   struct {                        // global parameters
-    float fovy;                   // y-field of view for free camera (degrees)
+    int orthographic;             // is the free camera orthographic (0: no, 1: yes)
+    float fovy;                   // y field-of-view of free camera (orthographic ? length : degree)
     float ipd;                    // inter-pupilary distance for free camera
     float azimuth;                // initial azimuth of free camera (degrees)
     float elevation;              // initial elevation of free camera (degrees)
@@ -787,11 +782,12 @@ struct mjModel_ {
   mjtNum*   cam_poscom0;          // global position rel. to sub-com in qpos0 (ncam x 3)
   mjtNum*   cam_pos0;             // global position rel. to body in qpos0    (ncam x 3)
   mjtNum*   cam_mat0;             // global orientation in qpos0              (ncam x 9)
-  int*      cam_resolution;       // [width, height] in pixels                (ncam x 2)
-  mjtNum*   cam_fovy;             // y-field of view (deg)                    (ncam x 1)
-  float*    cam_intrinsic;        // [focal length; principal point]          (ncam x 4)
-  float*    cam_sensorsize;       // sensor size                              (ncam x 2)
+  int*      cam_orthographic;     // orthographic camera; 0: no, 1: yes       (ncam x 1)
+  mjtNum*   cam_fovy;             // y field-of-view (ortho ? len : deg)      (ncam x 1)
   mjtNum*   cam_ipd;              // inter-pupilary distance                  (ncam x 1)
+  int*      cam_resolution;       // resolution: pixels [width, height]       (ncam x 2)
+  float*    cam_sensorsize;       // sensor size: length [width, height]      (ncam x 2)
+  float*    cam_intrinsic;        // [focal length; principal point]          (ncam x 4)
   mjtNum*   cam_user;             // user data                                (ncam x nuser_cam)
 
   // lights
@@ -933,7 +929,7 @@ struct mjModel_ {
   int*      tex_pathadr;          // address of texture asset path; -1: none  (ntex x 1)
 
   // materials
-  int*      mat_texid;            // texture id; -1: none                     (nmat x 1)
+  int*      mat_texid;            // indices of textures; -1: none            (nmat x mjNTEXMAT)
   mjtByte*  mat_texuniform;       // make texture cube uniform                (nmat x 1)
   float*    mat_texrepeat;        // texture repetition for 2d mapping        (nmat x 2)
   float*    mat_emission;         // emission (x rgb)                         (nmat x 1)

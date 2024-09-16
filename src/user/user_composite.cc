@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include "user/user_api.h"
+#include <mujoco/mjspec.h>
 #include "user/user_composite.h"
 
 #include <algorithm>
@@ -31,7 +31,6 @@
 #include <mujoco/mujoco.h>
 #include "cc/array_safety.h"
 #include "engine/engine_io.h"
-#include "engine/engine_util_blas.h"
 #include "engine/engine_util_errmem.h"
 #include "engine/engine_util_misc.h"
 #include "user/user_model.h"
@@ -69,8 +68,8 @@ mjCComposite::mjCComposite(void) {
   mjs_defaultPlugin(&plugin);
   plugin_name = "";
   plugin_instance_name = "";
-  plugin.name = (mjString)&plugin_name;
-  plugin.instance_name = (mjString)&plugin_instance_name;
+  plugin.name = (mjString*)&plugin_name;
+  plugin.instance_name = (mjString*)&plugin_instance_name;
 
   // cable
   curve[0] = curve[1] = curve[2] = mjCOMPSHAPE_ZERO;
@@ -428,12 +427,12 @@ bool mjCComposite::MakeParticle(mjCModel* model, mjsBody* body, char* error, int
   }
 
   // compute volume
-  std::vector<mjtNum> volume(uservert.size()/3);
-  mjtNum t = 1;
+  std::vector<double> volume(uservert.size()/3);
+  double thickness = 1;
   if (dim == 2 && plugin.active) {
     try {
       mjCPlugin* pplugin = static_cast<mjCPlugin*>(plugin.instance);
-      t = std::stod(pplugin->config_attribs["thickness"], nullptr);
+      thickness = std::stod(pplugin->config_attribs["thickness"], nullptr);
     } catch (const std::invalid_argument& e) {
       return comperr(error, "Invalid thickness attribute", error_sz);
     }
@@ -441,9 +440,9 @@ bool mjCComposite::MakeParticle(mjCModel* model, mjsBody* body, char* error, int
   if (!userface.empty()) {
     face = mjXUtil::String2Vector<int>(userface);
     for (int j=0; j<face.size()/3; j++) {
-      mjtNum area[3];
-      mjtNum edge1[3];
-      mjtNum edge2[3];
+      double area[3];
+      double edge1[3];
+      double edge2[3];
 
       for (int i=0; i<3; i++) {
         edge1[i] = uservert[3*face[3*j+1]+i] - uservert[3*face[3*j]+i];
@@ -452,12 +451,12 @@ bool mjCComposite::MakeParticle(mjCModel* model, mjsBody* body, char* error, int
 
       mjuu_crossvec(area, edge1, edge2);
       for (int i=0; i<3; i++) {
-        volume[face[3*j+i]] += sqrt(mjuu_dot3(area, area)) / 2 * t;
+        volume[face[3*j+i]] += sqrt(mjuu_dot3(area, area)) / 2 * thickness;
       }
     }
   } else {
     for (int i=0; i<uservert.size()/3; i++) {
-      volume[i] = 6 * spacing * spacing / 2 * t;
+      volume[i] = 6 * spacing * spacing / 2 * thickness;
     }
   }
 
@@ -492,7 +491,7 @@ bool mjCComposite::MakeParticle(mjCModel* model, mjsBody* body, char* error, int
 
     // add user-specified joints
     else {
-      for (auto defjnt : defjoint[mjCOMPKIND_PARTICLE]) {
+      for (auto& defjnt : defjoint[mjCOMPKIND_PARTICLE]) {
         mjsJoint* jnt = mjs_addJoint(b, &defjnt.spec);
         mjs_setDefault(jnt->element, mjs_getDefault(body->element));
       }
@@ -561,7 +560,7 @@ bool mjCComposite::MakeParticle(mjCModel* model, mjsBody* body, char* error, int
 
       // create tendon
       mjsTendon* ten = mjs_addTendon(&model->spec, &def[mjCOMPKIND_TENDON].spec);
-      mjs_setDefault(ten->element, &model->Defaults(0)->spec);
+      mjs_setDefault(ten->element, &model->Default()->spec);
       mjs_setString(ten->name, txt0);
       ten->group = 4;
       mjs_wrapSite(ten, txt1);
@@ -569,7 +568,7 @@ bool mjCComposite::MakeParticle(mjCModel* model, mjsBody* body, char* error, int
 
       // add equality constraint
       mjsEquality* eq = mjs_addEquality(&model->spec, &def[mjCOMPKIND_TENDON].spec);
-      mjs_setDefault(eq->element, &model->Defaults(0)->spec);
+      mjs_setDefault(eq->element, &model->Default()->spec);
       eq->type = mjEQ_TENDON;
       mjs_setString(eq->name1, mjs_getString(ten->name));
     }
@@ -675,7 +674,7 @@ bool mjCComposite::MakeGrid(mjCModel* model, mjsBody* body, char* error, int err
 
         // create tendon
         mjCTendon* ten = model->AddTendon(def + mjCOMPKIND_TENDON);
-        ten->def = model->Defaults(0);
+        ten->classname = model->Default()->name;
         mju::sprintf_arr(txt, "%sT%d_%d_%d", prefix.c_str(), i, ix, iy);
         ten->name = txt;
         ten->WrapSite(txt1);
@@ -683,7 +682,7 @@ bool mjCComposite::MakeGrid(mjCModel* model, mjsBody* body, char* error, int err
 
         // add equality constraint
         mjsEquality* eq = mjs_addEquality(&model->spec, &def[mjCOMPKIND_TENDON].spec);
-        mjs_setDefault(eq->element, &model->Defaults(0)->spec);
+        mjs_setDefault(eq->element, &model->Default()->spec);
         eq->type = mjEQ_TENDON;
         mjs_setString(eq->name1, ten->name.c_str());
       }
@@ -754,7 +753,7 @@ bool mjCComposite::MakeCable(mjCModel* model, mjsBody* body, char* error, int er
   }
 
   // create frame
-  mjtNum normal[3], prev_quat[4];
+  double normal[3], prev_quat[4];
   mjuu_setvec(normal, 0, 1, 0);
   mjuu_setvec(prev_quat, 1, 0, 0, 0);
 
@@ -780,10 +779,11 @@ bool mjCComposite::MakeCable(mjCModel* model, mjsBody* body, char* error, int er
 
 
 
-mjsBody* mjCComposite::AddCableBody(mjCModel* model, mjsBody* body, int ix, mjtNum normal[3], mjtNum prev_quat[4]) {
+mjsBody* mjCComposite::AddCableBody(mjCModel* model, mjsBody* body, int ix,
+                                    double normal[3], double prev_quat[4]) {
   char txt_geom[100], txt_site[100], txt_slide[100];
   char this_body[100], next_body[100], this_joint[100];
-  mjtNum dquat[4], this_quat[4];
+  double dquat[4], this_quat[4];
 
   // set flags
   int lastidx = count[0]-2;
@@ -792,7 +792,7 @@ mjsBody* mjCComposite::AddCableBody(mjCModel* model, mjsBody* body, int ix, mjtN
   bool secondlast = ix==lastidx-1;
 
   // compute edge and tangent vectors
-  mjtNum edge[3], tprev[3], tnext[3], length_prev = 0;
+  double edge[3], tprev[3], tnext[3], length_prev = 0;
   mjuu_setvec(edge, uservert[3*(ix+1)+0]-uservert[3*ix+0],
                     uservert[3*(ix+1)+1]-uservert[3*ix+1],
                     uservert[3*(ix+1)+2]-uservert[3*ix+2]);
@@ -810,7 +810,7 @@ mjsBody* mjCComposite::AddCableBody(mjCModel* model, mjsBody* body, int ix, mjtN
   }
 
   // update moving frame
-  mjtNum length = mju_updateFrame(this_quat, normal, edge, tprev, tnext, first);
+  double length = mjuu_updateFrame(this_quat, normal, edge, tprev, tnext, first);
 
   // create body, joint, and geom names
   if (first) {
@@ -845,7 +845,7 @@ mjsBody* mjCComposite::AddCableBody(mjCModel* model, mjsBody* body, int ix, mjtN
     mjuu_copyvec(body->quat, this_quat, 4);
   } else {
     mjuu_setvec(body->pos, length_prev, 0, 0);
-    mjtNum negquat[4] = {prev_quat[0], -prev_quat[1], -prev_quat[2], -prev_quat[3]};
+    double negquat[4] = {prev_quat[0], -prev_quat[1], -prev_quat[2], -prev_quat[3]};
     mjuu_mulquat(dquat, negquat, this_quat);
     mjuu_copyvec(body->quat, dquat, 4);
   }
@@ -1045,7 +1045,7 @@ mjsBody* mjCComposite::AddRopeBody(mjCModel* model, mjsBody* body, int ix, int i
 
     // add constraint
     mjsEquality* eq = mjs_addEquality(&model->spec, &def[mjCOMPKIND_TWIST].spec);
-    mjs_setDefault(eq->element, &model->Defaults(0)->spec);
+    mjs_setDefault(eq->element, &model->Default()->spec);
     eq->type = mjEQ_JOINT;
     mjs_setString(eq->name1, mjs_getString(jnt->name));
   }
@@ -1063,7 +1063,7 @@ mjsBody* mjCComposite::AddRopeBody(mjCModel* model, mjsBody* body, int ix, int i
 
     // add constraint
     mjsEquality* eq = mjs_addEquality(&model->spec, &def[mjCOMPKIND_STRETCH].spec);
-    mjs_setDefault(eq->element,  &model->Defaults(0)->spec);
+    mjs_setDefault(eq->element,  &model->Default()->spec);
     eq->type = mjEQ_JOINT;
     mjs_setString(eq->name1, mjs_getString(jnt->name));
   }
@@ -1091,7 +1091,7 @@ void mjCComposite::BoxProject(double* pos) {
 
   // cylinder
   else if (type==mjCOMPTYPE_CYLINDER) {
-    double L0 = mju_max(mju_abs(pos[0]), mju_abs(pos[1]));
+    double L0 = std::max(std::abs(pos[0]), std::abs(pos[1]));
     mjuu_normvec(pos, 2);
     pos[0] *= size[0]*L0;
     pos[1] *= size[1]*L0;
@@ -1131,7 +1131,7 @@ bool mjCComposite::MakeBox(mjCModel* model, mjsBody* body, char* error, int erro
 
   // fixed tendon for all joints
   mjCTendon* ten = model->AddTendon(def + mjCOMPKIND_TENDON);
-  ten->def = model->Defaults(0);
+  ten->classname = model->Default()->name;
   mju::sprintf_arr(txt, "%sT", prefix.c_str());
   ten->name = txt;
 
@@ -1156,6 +1156,7 @@ bool mjCComposite::MakeBox(mjCModel* model, mjsBody* body, char* error, int erro
           BoxProject(b->pos);
 
           // reorient body
+          b->alt.type = mjORIENTATION_ZAXIS;
           mjuu_copyvec(b->alt.zaxis, b->pos, 3);
           mjuu_normvec(b->alt.zaxis, 3);
 
@@ -1184,7 +1185,7 @@ bool mjCComposite::MakeBox(mjCModel* model, mjsBody* body, char* error, int erro
 
           // add fix constraint
           mjsEquality* eq = mjs_addEquality(&model->spec, &def[mjCOMPKIND_JOINT].spec);
-          mjs_setDefault(eq->element,  &model->Defaults(0)->spec);
+          mjs_setDefault(eq->element,  &model->Default()->spec);
           eq->type = mjEQ_JOINT;
           mjs_setString(eq->name1, mjs_getString(jnt->name));
 
@@ -1218,7 +1219,7 @@ bool mjCComposite::MakeBox(mjCModel* model, mjsBody* body, char* error, int erro
 
   // finalize fixed tendon
   mjsEquality* eqt = mjs_addEquality(&model->spec, &def[mjCOMPKIND_TENDON].spec);
-  mjs_setDefault(eqt->element, &model->Defaults(0)->spec);
+  mjs_setDefault(eqt->element, &model->Default()->spec);
   eqt->type = mjEQ_TENDON;
   mjs_setString(eqt->name1, ten->name.c_str());
 
@@ -1244,7 +1245,7 @@ void mjCComposite::MakeShear(mjCModel* model) {
 
       // create tendon
       mjCTendon* ten = model->AddTendon(def + mjCOMPKIND_SHEAR);
-      ten->def = model->Defaults(0);
+      ten->classname = model->Default()->name;
       ten->WrapSite(txt1);
       ten->WrapSite(txt2);
 
@@ -1254,7 +1255,7 @@ void mjCComposite::MakeShear(mjCModel* model) {
 
       // equality constraint
       mjsEquality* eq = mjs_addEquality(&model->spec, &def[mjCOMPKIND_SHEAR].spec);
-      mjs_setDefault(eq->element, &model->Defaults(0)->spec);
+      mjs_setDefault(eq->element, &model->Default()->spec);
       eq->type = mjEQ_TENDON;
       mjs_setString(eq->name1, txt);
     }

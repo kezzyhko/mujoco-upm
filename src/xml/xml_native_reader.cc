@@ -14,6 +14,7 @@
 
 #include "xml/xml_native_reader.h"
 
+#include <array>
 #include <cstddef>
 #include <cstdio>
 #include <cstring>
@@ -29,6 +30,7 @@
 
 #include "tinyxml2.h"
 
+#include <mujoco/mujoco.h>
 #include <mujoco/mjmodel.h>
 #include <mujoco/mjplugin.h>
 #include <mujoco/mjtnum.h>
@@ -36,6 +38,7 @@
 #include "engine/engine_plugin.h"
 #include "engine/engine_util_errmem.h"
 #include "engine/engine_util_misc.h"
+#include <mujoco/mjspec.h>
 #include "user/user_api.h"
 #include "user/user_composite.h"
 #include "user/user_flexcomp.h"
@@ -123,8 +126,8 @@ const char* MJCF[nMJCF][mjXATTRNUM] = {
 
     {"visual", "*", "0"},
     {"<"},
-        {"global", "?", "11", "fovy", "ipd", "azimuth", "elevation", "linewidth", "glow",
-            "offwidth", "offheight", "realtime", "ellipsoidinertia", "bvactive"},
+        {"global", "?", "12", "orthographic", "fovy", "ipd", "azimuth", "elevation", "linewidth",
+            "glow", "offwidth", "offheight", "realtime", "ellipsoidinertia", "bvactive"},
         {"quality", "?", "5", "shadowsize", "offsamples", "numslices", "numstacks",
             "numquads"},
         {"headlight", "?", "4", "ambient", "diffuse", "specular", "active"},
@@ -145,7 +148,7 @@ const char* MJCF[nMJCF][mjXATTRNUM] = {
 
     {"default", "R", "1", "class"},
     {"<"},
-        {"mesh", "?", "1", "scale"},
+        {"mesh", "?", "2", "scale", "maxhullvert"},
         {"material", "?", "10", "texture", "emission", "specular", "shininess",
             "reflectance", "metallic", "roughness", "rgba", "texrepeat", "texuniform"},
         {"joint", "?", "22", "type", "group", "pos", "axis", "springdamper",
@@ -160,9 +163,9 @@ const char* MJCF[nMJCF][mjXATTRNUM] = {
             "hfield", "mesh", "fitscale", "rgba", "fluidshape", "fluidcoef", "user"},
         {"site", "?", "13", "type", "group", "pos", "quat", "material",
             "size", "fromto", "axisangle", "xyaxes", "zaxis", "euler", "rgba", "user"},
-        {"camera", "?", "16", "fovy", "ipd", "resolution", "pos", "quat", "axisangle", "xyaxes",
-            "zaxis", "euler", "mode", "focal", "focalpixel", "principal", "principalpixel",
-            "sensorsize", "user"},
+        {"camera", "?", "17", "orthographic", "fovy", "ipd", "resolution", "pos", "quat",
+            "axisangle", "xyaxes", "zaxis", "euler", "mode", "focal", "focalpixel",
+            "principal", "principalpixel", "sensorsize", "user"},
         {"light", "?", "13", "pos", "dir", "bulbradius", "directional", "castshadow", "active",
             "attenuation", "cutoff", "exponent", "ambient", "diffuse", "specular", "mode"},
         {"pair", "?", "7", "condim", "friction", "solref", "solreffriction", "solimp",
@@ -221,8 +224,9 @@ const char* MJCF[nMJCF][mjXATTRNUM] = {
 
     {"asset", "*", "0"},
     {"<"},
-        {"mesh", "*", "12", "name", "class", "content_type", "file", "vertex", "normal",
-            "texcoord", "face", "refpos", "refquat", "scale", "smoothnormal"},
+        {"mesh", "*", "13", "name", "class", "content_type", "file", "vertex", "normal",
+            "texcoord", "face", "refpos", "refquat", "scale", "smoothnormal",
+            "maxhullvert"},
         {"<"},
           {"plugin", "*", "2", "plugin", "instance"},
           {"<"},
@@ -241,6 +245,7 @@ const char* MJCF[nMJCF][mjXATTRNUM] = {
             "hflip", "vflip"},
         {"material", "*", "12", "name", "class", "texture",  "texrepeat", "texuniform",
             "emission", "specular", "shininess", "reflectance", "metallic", "roughness", "rgba"},
+        {"model", "*", "2", "name", "file"},
     {">"},
 
     {"body", "R", "11", "name", "childclass", "pos", "quat", "mocap",
@@ -265,11 +270,12 @@ const char* MJCF[nMJCF][mjXATTRNUM] = {
               {"config", "*", "2", "key", "value"},
             {">"},
         {">"},
+        {"attach", "*", "3", "model", "body", "prefix"},
         {"site", "*", "15", "name", "class", "type", "group", "pos", "quat",
             "material", "size", "fromto", "axisangle", "xyaxes", "zaxis", "euler", "rgba", "user"},
-        {"camera", "*", "19", "name", "class", "fovy", "ipd", "resolution", "pos", "quat",
-            "axisangle", "xyaxes", "zaxis", "euler", "mode", "target", "focal", "focalpixel",
-            "principal", "principalpixel", "sensorsize", "user"},
+        {"camera", "*", "20", "name", "class", "orthographic", "fovy", "ipd", "resolution", "pos",
+            "quat", "axisangle", "xyaxes", "zaxis", "euler", "mode", "target",
+            "focal", "focalpixel", "principal", "principalpixel", "sensorsize", "user"},
         {"light", "*", "16", "name", "class", "directional", "castshadow", "active",
             "pos", "dir", "bulbradius", "attenuation", "cutoff", "exponent", "ambient", "diffuse",
             "specular", "mode", "target"},
@@ -421,10 +427,11 @@ const char* MJCF[nMJCF][mjXATTRNUM] = {
             "lmin", "lmax", "vmax", "fpmax", "fvmax"},
         {"adhesion", "*", "9", "name", "class", "group",
             "forcelimited", "ctrlrange", "forcerange", "user", "body", "gain"},
-        {"plugin", "*", "24", "name", "class",  "plugin", "instance", "group",
+        {"plugin", "*", "25", "name", "class",  "plugin", "instance", "group",
             "ctrllimited", "forcelimited", "actlimited", "ctrlrange", "forcerange", "actrange",
             "lengthrange", "gear", "cranklength", "joint", "jointinparent",
-            "site", "dyntype", "dynprm", "tendon", "cranksite", "slidersite", "user", "actearly"},
+            "site", "actdim", "dyntype", "dynprm", "tendon", "cranksite", "slidersite", "user",
+            "actearly"},
         {"<"},
           {"config", "*", "2", "key", "value"},
         {">"},
@@ -802,7 +809,7 @@ void mjXReader::PrintSchema(std::stringstream& str, bool html, bool pad) {
 
 // main entry point for XML parser
 //  mjCModel is allocated here; caller is responsible for deallocation
-void mjXReader::Parse(XMLElement* root) {
+void mjXReader::Parse(XMLElement* root, const mjVFS* vfs) {
   // check schema
   if (!schema.GetError().empty()) {
     throw mjXError(0, "XML Schema Construction Error: %s\n",
@@ -819,31 +826,31 @@ void mjXReader::Parse(XMLElement* root) {
   // get model name
   string modelname;
   if (ReadAttrTxt(root, "model", modelname)) {
-    mjs_setString(model->modelname, modelname.c_str());
+    mjs_setString(spec->modelname, modelname.c_str());
   }
 
   // get comment
   if (root->FirstChild() && root->FirstChild()->ToComment()) {
-    mjs_setString(model->comment, root->FirstChild()->Value());
+    mjs_setString(spec->comment, root->FirstChild()->Value());
   } else {
-    mjs_setString(model->comment, "");
+    mjs_setString(spec->comment, "");
   }
 
   //------------------- parse MuJoCo sections embedded in all XML formats
 
   for (XMLElement* section = FirstChildElement(root, "compiler"); section;
        section = NextSiblingElement(section, "compiler")) {
-    Compiler(section, model);
+    Compiler(section, spec);
   }
 
   for (XMLElement* section = FirstChildElement(root, "option"); section;
        section = NextSiblingElement(section, "option")) {
-    Option(section, &model->option);
+    Option(section, &spec->option);
   }
 
   for (XMLElement* section = FirstChildElement(root, "size"); section;
        section = NextSiblingElement(section, "size")) {
-    Size(section, model);
+    Size(section, spec);
   }
 
   //------------------ parse MJCF-specific sections
@@ -861,7 +868,7 @@ void mjXReader::Parse(XMLElement* root) {
   readingdefaults = true;
   for (XMLElement* section = FirstChildElement(root, "default"); section;
        section = NextSiblingElement(section, "default")) {
-    Default(section, -1);
+    Default(section, nullptr);
   }
   readingdefaults = false;
 
@@ -877,7 +884,7 @@ void mjXReader::Parse(XMLElement* root) {
 
   for (XMLElement* section = FirstChildElement(root, "asset"); section;
        section = NextSiblingElement(section, "asset")) {
-    Asset(section);
+    Asset(section, vfs);
   }
 
   for (XMLElement* section = FirstChildElement(root, "contact"); section;
@@ -917,7 +924,7 @@ void mjXReader::Parse(XMLElement* root) {
 
   for (XMLElement* section = FirstChildElement(root, "worldbody"); section;
        section = NextSiblingElement(section, "worldbody")) {
-    Body(section, mjs_findBody(model, "world"), nullptr);
+    Body(section, mjs_findBody(spec, "world"), nullptr);
   }
 }
 
@@ -957,7 +964,7 @@ void mjXReader::Compiler(XMLElement* section, mjSpec* spec) {
     if (text.size()!=3) {
       throw mjXError(section, "euler format must have length 3");
     }
-    memcpy(spec->euler, text.c_str(), 3);
+    memcpy(spec->eulerseq, text.c_str(), 3);
   }
   if (ReadAttrTxt(section, "assetdir", text)) {
     mjs_setString(spec->meshdir, text.c_str());
@@ -1271,14 +1278,14 @@ void mjXReader::Statistic(XMLElement* section) {
   string text;
 
   // read statistics
-  ReadAttr(section, "meaninertia", 1, &model->stat.meaninertia, text);
-  ReadAttr(section, "meanmass", 1, &model->stat.meanmass, text);
-  ReadAttr(section, "meansize", 1, &model->stat.meansize, text);
-  ReadAttr(section, "extent", 1, &model->stat.extent, text);
-  if (mjuu_defined(model->stat.extent) && model->stat.extent<=0) {
+  ReadAttr(section, "meaninertia", 1, &spec->stat.meaninertia, text);
+  ReadAttr(section, "meanmass", 1, &spec->stat.meanmass, text);
+  ReadAttr(section, "meansize", 1, &spec->stat.meansize, text);
+  ReadAttr(section, "extent", 1, &spec->stat.extent, text);
+  if (mjuu_defined(spec->stat.extent) && spec->stat.extent<=0) {
     throw mjXError(section, "extent must be strictly positive");
   }
-  ReadAttr(section, "center", 3, model->stat.center, text);
+  ReadAttr(section, "center", 3, spec->stat.center, text);
 }
 
 
@@ -1287,15 +1294,12 @@ void mjXReader::Statistic(XMLElement* section) {
 
 // flex element parser
 void mjXReader::OneFlex(XMLElement* elem, mjsFlex* pflex) {
-  string text, name, classname, material;
+  string text, name, material;
   int n;
 
   // read attributes
   if (ReadAttrTxt(elem, "name", name)) {
     mjs_setString(pflex->name, name.c_str());
-  }
-  if (ReadAttrTxt(elem, "classname", classname)) {
-    mjs_setString(pflex->classname, classname.c_str());
   }
   if (ReadAttrTxt(elem, "material", material)) {
     mjs_setString(pflex->material, material.c_str());
@@ -1362,17 +1366,14 @@ void mjXReader::OneFlex(XMLElement* elem, mjsFlex* pflex) {
 // mesh element parser
 void mjXReader::OneMesh(XMLElement* elem, mjsMesh* pmesh) {
   int n;
-  string text, name, classname, content_type;
+  string text, name, content_type;
 
   // read attributes
   if (ReadAttrTxt(elem, "name", name)) {
-    mjs_setString(pmesh->name, name.c_str());
-  }
-  if (ReadAttrTxt(elem, "class", classname)) {
-    mjs_setString(pmesh->classname, classname.c_str());
+    *pmesh->name = name;
   }
   if (ReadAttrTxt(elem, "content_type", content_type)) {
-    mjs_setString(pmesh->content_type, content_type.c_str());
+    *pmesh->content_type = content_type;
   }
   auto file = ReadAttrFile(elem, "file", MeshDir());
   if (file) {
@@ -1389,6 +1390,11 @@ void mjXReader::OneMesh(XMLElement* elem, mjsMesh* pmesh) {
 
   if (MapValue(elem, "smoothnormal", &n, bool_map, 2)) {
     pmesh->smoothnormal = (n==1);
+  }
+
+  if (ReadAttrInt(elem, "maxhullvert", &n)) {
+    if (n != 0 && n < 4) throw mjXError(elem, "maxhullvert must be larger than 3");
+    pmesh->maxhullvert = n;
   }
 
   // read user vertex data
@@ -1519,15 +1525,12 @@ void mjXReader::OneSkin(XMLElement* elem, mjsSkin* pskin) {
 
 // material element parser
 void mjXReader::OneMaterial(XMLElement* elem, mjsMaterial* pmat) {
-  string text, name, classname, texture;
+  string text, name, texture;
   int n;
 
   // read attributes
   if (ReadAttrTxt(elem, "name", name)) {
     mjs_setString(pmat->name, name.c_str());
-  }
-  if (ReadAttrTxt(elem, "class", classname)) {
-    mjs_setString(pmat->classname, classname.c_str());
   }
   if (ReadAttrTxt(elem, "texture", texture)) {
     mjs_setString(pmat->texture, texture.c_str());
@@ -1552,16 +1555,13 @@ void mjXReader::OneMaterial(XMLElement* elem, mjsMaterial* pmat) {
 
 // joint element parser
 void mjXReader::OneJoint(XMLElement* elem, mjsJoint* pjoint) {
-  string text, name, classname;
+  string text, name;
   std::vector<double> userdata;
   int n;
 
   // read attributes
   if (ReadAttrTxt(elem, "name", name)) {
     mjs_setString(pjoint->name, name.c_str());
-  }
-  if (ReadAttrTxt(elem, "class", classname)) {
-    mjs_setString(pjoint->classname, classname.c_str());
   }
   if (MapValue(elem, "type", &n, joint_map, joint_sz)) {
     pjoint->type = (mjtJoint)n;
@@ -1602,7 +1602,7 @@ void mjXReader::OneJoint(XMLElement* elem, mjsJoint* pjoint) {
 
 // geom element parser
 void mjXReader::OneGeom(XMLElement* elem, mjsGeom* pgeom) {
-  string text, name, classname;
+  string text, name;
   std::vector<double> userdata;
   std::string hfieldname, meshname, material;
   int n;
@@ -1610,9 +1610,6 @@ void mjXReader::OneGeom(XMLElement* elem, mjsGeom* pgeom) {
   // read attributes
   if (ReadAttrTxt(elem, "name", name)) {
     mjs_setString(pgeom->name, name.c_str());
-  }
-  if (ReadAttrTxt(elem, "class", classname)) {
-    mjs_setString(pgeom->classname, classname.c_str());
   }
   if (MapValue(elem, "type", &n, geom_map, mjNGEOMTYPES)) {
     pgeom->type = (mjtGeom)n;
@@ -1678,16 +1675,13 @@ void mjXReader::OneGeom(XMLElement* elem, mjsGeom* pgeom) {
 // site element parser
 void mjXReader::OneSite(XMLElement* elem, mjsSite* site) {
   int n;
-  string text, name, classname;
+  string text, name;
   std::vector<double> userdata;
   std::string material;
 
   // read attributes
   if (ReadAttrTxt(elem, "name", name)) {
     mjs_setString(site->name, name.c_str());
-  }
-  if (ReadAttrTxt(elem, "class", classname)) {
-    mjs_setString(site->classname, classname.c_str());
   }
   if (MapValue(elem, "type", &n, geom_map, mjNGEOMTYPES)) {
     site->type = (mjtGeom)n;
@@ -1715,15 +1709,12 @@ void mjXReader::OneSite(XMLElement* elem, mjsSite* site) {
 // camera element parser
 void mjXReader::OneCamera(XMLElement* elem, mjsCamera* pcam) {
   int n;
-  string text, name, classname, targetbody;
+  string text, name, targetbody;
   std::vector<double> userdata;
 
   // read attributes
   if (ReadAttrTxt(elem, "name", name)) {
     mjs_setString(pcam->name, name.c_str());
-  }
-  if (ReadAttrTxt(elem, "class", classname)) {
-    mjs_setString(pcam->classname, classname.c_str());
   }
   if (ReadAttrTxt(elem, "target", targetbody)) {
     mjs_setString(pcam->targetbody, targetbody.c_str());
@@ -1735,6 +1726,10 @@ void mjXReader::OneCamera(XMLElement* elem, mjsCamera* pcam) {
   ReadQuat(elem, "quat", pcam->quat, text);
   ReadAlternative(elem, pcam->alt);
   ReadAttr(elem, "ipd", 1, &pcam->ipd, text);
+
+  if (MapValue(elem, "orthographic", &n, bool_map, 2)) {
+    pcam->orthographic = (n==1);
+  }
 
   bool has_principal = ReadAttr(elem, "principalpixel", 2, pcam->principal_pixel, text) ||
                        ReadAttr(elem, "principal", 2, pcam->principal_length, text);
@@ -1769,14 +1764,11 @@ void mjXReader::OneCamera(XMLElement* elem, mjsCamera* pcam) {
 // light element parser
 void mjXReader::OneLight(XMLElement* elem, mjsLight* plight) {
   int n;
-  string text, name, classname, targetbody;
+  string text, name, targetbody;
 
   // read attributes
   if (ReadAttrTxt(elem, "name", name)) {
     mjs_setString(plight->name, name.c_str());
-  }
-  if (ReadAttrTxt(elem, "class", classname)) {
-    mjs_setString(plight->classname, classname.c_str());
   }
   if (ReadAttrTxt(elem, "target", targetbody)) {
     mjs_setString(plight->targetbody, targetbody.c_str());
@@ -1811,13 +1803,10 @@ void mjXReader::OneLight(XMLElement* elem, mjsLight* plight) {
 
 // pair element parser
 void mjXReader::OnePair(XMLElement* elem, mjsPair* ppair) {
-  string text, name, classname, geomname1, geomname2;
+  string text, name, geomname1, geomname2;
 
   // regular only
   if (!readingdefaults) {
-    if (ReadAttrTxt(elem, "class", classname)) {
-      mjs_setString(ppair->classname, classname.c_str());
-    }
     if (ReadAttrTxt(elem, "geom1", geomname1)) {
       mjs_setString(ppair->geomname1, geomname1.c_str());
     }
@@ -1847,7 +1836,7 @@ void mjXReader::OnePair(XMLElement* elem, mjsPair* ppair) {
 // equality element parser
 void mjXReader::OneEquality(XMLElement* elem, mjsEquality* pequality) {
   int n;
-  string text, name1, name2, name, classname;
+  string text, name1, name2, name;
 
   // read type (bad keywords already detected by schema)
   text = elem->Value();
@@ -1858,9 +1847,6 @@ void mjXReader::OneEquality(XMLElement* elem, mjsEquality* pequality) {
     if (ReadAttrTxt(elem, "name", name)) {
       mjs_setString(pequality->name, name.c_str());
     }
-    if (ReadAttrTxt(elem, "class", classname)) {
-      mjs_setString(pequality->classname, classname.c_str());
-    };
 
     switch (pequality->type) {
     case mjEQ_CONNECT:
@@ -1924,15 +1910,12 @@ void mjXReader::OneEquality(XMLElement* elem, mjsEquality* pequality) {
 
 // tendon element parser
 void mjXReader::OneTendon(XMLElement* elem, mjsTendon* pten) {
-  string text, name, classname, material;
+  string text, name, material;
   std::vector<double> userdata;
 
   // read attributes
   if (ReadAttrTxt(elem, "name", name)) {
     mjs_setString(pten->name, name.c_str());
-  }
-  if (ReadAttrTxt(elem, "class", classname)) {
-    mjs_setString(pten->classname, classname.c_str());
   }
   ReadAttrInt(elem, "group", &pten->group);
   if (ReadAttrTxt(elem, "material", material)) {
@@ -1968,14 +1951,11 @@ void mjXReader::OneTendon(XMLElement* elem, mjsTendon* pten) {
 
 // actuator element parser
 void mjXReader::OneActuator(XMLElement* elem, mjsActuator* pact) {
-  string text, type, name, classname, target, slidersite, refsite;
+  string text, type, name, target, slidersite, refsite;
 
   // common attributes
   if (ReadAttrTxt(elem, "name", name)) {
     mjs_setString(pact->name, name.c_str());
-  }
-  if (ReadAttrTxt(elem, "class", classname)) {
-    mjs_setString(pact->classname, classname.c_str());
   }
   ReadAttrInt(elem, "group", &pact->group);
   MapValue(elem, "ctrllimited", &pact->ctrllimited, TFAuto_map, 3);
@@ -2259,6 +2239,7 @@ void mjXReader::OneActuator(XMLElement* elem, mjsActuator* pact) {
       pact->actearly = (n==1);
     }
     ReadAttr(elem, "dynprm", mjNDYN, pact->dynprm, text, false, false);
+    ReadAttrInt(elem, "actdim", &pact->actdim);
   }
 
   else {          // SHOULD NOT OCCUR
@@ -2499,7 +2480,7 @@ void mjXReader::OneComposite(XMLElement* elem, mjsBody* pbody, mjsDefault* def) 
 
   // make composite
   char error[200];
-  bool res = comp.Make(model, pbody, error, 200);
+  bool res = comp.Make(spec, pbody, error, 200);
 
   // throw error
   if (!res) {
@@ -2550,7 +2531,7 @@ void mjXReader::OneFlexcomp(XMLElement* elem, mjsBody* pbody) {
     fcomp.rigid = (n==1);
   }
   if (ReadAttrTxt(elem, "point", text)){
-    fcomp.point = String2Vector<mjtNum>(text);
+    fcomp.point = String2Vector<double>(text);
   }
   if (ReadAttrTxt(elem, "element", text)){
     fcomp.element = String2Vector<int>(text);
@@ -2625,7 +2606,7 @@ void mjXReader::OneFlexcomp(XMLElement* elem, mjsBody* pbody) {
 
   // make flexcomp
   char error[200];
-  bool res = fcomp.Make(model, pbody, error, 200);
+  bool res = fcomp.Make(spec, pbody, error, 200);
 
   // throw error
   if (!res) {
@@ -2645,10 +2626,10 @@ void mjXReader::OnePlugin(XMLElement* elem, mjsPlugin* plugin) {
   mjs_setString(plugin->name, name.c_str());
   mjs_setString(plugin->instance_name, instance_name.c_str());
   if (instance_name.empty()) {
-    plugin->instance = mjs_addPlugin(model)->instance;
+    plugin->instance = mjs_addPlugin(spec)->instance;
     ReadPluginConfigs(elem, plugin);
   } else {
-    model->hasImplicitPluginElem = true;
+    spec->hasImplicitPluginElem = true;
   }
 }
 
@@ -2657,31 +2638,28 @@ void mjXReader::OnePlugin(XMLElement* elem, mjsPlugin* plugin) {
 //------------------ MJCF-specific sections --------------------------------------------------------
 
 // default section parser
-void mjXReader::Default(XMLElement* section, int parentid) {
+void mjXReader::Default(XMLElement* section, const mjsDefault* def) {
   XMLElement* elem;
   string text, name;
-  mjsDefault* def;
-  int thisid;
 
-  // create new default, except at top level (already added in mjCModel ctor)
+  // create new default, except at top level (already added in mjCModel constructor)
   text.clear();
   ReadAttrTxt(section, "class", text);
   if (text.empty()) {
-    if (parentid>=0) {
+    if (def) {
       throw mjXError(section, "empty class name");
-    } else {
-      text = "main";
     }
   }
-  if (parentid>=0) {
-    def = mjs_addDefault(model, text.c_str(), parentid, &thisid);
+  if (def) {
+    def = mjs_addDefault(spec, text.c_str(), def);
     if (!def) {
       throw mjXError(section, "repeated default class name");
     }
   } else {
-    thisid = 0;
-    def = mjs_getSpecDefault(model);
-    mjs_setString(def->name, text.c_str());
+    def = mjs_getSpecDefault(spec);
+    if (!text.empty() && text != "main") {
+      throw mjXError(section, "top-level default class 'main' cannot be renamed");
+    }
   }
 
   // iterate over elements other than nested defaults
@@ -2745,7 +2723,7 @@ void mjXReader::Default(XMLElement* section, int parentid) {
 
     // read default
     if (name=="default") {
-      Default(elem, thisid);
+      Default(elem, def);
     }
 
     // advance
@@ -2787,12 +2765,12 @@ void mjXReader::Extension(XMLElement* section) {
       XMLElement* child = FirstChildElement(elem);
       while (child) {
         if (std::string(child->Value())=="instance") {
-          if (model->hasImplicitPluginElem) {
+          if (spec->hasImplicitPluginElem) {
             throw mjXError(
                 child, "explicit plugin instance must appear before implicit plugin elements");
           }
           string name;
-          mjsPlugin* p = mjs_addPlugin(model);
+          mjsPlugin* p = mjs_addPlugin(spec);
           mjs_setString(p->info, ("line " + std::to_string(elem->GetLineNum())).c_str());
           ReadAttrTxt(child, "name", name, /* required = */ true);
           mjs_setString(p->name, name.c_str());
@@ -2810,7 +2788,7 @@ void mjXReader::Extension(XMLElement* section) {
     elem = NextSiblingElement(elem);
   }
 
-  mjs_setActivePlugins(model, &active_plugins);
+  mjs_setActivePlugins(spec, &active_plugins);
 }
 
 
@@ -2831,7 +2809,7 @@ void mjXReader::Custom(XMLElement* section) {
     // numeric
     if (name=="numeric") {
       // create custom
-      mjsNumeric* pnum = mjs_addNumeric(model);
+      mjsNumeric* pnum = mjs_addNumeric(spec);
 
       // write error info
       mjs_setString(pnum->info, ("line " + std::to_string(elem->GetLineNum())).c_str());
@@ -2862,7 +2840,7 @@ void mjXReader::Custom(XMLElement* section) {
     // text
     else if (name=="text") {
       // create custom
-      mjsText* pte = mjs_addText(model);
+      mjsText* pte = mjs_addText(spec);
 
       // write error info
       mjs_setString(pte->info, ("line " + std::to_string(elem->GetLineNum())).c_str());
@@ -2882,7 +2860,7 @@ void mjXReader::Custom(XMLElement* section) {
     // tuple
     else if (name=="tuple") {
       // create custom
-      mjsTuple* ptu = mjs_addTuple(model);
+      mjsTuple* ptu = mjs_addTuple(spec);
 
       // write error info
       mjs_setString(ptu->info, ("line " + std::to_string(elem->GetLineNum())).c_str());
@@ -2941,7 +2919,8 @@ void mjXReader::Custom(XMLElement* section) {
 void mjXReader::Visual(XMLElement* section) {
   string text, name;
   XMLElement* elem;
-  mjVisual* vis = &model->visual;
+  mjVisual* vis = &spec->visual;
+  int n;
 
   // iterate over child elements
   elem = FirstChildElement(section);
@@ -2951,6 +2930,9 @@ void mjXReader::Visual(XMLElement* section) {
 
     // global sub-element
     if (name=="global") {
+      if (MapValue(elem, "orthographic", &n, bool_map, 2)) {
+        vis->global.orthographic = (n==1);
+      }
       ReadAttr(elem,    "fovy",      1, &vis->global.fovy,      text);
       ReadAttr(elem,    "ipd",       1, &vis->global.ipd,       text);
       ReadAttr(elem,    "azimuth",   1, &vis->global.azimuth,   text);
@@ -2964,13 +2946,11 @@ void mjXReader::Visual(XMLElement* section) {
           throw mjXError(elem, "realtime must be greater than 0");
         }
       }
-      int ellipsoidinertia;
-      if (MapValue(elem, "ellipsoidinertia", &ellipsoidinertia, bool_map, 2)) {
-        vis->global.ellipsoidinertia = (ellipsoidinertia==1);
+      if (MapValue(elem, "ellipsoidinertia", &n, bool_map, 2)) {
+        vis->global.ellipsoidinertia = (n==1);
       }
-      int bvactive;
-      if (MapValue(elem, "bvactive", &bvactive, bool_map, 2)) {
-        vis->global.bvactive = (bvactive==1);
+      if (MapValue(elem, "bvactive", &n, bool_map, 2)) {
+        vis->global.bvactive = (n==1);
       }
     }
 
@@ -3069,7 +3049,7 @@ void mjXReader::Visual(XMLElement* section) {
 
 
 // asset section parser
-void mjXReader::Asset(XMLElement* section) {
+void mjXReader::Asset(XMLElement* section, const mjVFS* vfs) {
   int n;
   string text, name, texname, content_type;
   XMLElement* elem;
@@ -3083,13 +3063,13 @@ void mjXReader::Asset(XMLElement* section) {
     // get class if specified, otherwise use default0
     mjsDefault* def = GetClass(elem);
     if (!def) {
-      def = mjs_getSpecDefault(model);
+      def = mjs_getSpecDefault(spec);
     }
 
     // texture sub-element
     if (name=="texture") {
       // create texture
-      mjsTexture* ptex = mjs_addTexture(model);
+      mjsTexture* ptex = mjs_addTexture(spec);
 
       // write error info
       mjs_setString(ptex->info, ("line " + std::to_string(elem->GetLineNum())).c_str());
@@ -3157,28 +3137,28 @@ void mjXReader::Asset(XMLElement* section) {
     // material sub-element
     else if (name=="material") {
       // create material and parse
-      mjsMaterial* pmat = mjs_addMaterial(model, def);
+      mjsMaterial* pmat = mjs_addMaterial(spec, def);
       OneMaterial(elem, pmat);
     }
 
     // mesh sub-element
     else if (name=="mesh") {
       // create mesh and parse
-      mjsMesh* pmesh = mjs_addMesh(model, def);
+      mjsMesh* pmesh = mjs_addMesh(spec, def);
       OneMesh(elem, pmesh);
     }
 
     // skin sub-element... deprecate ???
     else if (name=="skin") {
       // create skin and parse
-      mjsSkin* pskin = mjs_addSkin(model);
+      mjsSkin* pskin = mjs_addSkin(spec);
       OneSkin(elem, pskin);
     }
 
     // hfield sub-element
     else if (name=="hfield") {
       // create hfield
-      mjsHField* phf = mjs_addHField(model);
+      mjsHField* phf = mjs_addHField(spec);
 
       // write error info
       mjs_setString(phf->info, ("line " + std::to_string(elem->GetLineNum())).c_str());
@@ -3231,6 +3211,27 @@ void mjXReader::Asset(XMLElement* section) {
           mjs_setFloat(phf->userdata, zero.data(), zero.size());
         }
       }
+    }
+
+    // model sub-element
+    else if (name=="model") {
+      auto filename = modelfiledir_ + ReadAttrFile(elem, "file", "").value();
+
+      // parse the child
+      std::array<char, 1024> error;
+      mjSpec* child = mj_parseXML(filename.c_str(), vfs, error.data(), error.size());
+      if (!child) {
+        throw mjXError(elem, "could not parse model file with error: %s", error.data());
+      }
+
+      // overwrite model name if given
+      std::string modelname = "";
+      if (ReadAttrTxt(elem, "name", modelname)) {
+        mjs_setString(child->modelname, modelname.c_str());
+      }
+
+      // store child spec in model
+      mjs_addSpec(spec, child);
     }
 
     // advance to next element
@@ -3375,8 +3376,8 @@ void mjXReader::Body(XMLElement* section, mjsBody* pbody, mjsFrame* frame) {
       // read childdef
       mjsDefault* childdef = 0;
       if (ReadAttrTxt(elem, "childclass", text)) {
-        childdef = mjs_findDefault(model, text.c_str());
-        mjs_findDefault(model, text.c_str());
+        childdef = mjs_findDefault(spec, text.c_str());
+        mjs_findDefault(spec, text.c_str());
         if (!childdef) {
           throw mjXError(elem, "unknown default childclass");
         }
@@ -3419,13 +3420,13 @@ void mjXReader::Body(XMLElement* section, mjsBody* pbody, mjsFrame* frame) {
       alt.type = mjORIENTATION_EULER;
       mjuu_copyvec(alt.euler, euler, 3);
       double rotation[4] = {1, 0, 0, 0};
-      mjs_resolveOrientation(rotation, model->degree, model->euler, &alt);
+      mjs_resolveOrientation(rotation, spec->degree, spec->eulerseq, &alt);
 
       // read childdef
       mjsDefault* childdef = 0;
       if (ReadAttrTxt(elem, "childclass", text)) {
-        childdef = mjs_findDefault(model, text.c_str());
-        mjs_findDefault(model, text.c_str());
+        childdef = mjs_findDefault(spec, text.c_str());
+        mjs_findDefault(spec, text.c_str());
         if (!childdef) {
           throw mjXError(elem, "unknown default childclass");
         }
@@ -3450,7 +3451,7 @@ void mjXReader::Body(XMLElement* section, mjsBody* pbody, mjsFrame* frame) {
         alt.euler[0] = i*euler[0];
         alt.euler[1] = i*euler[1];
         alt.euler[2] = i*euler[2];
-        mjs_resolveOrientation(quat, model->degree, model->euler, &alt);
+        mjs_resolveOrientation(quat, spec->degree, spec->eulerseq, &alt);
         mjuu_setvec(pframe->quat, quat[0], quat[1], quat[2], quat[3]);
 
         // process suffix
@@ -3461,11 +3462,13 @@ void mjXReader::Body(XMLElement* section, mjsBody* pbody, mjsFrame* frame) {
         Body(elem, subtree, pframe);
 
         // attach to parent
-        mjs_attachFrame(pbody, pframe, /*prefix=*/"", suffix.c_str());
+        if (mjs_attachFrame(pbody, pframe, /*prefix=*/"", suffix.c_str()) != 0) {
+          throw mjXError(elem, mjs_getError(spec));
+        }
       }
 
       // delete subtree
-      mjs_detachBody(model, subtree);
+      mjs_detachBody(spec, subtree);
     }
 
     // body sub-element
@@ -3473,8 +3476,8 @@ void mjXReader::Body(XMLElement* section, mjsBody* pbody, mjsFrame* frame) {
       // read childdef
       mjsDefault* childdef = 0;
       if (ReadAttrTxt(elem, "childclass", text)) {
-        childdef = mjs_findDefault(model, text.c_str());
-        mjs_findDefault(model, text.c_str());
+        childdef = mjs_findDefault(spec, text.c_str());
+        mjs_findDefault(spec, text.c_str());
         if (!childdef) {
           throw mjXError(elem, "unknown default childclass");
         }
@@ -3484,6 +3487,9 @@ void mjXReader::Body(XMLElement* section, mjsBody* pbody, mjsFrame* frame) {
       mjsBody* pchild = mjs_addBody(pbody, childdef);
       mjs_setString(pchild->info,
                     std::string("line " + std::to_string(elem->GetLineNum())).c_str());
+
+      // set default from class or childclass
+      mjs_setDefault(pchild->element, childdef ? childdef : def);
 
       // read attributes
       std::string name, childclass;
@@ -3515,6 +3521,35 @@ void mjXReader::Body(XMLElement* section, mjsBody* pbody, mjsFrame* frame) {
       Body(elem, pchild, nullptr);
     }
 
+    // attachment
+    else if (name=="attach") {
+      std::string model_name, body_name, prefix;
+      ReadAttrTxt(elem, "model", model_name);
+      ReadAttrTxt(elem, "body", body_name);
+      ReadAttrTxt(elem, "prefix", prefix);
+
+      mjsBody* child = mjs_findBody(spec, (prefix+body_name).c_str());
+      mjsFrame* pframe = frame ? frame : mjs_addFrame(pbody, nullptr);
+
+      if (!child) {
+        mjSpec* asset = mjs_findSpec(spec, model_name.c_str());
+        if (!asset) {
+          throw mjXError(0, "could not find model '%s'", model_name.c_str());
+        }
+        child = mjs_findBody(asset, body_name.c_str());
+        if (!child) {
+          throw mjXError(0, "could not find body '%s''%s'", body_name.c_str());
+        }
+        if (mjs_attachBody(pframe, child, prefix.c_str(), "") != 0) {
+          mj_deleteSpec(asset);
+          throw mjXError(elem, mjs_getError(spec));
+        }
+      } else {
+        // only set frame to existing body
+        mjs_setFrame(child->element, pframe);
+      }
+    }
+
     // no match
     else {
       throw mjXError(elem, "unrecognized model element '%s'", name.c_str());
@@ -3541,19 +3576,19 @@ void mjXReader::Contact(XMLElement* section) {
     // get class if specified, otherwise use default0
     mjsDefault* def = GetClass(elem);
     if (!def) {
-      def = mjs_getSpecDefault(model);
+      def = mjs_getSpecDefault(spec);
     }
 
     // geom pair to include
     if (name=="pair") {
       // create pair and parse
-      mjsPair* ppair = mjs_addPair(model, def);
+      mjsPair* ppair = mjs_addPair(spec, def);
       OnePair(elem, ppair);
     }
 
     // body pair to exclude
     else if (name=="exclude") {
-      mjsExclude* pexclude = mjs_addExclude(model);
+      mjsExclude* pexclude = mjs_addExclude(spec);
       string exname, exbody1, exbody2;
 
       // write error info
@@ -3586,11 +3621,11 @@ void mjXReader::Equality(XMLElement* section) {
     // get class if specified, otherwise use default0
     mjsDefault* def = GetClass(elem);
     if (!def) {
-      def = mjs_getSpecDefault(model);
+      def = mjs_getSpecDefault(spec);
     }
 
     // create equality constraint and parse
-    mjsEquality* pequality = mjs_addEquality(model, def);
+    mjsEquality* pequality = mjs_addEquality(spec, def);
     OneEquality(elem, pequality);
 
     // advance to next element
@@ -3614,20 +3649,20 @@ void mjXReader::Deformable(XMLElement* section) {
     // get class if specified, otherwise use default0
     mjsDefault* def = GetClass(elem);
     if (!def) {
-      def = mjs_getSpecDefault(model);
+      def = mjs_getSpecDefault(spec);
     }
 
     // flex sub-element
     if (name=="flex") {
       // create flex and parse
-      mjsFlex* pflex = mjs_addFlex(model);
+      mjsFlex* pflex = mjs_addFlex(spec);
       OneFlex(elem, pflex);
     }
 
     // skin sub-element
     else if (name=="skin") {
       // create skin and parse
-      mjsSkin* pskin = mjs_addSkin(model);
+      mjsSkin* pskin = mjs_addSkin(spec);
       OneSkin(elem, pskin);
     }
 
@@ -3650,11 +3685,11 @@ void mjXReader::Tendon(XMLElement* section) {
     // get class if specified, otherwise use default0
     mjsDefault* def = GetClass(elem);
     if (!def) {
-      def = mjs_getSpecDefault(model);
+      def = mjs_getSpecDefault(spec);
     }
 
     // create equality constraint and parse
-    mjsTendon* pten = mjs_addTendon(model, def);
+    mjsTendon* pten = mjs_addTendon(spec, def);
     OneTendon(elem, pten);
 
     // process wrap sub-elements
@@ -3716,11 +3751,11 @@ void mjXReader::Actuator(XMLElement* section) {
     // get class if specified, otherwise use default0
     mjsDefault* def = GetClass(elem);
     if (!def) {
-      def = mjs_getSpecDefault(model);
+      def = mjs_getSpecDefault(spec);
     }
 
     // create actuator and parse
-    mjsActuator* pact = mjs_addActuator(model, def);
+    mjsActuator* pact = mjs_addActuator(spec, def);
     OneActuator(elem, pact);
 
     // advance to next element
@@ -3736,7 +3771,7 @@ void mjXReader::Sensor(XMLElement* section) {
   XMLElement* elem = FirstChildElement(section);
   while (elem) {
     // create sensor, get string type
-    mjsSensor* psen = mjs_addSensor(model);
+    mjsSensor* psen = mjs_addSensor(spec);
     string type = elem->Value();
     string text, name, objname, refname;
     std::vector<double> userdata;
@@ -4076,7 +4111,7 @@ void mjXReader::Keyframe(XMLElement* section) {
     string text, name = "";
 
     // add keyframe
-    mjsKey* pk = mjs_addKey(model);
+    mjsKey* pk = mjs_addKey(spec);
 
     // read name, time
     ReadAttrTxt(elem, "name", name);
@@ -4132,7 +4167,7 @@ mjsDefault* mjXReader::GetClass(XMLElement* section) {
   mjsDefault* def = nullptr;
 
   if (ReadAttrTxt(section, "class", text)) {
-    def = mjs_findDefault(model, text.c_str());
+    def = mjs_findDefault(spec, text.c_str());
     if (!def) {
       throw mjXError(
           section,
@@ -4143,56 +4178,36 @@ mjsDefault* mjXReader::GetClass(XMLElement* section) {
   return def;
 }
 
-
-
-
-// return true if c is a directory path separator (i.e. '/' or '\' on windows)
-static bool IsSeperator(char c) {
-  return c == '/' || c == '\\';
-}
-
 void mjXReader::SetModelFileDir(std::string modelfiledir) {
   modelfiledir_ = modelfiledir;
-  if (!modelfiledir_.empty() && !IsSeperator(modelfiledir_.back())) {
-    modelfiledir_.append("/");
-  }
 }
 
 void mjXReader::SetAssetDir(std::string assetdir) {
   assetdir_ = assetdir;
-  if (!assetdir_.empty() && !IsSeperator(assetdir_.back())) {
-    assetdir_.append("/");
-  }
 }
 
 void mjXReader::SetMeshDir(std::string meshdir) {
   meshdir_ = meshdir;
-  if (!meshdir_.empty() && !IsSeperator(meshdir_.back())) {
-    meshdir_.append("/");
-  }
 }
 
 void mjXReader::SetTextureDir(std::string texturedir) {
   texturedir_ = texturedir;
-  if (!texturedir_.empty() && !IsSeperator(texturedir_.back())) {
-    texturedir_.append("/");
-  }
 }
 
 std::string mjXReader::AssetDir() const {
-  return modelfiledir_ + assetdir_;
+  return mjuu_combinePaths(modelfiledir_, assetdir_);
 }
 
 std::string mjXReader::MeshDir() const {
   if (meshdir_.empty()) {
     return AssetDir();
   }
-  return modelfiledir_ + meshdir_;
+  return mjuu_combinePaths(modelfiledir_, meshdir_);
 }
 
 std::string mjXReader::TextureDir() const {
   if (texturedir_.empty()) {
     return AssetDir();
   }
-  return modelfiledir_ + texturedir_;
+  return mjuu_combinePaths(modelfiledir_, texturedir_);
 }

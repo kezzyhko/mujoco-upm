@@ -35,8 +35,8 @@
 
 #include <mujoco/mujoco.h>
 #include "cc/array_safety.h"
-#include "engine/engine_resource.h"
 #include "engine/engine_util_errmem.h"
+#include "user/user_resource.h"
 #include "user/user_util.h"
 #include "xml/xml_util.h"
 #include "xml/xml_numeric_format.h"
@@ -168,7 +168,7 @@ static std::string ResolveFilePath(XMLElement* e, std::string filename,
 
   // TODO(kylebayes): We first look in the base model directory for files to
   // remain backwards compatible.
-  std::string full_filename = dir + filename;
+  std::string full_filename = mjuu_combinePaths(dir, filename);
   mjResource *resource = mju_openResource(full_filename.c_str(), nullptr, 0);
   if (resource != nullptr) {
     mju_closeResource(resource);
@@ -185,7 +185,7 @@ static std::string ResolveFilePath(XMLElement* e, std::string filename,
       break;
     }
   }
-  return path + filename;
+  return mjuu_combinePaths(path, filename);
 }
 
 // constructor
@@ -481,16 +481,6 @@ bool mjXUtil::ReadAttrValues(XMLElement* elem, const char* attr,
   // read numbers
   for (int i = 0; (max < 0 || i < max) && !strm.eof(); ++i) {
     strm >> token;
-
-    // some C++ libraries do not allow .x instead of 0.x
-    if (!token.empty()) {
-      if (token[0] == std::string(".")[0]) {
-        token = "0" + token;
-      } else if (token[0] == std::string("-")[0] && token[1] == std::string(".")[0]) {
-        token.insert(1, "0");
-      }
-    }
-
     std::istringstream token_strm(token);
     token_strm >> item;
     if (token_strm.fail() || !token_strm.eof()) {

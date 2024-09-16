@@ -12,6 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#include <cerrno>
 #include <chrono>
 #include <cstdint>
 #include <cstdio>
@@ -55,9 +56,6 @@ const int kErrorLength = 1024;          // load error string length
 // model and data
 mjModel* m = nullptr;
 mjData* d = nullptr;
-
-// control noise variables
-mjtNum* ctrlnoise = nullptr;
 
 using Seconds = std::chrono::duration<double>;
 
@@ -215,6 +213,7 @@ mjModel* LoadModel(const char* file, mj::Simulate& sim) {
   // load and compile
   char loadError[kErrorLength] = "";
   mjModel* mnew = 0;
+  auto load_start = mj::Simulate::Clock::now();
   if (mju::strlen_arr(filename)>4 &&
       !std::strncmp(filename + mju::strlen_arr(filename) - 4, ".mjb",
                     mju::sizeof_arr(filename) - mju::strlen_arr(filename)+4)) {
@@ -224,6 +223,7 @@ mjModel* LoadModel(const char* file, mj::Simulate& sim) {
     }
   } else {
     mnew = mj_loadXML(filename, nullptr, loadError, kErrorLength);
+
     // remove trailing newline character from loadError
     if (loadError[0]) {
       int error_length = mju::strlen_arr(loadError);
@@ -231,6 +231,13 @@ mjModel* LoadModel(const char* file, mj::Simulate& sim) {
         loadError[error_length-1] = '\0';
       }
     }
+  }
+  auto load_interval = mj::Simulate::Clock::now() - load_start;
+  double load_seconds = Seconds(load_interval).count();
+
+  // if no error and load took more than 1/4 seconds, report load time
+  if (!loadError[0] && load_seconds > 0.25) {
+    mju::sprintf_arr(loadError, "Model loaded in %.2g seconds", load_seconds);
   }
 
   mju::strcpy_arr(sim.load_error, loadError);
@@ -278,10 +285,6 @@ void PhysicsLoop(mj::Simulate& sim) {
         d = dnew;
         mj_forward(m, d);
 
-        // allocate ctrlnoise
-        free(ctrlnoise);
-        ctrlnoise = (mjtNum*) malloc(sizeof(mjtNum)*m->nu);
-        mju_zero(ctrlnoise, m->nu);
       } else {
         sim.LoadMessageClear();
       }
@@ -306,10 +309,6 @@ void PhysicsLoop(mj::Simulate& sim) {
         d = dnew;
         mj_forward(m, d);
 
-        // allocate ctrlnoise
-        free(ctrlnoise);
-        ctrlnoise = static_cast<mjtNum*>(malloc(sizeof(mjtNum)*m->nu));
-        mju_zero(ctrlnoise, m->nu);
       } else {
         sim.LoadMessageClear();
       }
@@ -340,27 +339,12 @@ void PhysicsLoop(mj::Simulate& sim) {
           const auto elapsedCPU = startCPU - syncCPU;
           double elapsedSim = d->time - syncSim;
 
-          // inject noise
-          if (sim.ctrl_noise_std) {
-            // convert rate and scale to discrete time (Ornstein–Uhlenbeck)
-            mjtNum rate = mju_exp(-m->opt.timestep / mju_max(sim.ctrl_noise_rate, mjMINVAL));
-            mjtNum scale = sim.ctrl_noise_std * mju_sqrt(1-rate*rate);
-
-            for (int i=0; i<m->nu; i++) {
-              // update noise
-              ctrlnoise[i] = rate * ctrlnoise[i] + scale * mju_standardNormal(nullptr);
-
-              // apply noise
-              d->ctrl[i] = ctrlnoise[i];
-            }
-          }
-
           // requested slow-down factor
           double slowdown = 100 / sim.percentRealTime[sim.real_time_index];
 
           // misalignment condition: distance from target sim time is bigger than syncmisalign
           bool misaligned =
-              mju_abs(Seconds(elapsedCPU).count()/slowdown - elapsedSim) > syncMisalign;
+              std::abs(Seconds(elapsedCPU).count()/slowdown - elapsedSim) > syncMisalign;
 
           // out-of-sync (for any reason): reset sync times, step
           if (elapsedSim < 0 || elapsedCPU.count() < 0 || syncCPU.time_since_epoch().count() == 0 ||
@@ -391,6 +375,9 @@ void PhysicsLoop(mj::Simulate& sim) {
                     std::chrono::duration<double>(elapsedCPU).count() / elapsedSim;
                 measured = true;
               }
+
+              // inject noise
+              sim.InjectNoise();
 
               // call mj_step
               mj_step(m, d);
@@ -442,10 +429,6 @@ void PhysicsThread(mj::Simulate* sim, const char* filename) {
 
       mj_forward(m, d);
 
-      // allocate ctrlnoise
-      free(ctrlnoise);
-      ctrlnoise = static_cast<mjtNum*>(malloc(sizeof(mjtNum)*m->nu));
-      mju_zero(ctrlnoise, m->nu);
     } else {
       sim->LoadMessageClear();
     }
@@ -454,7 +437,6 @@ void PhysicsThread(mj::Simulate* sim, const char* filename) {
   PhysicsLoop(*sim);
 
   // delete everything we allocated
-  free(ctrlnoise);
   mj_deleteData(d);
   mj_deleteModel(m);
 }

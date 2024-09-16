@@ -64,9 +64,11 @@ static void mj_springdamper(const mjModel* m, mjData* d) {
 
     case mjJNT_BALL:
       {
-        mjtNum dif[3];
         // convert quatertion difference into angular "velocity"
-        mju_subQuat(dif, d->qpos + padr, m->qpos_spring + padr);
+        mjtNum dif[3], quat[4];
+        mju_copy4(quat, d->qpos+padr);
+        mju_normalize4(quat);
+        mju_subQuat(dif, quat, m->qpos_spring + padr);
 
         // apply torque
         d->qfrc_spring[dadr+0] = -stiffness*dif[0];
@@ -371,8 +373,8 @@ void mj_inertiaBoxFluidModel(const mjModel* m, mjData* d, int i) {
                mju_abs(lvel[2])*lvel[2]/64.0;
   }
   // rotate to global orientation: lfrc -> bfrc
-  mju_rotVecMat(bfrc, lfrc, d->ximat+9*i);
-  mju_rotVecMat(bfrc+3, lfrc+3, d->ximat+9*i);
+  mju_mulMatVec3(bfrc, d->ximat+9*i, lfrc);
+  mju_mulMatVec3(bfrc+3, d->ximat+9*i, lfrc+3);
 
   // apply force and torque to body com
   mj_applyFT(m, d, bfrc+3, bfrc, d->xipos+3*i, i, d->qfrc_fluid);
@@ -431,8 +433,8 @@ void mj_ellipsoidFluidModel(const mjModel* m, mjData* d, int bodyid) {
     mju_scl(lfrc, lfrc, geom_interaction_coef, 6);
 
     // rotate to global orientation: lfrc -> bfrc
-    mju_rotVecMat(bfrc, lfrc, d->geom_xmat + 9*geomid);
-    mju_rotVecMat(bfrc+3, lfrc+3, d->geom_xmat + 9*geomid);
+    mju_mulMatVec3(bfrc, d->geom_xmat + 9*geomid, lfrc);
+    mju_mulMatVec3(bfrc+3, d->geom_xmat + 9*geomid, lfrc+3);
 
     // apply force and torque to body com
     mj_applyFT(m, d, bfrc+3, bfrc,

@@ -110,11 +110,11 @@ Meta elements
 
 These elements are not strictly part of the low-level MJCF format definition, but rather instruct the compiler to
 perform some operation on the model. A general property of meta-elements is that they disappear from the model upon
-saving the XML. There are currently five meta-elements in MJCF:
+saving the XML. There are currently six meta-elements in MJCF:
 
 - :ref:`include<include>`, :ref:`frame<frame>`, and :ref:`replicate<replicate>` which are outside of the schema.
-- :ref:`composite<body-composite>` and :ref:`flexcomp<body-flexcomp>` which are part of the schema, but serve to
-  procedurally generate other MJCF elements.
+- :ref:`composite<body-composite>`, :ref:`flexcomp<body-flexcomp>` and :ref:`attach<body-attach>` which are part of the
+  schema, but serve to procedurally generate other MJCF elements.
 
 .. _frame:
 
@@ -1233,6 +1233,13 @@ The full list of processing steps applied by the compiler to each mesh is as fol
    faces at large angles relative to the average normal are excluded from the average. In this way, sharp edges (as in
    cube edges) are not smoothed.
 
+.. _asset-mesh-maxhullvert:
+
+:at:`maxhullvert`: :at-val:`int, "-1"`
+   Maximum number of vertices in a mesh's convex hull. Currently this is implemented by asking qhull
+   `to teminate <http://www.qhull.org/html/qh-optt.htm#TAn>`__ after :at:`maxhullvert` vertices. The default
+   value of -1 means "unlimited". Positive values must be larger than 3.
+
 .. _asset-mesh-vertex:
 
 :at:`vertex`: :at-val:`real(3*nvert), optional`
@@ -1450,7 +1457,7 @@ still be specified here but this functionality is now deprecated and will be rem
    This attribute determines how the texture is represented and mapped to objects. It also determines which of the
    remaining attributes are relevant. The keywords have the following meaning:
 
-   The **cube** type is the most common. It has the effect of shrink-wrapping a texture cube over an object. Apart from
+   The **cube** type has the effect of shrink-wrapping a texture cube over an object. Apart from
    the adjustment provided by the texuniform attribute of :ref:`material <asset-material>`, the process is automatic.
    Internally the GPU constructs a ray from the center of the object to each pixel (or rather fragment), finds the
    intersection of this ray with the cube surface (the cube and the object have the same center), and uses the
@@ -1473,15 +1480,13 @@ still be specified here but this functionality is now deprecated and will be rem
    a texture is referenced from a material applied to a regular object, the effect is equivalent to a cube map. Note
    however that the images suitable for skyboxes are rarely suitable for texturing objects.
 
-   The **2d** type may be the most familiar to users, however it is only suitable for planes and height fields. This is
-   because the texture coordinate generator is trying to map a 2D image to 3D space, and as a result there are entire
-   curves on the object surface that correspond to the same texture pixel. For a box geom for example, the two faces
-   whose normals are aligned with the Z axis of the local frame appear normal, while the other four faces appear
-   stretched. For planes this is not an issue because the plane is always normal to the local Z axis. For height fields
-   the sides enclosing the terrain map appear stretched, but in that case the effect is actually desirable. 2d textures
-   can be rectangular, unlike the sides of cube textures which must be square. The scaling can be controlled with the
-   texrepeat attribute of :ref:`material <asset-material>`. The data can be loaded from a singlefile or created
-   procedurally.
+   The **2d** type maps a 2D image to a 3D object using :ref:`texture coordinates<asset-mesh-texcoord>` (a.k.a UV
+   coordinates). However, UV coordinates are only available for meshes. For primitive geoms, the texture is mapped to
+   the object surface using the local XY coordinates of the geom, effectively projecting the texture along the Z axis.
+   This sort of mapping is only suitable for planes and height fields, since their top surfaces always face the Z axis.
+   2d textures can be rectangular, unlike the sides of cube textures which must be square. The scaling can be controlled
+   with the texrepeat attribute of :ref:`material <asset-material>`. The data can be loaded from a single file or
+   created procedurally.
 
 .. _asset-texture-content_type:
 
@@ -1559,17 +1564,21 @@ still be specified here but this functionality is now deprecated and will be rem
    This and the remaining attributes control the generation of procedural textures. If the value of this attribute is
    different from "none", the texture is treated as procedural and any file names are ignored. The keywords have the
    following meaning:
-   The **gradient** type generates a color gradient from rgb1 to rgb2. The interpolation in color space is done through
-   a sigmoid function. For cube and skybox textures the gradient is along the +Y axis, i.e., from top to bottom for
-   skybox rendering.
 
-   The **checker** type generates a 2-by-2 checker pattern with alternating colors given by rgb1 to rgb2. This is
-   suitable for rendering ground planes and also for marking objects with rotational symmetries. Note that 2d textures
-   can be scaled so as to repeat the pattern as many times as necessary. For cube and skybox textures, the checker
-   pattern is painted on each side of the cube.
+   **gradient**
+      Generates a color gradient from rgb1 to rgb2. The interpolation in color space is done through
+      a sigmoid function. For cube and skybox textures the gradient is along the +Y axis, i.e., from top to bottom for
+      skybox rendering.
 
-   The **flat** type fills the entire texture with rgb1, except for the bottom face of cube and skybox textures which is
-   filled with rgb2.
+   **checker**
+      Generates a 2-by-2 checker pattern with alternating colors given by rgb1 and rgb2. This is suitable for rendering
+      ground planes and also for marking objects with rotational symmetries. Note that 2d textures can be scaled so as
+      to repeat the pattern as many times as necessary. For cube and skybox textures, the checker pattern is painted on
+      each side of the cube.
+
+   **flat**
+      Fills the entire texture with rgb1, except for the bottom face of cube and skybox textures which is
+      filled with rgb2.
 
 .. _asset-texture-rgb1:
 
@@ -1599,21 +1608,23 @@ still be specified here but this functionality is now deprecated and will be rem
 
 :at:`random`: :at-val:`real, "0.01"`
    When the mark attribute is set to "random", this attribute determines the probability of turning on each pixel. Note
-   that larger textures have more pixels, and the probability here is applied independently to each pixel - thus the
+   that larger textures have more pixels, and the probability here is applied independently to each pixel -- thus the
    texture size and probability need to be adjusted jointly. Together with a gradient skybox texture, this can create
-   the appearance of a night sky with stars.
+   the appearance of a night sky with stars. The random number generator is initialized with a fixed seed.
 
 .. _asset-texture-width:
 
 :at:`width`: :at-val:`int, "0"`
-   The width of the procedural texture, i.e., the number of columns in the image. For cube and skybox procedural
-   textures the width and height must be equal. Larger values usually result in higher quality images, although in some
-   cases (e.g. checker patterns) small values are sufficient.
+   The width of a procedural texture, i.e., the number of columns in the image. Larger values usually result in higher
+   quality images, although in some cases (e.g. checker patterns) small values are sufficient. For textures loaded from
+   files, this attribute is ignored.
 
 .. _asset-texture-height:
 
 :at:`height`: :at-val:`int, "0"`
-   The height of the procedural texture, i.e., the number of rows in the image.
+   The height of the procedural texture, i.e., the number of rows in the image. For cube and skybox textures, this
+   attribute is ignored and the height is set to 6 times the width. For textures loaded from files, this attribute is
+   ignored.
 
 .. _asset-texture-hflip:
 
@@ -1726,6 +1737,24 @@ properties are grouped together.
    the default value of "1 1 1 1" has the effect of leaving the texture unchanged. When the material is applied to a
    model element which defines its own local rgba attribute, the local definition has precedence. Note that this "local"
    definition could in fact come from a defaults class. The remaining material properties always apply.
+
+
+.. _asset-model:
+
+:el-prefix:`asset/` |-| **model** (*)
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+This element specifies other MJCF models which may be used for :ref:`attachment<body-attach>` in the current model.
+
+.. _asset-model-name:
+
+:at:`name`: :at-val:`string, required`
+   Name of the sub-model, used for referencing in :ref:`attach<body-attach>`. If unspecified, the
+   :ref:`model name<mujoco-model>` is used.
+
+.. _asset-model-file:
+
+:at:`file`: :at-val:`string, required`
+   The file from which the sub-model will be loaded. Note that the sub-model must be a valid MJCF model.
 
 
 .. _body:
@@ -2432,19 +2461,19 @@ helps clarify the role of bodies and geoms in MuJoCo.
      - :math:`C_{D, \text{blunt}}`
      - 0.5
    * - 1
-     - Slender drag coeficient
+     - Slender drag coefficient
      - :math:`C_{D, \text{slender}}`
      - 0.25
    * - 2
-     - Angular drag coeficient
+     - Angular drag coefficient
      - :math:`C_{D, \text{angular}}`
      - 1.5
    * - 3
-     - Kutta lift coeficient
+     - Kutta lift coefficient
      - :math:`C_K`
      - 1.0
    * - 4
-     - Magnus lift coeficient
+     - Magnus lift coefficient
      - :math:`C_M`
      - 1.0
 
@@ -2608,11 +2637,20 @@ and the +Y axis points up. Thus the frame position and orientation are the key a
    When the camera mode is "targetbody" or "targetbodycom", this attribute becomes required. It specifies which body
    should be targeted by the camera. In all other modes this attribute is ignored.
 
+.. _body-camera-orthographic:
+
+:at:`orthographic`: :at-val:`[false, true], "false"`
+   Whether the camera uses a perspective projection (the default) or an orthographic projection. Setting this attribute
+   changes the semantic of the :ref:`fovy<body-camera-fovy>` attribute, see below.
+
 .. _body-camera-fovy:
 
 :at:`fovy`: :at-val:`real, "45"`
-   Vertical field of view of the camera, expressed in degrees regardless of the global angle setting. The horizontal
-   field of view is computed automatically given the window size and the vertical field of view.
+   Vertical field-of-view of the camera. If the camera uses a perspective projection, the field-of-view is expressed in
+   degrees, regardless of the global :ref:`compiler/angle <compiler-angle>` setting. If the camera uses an orthographic
+   projection, the field-of-view is expressed in units of length; note that in this case the default of 45 is too large
+   for most scenes and should likely be reduced. In either case, the horizontal field of view is computed automatically
+   given the window size and the vertical field of view.
 
 .. _body-camera-resolution:
 
@@ -2794,24 +2832,6 @@ the direction specified by the dir attribute. It does not have a full spatial fr
 
 :at:`specular`: :at-val:`real(3), "0.3 0.3 0.3"`
    The specular color of the light.
-
-
-.. _body-plugin:
-
-:el-prefix:`body/` |-| **plugin** (?)
-^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-
-Associate this body with an :ref:`engine plugin<exPlugin>`. Either :at:`plugin` or :at:`instance` are required.
-
-.. _body-plugin-plugin:
-
-:at:`plugin`: :at-val:`string, optional`
-   Plugin identifier, used for implicit plugin instantiation.
-
-.. _body-plugin-instance:
-
-:at:`instance`: :at-val:`string, optional`
-   Instance name, used for explicit plugin instantiation.
 
 
 .. _body-composite:
@@ -3618,10 +3638,71 @@ Associate this flexcomp with an :ref:`engine plugin<exPlugin>`. Either :at:`plug
    Instance name, used for explicit plugin instantiation.
 
 
+.. _body-plugin:
+
+:el-prefix:`body/` |-| **plugin** (?)
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+Associate this body with an :ref:`engine plugin<exPlugin>`. Either :at:`plugin` or :at:`instance` are required.
+
+.. _body-plugin-plugin:
+
+:at:`plugin`: :at-val:`string, optional`
+   Plugin identifier, used for implicit plugin instantiation.
+
+.. _body-plugin-instance:
+
+:at:`instance`: :at-val:`string, optional`
+   Instance name, used for explicit plugin instantiation.
+
+
+.. _body-attach:
+
+:el-prefix:`body/` |-| **attach** (*)
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+The :el:`attach` element is used to insert a sub-tree of bodies from another model into this model's kinematic tree.
+Unlike :ref:`include<include>`, which is implemented in the parser and is equivalent to copying and pasting XML from
+one file into another, :el:`attach` is implemented in the model compiler. In order to use this element, the sub-model
+must first be defined as an :ref:`asset<asset-model>`. When creating an attachment, the top body of the attached subtree
+is specified, and all referencing elements outside the kinematic tree (e.g., sensors and actuators), are
+also copied into the top-level model. Additionally, any elements referenced from within the attached subtree (e.g.
+defaults and assets) will be copied in to the top-level model. :el:`attach` is a :ref:`meta-element`, so upon saving
+all attachments will appear in the saved XML file.
+
+.. admonition:: Known issues
+   :class: attention
+
+   The :el:`attach` meta-element is new and not well tested. Please report any issues you encounter to the development
+   team. Additionally, the following known limitations exist, to be addressed in a future release:
+
+   - The world body cannot be attached.
+   - An entire model cannot be attached (i.e. including all elements, referenced or not).
+   - All assets from the child model will be copied in, whether they are referenced or not.
+   - Self-attach or circular references are not checked for and will lead to infinite loops.
+   - :ref:`Keyframes<keyframe>` are not yet supported. When attaching, all keyframes will be deleted.
+
+.. _body-attach-model:
+
+:at:`model`: :at-val:`string, optional`
+   The sub-model from which to attach a subtree.
+
+.. _body-attach-body:
+
+:at:`body`: :at-val:`string, optional`
+   Name of the body in the sub-model to attach here. The body and its subtree will be attached.
+
+.. _body-attach-prefix:
+
+:at:`prefix`: :at-val:`string, optional`
+   Prefix to prepend to names of elements in the sub-model. If empty, the names are unchanged. This attribute is
+   required to prevent name collisions with the parent or when attaching the same sub-tree multiple times.
+
+
 .. _body-frame:
 
 :el-prefix:`body/` |-| **frame** (*)
-^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 Frames specify a coordinate transformation which is applied to all child elements. They disappear during compilation
 and the transformation they encode is accumulated in their direct children. See :ref:`frame<frame>` for examples.
@@ -5646,6 +5727,8 @@ Associate this actuator with an :ref:`engine plugin<exPlugin>`. Either :at:`plug
 
 .. _actuator-plugin-user:
 
+.. _actuator-plugin-actdim:
+
 .. _actuator-plugin-dynprm:
 
 .. _actuator-plugin-actearly:
@@ -5653,7 +5736,7 @@ Associate this actuator with an :ref:`engine plugin<exPlugin>`. Either :at:`plug
 .. |actuator/plugin attrib list| replace:: :at:`name`, :at:`class`, :at:`group`, :at:`actlimited`, :at:`ctrllimited`,
    :at:`forcelimited`, :at:`ctrlrange`, :at:`forcerange`, :at:`lengthrange`, :at:`gear`, :at:`cranklength`,
    :at:`joint`, :at:`jointinparent`, :at:`site`, :at:`tendon`, :at:`cranksite`, :at:`slidersite`, :at:`user`,
-   :at:`dynprm`, :at:`actearly`
+   :at:`actdim`, :at:`dynprm`, :at:`actearly`
 
 |actuator/plugin attrib list|
    Same as in actuator/ :ref:`general <actuator-general>`.
@@ -7150,14 +7233,22 @@ coordinated visual settings corresponding to a "theme", and then include this fi
 While all settings in mjVisual are global, the settings here could not be fit into any of the other subsections. So this
 is effectively a miscellaneous subsection.
 
+.. _visual-global-orthographic:
+
+:at:`orthographic`: :at-val:`[false, true], "false"`
+   Whether the free camera uses a perspective projection (the default) or an orthographic projection. Setting this
+   attribute changes the semantic of the :ref:`global/fovy<visual-global-fovy>` attribute, see below.
+
 .. _visual-global-fovy:
 
 :at:`fovy`: :at-val:`real, "45"`
    This attribute specifies the vertical field of view of the free camera, i.e., the camera that is always available in
-   the visualizer even if no cameras are explicitly defined in the model. It is always expressed in degrees, regardless
-   of the setting of the angle attribute of :ref:`compiler <compiler>`, and is also represented in the low level model
-   in degrees. This is because we pass it to OpenGL which uses degrees. The same convention applies to the fovy
-   attribute of the :ref:`camera <body-camera>` element below.
+   the visualizer even if no cameras are explicitly defined in the model. If the camera uses a perspective projection,
+   the field-of-view is expressed in degrees, regardless of the global :ref:`compiler/angle <compiler-angle>` setting.
+   If the camera uses an orthographic projection, the field-of-view is expressed in units of length; note that in this
+   case the default of 45 is too large for most scenes and should likely be reduced. In either case, the horizontal
+   field of view is computed automatically given the window size and the vertical field of view. The same convention
+   applies to the :ref:`camera/fovy <body-camera-fovy>` attribute.
 
 .. _visual-global-ipd:
 
@@ -7666,6 +7757,8 @@ if omitted.
 
 .. _default-mesh-scale:
 
+.. _default-mesh-maxhullvert:
+
 :el-prefix:`default/` |-| **mesh** (?)
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
@@ -7860,6 +7953,7 @@ if omitted.
 | This element sets the attributes of the dummy :ref:`site <body-site>` element of the defaults class.
 | All site attributes are available here except: name, class.
 
+.. _default-camera-orthographic:
 
 .. _default-camera-fovy:
 

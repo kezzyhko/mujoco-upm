@@ -141,32 +141,30 @@ There are several entities called "model" in MuJoCo. The user defines the model 
 The software can then create multiple instances of the same model in different media (file or memory) and on different
 levels of description (high or low). All combinations are possible as shown in the following table:
 
-+------------+----------------------+----------------------+
-|            | High level           | Low level            |
-+============+======================+======================+
-| **File**   | MJCF/URDF (XML)      | MJB (binary)         |
-+------------+----------------------+----------------------+
-| **Memory** | mjCModel (C++ class) | mjModel (C struct)   |
-+------------+----------------------+----------------------+
++------------+---------------------------+----------------------------+
+|            | High level                | Low level                  |
++============+===========================+============================+
+| **File**   | MJCF/URDF (XML)           | MJB (binary)               |
++------------+---------------------------+----------------------------+
+| **Memory** | :ref:`mjSpec` (C struct)  | :ref:`mjModel` (C struct)  |
++------------+---------------------------+----------------------------+
 
-All runtime computations are performed with ``mjModel`` which is too complex to create manually. This is why we have two
-levels of modeling. The high level exists for user convenience: its sole purpose is to be compiled into a low level
-model on which computations can be performed. The resulting ``mjModel`` can be loaded and saved into a binary file
+All runtime computations are performed with :ref:`mjModel` which is too complex to create manually. This is why we have
+two levels of modeling. The high level exists for user convenience: its sole purpose is to be compiled into a low level
+model on which computations can be performed. The resulting :ref:`mjModel` can be loaded and saved into a binary file
 (MJB), however those are version-specific and cannot be decompiled, thus models should always be maintained as XML
 files.
 
-The (internal) C++ class ``mjCModel`` is roughly in one-to-one correspondence with the MJCF file format. The XML parser
-interprets the MJCF or URDF file and creates the corresponding ``mjCModel``. In principle the user can create
-``mjCModel`` programmatically and then save it to MJCF or compile it. However this functionality is not yet exposed
-because a C++ API cannot be exported from a compiler-independent library. There is a plan to develop a C wrapper around
-it, but for the time being the parser and compiler are always invoked together, and models can only be created in XML.
+The :ref:`mjSpec` C struct is in one-to-one correspondence with the MJCF file format. The XML loader interprets the MJCF
+or URDF file, creates the corresponding :ref:`mjSpec` and compiles it to :ref:`mjModel`. The user can create
+:ref:`mjSpec` programmatically and then save it to MJCF or compile it. Procedural model creation and editing is
+described in the :doc:`Model Editing <programming/modeledit>` chapter.
 
-The following diagram shows the different paths to obtaining an ``mjModel`` (again, the second bullet point is not yet
-available):
+The following diagram shows the different paths to obtaining an :ref:`mjModel`:
 
--  (text editor) → MJCF/URDF file → (MuJoCo parser → mjCModel → MuJoCo compiler) → mjModel
--  (user code) → mjCModel → (MuJoCo compiler) → mjModel
--  MJB file → (MuJoCo loader) → mjModel
+-  (text editor) → MJCF/URDF file → (MuJoCo parser → mjSpec → compiler) → mjModel
+-  (user code) → mjSpec → (MuJoCo compiler) → mjModel
+-  MJB file → (model loader) → mjModel
 
 .. _Examples:
 
@@ -209,28 +207,26 @@ rendering, is given below.
    mjModel* m;
    mjData* d;
 
-   int main(void)
-   {
-      // load model from file and check for errors
-      m = mj_loadXML("hello.xml", NULL, error, 1000);
-      if( !m )
-      {
-         printf("%s\n", error);
-         return 1;
-      }
+   int main(void) {
+     // load model from file and check for errors
+     m = mj_loadXML("hello.xml", NULL, error, 1000);
+     if (!m) {
+       printf("%s\n", error);
+       return 1;
+     }
 
-      // make data corresponding to model
-      d = mj_makeData(m);
+     // make data corresponding to model
+     d = mj_makeData(m);
 
-      // run simulation for 10 seconds
-      while( d->time<10 )
-         mj_step(m, d);
+     // run simulation for 10 seconds
+     while (d->time < 10)
+       mj_step(m, d);
 
-      // free model and data
-      mj_deleteData(d);
-      mj_deleteModel(m);
+     // free model and data
+     mj_deleteData(d);
+     mj_deleteModel(m);
 
-      return 0;
+     return 0;
    }
 
 This is technically a C file, but it is also a legitimate C++ file. Indeed the MuJoCo API is compatible with both C and
@@ -825,8 +821,9 @@ convention. Suppose we already have ``mjModel* m``. To print the range of a join
 .. code:: C
 
    int jntid = mj_name2id(m, mjOBJ_JOINT, "elbow");
-   if( jntid>=0 )
+   if (jntid >= 0)
       printf("(%f, %f)\n", m->jnt_range[2*jntid], m->jnt_range[2*jntid+1]);
+
 
 If the name is not found the function returns -1, which is why one should always check for id>=0.
 
@@ -945,7 +942,7 @@ can be obtained as:
    int qposadr = -1, qveladr = -1;
 
    // make sure we have a floating body: it has a single free joint
-   if( bodyid>=0 && m->body_jntnum[bodyid]==1 && m->jnt_type[m->body_jntadr[bodyid]]==mjJNT_FREE ) {
+   if (bodyid >= 0 && m->body_jntnum[bodyid] == 1 && m->jnt_type[m->body_jntadr[bodyid]] == mjJNT_FREE) {
      // extract the addresses from the joint specification
      qposadr = m->jnt_qposadr[m->body_jntadr[bodyid]];
      qveladr = m->jnt_dofadr[m->body_jntadr[bodyid]];

@@ -35,9 +35,9 @@
 #endif
 
 #ifdef mjUSEPLATFORMSIMD
-  #if defined(__AVX__) && defined(mjUSEDOUBLE)
+  #if defined(__AVX__) && !defined(mjUSESINGLE)
     #define mjUSEAVX
-  #endif  // defined(__AVX__) && defined(mjUSEDOUBLE)
+  #endif  // defined(__AVX__) && !defined(mjUSESINGLE)
 #endif  // mjUSEPLATFORMSIMD
 
 
@@ -511,7 +511,7 @@ void mj_instantiateEquality(const mjModel* m, mjData* d) {
       case mjEQ_CONNECT:              // connect bodies with ball joint
         // find global points
         for (int j=0; j < 2; j++) {
-          mju_rotVecMat(pos[j], data + 3*j, d->xmat + 9*id[j]);
+          mju_mulMatVec3(pos[j], d->xmat + 9*id[j], data + 3*j);
           mju_addTo3(pos[j], d->xpos + 3*id[j]);
         }
 
@@ -532,7 +532,7 @@ void mj_instantiateEquality(const mjModel* m, mjData* d) {
         // find global points
         for (int j=0; j < 2; j++) {
           mjtNum* anchor = data + 3*(1-j);
-          mju_rotVecMat(pos[j], anchor, d->xmat + 9*id[j]);
+          mju_mulMatVec3(pos[j], d->xmat + 9*id[j], anchor);
           mju_addTo3(pos[j], d->xpos + 3*id[j]);
         }
 
@@ -818,7 +818,10 @@ void mj_instantiateLimit(const mjModel* m, mjData* d) {
       // BALL joint
       else if (m->jnt_type[i] == mjJNT_BALL) {
         // convert joint quaternion to axis-angle
-        mju_quat2Vel(angleAxis, d->qpos+m->jnt_qposadr[i], 1);
+        int adr = m->jnt_qposadr[i];
+        mjtNum quat[4] = {d->qpos[adr], d->qpos[adr+1], d->qpos[adr+2], d->qpos[adr+3]};
+        mju_normalize4(quat);
+        mju_quat2Vel(angleAxis, quat, 1);
 
         // get rotation angle, normalize
         value = mju_normalize3(angleAxis);
@@ -1767,7 +1770,10 @@ static int mj_nl(const mjModel* m, const mjData* d, int *nnz) {
     }
     else if (m->jnt_type[i] == mjJNT_BALL) {
       mjtNum angleAxis[3];
-      mju_quat2Vel(angleAxis, d->qpos+m->jnt_qposadr[i], 1);
+      int adr = m->jnt_qposadr[i];
+      mjtNum quat[4] = {d->qpos[adr], d->qpos[adr+1], d->qpos[adr+2], d->qpos[adr+3]};
+      mju_normalize4(quat);
+      mju_quat2Vel(angleAxis, quat, 1);
       value = mju_normalize3(angleAxis);
       dist = mju_max(m->jnt_range[2*i], m->jnt_range[2*i+1]) - value;
       if (dist < margin) {

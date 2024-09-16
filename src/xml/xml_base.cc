@@ -21,9 +21,7 @@
 #include <string>
 #include <vector>
 
-#include "user/user_api.h"
-#include "user/user_model.h"
-#include "user/user_objects.h"
+#include <mujoco/mjspec.h>
 #include "xml/xml_util.h"
 #include "tinyxml2.h"
 
@@ -39,14 +37,14 @@ using tinyxml2::XMLElement;
 
 // base constructor
 mjXBase::mjXBase() {
-  model = NULL;
+  spec = NULL;
 }
 
 
 
 // set model field
-void mjXBase::SetModel(mjSpec* _model) {
-  model = _model;
+void mjXBase::SetModel(const mjSpec* _model) {
+  spec = (mjSpec*)_model;
 }
 
 

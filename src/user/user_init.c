@@ -15,6 +15,7 @@
 #include <string.h>
 #include <mujoco/mjmodel.h>
 #include <mujoco/mjvisualize.h>
+#include <mujoco/mjspec.h>
 #include "engine/engine_io.h"
 #include "user/user_api.h"
 
@@ -35,9 +36,9 @@ void mjs_defaultSpec(mjSpec* spec) {
   spec->autolimits = 1;
   spec->settotalmass = -1;
   spec->degree = 1;
-  spec->euler[0] = 'x';
-  spec->euler[1] = 'y';
-  spec->euler[2] = 'z';
+  spec->eulerseq[0] = 'x';
+  spec->eulerseq[1] = 'y';
+  spec->eulerseq[2] = 'z';
   spec->convexhull = 1;
   spec->usethread = 1;
   spec->inertiafromgeom = mjINERTIAFROMGEOM_AUTO;
@@ -243,6 +244,7 @@ void mjs_defaultMesh(mjsMesh* mesh) {
   memset(mesh, 0, sizeof(mjsMesh));
   mesh->refquat[0] = 1;
   mesh->scale[0] = mesh->scale[1] = mesh->scale[2] = 1;
+  mesh->maxhullvert = -1;
 }
 
 
