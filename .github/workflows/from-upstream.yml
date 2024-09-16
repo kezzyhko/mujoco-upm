@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
 
 jobs:
-  sync_with_upstream:
+  sync-with-upstream:
     runs-on: ubuntu-latest
     environment: OpenUPM workflows
     name: Sync main with upstream latest
