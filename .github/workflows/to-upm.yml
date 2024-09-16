@@ -1,4 +1,4 @@
-name: UPM
+name: UPM Release
 
 on:
   workflow_dispatch:
@@ -7,10 +7,6 @@ on:
         description: "Tag to merge"
         required: true
         type: string
-  push:
-    tags:
-      - '*'
-      - '!upm-*'
 
 jobs:
   sync-to-upm:
@@ -18,7 +14,7 @@ jobs:
     steps:
     - name: Set environment variables
       run: |
-        echo "TAG_NAME=${{ inputs.tag_name || env.GITHUB_REF_NAME }}" >> $GITHUB_ENV
+        echo "TAG_NAME=${{ inputs.tag_name }}" >> $GITHUB_ENV
     - name: Checkout
       uses: actions/checkout@v4
       with:
