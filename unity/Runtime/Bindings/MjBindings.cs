@@ -101,7 +101,7 @@ public const int mjMAXLINEPNT = 1000;
 public const int mjMAXPLANEGRID = 200;
 public const bool THIRD_PARTY_MUJOCO_MJXMACRO_H_ = true;
 public const bool THIRD_PARTY_MUJOCO_MUJOCO_H_ = true;
-public const int mjVERSION_HEADER = 234;
+public const int mjVERSION_HEADER = 235;
 
 
 // ------------------------------------Enums------------------------------------
@@ -3389,7 +3389,7 @@ public static unsafe extern void mjv_makeSceneState(mjModel_* m, mjData_* d, mjv
 public static unsafe extern void mjv_freeSceneState(mjvSceneState_* scnstate);
 
 [DllImport("mujoco", CallingConvention = CallingConvention.Cdecl)]
-public static unsafe extern void mjv_updateSceneState(mjModel_* m, mjData_* d, mjvSceneState_* scnstate);
+public static unsafe extern void mjv_updateSceneState(mjModel_* m, mjData_* d, mjvOption_* opt, mjvSceneState_* scnstate);
 
 [DllImport("mujoco", CallingConvention = CallingConvention.Cdecl)]
 public static unsafe extern void mjv_addGeoms(mjModel_* m, mjData_* d, mjvOption_* opt, mjvPerturb_* pert, int catmask, mjvScene_* scn);

@@ -2,8 +2,28 @@
 Changelog
 =========
 
+Version 2.3.5 (April 25, 2023)
+------------------------------
+
+Bug fixes
+^^^^^^^^^
+
+1. Fix asset loading bug that prevented OBJ and PNG files from being read from disk when :ref:`mjVFS` is used.
+#. Fix occasional segmentation faults on macOS when mouse perturbations are applied in the Python passive viewer.
+
+Plugins
+^^^^^^^
+
+3. The ``visualize`` callback in :ref:`mjpPlugin` now receives an :ref:`mjvOption` as an input argument.
+
+
 Version 2.3.4 (April 20, 2023)
 ------------------------------
+
+.. note::
+
+   This version is affected by an asset loading bug that prevents OBJ and PNG files from being read from disk when
+   ``mjVFS`` is used. Users are advised to skip to version 2.3.5 instead.
 
 General
 ^^^^^^^
@@ -38,8 +58,8 @@ Python bindings
    or `segmentation fault <https://github.com/deepmind/mujoco/issues/790>`_.
 #. The ``viewer.launch_passive`` function now returns a handle which can be used to interact with the viewer. The
    passive viewer now also requires an explicit call to ``sync`` on its handle to pick up any update to the physics
-   state. This is to avoid race conditions that can result in visual artifacts. See :ref:`documentation<PyViewer>` for
-   details.
+   state. This is to avoid race conditions that can result in visual artifacts. See
+   :ref:`documentation<PyViewerPassive>` for details.
 #. The ``viewer.launch_repl`` function has been removed since its functionality is superceded by ``launch_passive``.
 #. Added a small number of missing struct fields discovered through the new ``introspect`` metadata.
 
@@ -49,8 +69,8 @@ Bug fixes
 12. Fixed bug in the handling of ellipsoid-based fluid model forces in the new implicitfast integrator.
 #.  Removed spurious whole-arena copying in `mj_copyData`, which can considerably
     `slow down <https://github.com/deepmind/mujoco/issues/568>`_ the copying operation.
-#.  Make ``shellinertia`` ignore ``exactmeshinertia``, which is only used for legacy volume computations
-    (`#759 <https://github.com/deepmind/mujoco/issues/759>`_).
+#.  Make :ref:`shellinertia<body-geom-shellinertia>` ignore :ref:`exactmeshinertia<compiler-exactmeshinertia>`, which is
+    only used for legacy volume computations (`#759 <https://github.com/deepmind/mujoco/issues/759>`_).
 
 
 Version 2.3.3 (March 20, 2023)

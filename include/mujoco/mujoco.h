@@ -24,7 +24,7 @@ extern "C" {
 #endif
 
 // header version; should match the library version as returned by mj_version()
-#define mjVERSION_HEADER 234
+#define mjVERSION_HEADER 235
 
 // needed to define size_t, fabs and log10
 #include <stdlib.h>
@@ -632,7 +632,8 @@ MJAPI void mjv_makeSceneState(const mjModel* m, const mjData* d,
 MJAPI void mjv_freeSceneState(mjvSceneState* scnstate);
 
 // Update a scene state from model and data.
-MJAPI void mjv_updateSceneState(const mjModel* m, mjData* d, mjvSceneState* scnstate);
+MJAPI void mjv_updateSceneState(const mjModel* m, mjData* d, const mjvOption* opt,
+                                mjvSceneState* scnstate);
 
 // Add geoms from selected categories.
 MJAPI void mjv_addGeoms(const mjModel* m, mjData* d, const mjvOption* opt,

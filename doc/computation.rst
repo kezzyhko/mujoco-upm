@@ -258,7 +258,7 @@ actuator works. The user can set them independently for maximum flexibility, or 
 .. _geTransmission:
 
 Transmission
-~~~~~~~~~~~~
+^^^^^^^^^^^^
 
 Each actuator has a scalar length :math:`l_i(q)` defined by the type of transmission and its parameters. The gradient
 :math:`\nabla l_i` is an :math:`n_V`-dimensional vector of moment arms. It determines the mapping from scalar
@@ -266,19 +266,23 @@ actuator force to joint force. The transmission properties are determined by the
 is attached; the possible attachment object types are :at:`joint`, :at:`tendon`, :at:`jointinparent`,
 :at:`slider-crank`, :at:`site`, and :at:`body`.
 
+:at:`joint` and :at:`tendon`
    The :at:`joint` and :at:`tendon` transmission types act as expected and correspond to the actuator applying forces or
-   torques to the target object. Ball joints are special, see the :at:`joint` documentation in
-   :ref:`actuator<actuator-general>` reference for more details.
+   torques to the target object. Ball joints are special, see the :ref:`actuator/general/joint<actuator-general-joint>`
+   documentation for more details.
 
+:at:`jointinparent`
    The :at:`jointinparent` transmission is unique to ball and free joint and asserts that rotation should be measured
    in the parent rather than child frame.
 
+:at:`slider-crank`
    :at:`slider-crank` `transmissions <https://en.wikipedia.org/wiki/Slider-crank_linkage>`_ transform a linear force to
    a torque, as in a piston-driven combustion engine. `This model
    <https://github.com/deepmind/mujoco/tree/main/model/slider_crank>`_ contains pedagogical examples. Slider-cranks can
    also be modeled explicitly by creating MuJoCo bodies and coupling them with equality constraints to the rest of the
    system, but that would be less efficient.
 
+:at:`site`
    :at:`site` transmission (without a :at:`refsite`, see below) and :at:`body` transmission targets have a fixed zero
    length :math:`l_i(q) = 0`. They can therefore not be used to maintain a desired length, but can be used to apply
    forces. Site transmissions correspond to applying a Cartsian force/torque at the site, and are useful for modeling
@@ -292,51 +296,59 @@ is attached; the possible attachment object types are :at:`joint`, :at:`tendon`,
    be controlled with a :el:`position` actuator, enabling Cartesian end-effector control. See the :at:`refsite`
    documentation in :ref:`actuator<actuator-general>` reference for more details.
 
+.. _geActivation:
+
 Activation dynamics
-   Some actuators such as pneumatic and hydraulic cylinders as well as biological muscles have an internal state called
-   "activation". This is a true dynamic state, beyond the joint positions :math:`q` and velocities :math:`v`. Including
-   such actuators in the model results in 3rd-order dynamics. We denote the vector of actuator activations :math:`w`.
-   They have some first-order dynamics
+^^^^^^^^^^^^^^^^^^^
 
-   .. math::
-      \dot{w}_i \left( u_i, w_i, l_i, \dot{l}_i \right)
+Some actuators such as pneumatic and hydraulic cylinders as well as biological muscles have an internal state called
+"activation". This is a true dynamic state, beyond the joint positions :math:`q` and velocities :math:`v`. Including
+such actuators in the model results in 3rd-order dynamics. We denote the vector of actuator activations :math:`w`.
+They have some first-order dynamics
 
-   determined by the activation type and corresponding model parameters. Note that each actuator has scalar dynamics
-   independent of the other actuators. The activation types currently implemented are
+.. math::
+   \dot{w}_i \left( u_i, w_i, l_i, \dot{l}_i \right)
 
-   .. math::
-      \begin{aligned}
-      \text{integrator}: & & \dot{w}_i &= u_i \\
-      \text{filter}:     & & \dot{w}_i &= (u_i - w_i) / t \\
-      \end{aligned}
+determined by the activation type and corresponding model parameters. Note that each actuator has scalar dynamics
+independent of the other actuators. The activation types currently implemented are
 
-   where :math:`t` is an actuator-specific time constant stored in ``mjModel.actuator_dynprm``. In addition the type can
-   be "user", in which case :math:`w_i` is computed by the user-defined callback :ref:`mjcb_act_dyn`. The type can also
-   be "none" which corresponds to a regular actuator with no activation state. The dimensionality of :math:`w` equals
-   the number of actuators whose activation type is different from "none".
+.. math::
+   \begin{aligned}
+   \text{integrator}: & & \dot{w}_i &= u_i \\
+   \text{filter}:     & & \dot{w}_i &= (u_i - w_i) / t \\
+   \end{aligned}
+
+where :math:`t` is an actuator-specific time constant stored in ``mjModel.actuator_dynprm``. In addition the type can
+be "user", in which case :math:`w_i` is computed by the user-defined callback :ref:`mjcb_act_dyn`. The type can also
+be "none" which corresponds to a regular actuator with no activation state. The dimensionality of :math:`w` equals
+the number of actuators whose activation type is different from "none".
+
+.. _geActuatorForce:
 
 Force generation
-   Each actuator generates a scalar force :math:`p_i` which is some function
+^^^^^^^^^^^^^^^^
 
-   .. math::
-      p_i \left( u_i, w_i, l_i, \dot{l}_i \right)
+Each actuator generates a scalar force :math:`p_i` which is some function
 
-   Similarly to activation dynamics, the force generation mechanism is actuator-specific and cannot interact with the
-   other actuators in the model. Currently the force is affine in the activation state when present, and in the control
-   otherwise:
+.. math::
+   p_i \left( u_i, w_i, l_i, \dot{l}_i \right)
 
-   .. math::
-      p_i = (a w_i \; \text{or} \; a u_i) + b_0 + b_1 l_i + b_2 \dot{l}_i
+Similarly to activation dynamics, the force generation mechanism is actuator-specific and cannot interact with the
+other actuators in the model. Currently the force is affine in the activation state when present, and in the control
+otherwise:
 
-   Here :math:`a` is an actuator-specific gain parameter and :math:`b_0, b_1, b_2` are actuator-specific bias
-   parameters, stored in ``mjModel.actuator_gainprm`` and ``mjModel.actuator_biasprm`` respectively. Different settings
-   of the gain and bias parameters can be used to model direct force control as well as position and velocity servos -in
-   which case the control/activation has the meaning of reference position or velocity. One can also compute custom gain
-   and bias terms by installing the callbacks :ref:`mjcb_act_gain` and :ref:`mjcb_act_bias` and setting the gain and
-   bias type to "user". Note that affine force generation makes it possible to infer the controls/activations from the
-   applied force computed in inverse dynamics, using the pseudo-inverse of the matrix of moment arms. However some of
-   the actuators used in the real world are not affine (especially those that have embedded low-level controllers), so
-   we are considering extensions to the above model.
+.. math::
+   p_i = (a w_i \; \text{or} \; a u_i) + b_0 + b_1 l_i + b_2 \dot{l}_i
+
+Here :math:`a` is an actuator-specific gain parameter and :math:`b_0, b_1, b_2` are actuator-specific bias
+parameters, stored in ``mjModel.actuator_gainprm`` and ``mjModel.actuator_biasprm`` respectively. Different settings
+of the gain and bias parameters can be used to model direct force control as well as position and velocity servos -in
+which case the control/activation has the meaning of reference position or velocity. One can also compute custom gain
+and bias terms by installing the callbacks :ref:`mjcb_act_gain` and :ref:`mjcb_act_bias` and setting the gain and
+bias type to "user". Note that affine force generation makes it possible to infer the controls/activations from the
+applied force computed in inverse dynamics, using the pseudo-inverse of the matrix of moment arms. However some of
+the actuators used in the real world are not affine (especially those that have embedded low-level controllers), so
+we are considering extensions to the above model.
 
 Putting all this together, the net force in generalized coordinates contributed by all actuators is
 
@@ -569,20 +581,20 @@ resetting the state and computing dynamics derivatives are also well-defined. Th
 
 Physics state
 ^^^^^^^^^^^^^
-| The *physics state* contains all quantities which are time-integrated during stepping.
-| They are ``mjData.{qpos, qvel, act, time}``:
+The *physics state* contains all quantities which are time-integrated during stepping.
+These are ``mjData.{qpos, qvel, act, time}``:
 
-  Mechanical state: ``qpos`` and ``qvel``
-    The *mechanical state* of a simulation is given by the generalized position (``mjData.qpos``) and velocity
-    (``mjData.qvel``) vectors, denoted above as :math:`q` and :math:`v`, respectively.
+Mechanical state: ``qpos`` and ``qvel``
+  The *mechanical state* of a simulation is given by the generalized position (``mjData.qpos``) and velocity
+  (``mjData.qvel``) vectors, denoted above as :math:`q` and :math:`v`, respectively.
 
-  Actuator activations: ``act``
-    ``mjData.act`` contains the internal states of stateful actuators, denoted above as :math:`w`.
+Actuator activations: ``act``
+  ``mjData.act`` contains the internal states of stateful actuators, denoted above as :math:`w`.
 
-  Time: ``time``
-    The time of the simulation is given by the scalar ``mjData.time``. Since physics is time-invariant, it is
-    often excluded from the *physics state*; an exception could be a time-dependent user callback (e.g., an open-loop
-    controller), in which case time should be included.
+Time: ``time``
+  The time of the simulation is given by the scalar ``mjData.time``. Since physics is time-invariant, it is
+  often excluded from the *physics state*; an exception could be a time-dependent user callback (e.g., an open-loop
+  controller), in which case time should be included.
 
 .. _geInput:
 
@@ -591,53 +603,53 @@ User inputs
 These input fields are set by the user and affect the physics simulation, but are untouched by the simulator. All input
 fields except for MoCap poses default to 0.
 
-  Controls: ``ctrl``
-    Controls are defined by the :ref:`actuator<actuator>` section of the XML. ``mjData.ctrl`` values either produce
-    generalized forces directly (stateless actuators), or affect the actuator activations in ``mjData.act``, which then
-    produce forces.
+Controls: ``ctrl``
+  Controls are defined by the :ref:`actuator<actuator>` section of the XML. ``mjData.ctrl`` values either produce
+  generalized forces directly (stateless actuators), or affect the actuator activations in ``mjData.act``, which then
+  produce forces.
 
-  Auxillary Controls: ``qfrc_applied`` and ``xfrc_applied``
-    | ``mjData.qfrc_applied`` are directly applied generalized forces.
-    | ``mjData.xfrc_applied`` are Cartesian wrenches applied to the CoM of individual bodies. This field is used for
-      example, by the :ref:`native viewer<saSimulate>` to apply mouse perturbations.
-    | Note that the effects of ``qfrc_applied`` and ``xfrc_applied`` can usually be recreated by appropriate actuator
-      definitions.
+Auxillary Controls: ``qfrc_applied`` and ``xfrc_applied``
+  | ``mjData.qfrc_applied`` are directly applied generalized forces.
+  | ``mjData.xfrc_applied`` are Cartesian wrenches applied to the CoM of individual bodies. This field is used for
+    example, by the :ref:`native viewer<saSimulate>` to apply mouse perturbations.
+  | Note that the effects of ``qfrc_applied`` and ``xfrc_applied`` can usually be recreated by appropriate actuator
+    definitions.
 
-  MoCap poses: ``mocap_pos`` and ``mocap_quat``
-    ``mjData.mocap_pos`` and ``mjData.mocap_quat`` are special optional kinematic states :ref:`described here<CMocap>`,
-    which allow the user to set the positions and orientations of static bodies in real-time, for example when streaming
-    6D poses from a motion-capture device. The default values set by :ref:`mj_resetData` are the poses of the bodies at
-    the default configuration.
+MoCap poses: ``mocap_pos`` and ``mocap_quat``
+  ``mjData.mocap_pos`` and ``mjData.mocap_quat`` are special optional kinematic states :ref:`described here<CMocap>`,
+  which allow the user to set the positions and orientations of static bodies in real-time, for example when streaming
+  6D poses from a motion-capture device. The default values set by :ref:`mj_resetData` are the poses of the bodies at
+  the default configuration.
 
-  User data: ``userdata``
-    ``mjData.userdata`` acts as a user-defined memory space untouched by the engine. For example it can be used by
-    callbacks. This is described in more detail in the :ref:`Programming chapter<siSimulation>`.
+User data: ``userdata``
+  ``mjData.userdata`` acts as a user-defined memory space untouched by the engine. For example it can be used by
+  callbacks. This is described in more detail in the :ref:`Programming chapter<siSimulation>`.
 
 .. _geWarmstart:
 
 Warmstart accelerations
 ^^^^^^^^^^^^^^^^^^^^^^^
 
-  ``qacc_warmstart``
-    ``mjData.qacc_warmstart`` are accelerations used to warmstart the constraint solver, saved from the previous step.
-    When using a slowly-converging :ref:`constraint solver<Solver>` like PGS, these can speed up simulation by reducing
-    the number of iterations required for convergence. Note however that the default Newton solver converges so quickly
-    (usually 2-3 iterations), that warmstarts often have no effect on speed and can be disabled.
+``qacc_warmstart``
+  ``mjData.qacc_warmstart`` are accelerations used to warmstart the constraint solver, saved from the previous step.
+  When using a slowly-converging :ref:`constraint solver<Solver>` like PGS, these can speed up simulation by reducing
+  the number of iterations required for convergence. Note however that the default Newton solver converges so quickly
+  (usually 2-3 iterations), that warmstarts often have no effect on speed and can be disabled.
 
-    Different warmstarts have no perceptible effect on the dynamics but should be saved if perfect numerical
-    reproducibility is required when loading a non-initial state. Note that even though their effect on physics is
-    negligible, many physical systems will accumulate small differences  `exponentially
-    <https://en.wikipedia.org/wiki/Lyapunov_exponent>`__ when time-stepping, quickly leading to divergent trajectories
-    for different warmstarts.
+  Different warmstarts have no perceptible effect on the dynamics but should be saved if perfect numerical
+  reproducibility is required when loading a non-initial state. Note that even though their effect on physics is
+  negligible, many physical systems will accumulate small differences  `exponentially
+  <https://en.wikipedia.org/wiki/Lyapunov_exponent>`__ when time-stepping, quickly leading to divergent trajectories
+  for different warmstarts.
 
 .. _gePlugin:
 
 Plugin state
 ^^^^^^^^^^^^
 
-  ``plugin_state``
-    ``mjData.plugin_state`` are states declared by :ref:`engine plugins<exPlugin>`. Please see the :ref:`exPluginState`
-    section for more details.
+``plugin_state``
+  ``mjData.plugin_state`` are states declared by :ref:`engine plugins<exPlugin>`. Please see the :ref:`exPluginState`
+  section for more details.
 
 .. _geIntegrationState:
 
