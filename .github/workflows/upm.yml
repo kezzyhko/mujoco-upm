@@ -17,12 +17,6 @@ jobs:
     runs-on: ubuntu-latest
     environment: OpenUPM workflows
     steps:
-    - name: Generate token
-      id: generate-token
-      uses: actions/create-github-app-token@v1
-      with:
-        app-id: ${{ vars.UPM_TOKEN_APP_ID }}
-        private-key: ${{ secrets.UPM_TOKEN_APP_PRIVATE_KEY }}
     - name: Set environment variables
       run: |
         echo "TAG_NAME=${{ inputs.tag_name || env.GITHUB_REF_NAME }}" >> $GITHUB_ENV
@@ -34,10 +28,10 @@ jobs:
     - name: Setup user
       uses: fregante/setup-git-user@v2
     - name: Merge
-      env:
-        GITHUB_TOKEN: ${{ steps.generate-token.outputs.token }}
       run: |
-        git merge ${{ env.TAG_NAME }}
+        git merge --no-commit --no-ff ${{ env.TAG_NAME }}
+        git reset -- .github
+        git commit --no-edit
         git push
         echo "MERGE_COMMIT_HASH=$(git rev-parse --verify HEAD)" >> $GITHUB_ENV
     - name: Create release
