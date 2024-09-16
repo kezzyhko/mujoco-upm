@@ -1,7 +1,0 @@
-version: "1"
-rules:
-  - base: main
-    upstream: google-deepmind:main
-    mergeMethod: hardreset
-    conflictReviewers:      # Optional, on merge conflict assign a reviewer
-      - kezzyhko
