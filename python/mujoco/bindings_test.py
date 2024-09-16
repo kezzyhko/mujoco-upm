@@ -41,7 +41,7 @@ TEST_XML = r"""
     <body>
       <inertial pos="0 0 0" mass="1" diaginertia="1 1 1"/>
       <site pos="0 0 -1" name="mysite" type="sphere"/>
-      <joint type="hinge" axis="0 1 0"/>
+      <joint name="myhinge" type="hinge" axis="0 1 0"/>
     </body>
     <body>
       <inertial pos="0 0 0" mass="1" diaginertia="1 1 1"/>
@@ -51,6 +51,9 @@ TEST_XML = r"""
       <geom type="sphere" size="0.1"/>
     </body>
   </worldbody>
+  <actuator>
+    <position name="myactuator" joint="myhinge"/>
+  </actuator>
 </mujoco>
 """
 
@@ -143,6 +146,22 @@ class MuJoCoBindingsTest(parameterized.TestCase):
     self.assertEqual(sys.getrefcount(capsule) - base_refcount, 2)
     del qpos_spring
     self.assertEqual(sys.getrefcount(capsule) - base_refcount, 1)
+
+  def test_named_indexing_actuator_ctrl(self):
+    actuator_id = mujoco.mj_name2id(
+        self.model, mujoco.mjtObj.mjOBJ_ACTUATOR, 'myactuator')
+    self.assertIs(self.data.actuator('myactuator'),
+                  self.data.actuator(actuator_id))
+    self.assertIs(self.data.actuator('myactuator').ctrl,
+                  self.data.actuator(actuator_id).ctrl)
+    self.assertEqual(self.data.actuator('myactuator').ctrl.shape, (1,))
+
+    # Test that the indexer is returning a view into the underlying struct.
+    ctrl_from_indexer = self.data.actuator('myactuator').ctrl
+    self.data.ctrl[actuator_id] = 5
+    np.testing.assert_array_equal(ctrl_from_indexer, [5])
+    self.data.actuator('myactuator').ctrl = 7
+    np.testing.assert_array_equal(self.data.ctrl[actuator_id], [7])
 
   def test_named_indexing_geom_size(self):
     box_id = mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_GEOM, 'mybox')
@@ -641,7 +660,7 @@ Euler integrator, semi-implicit in velocity.
     self.assertEqual(mujoco.mjtEnableBit.mjENBL_ENERGY, 1<<1)
     self.assertEqual(mujoco.mjtEnableBit.mjENBL_FWDINV, 1<<2)
     self.assertEqual(mujoco.mjtEnableBit.mjENBL_SENSORNOISE, 1<<3)
-    self.assertEqual(mujoco.mjtEnableBit.mjNENABLE, 4)
+    self.assertEqual(mujoco.mjtEnableBit.mjNENABLE, 5)
     self.assertEqual(mujoco.mjtGeom.mjGEOM_PLANE, 0)
     self.assertEqual(mujoco.mjtGeom.mjGEOM_HFIELD, 1)
     self.assertEqual(mujoco.mjtGeom.mjGEOM_SPHERE, 2)
@@ -653,11 +672,6 @@ Euler integrator, semi-implicit in velocity.
   def test_enum_from_int(self):
     self.assertEqual(mujoco.mjtJoint.mjJNT_FREE, mujoco.mjtJoint(0))
     self.assertEqual(mujoco.mjtGeom.mjGEOM_ARROW, mujoco.mjtGeom(value=100))
-    # mjENABLE_FWDINV and mjNENABLE have the same int value. Default to the
-    # first defined one.
-    self.assertEqual(
-        mujoco.mjtEnableBit.mjENBL_FWDINV,
-        mujoco.mjtEnableBit(mujoco.mjtEnableBit.mjNENABLE.value))
     with self.assertRaises(ValueError):
       mujoco.mjtJoint(1000)
     with self.assertRaises(ValueError):
