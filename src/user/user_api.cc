@@ -27,7 +27,12 @@
 #include "user/user_model.h"
 #include "user/user_objects.h"
 #include "user/user_cache.h"
-#include "xml/xml_util.h"
+
+namespace {
+
+using mujoco::user::StringToVector;
+
+}  // namespace
 
 // global cache size in bytes (default 500MB)
 static constexpr std::size_t kGlobalCacheSize = 500 * (1 << 20);
@@ -86,9 +91,14 @@ mjModel* mj_compile(mjSpec* s, const mjVFS* vfs) {
 // recompile spec into existing model and data while preserving the state
 void mj_recompile(mjSpec* s, const mjVFS* vfs, mjModel* m, mjData* d) {
   mjCModel* modelC = static_cast<mjCModel*>(s->element);
-  modelC->SaveState(d);
+  if (d) {
+    modelC->SaveState(d->qpos, d->qvel, d->act);
+  }
   modelC->Compile(vfs, &m);
-  modelC->RestoreState(m, &d);
+  if (d) {
+    modelC->MakeData(m, &d);
+    modelC->RestoreState(d->qpos, d->qvel, d->act);
+  }
 }
 
 
@@ -138,7 +148,7 @@ int mjs_detachBody(mjSpec* s, mjsBody* b) {
   mjCModel* model = static_cast<mjCModel*>(s->element);
   mjCBody* body = static_cast<mjCBody*>(b->element);
   *model -= *body;
-  mjs_delete(b->element);
+  delete body;
   return 0;
 }
 
@@ -171,7 +181,7 @@ void mjs_addSpec(mjSpec* s, mjSpec* child) {
 // delete object, it will call the appropriate destructor since ~mjCBase is virtual
 void mjs_delete(mjsElement* element) {
   mjCBase* object = static_cast<mjCBase*>(element);
-  delete object;
+  object->model->DeleteElement(element);
 }
 
 
@@ -887,7 +897,7 @@ mjtByte mjs_setInStringVec(mjStringVec* dest, int i, const char* text) {
 // split text and copy into string array
 void mjs_setStringVec(mjStringVec* dest, const char* text) {
   std::vector<std::string>* v = static_cast<std::vector<std::string>*>(dest);
-  *v = mjXUtil::String2Vector<std::string>(text);
+  *v = StringToVector<std::string>(text);
 }
 
 

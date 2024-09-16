@@ -75,6 +75,8 @@ TEST_F(MujocoTest, TreeTraversal) {
   mjsSite* site3 = mjs_addSite(body, 0);
   mjsGeom* geom3 = mjs_addGeom(body, 0);
 
+  mjsElement* a_el1 = mjs_firstElement(spec, mjOBJ_ACTUATOR);
+  mjsElement* c_el1 = mjs_firstChild(body, mjOBJ_CAMERA);
   mjsElement* t_el1 = mjs_firstChild(body, mjOBJ_TENDON);
   mjsElement* s_el1 = mjs_firstChild(body, mjOBJ_SITE);
   mjsElement* s_el2 = mjs_nextChild(body, s_el1);
@@ -85,6 +87,8 @@ TEST_F(MujocoTest, TreeTraversal) {
   mjsElement* g_el3 = mjs_nextChild(body, g_el2);
   mjsElement* g_el4 = mjs_nextChild(body, g_el3);
 
+  EXPECT_EQ(a_el1, nullptr);
+  EXPECT_EQ(c_el1, nullptr);
   EXPECT_EQ(t_el1, nullptr);
   EXPECT_EQ(s_el1, site1->element);
   EXPECT_EQ(s_el2, site2->element);
@@ -180,6 +184,38 @@ TEST_F(PluginTest, RecompileCompare) {
       }
     }
   }
+}
+
+TEST_F(PluginTest, RecompileEdit) {
+  static constexpr char xml[] = R"(
+  <mujoco>
+    <worldbody>
+      <body>
+        <freejoint/>
+        <geom size=".1"/>
+      </body>
+    </worldbody>
+  </mujoco>
+  )";
+
+  std::array<char, 1000> er;
+  mjSpec *spec = mj_parseXMLString(xml, 0, er.data(), er.size());
+  EXPECT_THAT(spec, NotNull()) << er.data();
+  mjModel *m1 = mj_compile(spec, nullptr);
+  EXPECT_THAT(m1, NotNull());
+
+  // add a geom
+  mjsBody *world = mjs_findBody(spec, "world");
+  mjsGeom *geom = mjs_addGeom(world, nullptr);
+  geom->size[0] = 1;
+
+  // compile again
+  mjModel *m2 = mj_compile(spec, nullptr);
+  EXPECT_THAT(m2, NotNull());
+
+  mj_deleteModel(m1);
+  mj_deleteModel(m2);
+  mj_deleteSpec(spec);
 }
 
 // ------------------- test cache with modified assets -------------------------
@@ -284,15 +320,15 @@ TEST_F(PluginTest, RecompileComparePngCache) {
   // load model once
   mjModel* m = LoadModelFromString(xml, error.data(), error.size(), vfs.get());
   EXPECT_EQ(m->ntexdata, 18);  // w x h x rgb = 3 x 2 x 3
-  mjtByte byte = m->tex_rgb[0];
+  mjtByte byte = m->tex_data[0];
   mj_deleteModel(m);
 
   // update tex.png, load again
   mj_deleteFileVFS(vfs.get(), "tex.png");
   mj_addBufferVFS(vfs.get(), "tex.png", tex2, sizeof(tex2));
   m = LoadModelFromString(xml, error.data(), error.size(), vfs.get());
-  EXPECT_NE(m->tex_rgb[0], byte);
-  EXPECT_EQ(m->tex_rgb[15], byte);  // first pixel is now last pixel
+  EXPECT_NE(m->tex_data[0], byte);
+  EXPECT_EQ(m->tex_data[15], byte);  // first pixel is now last pixel
   mj_deleteModel(m);
 
   mj_deleteVFS(vfs.get());
@@ -863,8 +899,11 @@ TEST_F(MujocoTest, PreserveState) {
     EXPECT_EQ(data->act[i], d_expected->act[i]) << i;
   }
 
-  // destroy everything
+  // check that the function is callable with no data
   mj_deleteData(data);
+  mj_recompile(spec, 0, model, nullptr);
+
+  // destroy everything
   mj_deleteData(d_expected);
   mj_deleteSpec(spec);
   mj_deleteModel(model);

@@ -1950,6 +1950,7 @@ void Simulate::Sync() {
   if (pending_.reset) {
     mj_resetData(m_, d_);
     mj_forward(m_, d_);
+    load_error[0] = '\0';
     update_profiler = true;
     update_sensor = true;
     scrub_index = 0;

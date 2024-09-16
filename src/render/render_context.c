@@ -1304,12 +1304,12 @@ static void makeMaterial(const mjModel* m, mjrContext* con) {
   }
 
   if (m->nmat >= mjMAXMATERIAL-1) {
-    mju_error("Maximum number of materials is %d", mjMAXMATERIAL);
+    mju_error("Maximum number of materials is 100, got %d", m->nmat);
   }
   for (int i=0; i < m->nmat; i++) {
-    if (m->mat_texid[i*mjNTEXMAT] >= 0) {
-      for (int j=0; j < mjNTEXMAT; j++) {
-        con->mat_texid[i*mjNTEXMAT + j] = m->mat_texid[i*mjNTEXMAT + j];
+    if (m->mat_texid[i*mjNTEXROLE + mjTEXROLE_RGB] >= 0) {
+      for (int j=0; j < mjNTEXROLE; j++) {
+        con->mat_texid[i*mjNTEXROLE + j] = m->mat_texid[i*mjNTEXROLE + j];
       }
       con->mat_texuniform[i] = m->mat_texuniform[i];
       con->mat_texrepeat[2*i] = m->mat_texrepeat[2*i];
@@ -1320,12 +1320,13 @@ static void makeMaterial(const mjModel* m, mjrContext* con) {
   for (int i=0; i < m->ntex; i++) {
     if (m->tex_type[i] == mjTEXTURE_SKYBOX) {
       if (m->nmat >= mjMAXMATERIAL-2) {
-        mju_error("With skybox, maximum number of materials is %d", mjMAXMATERIAL);
+        mju_error("With skybox, maximum number of materials is 99, got %d",
+                  m->nmat);
       }
-      con->mat_texid[mjNTEXMAT * (mjMAXMATERIAL-1)] = i;
-      for (int j=1; j < mjNTEXMAT; j++) {
-        con->mat_texid[mjNTEXMAT * (mjMAXMATERIAL-1) + j] = -1;
+      for (int j=0; j < mjNTEXROLE; j++) {
+        con->mat_texid[mjNTEXROLE * (mjMAXMATERIAL-1) + j] = -1;
       }
+      con->mat_texid[mjNTEXROLE * (mjMAXMATERIAL-1) + mjTEXROLE_RGB] = i;
 
       break;
     }
@@ -1382,7 +1383,7 @@ void mjr_uploadTexture(const mjModel* m, const mjrContext* con, int texid) {
 
     // assign data
     glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, m->tex_width[texid], m->tex_height[texid], 0,
-                 GL_RGB, GL_UNSIGNED_BYTE, m->tex_rgb + m->tex_adr[texid]);
+                 GL_RGB, GL_UNSIGNED_BYTE, m->tex_data + m->tex_adr[texid]);
 
     // generate mipmaps
     glGenerateMipmap(GL_TEXTURE_2D);
@@ -1416,7 +1417,7 @@ void mjr_uploadTexture(const mjModel* m, const mjrContext* con, int texid) {
     if (m->tex_width[texid] == m->tex_height[texid]) {
       for (int i=0; i < 6; i++) {
         glTexImage2D(GL_TEXTURE_CUBE_MAP_POSITIVE_X+i, 0, GL_RGB, w, w, 0,
-                     GL_RGB, GL_UNSIGNED_BYTE, m->tex_rgb + m->tex_adr[texid]);
+                     GL_RGB, GL_UNSIGNED_BYTE, m->tex_data + m->tex_adr[texid]);
       }
     }
 
@@ -1424,7 +1425,7 @@ void mjr_uploadTexture(const mjModel* m, const mjrContext* con, int texid) {
     else {
       for (int i=0; i < 6; i++) {
         glTexImage2D(GL_TEXTURE_CUBE_MAP_POSITIVE_X+i, 0, GL_RGB, w, w, 0,
-                     GL_RGB, GL_UNSIGNED_BYTE, m->tex_rgb + m->tex_adr[texid] + i*3*w*w);
+                     GL_RGB, GL_UNSIGNED_BYTE, m->tex_data + m->tex_adr[texid] + i*3*w*w);
       }
     }
 

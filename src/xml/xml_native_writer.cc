@@ -44,6 +44,7 @@ using std::string;
 using tinyxml2::XMLComment;
 using tinyxml2::XMLDocument;
 using tinyxml2::XMLElement;
+using mujoco::user::VectorToString;
 
 }  // namespace
 
@@ -142,19 +143,19 @@ void mjXWriter::OneFlex(XMLElement* elem, const mjCFlex* pflex) {
 
   // data vectors
   if (!pflex->get_vertbody().empty()) {
-    Vector2String(text, pflex->get_vertbody());
+    text = VectorToString(pflex->get_vertbody());
     WriteAttrTxt(elem, "body", text);
   }
   if (!pflex->get_vert().empty()) {
-    Vector2String(text, pflex->get_vert());
+    text = VectorToString(pflex->get_vert());
     WriteAttrTxt(elem, "vertex", text);
   }
   if (!pflex->get_elem().empty()) {
-    Vector2String(text, pflex->get_elem());
+    text = VectorToString(pflex->get_elem());
     WriteAttrTxt(elem, "element", text);
   }
   if (!pflex->get_texcoord().empty()) {
-    Vector2String(text, pflex->get_texcoord());
+    text = VectorToString(pflex->get_texcoord());
     WriteAttrTxt(elem, "texcoord", text);
   }
 
@@ -207,25 +208,25 @@ void mjXWriter::OneMesh(XMLElement* elem, const mjCMesh* pmesh, mjCDef* def) {
 
     // write vertex data
     if (!pmesh->get_uservert().empty()) {
-      Vector2String(text, pmesh->get_uservert());
+      text = VectorToString(pmesh->get_uservert());
       WriteAttrTxt(elem, "vertex", text);
     }
 
     // write normal data
     if (!pmesh->get_usernormal().empty()) {
-      Vector2String(text, pmesh->get_usernormal());
+      text = VectorToString(pmesh->get_usernormal());
       WriteAttrTxt(elem, "normal", text);
     }
 
     // write texcoord data
     if (!pmesh->get_usertexcoord().empty()) {
-      Vector2String(text, pmesh->get_usertexcoord());
+      text = VectorToString(pmesh->get_usertexcoord());
       WriteAttrTxt(elem, "texcoord", text);
     }
 
     // write face data
     if (!pmesh->get_userface().empty()) {
-      Vector2String(text, pmesh->get_userface());
+      text = VectorToString(pmesh->get_userface());
       WriteAttrTxt(elem, "face", text);
     }
   }
@@ -257,17 +258,17 @@ void mjXWriter::OneSkin(XMLElement* elem, const mjCSkin* pskin) {
   // write data if no file
   if (pskin->get_file().empty()) {
     // mesh vert
-    Vector2String(text, pskin->get_vert());
+    text = VectorToString(pskin->get_vert());
     WriteAttrTxt(elem, "vertex", text);
 
     // mesh texcoord
     if (!pskin->get_texcoord().empty()) {
-      Vector2String(text, pskin->get_texcoord());
+      text = VectorToString(pskin->get_texcoord());
       WriteAttrTxt(elem, "texcoord", text);
     }
 
     // mesh face
-    Vector2String(text, pskin->get_face());
+    text = VectorToString(pskin->get_face());
     WriteAttrTxt(elem, "face", text);
 
     // bones
@@ -281,11 +282,11 @@ void mjXWriter::OneSkin(XMLElement* elem, const mjCSkin* pskin) {
       WriteAttr(bone, "bindquat", 4, pskin->get_bindquat().data()+4*i);
 
       // write vertid
-      Vector2String(text, pskin->get_vertid()[i]);
+      text = VectorToString(pskin->get_vertid()[i]);
       WriteAttrTxt(bone, "vertid", text);
 
       // write vertweight
-      Vector2String(text, pskin->get_vertweight()[i]);
+      text = VectorToString(pskin->get_vertweight()[i]);
       WriteAttrTxt(bone, "vertweight", text);
     }
   }
@@ -304,8 +305,20 @@ void mjXWriter::OneMaterial(XMLElement* elem, const mjCMaterial* pmat, mjCDef* d
   }
 
   // defaults and regular
-  if (pmat->texture != def->Material().texture) {
-    WriteAttrTxt(elem, "texture", pmat->get_texture());
+  bool has_non_rgb = false;
+  for (int i=1; i<mjNTEXROLE; i++) {
+    if (!pmat->textures_[i].empty()) {
+      if (i != mjTEXROLE_RGB) {
+        has_non_rgb = true;
+      }
+    }
+    if (pmat->textures_[i] != def->Material().textures_[i]) {
+      WriteAttrTxt(elem, "texture", pmat->get_texture(i));
+    }
+  }
+  if (has_non_rgb) {
+  //   // TODO elem = InsertEnd(section, "role");
+    mju_error("mjXWriter: no support for non-RGB textures.");
   }
   WriteAttrKey(elem, "texuniform", bool_map, 2, pmat->texuniform, def->Material().texuniform);
   WriteAttr(elem, "texrepeat", 2, pmat->texrepeat, def->Material().texrepeat);
@@ -988,6 +1001,7 @@ void mjXWriter::Option(XMLElement* root) {
     WRITEDSBL("sensor",         mjDSBL_SENSOR)
     WRITEDSBL("midphase",       mjDSBL_MIDPHASE)
     WRITEDSBL("eulerdamp",      mjDSBL_EULERDAMP)
+    WRITEDSBL("autoreset",      mjDSBL_AUTORESET)
 #undef WRITEDSBL
 
 #define WRITEENBL(NAME, MASK) \

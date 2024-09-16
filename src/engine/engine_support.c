@@ -38,8 +38,8 @@
 
 //-------------------------- Constants -------------------------------------------------------------
 
- #define mjVERSION 320
-#define mjVERSIONSTRING "3.2.0"
+ #define mjVERSION 321
+#define mjVERSIONSTRING "3.2.1"
 
 // names of disable flags
 const char* mjDISABLESTRING[mjNDISABLE] = {
@@ -57,7 +57,8 @@ const char* mjDISABLESTRING[mjNDISABLE] = {
   "Refsafe",
   "Sensor",
   "Midphase",
-  "Eulerdamp"
+  "Eulerdamp",
+  "AutoReset"
 };
 
 

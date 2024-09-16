@@ -202,6 +202,9 @@ class mjCModel : public mjCModel_, private mjSpec {
   // delete all elements
   template <class T> void DeleteAll(std::vector<T*>& elements);
 
+  // delete object from the corresponding list
+  void DeleteElement(mjsElement* el);
+
   // API for access to model elements (outside tree)
   int NumObjects(mjtObj type);              // number of objects in specified list
   mjCBase* GetObject(mjtObj type, int id);  // pointer to specified object
@@ -273,8 +276,9 @@ class mjCModel : public mjCModel_, private mjSpec {
                                          std::string_view name = "");
 
   // save/restore the current state
-  void SaveState(const mjData* d);
-  void RestoreState(const mjModel* m, mjData** dest);
+  void SaveState(const mjtNum* qpos, const mjtNum* qvel, const mjtNum* act);
+  void MakeData(const mjModel* m, mjData** dest);
+  void RestoreState(mjtNum* qpos, mjtNum* qvel, mjtNum* act);
 
   // map from default class name to default class pointer
   std::unordered_map<std::string, mjCDef*> def_map;
@@ -344,13 +348,16 @@ class mjCModel : public mjCModel_, private mjSpec {
                                    const std::vector<T*>& sources);
 
   // delete from list the elements that cause an error
-  template <class T> void RemoveFromList(std::vector<T*>& list);
+  template <class T> void RemoveFromList(std::vector<T*>& list, const mjCModel& other);
 
   // create mjCBase lists from children lists
   void CreateObjectLists();
 
   // populate objects ids
   void ProcessLists(bool checkrepeat = true);
+
+  // reset lists of kinematic tree
+  void ResetTreeLists();
 
   mjListKeyMap ids;   // map from object names to ids
   mjCError errInfo;   // last error info

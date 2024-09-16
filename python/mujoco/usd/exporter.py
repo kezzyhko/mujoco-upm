@@ -29,6 +29,8 @@ import scipy
 import termcolor
 import tqdm
 
+# TODO: b/288149332 - Remove once USD Python Binding works well with pytype.
+# pytype: disable=module-attr
 from pxr import Sdf
 from pxr import Usd
 from pxr import UsdGeom
@@ -210,9 +212,10 @@ class USDExporter:
     for texture_id in tqdm.tqdm(range(self.model.ntex)):
       texture_height = self.model.tex_height[texture_id]
       texture_width = self.model.tex_width[texture_id]
-      pixels = 3 * texture_height * texture_width
+      texture_nchannel = self.model.tex_nchannel[texture_id]
+      pixels = texture_nchannel * texture_height * texture_width
       img = im.fromarray(
-          self.model.tex_rgb[data_adr : data_adr + pixels].reshape(
+          self.model.tex_data[data_adr : data_adr + pixels].reshape(
               texture_height, texture_width, 3
           )
       )
@@ -249,7 +252,9 @@ class USDExporter:
     assert geom_name not in self.geom_names
 
     texture_file = (
-        self.texture_files[self.model.mat_texid[geom.matid][0]]
+        self.texture_files[
+            self.model.mat_texid[geom.matid][mujoco.mjTEXROLE_RGB]
+        ]
         if geom.matid != -1
         else None
     )

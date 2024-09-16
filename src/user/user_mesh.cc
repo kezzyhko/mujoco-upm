@@ -62,12 +62,15 @@
 #include "user/user_objects.h"
 #include "user/user_resource.h"
 #include "user/user_util.h"
-#include "xml/xml_util.h"
 #include <tiny_obj_loader.h>
 
 extern "C" {
 #include "qhull_ra.h"
 }
+
+namespace {
+  using mujoco::user::VectorToString;
+}  // namespace
 
 // compute triangle area, surface normal, center
 static double _triangle(double* normal, double* center,
@@ -399,8 +402,8 @@ void mjCMesh::Compile(const mjVFS* vfs) {
       throw mjCError(this, "unsupported content type: '%s'", asset_type.c_str());
     }
 
-    std::string filename = mjuu_combinePaths(model->modelfiledir_, model->meshdir_, file_);
-    mjResource* resource = LoadResource(filename, vfs);
+    std::string filename = mjuu_combinePaths(model->meshdir_, file_);
+    mjResource* resource = LoadResource(model->modelfiledir_, filename, vfs);
 
     try {
       if (asset_type == "model/stl") {
@@ -2092,8 +2095,8 @@ void mjCSkin::Compile(const mjVFS* vfs) {
       throw mjCError(this, "Unknown skin file type: %s", file_.c_str());
     }
 
-    std::string filename = mjuu_combinePaths(model->modelfiledir_, model->meshdir_, file_);
-    mjResource* resource = LoadResource(filename, vfs);
+    std::string filename = mjuu_combinePaths(model->meshdir_, file_);
+    mjResource* resource = LoadResource(model->modelfiledir_, filename, vfs);
 
     try {
       LoadSKN(resource);
@@ -2149,7 +2152,7 @@ void mjCSkin::Compile(const mjVFS* vfs) {
   if (pmat) {
     matid = pmat->id;
   } else if (!material_.empty()) {
-      throw mjCError(this, "unkown material '%s' in skin", material_.c_str());
+    throw mjCError(this, "unknown material '%s' in skin", material_.c_str());
   }
 
   // set total vertex weights to 0
@@ -2449,7 +2452,7 @@ void mjCFlex::ResolveReferences(const mjCModel* m) {
     if (pbody) {
       vertbodyid.push_back(pbody->id);
     } else {
-        throw mjCError(this, "unkown body '%s' in flex", vertbody.c_str());
+      throw mjCError(this, "unknown body '%s' in flex", vertbody.c_str());
     }
   }
 }
@@ -2512,7 +2515,7 @@ void mjCFlex::Compile(const mjVFS* vfs) {
   if (pmat) {
     matid = pmat->id;
   } else if (!material_.empty()) {
-      throw mjCError(this, "unkown material '%s' in flex", material_.c_str());
+    throw mjCError(this, "unknown material '%s' in flex", material_.c_str());
   }
 
   // resolve body ids
@@ -2627,8 +2630,8 @@ void mjCFlex::Compile(const mjVFS* vfs) {
 
   // add plugins
   std::string userface, useredge;
-  mjXUtil::Vector2String(userface, elem_);
-  mjXUtil::Vector2String(useredge, edgeidx);
+  userface = VectorToString(elem_);
+  useredge = VectorToString(edgeidx);
 
   for (const auto& vbodyid : vertbodyid) {
     if (model->Bodies()[vbodyid]->plugin.instance) {

@@ -181,7 +181,8 @@ class mjCBase : public mjCBase_ {
 
  public:
   // load resource if found (fallback to OS filesystem)
-  static mjResource* LoadResource(std::string filename, const mjVFS* vfs);
+  static mjResource* LoadResource(const std::string& modelfiledir,
+                                  const std::string& filename, const mjVFS* vfs);
 
   // Get and sanitize content type from raw_text if not empty, otherwise parse
   // content type from resource_name; throw on failure
@@ -385,6 +386,12 @@ class mjCJoint_ : public mjCBase {
  protected:
   mjCBody* body;                   // joint's body
 
+  // variable used for temporarily storing the state of the joint
+  int qposadr_;                    // address of dof in data->qpos
+  int dofadr_;                     // address of dof in data->qvel
+  mjtNum qpos[7];                  // qpos at the previous step
+  mjtNum qvel[6];                  // qvel at the previous step
+
   // variable-size data
   std::vector<double> userdata_;
   std::vector<double> spec_userdata_;
@@ -420,11 +427,6 @@ class mjCJoint : public mjCJoint_, private mjsJoint {
  private:
   int Compile(void);               // compiler; return dofnum
   void PointToLocal(void);
-
-  int qposadr_;                    // address of dof in data->qpos
-  int dofadr_;                     // address of dof in data->qvel
-  mjtNum qpos[7];                  // qpos at the previous step
-  mjtNum qvel[6];                  // qvel at the previous step
 };
 
 
@@ -1002,7 +1004,7 @@ class mjCHField : public mjCHField_, private mjsHField {
 
 class mjCTexture_ : public mjCBase {
  protected:
-  std::vector<mjtByte> rgb;                   // rgb data
+  std::vector<mjtByte> data;  // texture data (rgb, roughness, etc.)
 
   std::string file_;
   std::string content_type_;
@@ -1062,9 +1064,9 @@ class mjCTexture : public mjCTexture_, private mjsTexture {
 
 class mjCMaterial_ : public mjCBase {
  protected:
-  int texid;                      // id of material's texture
-  std::string texture_;
-  std::string spec_texture_;
+  int texid[mjNTEXROLE];                    // id of material's textures
+  std::vector<std::string> textures_;
+  std::vector<std::string> spec_textures_;
 };
 
 class mjCMaterial : public mjCMaterial_, private mjsMaterial {
@@ -1085,8 +1087,8 @@ class mjCMaterial : public mjCMaterial_, private mjsMaterial {
   void PointToLocal();
   void NameSpace(const mjCModel* m);
 
-  const std::string& get_texture() const { return texture_; }
-  void del_texture() { texture_.clear(); }
+  const std::string& get_texture(int i) const { return textures_[i]; }
+  void del_textures() { for (auto& t : textures_) t.clear(); }
 
  private:
   void Compile(void);                       // compiler
@@ -1362,6 +1364,11 @@ class mjCActuator_ : public mjCBase {
  protected:
   int trnid[2];                   // id of transmission target
 
+  // variable used for temporarily storing the state of the actuator
+  int actadr_;              // address of dof in data->act
+  int actnum_;              // number of dofs in data->act
+  std::vector<mjtNum> act;  // act at the previous step
+
   // variable-size data
   std::string plugin_name;
   std::string plugin_instance_name;
@@ -1407,10 +1414,6 @@ class mjCActuator : public mjCActuator_, private mjsActuator {
   void NameSpace(const mjCModel* m);
 
   mjCBase* ptarget;  // transmission target
-
-  int actadr_;              // address of dof in data->act
-  int actnum_;              // number of dofs in data->act
-  std::vector<mjtNum> act;  // act at the previous step
 };
 
 

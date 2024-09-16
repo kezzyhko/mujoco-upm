@@ -60,20 +60,25 @@ def _make_option(o: mujoco.MjOption) -> types.Option:
 
 def _make_statistic(s: mujoco.MjStatistic) -> types.Statistic:
   """Puts mujoco.MjStatistic onto a device, resulting in mjx.Statistic."""
-  return types.Statistic(meaninertia=s.meaninertia)
+  return types.Statistic(
+      meaninertia=s.meaninertia,
+      meanmass=s.meanmass,
+      meansize=s.meansize,
+      extent=s.extent,
+      center=s.center,
+  )
 
 
-def put_model(m: mujoco.MjModel, device=None) -> types.Model:
+def put_model(
+    m: mujoco.MjModel, device=None, _check_unsupported=True
+) -> types.Model:
   """Puts mujoco.MjModel onto a device, resulting in mjx.Model."""
-
-  if m.ntendon:
-    raise NotImplementedError('tendons are not supported')
 
   mesh_geomid = set()
   for g1, g2, ip in collision_driver.geom_pairs(m):
     t1, t2 = m.geom_type[[g1, g2]]
     # check collision function exists for type pair
-    if not collision_driver.has_collision_fn(t1, t2):
+    if _check_unsupported and not collision_driver.has_collision_fn(t1, t2):
       t1, t2 = mujoco.mjtGeom(t1), mujoco.mjtGeom(t2)
       raise NotImplementedError(f'({t1}, {t2}) collisions not implemented.')
     # margin/gap not supported for meshes and height fields
@@ -83,7 +88,7 @@ def put_model(m: mujoco.MjModel, device=None) -> types.Model:
         margin = m.pair_margin[ip]
       else:
         margin = m.geom_margin[g1] + m.geom_margin[g2]
-      if margin.any():
+      if _check_unsupported and margin.any():
         t1, t2 = mujoco.mjtGeom(t1), mujoco.mjtGeom(t2)
         raise NotImplementedError(f'({t1}, {t2}) margin/gap not implemented.')
     for t, g in [(t1, g1), (t2, g2)]:
@@ -96,22 +101,21 @@ def put_model(m: mujoco.MjModel, device=None) -> types.Model:
       (m.actuator_gaintype, types.GainType, mujoco.mjtGain),
       (m.actuator_trntype, types.TrnType, mujoco.mjtTrn),
       (m.eq_type, types.EqType, mujoco.mjtEq),
+      (m.wrap_type, types.WrapType, mujoco.mjtWrap),
   ):
     missing = set(enum_field) - set(enum_type)
-    if missing:
+    if _check_unsupported and missing:
       raise NotImplementedError(
           f'{[mj_type(m) for m in missing]} not supported'
       )
 
-  if not np.allclose(m.dof_frictionloss, 0):
+  if _check_unsupported and not np.allclose(m.dof_frictionloss, 0):
     raise NotImplementedError('dof_frictionloss is not implemented.')
 
   mjx_only = {'mesh_convex', 'geom_rbound_hfield'}
   mj_field_names = {f.name for f in types.Model.fields()} - mjx_only
   fields = {f: getattr(m, f) for f in mj_field_names}
   fields['geom_rbound_hfield'] = fields['geom_rbound']
-  fields['geom_rgba'] = fields['geom_rgba'].reshape((-1, 4))
-  fields['mat_rgba'] = fields['mat_rgba'].reshape((-1, 4))
   fields['cam_mat0'] = fields['cam_mat0'].reshape((-1, 3, 3))
   fields['opt'] = _make_option(m.opt)
   fields['stat'] = _make_statistic(m.stat)
@@ -137,33 +141,19 @@ def make_data(m: Union[types.Model, mujoco.MjModel]) -> types.Data:
   ne, nf, nl, nc = constraint.counts(efc_type)
   ncon, nefc = dim.size, ne + nf + nl + nc
 
-  zero_0 = jp.zeros(0, dtype=float)
-  zero_nv = jp.zeros(m.nv, dtype=float)
-  zero_nv_6 = jp.zeros((m.nv, 6), dtype=float)
-  zero_nv_nv = jp.zeros((m.nv, m.nv), dtype=float)
-  zero_nbody_3 = jp.zeros((m.nbody, 3), dtype=float)
-  zero_nbody_6 = jp.zeros((m.nbody, 6), dtype=float)
-  zero_nbody_10 = jp.zeros((m.nbody, 10), dtype=float)
-  zero_nbody_3_3 = jp.zeros((m.nbody, 3, 3), dtype=float)
-  zero_nefc = jp.zeros(nefc, dtype=float)
-  zero_na = jp.zeros(m.na, dtype=float)
-  zero_nu = jp.zeros(m.nu, dtype=float)
-  zero_njnt_3 = jp.zeros((m.njnt, 3), dtype=float)
-  zero_nm = jp.zeros(m.nM, dtype=float)
-
   contact = types.Contact(
-      dist=jp.zeros(ncon),
-      pos=jp.zeros((ncon, 3)),
-      frame=jp.zeros((ncon, 3, 3)),
-      includemargin=jp.zeros(ncon),
-      friction=jp.zeros((ncon, 5)),
-      solref=jp.zeros((ncon, mujoco.mjNREF)),
-      solreffriction=jp.zeros((ncon, mujoco.mjNREF)),
-      solimp=jp.zeros((ncon, mujoco.mjNIMP)),
+      dist=jp.zeros((ncon,), dtype=float),
+      pos=jp.zeros((ncon, 3), dtype=float),
+      frame=jp.zeros((ncon, 3, 3), dtype=float),
+      includemargin=jp.zeros((ncon,), dtype=float),
+      friction=jp.zeros((ncon, 5), dtype=float),
+      solref=jp.zeros((ncon, mujoco.mjNREF), dtype=float),
+      solreffriction=jp.zeros((ncon, mujoco.mjNREF), dtype=float),
+      solimp=jp.zeros((ncon, mujoco.mjNIMP), dtype=float),
       dim=dim,
-      geom1=jp.zeros(ncon, dtype=int) - 1,
-      geom2=jp.zeros(ncon, dtype=int) - 1,
-      geom=jp.zeros((ncon, 2), dtype=int) - 1,
+      geom1=jp.full((ncon,), -1, dtype=int),
+      geom2=jp.full((ncon,), -1, dtype=int),
+      geom=jp.full((ncon, 2), -1, dtype=int),
       efc_address=efc_address,
   )
 
@@ -173,59 +163,118 @@ def make_data(m: Union[types.Model, mujoco.MjModel]) -> types.Data:
       nl=nl,
       nefc=nefc,
       ncon=ncon,
-      solver_niter=jp.array(0, dtype=int),
-      time=jp.array(0.0, dtype=float),
+      solver_niter=jp.zeros((), dtype=int),
+      time=jp.zeros((), dtype=float),
       qpos=jp.array(m.qpos0),
-      qvel=zero_nv,
-      act=zero_na,
-      qacc_warmstart=zero_nv,
-      ctrl=zero_nu,
-      qfrc_applied=zero_nv,
-      xfrc_applied=zero_nbody_6,
-      eq_active=jp.zeros(m.neq, dtype=jp.uint8),
-      qacc=zero_nv,
-      act_dot=zero_na,
-      xpos=zero_nbody_3,
+      qvel=jp.zeros((m.nv,), dtype=float),
+      act=jp.zeros((m.na,), dtype=float),
+      qacc_warmstart=jp.zeros((m.nv,), dtype=float),
+      ctrl=jp.zeros((m.nu,), dtype=float),
+      qfrc_applied=jp.zeros((m.nv,), dtype=float),
+      xfrc_applied=jp.zeros((m.nbody, 6), dtype=float),
+      eq_active=jp.zeros((m.neq,), dtype=jp.uint8),
+      mocap_pos=jp.zeros((m.nmocap, 3), dtype=float),
+      mocap_quat=jp.zeros((m.nmocap, 4), dtype=float),
+      qacc=jp.zeros((m.nv,), dtype=float),
+      act_dot=jp.zeros((m.na,), dtype=float),
+      userdata=jp.zeros((m.nuserdata,), dtype=float),
+      sensordata=jp.zeros((m.nsensordata,), dtype=float),
+      xpos=jp.zeros((m.nbody, 3), dtype=float),
       xquat=jp.zeros((m.nbody, 4), dtype=float),
-      xmat=zero_nbody_3_3,
-      xipos=zero_nbody_3,
-      ximat=zero_nbody_3_3,
-      xanchor=zero_njnt_3,
-      xaxis=zero_njnt_3,
+      xmat=jp.zeros((m.nbody, 3, 3), dtype=float),
+      xipos=jp.zeros((m.nbody, 3), dtype=float),
+      ximat=jp.zeros((m.nbody, 3, 3), dtype=float),
+      xanchor=jp.zeros((m.njnt, 3), dtype=float),
+      xaxis=jp.zeros((m.njnt, 3), dtype=float),
       geom_xpos=jp.zeros((m.ngeom, 3), dtype=float),
       geom_xmat=jp.zeros((m.ngeom, 3, 3), dtype=float),
       site_xpos=jp.zeros((m.nsite, 3), dtype=float),
       site_xmat=jp.zeros((m.nsite, 3, 3), dtype=float),
       cam_xpos=jp.zeros((m.ncam, 3), dtype=float),
       cam_xmat=jp.zeros((m.ncam, 3, 3), dtype=float),
-      subtree_com=zero_nbody_3,
-      cdof=zero_nv_6,
-      cinert=zero_nbody_10,
-      actuator_length=zero_nu,
+      light_xpos=jp.zeros((m.nlight, 3), dtype=float),
+      light_xdir=jp.zeros((m.nlight, 3), dtype=float),
+      subtree_com=jp.zeros((m.nbody, 3), dtype=float),
+      cdof=jp.zeros((m.nv, 6), dtype=float),
+      cinert=jp.zeros((m.nbody, 10), dtype=float),
+      flexvert_xpos=jp.zeros((m.nflexvert, 3), dtype=float),
+      flexelem_aabb=jp.zeros((m.nflexelem, 6), dtype=float),
+      flexedge_J_rownnz=jp.zeros((m.nflexedge,), dtype=jp.int32),
+      flexedge_J_rowadr=jp.zeros((m.nflexedge,), dtype=jp.int32),
+      flexedge_J_colind=jp.zeros((m.nflexedge, m.nv), dtype=jp.int32),
+      flexedge_J=jp.zeros((m.nflexedge, m.nv), dtype=float),
+      flexedge_length=jp.zeros((m.nflexedge,), dtype=float),
+      ten_wrapadr=jp.zeros((m.ntendon,), dtype=jp.int32),
+      ten_wrapnum=jp.zeros((m.ntendon,), dtype=jp.int32),
+      ten_J_rownnz=jp.zeros((m.ntendon,), dtype=jp.int32),
+      ten_J_rowadr=jp.zeros((m.ntendon,), dtype=jp.int32),
+      ten_J_colind=jp.zeros((m.ntendon, m.nv), dtype=jp.int32),
+      ten_J=jp.zeros((m.ntendon, m.nv), dtype=float),
+      ten_length=jp.zeros((m.ntendon,), dtype=float),
+      wrap_obj=jp.zeros((m.nwrap, 2), dtype=jp.int32),
+      wrap_xpos=jp.zeros((m.nwrap, 6), dtype=float),
+      actuator_length=jp.zeros((m.nu,), dtype=float),
       actuator_moment=jp.zeros((m.nu, m.nv), dtype=float),
-      crb=zero_nbody_10,
-      qM=zero_nm if support.is_sparse(m) else zero_nv_nv,
-      qLD=zero_nm if support.is_sparse(m) else zero_nv_nv,
-      qLDiagInv=zero_nv if support.is_sparse(m) else zero_0,
+      crb=jp.zeros((m.nbody, 10), dtype=float),
+      qM=(
+          jp.zeros((m.nM,), dtype=float)
+          if support.is_sparse(m)
+          else jp.zeros((m.nv, m.nv), dtype=float)
+      ),
+      qLD=(
+          jp.zeros((m.nM,), dtype=float)
+          if support.is_sparse(m)
+          else jp.zeros((m.nv, m.nv), dtype=float)
+      ),
+      qLDiagInv=(
+          jp.zeros((m.nv,), dtype=float) if support.is_sparse(m)
+          else jp.zeros((0,), dtype=float)
+      ),
+      qLDiagSqrtInv=jp.zeros((m.nv,), dtype=float),
+      bvh_aabb_dyn=jp.zeros((m.nbvhdynamic, 6), dtype=float),
+      bvh_active=jp.zeros((m.nbvh,), dtype=jp.uint8),
+      flexedge_velocity=jp.zeros((m.nflexedge,), dtype=float),
+      ten_velocity=jp.zeros((m.ntendon,), dtype=float),
+      actuator_velocity=jp.zeros((m.nu,), dtype=float),
+      cvel=jp.zeros((m.nbody, 6), dtype=float),
+      cdof_dot=jp.zeros((m.nv, 6), dtype=float),
+      qfrc_bias=jp.zeros((m.nv,), dtype=float),
+      qfrc_spring=jp.zeros((m.nv,), dtype=float),
+      qfrc_damper=jp.zeros((m.nv,), dtype=float),
+      qfrc_gravcomp=jp.zeros((m.nv,), dtype=float),
+      qfrc_fluid=jp.zeros((m.nv,), dtype=float),
+      qfrc_passive=jp.zeros((m.nv,), dtype=float),
+      subtree_linvel=jp.zeros((m.nbody, 3), dtype=float),
+      subtree_angmom=jp.zeros((m.nbody, 3), dtype=float),
+      qH=jp.zeros((m.nM,), dtype=float),
+      qHDiagInv=jp.zeros((m.nv,), dtype=float),
+      D_rownnz=jp.zeros((m.nv,), dtype=jp.int32),
+      D_rowadr=jp.zeros((m.nv,), dtype=jp.int32),
+      D_colind=jp.zeros((m.nD,), dtype=jp.int32),
+      B_rownnz=jp.zeros((m.nbody,), dtype=jp.int32),
+      B_rowadr=jp.zeros((m.nbody,), dtype=jp.int32),
+      B_colind=jp.zeros((m.nB,), dtype=jp.int32),
+      qDeriv=jp.zeros((m.nD,), dtype=float),
+      qLU=jp.zeros((m.nD,), dtype=float),
+      actuator_force=jp.zeros((m.nu,), dtype=float),
+      qfrc_actuator=jp.zeros((m.nv,), dtype=float),
+      qfrc_smooth=jp.zeros((m.nv,), dtype=float),
+      qacc_smooth=jp.zeros((m.nv,), dtype=float),
+      qfrc_constraint=jp.zeros((m.nv,), dtype=float),
+      qfrc_inverse=jp.zeros((m.nv,), dtype=float),
+      cacc=jp.zeros((m.nbody, 6), dtype=float),
+      cfrc_int=jp.zeros((m.nbody, 6), dtype=float),
+      cfrc_ext=jp.zeros((m.nbody, 6), dtype=float),
       contact=contact,
       efc_type=efc_type,
       efc_J=jp.zeros((nefc, m.nv), dtype=float),
-      efc_frictionloss=zero_nefc,
-      efc_D=zero_nefc,
-      actuator_velocity=zero_nu,
-      cvel=zero_nbody_6,
-      cdof_dot=zero_nv_6,
-      qfrc_bias=zero_nv,
-      qfrc_gravcomp=zero_nv,
-      qfrc_passive=zero_nv,
-      efc_aref=zero_nefc,
-      qfrc_actuator=zero_nv,
-      qfrc_smooth=zero_nv,
-      qacc_smooth=zero_nv,
-      qfrc_constraint=zero_nv,
-      qfrc_inverse=zero_nv,
-      efc_force=zero_nefc,
-      userdata=jp.zeros(m.nuserdata, dtype=float),
+      efc_frictionloss=jp.zeros((nefc,), dtype=float),
+      efc_D=jp.zeros((nefc,), dtype=float),
+      efc_aref=jp.zeros((nefc,), dtype=float),
+      efc_force=jp.zeros((nefc,), dtype=float),
+      _qM_sparse=jp.zeros((m.nM), dtype=float),
+      _qLD_sparse=jp.zeros((m.nM), dtype=float),
+      _qLDiagInv_sparse=jp.zeros((m.nv,), dtype=float),
   )
 
   return d
@@ -296,6 +345,9 @@ def get_data_into(
     result_i.efc_J_colind[:] = np.tile(np.arange(m.nv), nefc)
 
     for field in types.Data.fields():
+      if field.name.startswith('_') and field.name.endswith('_sparse'):
+        continue
+
       if field.name == 'contact':
         _get_contact(result_i.contact, d_i.contact)
         # efc_address must be updated because rows were deleted above:
@@ -379,7 +431,8 @@ def put_data(m: mujoco.MjModel, d: mujoco.MjData, device=None) -> types.Data:
     if d_val > val:
       raise ValueError(f'd.{name} too high, d.{name} = {d_val}, model = {val}')
 
-  fields = {f.name: getattr(d, f.name) for f in types.Data.fields()}
+  fields = {f.name: getattr(d, f.name) for f in types.Data.fields()
+            if not f.name.endswith('_sparse')}
 
   # MJX prefers square matrices for these fields:
   for fname in ('xmat', 'ximat', 'geom_xmat', 'site_xmat', 'cam_xmat'):
@@ -427,6 +480,9 @@ def put_data(m: mujoco.MjModel, d: mujoco.MjData, device=None) -> types.Data:
     fields[fname] = value
 
   # convert qM and qLD if jacobian is dense
+  fields['_qM_sparse'] = fields['qM']
+  fields['_qLD_sparse'] = fields['qLD']
+  fields['_qLDiagInv_sparse'] = fields['qLDiagInv']
   if not support.is_sparse(m):
     fields['qM'] = np.zeros((m.nv, m.nv))
     mujoco.mj_fullM(m, fields['qM'], d.qM)

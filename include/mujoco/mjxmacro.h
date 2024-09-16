@@ -410,10 +410,11 @@
     X   ( int,     tex_type,              ntex,          1                    ) \
     X   ( int,     tex_height,            ntex,          1                    ) \
     X   ( int,     tex_width,             ntex,          1                    ) \
+    X   ( int,     tex_nchannel,          ntex,          1                    ) \
     X   ( int,     tex_adr,               ntex,          1                    ) \
-    X   ( mjtByte, tex_rgb,               ntexdata,      1                    ) \
+    X   ( mjtByte, tex_data,              ntexdata,      1                    ) \
     XMJV( int,     tex_pathadr,           ntex,          1                    ) \
-    XMJV( int,     mat_texid,             nmat,          mjNTEXMAT            ) \
+    XMJV( int,     mat_texid,             nmat,          mjNTEXROLE            ) \
     XMJV( mjtByte, mat_texuniform,        nmat,          1                    ) \
     XMJV( float,   mat_texrepeat,         nmat,          2                    ) \
     XMJV( float,   mat_emission,          nmat,          1                    ) \

@@ -63,7 +63,9 @@ static void settexture(int type, int state, const mjrContext* con, const mjvGeom
   float plane[4], scl[2];
   int texid = -1;
   if (geom) {
-    texid = (geom->matid == -1) ? -1 : con->mat_texid[mjNTEXMAT * geom->matid];
+    if (geom->matid >= 0) {
+      texid = con->mat_texid[mjNTEXROLE * geom->matid + mjTEXROLE_RGB];
+    }
   }
 
   // shadow
@@ -93,7 +95,7 @@ static void settexture(int type, int state, const mjrContext* con, const mjvGeom
   // explicit texture coordinates
   else if (type == mjtexREGULAR && geom->texcoord) {
     // enable
-    if (state) {
+    if (state && texid >= 0) {
       glActiveTexture(GL_TEXTURE0);
       glEnable(GL_TEXTURE_2D);
       glBindTexture(GL_TEXTURE_2D, con->texture[texid]);
@@ -107,7 +109,7 @@ static void settexture(int type, int state, const mjrContext* con, const mjvGeom
   }
 
   // 2D
-  else if (type == mjtexREGULAR && con->textureType[texid] == mjTEXTURE_2D) {
+  else if (type == mjtexREGULAR && texid >= 0 && con->textureType[texid] == mjTEXTURE_2D) {
     // enable
     if (state) {
       glActiveTexture(GL_TEXTURE0);
@@ -159,7 +161,7 @@ static void settexture(int type, int state, const mjrContext* con, const mjvGeom
   // cube or skybox
   else {
     // enable
-    if (state) {
+    if (state && texid >= 0) {
       glActiveTexture(GL_TEXTURE0);
       glEnable(GL_TEXTURE_CUBE_MAP);
       glEnable(GL_TEXTURE_GEN_S);

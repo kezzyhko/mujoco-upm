@@ -50,7 +50,6 @@ public const int mjNREF = 2;
 public const int mjNIMP = 5;
 public const int mjNSOLVER = 200;
 public const int mjNISLAND = 20;
-public const int mjNTEXMAT = 6;
 public const bool THIRD_PARTY_MUJOCO_INCLUDE_MJPLUGIN_H_ = true;
 public const bool mjEXTERNC = true;
 public const bool THIRD_PARTY_MUJOCO_MJRENDER_H_ = true;
@@ -109,7 +108,7 @@ public const int mjMAXLINEPNT = 1000;
 public const int mjMAXPLANEGRID = 200;
 public const bool THIRD_PARTY_MUJOCO_MJXMACRO_H_ = true;
 public const bool THIRD_PARTY_MUJOCO_MUJOCO_H_ = true;
-public const int mjVERSION_HEADER = 320;
+public const int mjVERSION_HEADER = 321;
 
 
 // ------------------------------------Enums------------------------------------
@@ -158,7 +157,8 @@ public enum mjtDisableBit : int{
   mjDSBL_SENSOR = 4096,
   mjDSBL_MIDPHASE = 8192,
   mjDSBL_EULERDAMP = 16384,
-  mjNDISABLE = 15,
+  mjDSBL_AUTORESET = 32768,
+  mjNDISABLE = 16,
 }
 public enum mjtEnableBit : int{
   mjENBL_OVERRIDE = 1,
@@ -208,6 +208,19 @@ public enum mjtTexture : int{
   mjTEXTURE_2D = 0,
   mjTEXTURE_CUBE = 1,
   mjTEXTURE_SKYBOX = 2,
+}
+public enum mjtTextureRole : int{
+  mjTEXROLE_USER = 0,
+  mjTEXROLE_RGB = 1,
+  mjTEXROLE_OCCLUSION = 2,
+  mjTEXROLE_ROUGHNESS = 3,
+  mjTEXROLE_METALLIC = 4,
+  mjTEXROLE_NORMAL = 5,
+  mjTEXROLE_OPACITY = 6,
+  mjTEXROLE_EMISSIVE = 7,
+  mjTEXROLE_RGBA = 8,
+  mjTEXROLE_ORM = 9,
+  mjNTEXROLE = 10,
 }
 public enum mjtIntegrator : int{
   mjINT_EULER = 0,
@@ -5451,8 +5464,9 @@ public unsafe struct mjModel_ {
   public int* tex_type;
   public int* tex_height;
   public int* tex_width;
+  public int* tex_nchannel;
   public int* tex_adr;
-  public byte* tex_rgb;
+  public byte* tex_data;
   public int* tex_pathadr;
   public int* mat_texid;
   public byte* mat_texuniform;
@@ -5630,7 +5644,7 @@ public unsafe struct mjrContext_ {
   public fixed uint auxFBO_r[10];
   public fixed uint auxColor[10];
   public fixed uint auxColor_r[10];
-  public fixed int mat_texid[600];
+  public fixed int mat_texid[1000];
   public fixed int mat_texuniform[100];
   public fixed int mat_texrepeat[200];
   public int ntexture;

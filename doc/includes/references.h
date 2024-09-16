@@ -35,7 +35,7 @@ typedef enum mjtState_ {          // state elements
 
   // convenience values for commonly used state specifications
   mjSTATE_PHYSICS       = mjSTATE_QPOS | mjSTATE_QVEL | mjSTATE_ACT,
-  mjSTATE_FULLPHYSICS   = mjSTATE_PHYSICS | mjSTATE_TIME | mjSTATE_PLUGIN,
+  mjSTATE_FULLPHYSICS   = mjSTATE_TIME | mjSTATE_PHYSICS | mjSTATE_PLUGIN,
   mjSTATE_USER          = mjSTATE_CTRL | mjSTATE_QFRC_APPLIED | mjSTATE_XFRC_APPLIED |
                           mjSTATE_EQ_ACTIVE | mjSTATE_MOCAP_POS | mjSTATE_MOCAP_QUAT |
                           mjSTATE_USERDATA,
@@ -418,8 +418,9 @@ typedef enum mjtDisableBit_ {     // disable default feature bitflags
   mjDSBL_SENSOR       = 1<<12,    // sensors
   mjDSBL_MIDPHASE     = 1<<13,    // mid-phase collision filtering
   mjDSBL_EULERDAMP    = 1<<14,    // implicit integration of joint damping in Euler integrator
+  mjDSBL_AUTORESET    = 1<<15,    // automatic reset when numerical issues are detected
 
-  mjNDISABLE          = 15        // number of disable flags
+  mjNDISABLE          = 16        // number of disable flags
 } mjtDisableBit;
 typedef enum mjtEnableBit_ {      // enable optional feature bitflags
   mjENBL_OVERRIDE     = 1<<0,     // override contact parameters
@@ -477,6 +478,19 @@ typedef enum mjtTexture_ {        // type of texture
   mjTEXTURE_CUBE,                 // cube texture, suitable for all other geom types
   mjTEXTURE_SKYBOX                // cube texture used as skybox
 } mjtTexture;
+typedef enum mjtTextureRole_ {    // role of texture map in rendering
+  mjTEXROLE_USER      = 0,        // unspecified
+  mjTEXROLE_RGB,                  // base color (albedo)
+  mjTEXROLE_OCCLUSION,            // ambient occlusion
+  mjTEXROLE_ROUGHNESS,            // roughness
+  mjTEXROLE_METALLIC,             // metallic
+  mjTEXROLE_NORMAL,               // normal (bump) map
+  mjTEXROLE_OPACITY,              // transperancy
+  mjTEXROLE_EMISSIVE,             // light emission
+  mjTEXROLE_RGBA,                 // base color, opacity
+  mjTEXROLE_ORM,                  // occlusion, roughness, metallic
+  mjNTEXROLE
+} mjtTextureRole;
 typedef enum mjtIntegrator_ {     // integrator mode
   mjINT_EULER         = 0,        // semi-implicit Euler
   mjINT_RK4,                      // 4th-order Runge Kutta
@@ -1211,12 +1225,13 @@ struct mjModel_ {
   int*      tex_type;             // texture type (mjtTexture)                (ntex x 1)
   int*      tex_height;           // number of rows in texture image          (ntex x 1)
   int*      tex_width;            // number of columns in texture image       (ntex x 1)
-  int*      tex_adr;              // address in rgb                           (ntex x 1)
-  mjtByte*  tex_rgb;              // rgb (alpha = 1)                          (ntexdata x 1)
+  int*      tex_nchannel;         // number of channels in texture image      (ntex x 1)
+  int*      tex_adr;              // start address in tex_data                (ntex x 1)
+  mjtByte*  tex_data;             // pixel values                             (ntexdata x 1)
   int*      tex_pathadr;          // address of texture asset path; -1: none  (ntex x 1)
 
   // materials
-  int*      mat_texid;            // indices of textures; -1: none            (nmat x mjNTEXMAT)
+  int*      mat_texid;            // indices of textures; -1: none            (nmat x mjNTEXROLE)
   mjtByte*  mat_texuniform;       // make texture cube uniform                (nmat x 1)
   float*    mat_texrepeat;        // texture repetition for 2d mapping        (nmat x 2)
   float*    mat_emission;         // emission (x rgb)                         (nmat x 1)
@@ -1543,9 +1558,9 @@ struct mjrContext_ {                // custom OpenGL context
   unsigned int auxColor_r[mjNAUX];  // auxiliary color buffer for resolving
 
   // materials with textures
-  int mat_texid[mjMAXMATERIAL*mjNTEXMAT];  // material texture ids (-1: no texture)
-  int mat_texuniform[mjMAXMATERIAL];       // texture repetition for 2d mapping
-  int mat_texrepeat[mjMAXMATERIAL*2];      // texture repetition for 2d mapping
+  int mat_texid[mjMAXMATERIAL*mjNTEXROLE];       // material texture ids (-1: no texture)
+  int mat_texuniform[mjMAXMATERIAL];            // texture repetition for 2d mapping
+  int mat_texrepeat[mjMAXMATERIAL*2];           // texture repetition for 2d mapping
 
   // texture objects and info
   int ntexture;                        // number of allocated textures
@@ -2000,6 +2015,7 @@ typedef struct mjsTexture_ {       // texture specification
   double random;                   // probability of random dots
   int height;                      // height in pixels (square for cube and skybox)
   int width;                       // width in pixels
+  int nchannel;                    // number of channels
 
   // method 2: single file
   mjString* content_type;          // content type of file
@@ -2020,7 +2036,7 @@ typedef struct mjsTexture_ {       // texture specification
 typedef struct mjsMaterial_ {      // material specification
   mjsElement* element;             // element type
   mjString* name;                  // name
-  mjString* texture;               // name of texture (empty: none)
+  mjStringVec* textures;           // names of textures (empty: none)
   mjtByte texuniform;              // make texture cube uniform
   float texrepeat[2];              // texture repetition for 2D mapping
   float emission;                  // emission

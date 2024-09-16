@@ -22,8 +22,10 @@
 #include <cstdio>
 #include <cstring>
 #include <functional>
+#include <limits>
 #include <map>
 #include <memory>
+#include <new>
 #include <optional>
 #include <random>
 #include <sstream>
@@ -33,7 +35,6 @@
 #include <vector>
 
 #include "lodepng.h"
-#include <mujoco/mjmacro.h>
 #include <mujoco/mjmodel.h>
 #include <mujoco/mjplugin.h>
 #include <mujoco/mjtnum.h>
@@ -45,7 +46,6 @@
 #include "user/user_model.h"
 #include "user/user_resource.h"
 #include "user/user_util.h"
-#include "user/user_vfs.h"
 
 namespace {
 namespace mju = ::mujoco::util;
@@ -703,19 +703,17 @@ void mjCBase::NameSpace(const mjCModel* m) {
 
 
 // load resource if found (fallback to OS filesystem)
-mjResource* mjCBase::LoadResource(std::string filename, const mjVFS* vfs) {
-  // try reading from provided VFS
-  mjResource* r = mju_openVfsResource(filename.c_str(), vfs);
-
-  if (!r) {
-    std::array<char, 1024> error;
-    // not in vfs try a provider or fallback to OS filesystem
-    r = mju_openResource(filename.c_str(), error.data(), error.size());
-    if (!r) {
-      throw mjCError(nullptr, "%s", error.data());
-    }
+mjResource* mjCBase::LoadResource(const std::string& modelfiledir,
+                                  const std::string& filename,
+                                  const mjVFS* vfs) {
+  // try reading from provided VFS or fallback to OS filesystem
+  std::array<char, 1024> error;
+  mjResource* resource = mju_openResource(modelfiledir.c_str(), filename.c_str(), vfs,
+                                          error.data(), error.size());
+  if (!resource) {
+    throw mjCError(nullptr, "%s", error.data());
   }
-  return r;
+  return resource;
 }
 
 
@@ -1256,6 +1254,13 @@ mjCBase* mjCBody::FindObject(mjtObj type, std::string _name, bool recursive) {
 
 template <class T>
 static mjsElement* GetNext(std::vector<T*>& list, mjsElement* child) {
+  if (!child) {
+    if (list.empty()) {
+      return nullptr;
+    }
+    return list[0]->spec.element;
+  }
+
   for (unsigned int i = 0; i < list.size()-1; i++) {
     if (list[i]->spec.element == child) {
       return list[i+1]->spec.element;
@@ -1281,19 +1286,19 @@ mjsElement* mjCBody::NextChild(mjsElement* child, mjtObj type) {
   switch (type) {
     case mjOBJ_BODY:
     case mjOBJ_XBODY:
-      return child ? GetNext(bodies, child) : bodies[0];
+      return GetNext(bodies, child);
     case mjOBJ_JOINT:
-      return child ? GetNext(joints, child) : joints[0];
+      return GetNext(joints, child);
     case mjOBJ_GEOM:
-      return child ? GetNext(geoms, child) : geoms[0];
+      return GetNext(geoms, child);
     case mjOBJ_SITE:
-      return child ? GetNext(sites, child) : sites[0];
+      return GetNext(sites, child);
     case mjOBJ_CAMERA:
-      return child ? GetNext(cameras, child) : cameras[0];
+      return GetNext(cameras, child);
     case mjOBJ_LIGHT:
-      return child ? GetNext(lights, child) : lights[0];
+      return GetNext(lights, child);
     case mjOBJ_FRAME:
-      return child ? GetNext(frames, child) : frames[0];
+      return GetNext(frames, child);
     default:
       return nullptr;
   }
@@ -3158,8 +3163,8 @@ void mjCHField::Compile(const mjVFS* vfs) {
       throw mjCError(this, "unsupported content type: '%s'", asset_type.c_str());
     }
 
-    std::string filename = mjuu_combinePaths(model->modelfiledir_, model->meshdir_, file_);
-    mjResource* resource = LoadResource(filename, vfs);
+    std::string filename = mjuu_combinePaths(model->meshdir_, file_);
+    mjResource* resource = LoadResource(model->modelfiledir_, filename, vfs);
 
     try {
       if (asset_type == "image/png") {
@@ -3216,7 +3221,7 @@ mjCTexture::mjCTexture(mjCModel* _model) {
   spec_cubefiles_.assign(6, "");
 
   // clear internal variables
-  rgb.clear();
+  data.clear();
 
   // point to local
   PointToLocal();
@@ -3265,14 +3270,14 @@ void mjCTexture::CopyFromSpec() {
   cubefiles_ = spec_cubefiles_;
 
   // clear precompiled asset. TODO: use asset cache
-  rgb.clear();
+  data.clear();
 }
 
 
 
 // free data storage allocated by lodepng
 mjCTexture::~mjCTexture() {
-  rgb.clear();
+  data.clear();
 }
 
 
@@ -3365,21 +3370,21 @@ void mjCTexture::Builtin2D(void) {
         double pos = 2*sqrt(x*x+y*y) - 1;
 
         // interpolate through sigmoid
-        interp(rgb.data() + 3*(r*width+c), rgb2, rgb1, pos);
+        interp(data.data() + 3*(r*width+c), rgb2, rgb1, pos);
       }
     }
   }
 
   // checker
   else if (builtin==mjBUILTIN_CHECKER) {
-    checker(rgb.data(), RGB1, RGB2, width, height);
+    checker(data.data(), RGB1, RGB2, width, height);
   }
 
   // flat
   else if (builtin==mjBUILTIN_FLAT) {
     for (int r=0; r<height; r++) {
       for (int c=0; c<width; c++) {
-        memcpy(rgb.data()+3*(r*width+c), RGB1, 3);
+        memcpy(data.data()+3*(r*width+c), RGB1, 3);
       }
     }
   }
@@ -3389,28 +3394,28 @@ void mjCTexture::Builtin2D(void) {
   // edge
   if (mark==mjMARK_EDGE) {
     for (int r=0; r<height; r++) {
-      memcpy(rgb.data()+3*(r*width+0), RGBm, 3);
-      memcpy(rgb.data()+3*(r*width+width-1), RGBm, 3);
+      memcpy(data.data()+3*(r*width+0), RGBm, 3);
+      memcpy(data.data()+3*(r*width+width-1), RGBm, 3);
     }
     for (int c=0; c<width; c++) {
-      memcpy(rgb.data()+3*(0*width+c), RGBm, 3);
-      memcpy(rgb.data()+3*((height-1)*width+c), RGBm, 3);
+      memcpy(data.data()+3*(0*width+c), RGBm, 3);
+      memcpy(data.data()+3*((height-1)*width+c), RGBm, 3);
     }
   }
 
   // cross
   else if (mark==mjMARK_CROSS) {
     for (int r=0; r<height; r++) {
-      memcpy(rgb.data()+3*(r*width+width/2), RGBm, 3);
+      memcpy(data.data()+3*(r*width+width/2), RGBm, 3);
     }
     for (int c=0; c<width; c++) {
-      memcpy(rgb.data()+3*(height/2*width+c), RGBm, 3);
+      memcpy(data.data()+3*(height/2*width+c), RGBm, 3);
     }
   }
 
   // random dots
   else if (mark==mjMARK_RANDOM && random>0) {
-    randomdot(rgb.data(), markrgb, width, height, random);
+    randomdot(data.data(), markrgb, width, height, random);
   }
 }
 
@@ -3420,6 +3425,9 @@ void mjCTexture::Builtin2D(void) {
 void mjCTexture::BuiltinCube(void) {
   unsigned char RGB1[3], RGB2[3], RGBm[3], RGBi[3];
   int w = width;
+  if (w > std::numeric_limits<int>::max() / w) {
+    throw mjCError(this, "Cube texture width is too large.");
+  }
   int ww = width*width;
 
   // convert fixed colors
@@ -3433,6 +3441,9 @@ void mjCTexture::BuiltinCube(void) {
 
   // gradient
   if (builtin == mjBUILTIN_GRADIENT) {
+    if (ww > std::numeric_limits<int>::max() / 18) {
+      throw mjCError(this, "Gradient texture width is too large.");
+    }
     for (int r = 0; r < w; r++) {
       for (int c = 0; c < w; c++) {
         // compute normalized pixel coordinates
@@ -3445,26 +3456,26 @@ void mjCTexture::BuiltinCube(void) {
 
         // set sides
         interp(RGBi, rgb1, rgb2, elside);
-        memcpy(rgb.data() + 0 * 3 * ww + 3 * (r * w + c), RGBi, 3);  // 0: right
-        memcpy(rgb.data() + 1 * 3 * ww + 3 * (r * w + c), RGBi, 3);  // 1: left
-        memcpy(rgb.data() + 4 * 3 * ww + 3 * (r * w + c), RGBi, 3);  // 4: front
-        memcpy(rgb.data() + 5 * 3 * ww + 3 * (r * w + c), RGBi, 3);  // 5: back
+        memcpy(data.data() + 0 * 3 * ww + 3 * (r * w + c), RGBi, 3);  // 0: right
+        memcpy(data.data() + 1 * 3 * ww + 3 * (r * w + c), RGBi, 3);  // 1: left
+        memcpy(data.data() + 4 * 3 * ww + 3 * (r * w + c), RGBi, 3);  // 4: front
+        memcpy(data.data() + 5 * 3 * ww + 3 * (r * w + c), RGBi, 3);  // 5: back
 
         // set up and down
-        interp(rgb.data() + 2 * 3 * ww + 3 * (r * w + c), rgb1, rgb2, elup);  // 2: up
-        interp(rgb.data() + 3 * 3 * ww + 3 * (r * w + c), rgb1, rgb2, -elup);  // 3: down
+        interp(data.data() + 2 * 3 * ww + 3 * (r * w + c), rgb1, rgb2, elup);  // 2: up
+        interp(data.data() + 3 * 3 * ww + 3 * (r * w + c), rgb1, rgb2, -elup);  // 3: down
       }
     }
   }
 
   // checker
   else if (builtin == mjBUILTIN_CHECKER) {
-    checker(rgb.data() + 0 * 3 * ww, RGB1, RGB2, w, w);
-    checker(rgb.data() + 1 * 3 * ww, RGB1, RGB2, w, w);
-    checker(rgb.data() + 2 * 3 * ww, RGB1, RGB2, w, w);
-    checker(rgb.data() + 3 * 3 * ww, RGB1, RGB2, w, w);
-    checker(rgb.data() + 4 * 3 * ww, RGB2, RGB1, w, w);
-    checker(rgb.data() + 5 * 3 * ww, RGB2, RGB1, w, w);
+    checker(data.data() + 0 * 3 * ww, RGB1, RGB2, w, w);
+    checker(data.data() + 1 * 3 * ww, RGB1, RGB2, w, w);
+    checker(data.data() + 2 * 3 * ww, RGB1, RGB2, w, w);
+    checker(data.data() + 3 * 3 * ww, RGB1, RGB2, w, w);
+    checker(data.data() + 4 * 3 * ww, RGB2, RGB1, w, w);
+    checker(data.data() + 5 * 3 * ww, RGB2, RGB1, w, w);
   }
 
   // flat
@@ -3472,14 +3483,14 @@ void mjCTexture::BuiltinCube(void) {
     for (int r = 0; r < w; r++) {
       for (int c = 0; c < w; c++) {
         // set sides and up
-        memcpy(rgb.data() + 0 * 3 * ww + 3 * (r * w + c), RGB1, 3);
-        memcpy(rgb.data() + 1 * 3 * ww + 3 * (r * w + c), RGB1, 3);
-        memcpy(rgb.data() + 2 * 3 * ww + 3 * (r * w + c), RGB1, 3);
-        memcpy(rgb.data() + 4 * 3 * ww + 3 * (r * w + c), RGB1, 3);
-        memcpy(rgb.data() + 5 * 3 * ww + 3 * (r * w + c), RGB1, 3);
+        memcpy(data.data() + 0 * 3 * ww + 3 * (r * w + c), RGB1, 3);
+        memcpy(data.data() + 1 * 3 * ww + 3 * (r * w + c), RGB1, 3);
+        memcpy(data.data() + 2 * 3 * ww + 3 * (r * w + c), RGB1, 3);
+        memcpy(data.data() + 4 * 3 * ww + 3 * (r * w + c), RGB1, 3);
+        memcpy(data.data() + 5 * 3 * ww + 3 * (r * w + c), RGB1, 3);
 
         // set down
-        memcpy(rgb.data() + 3 * 3 * ww + 3 * (r * w + c), RGB2, 3);
+        memcpy(data.data() + 3 * 3 * ww + 3 * (r * w + c), RGB2, 3);
       }
     }
   }
@@ -3490,12 +3501,12 @@ void mjCTexture::BuiltinCube(void) {
   if (mark == mjMARK_EDGE) {
     for (int j = 0; j < 6; j++) {
       for (int r = 0; r < w; r++) {
-        memcpy(rgb.data() + j * 3 * ww + 3 * (r * w + 0), RGBm, 3);
-        memcpy(rgb.data() + j * 3 * ww + 3 * (r * w + w - 1), RGBm, 3);
+        memcpy(data.data() + j * 3 * ww + 3 * (r * w + 0), RGBm, 3);
+        memcpy(data.data() + j * 3 * ww + 3 * (r * w + w - 1), RGBm, 3);
       }
       for (int c = 0; c < w; c++) {
-        memcpy(rgb.data() + j * 3 * ww + 3 * (0 * w + c), RGBm, 3);
-        memcpy(rgb.data() + j * 3 * ww + 3 * ((w - 1) * w + c), RGBm, 3);
+        memcpy(data.data() + j * 3 * ww + 3 * (0 * w + c), RGBm, 3);
+        memcpy(data.data() + j * 3 * ww + 3 * ((w - 1) * w + c), RGBm, 3);
       }
     }
   }
@@ -3504,17 +3515,17 @@ void mjCTexture::BuiltinCube(void) {
   else if (mark == mjMARK_CROSS) {
     for (int j = 0; j < 6; j++) {
       for (int r = 0; r < w; r++) {
-        memcpy(rgb.data() + j * 3 * ww + 3 * (r * w + w / 2), RGBm, 3);
+        memcpy(data.data() + j * 3 * ww + 3 * (r * w + w / 2), RGBm, 3);
       }
       for (int c = 0; c < w; c++) {
-        memcpy(rgb.data() + j * 3 * ww + 3 * (w / 2 * w + c), RGBm, 3);
+        memcpy(data.data() + j * 3 * ww + 3 * (w / 2 * w + c), RGBm, 3);
       }
     }
   }
 
   // random dots
   else if (mark == mjMARK_RANDOM && random > 0) {
-    randomdot(rgb.data(), markrgb, w, height, random);
+    randomdot(data.data(), markrgb, w, height, random);
   }
 }
 
@@ -3522,13 +3533,22 @@ void mjCTexture::BuiltinCube(void) {
 void mjCTexture::LoadPNG(mjResource* resource,
                          std::vector<unsigned char>& image,
                          unsigned int& w, unsigned int& h) {
-  PNGImage png_image = PNGImage::Load(this, resource, LCT_RGB);
+  LodePNGColorType color_type;
+  if (nchannel == 4) {
+    color_type = LCT_RGBA;
+  } else if (nchannel == 3) {
+    color_type = LCT_RGB;
+  } else if (nchannel == 1) {
+    color_type = LCT_GREY;
+  } else {
+    throw mjCError(this, "Unsupported number of channels: %s",
+                   std::to_string(nchannel).c_str());
+  }
+  PNGImage png_image = PNGImage::Load(this, resource, color_type);
   w = png_image.Width();
   h = png_image.Height();
   image = png_image.MoveData();
 }
-
-
 
 // load custom file
 void mjCTexture::LoadCustom(mjResource* resource,
@@ -3584,7 +3604,7 @@ void mjCTexture::LoadFlip(std::string filename, const mjVFS* vfs,
     throw mjCError(this, "unsupported content type: '%s'", asset_type.c_str());
   }
 
-  mjResource* resource = LoadResource(filename, vfs);
+  mjResource* resource = LoadResource(model->modelfiledir_, filename, vfs);
 
   try {
     if (asset_type == "image/png") {
@@ -3600,6 +3620,10 @@ void mjCTexture::LoadFlip(std::string filename, const mjVFS* vfs,
 
   // horizontal flip
   if (hflip) {
+    if (nchannel != 3) {
+      throw mjCError(
+          this, "currently only 3-channel textures support horizontal flip");
+    }
     for (int r=0; r<h; r++) {
       for (int c=0; c<w/2; c++) {
         int c1 = w-1-c;
@@ -3622,6 +3646,10 @@ void mjCTexture::LoadFlip(std::string filename, const mjVFS* vfs,
 
   // vertical flip
   if (vflip) {
+    if (nchannel != 3) {
+      throw mjCError(
+          this, "currently only 3-channel textures support vertical flip");
+    }
     for (int r=0; r<h/2; r++) {
       for (int c=0; c<w; c++) {
         int r1 = h-1-r;
@@ -3657,12 +3685,17 @@ void mjCTexture::Load2D(std::string filename, const mjVFS* vfs) {
   height = h;
 
   // allocate and copy data
-  rgb.assign(3*width*height, 0);
-  if (rgb.empty()) {
+  std::int64_t size = static_cast<std::int64_t>(width)*height;
+  if (size >= std::numeric_limits<int>::max() / nchannel || size <= 0) {
+    throw mjCError(this, "Texture too large");
+  }
+  try {
+    data.assign(nchannel*size, 0);
+  } catch (const std::bad_alloc& e) {
     throw mjCError(this, "Could not allocate memory for texture '%s' (id %d)",
                    (const char*)file_.c_str(), id);
   }
-  memcpy(rgb.data(), image.data(), 3*width*height);
+  memcpy(data.data(), image.data(), nchannel*size);
   image.clear();
 }
 
@@ -3692,12 +3725,20 @@ void mjCTexture::LoadCubeSingle(std::string filename, const mjVFS* vfs) {
     width = height = w;
   } else {
     width = w/gridsize[1];
+    if (width >= std::numeric_limits<int>::max()/6) {
+      throw mjCError(this, "Invalid width of cube texture");
+    }
     height = 6*width;
   }
 
   // allocate data
-  rgb.assign(3*width*height, 0);
-  if (rgb.empty()) {
+  std::int64_t size = static_cast<std::int64_t>(width)*height;
+  if (size >= std::numeric_limits<int>::max() / 3 || size <= 0) {
+    throw mjCError(this, "Cube texture too large");
+  }
+  try {
+    data.assign(3*size, 0);
+  } catch (const std::bad_alloc& e) {
     throw mjCError(this,
                    "Could not allocate memory for texture '%s' (id %d)",
                    (const char*)file_.c_str(), id);
@@ -3705,7 +3746,7 @@ void mjCTexture::LoadCubeSingle(std::string filename, const mjVFS* vfs) {
 
   // copy: repeated
   if (gridsize[0]==1 && gridsize[1]==1) {
-    memcpy(rgb.data(), image.data(), 3*width*width);
+    memcpy(data.data(), image.data(), 3*width*width);
   }
 
   // copy: grid
@@ -3738,7 +3779,7 @@ void mjCTexture::LoadCubeSingle(std::string filename, const mjVFS* vfs) {
         int rstart = width*(k/gridsize[1]);
         int cstart = width*(k%gridsize[1]);
         for (int j=0; j<width; j++) {
-          memcpy(rgb.data()+i*3*width*width+j*3*width, image.data()+(j+rstart)*3*w+3*cstart, 3*width);
+          memcpy(data.data()+i*3*width*width+j*3*width, image.data()+(j+rstart)*3*w+3*cstart, 3*width);
         }
 
         // mark as defined
@@ -3752,7 +3793,7 @@ void mjCTexture::LoadCubeSingle(std::string filename, const mjVFS* vfs) {
         for (int k=0; k<width; k++) {
           for (int s=0; s<width; s++) {
             for (int j=0; j<3; j++) {
-              rgb[i*3*width*width + 3*(k*width+s) + j] = (mjtByte)(255*rgb1[j]);
+              data[i*3*width*width + 3*(k*width+s) + j] = (mjtByte)(255*rgb1[j]);
             }
           }
         }
@@ -3779,7 +3820,7 @@ void mjCTexture::LoadCubeSeparate(const mjVFS* vfs) {
       }
 
       // make filename
-      std::string filename = mjuu_combinePaths(model->modelfiledir_, model->texturedir_, cubefiles_[i]);
+      std::string filename = mjuu_combinePaths(model->texturedir_, cubefiles_[i]);
 
       // load PNG or custom
       unsigned int w, h;
@@ -3794,11 +3835,19 @@ void mjCTexture::LoadCubeSeparate(const mjVFS* vfs) {
       }
 
       // first file: set size and allocate data
-      if (rgb.empty()) {
+      if (data.empty()) {
         width = w;
+        if (width >= std::numeric_limits<int>::max()/6) {
+          throw mjCError(this, "Invalid width of builtin texture");
+        }
         height = 6*width;
-        rgb.assign(3*width*height, 0);
-        if (rgb.empty()) {
+        std::int64_t size = static_cast<std::int64_t>(width)*height;
+        if (size >= std::numeric_limits<int>::max() / 3 || size <= 0) {
+          throw mjCError(this, "PNG texture too large");
+        }
+        try {
+          data.assign(3*size, 0);
+        } catch (const std::bad_alloc& e) {
           throw mjCError(this, "Could not allocate memory for texture");
         }
       }
@@ -3811,7 +3860,7 @@ void mjCTexture::LoadCubeSeparate(const mjVFS* vfs) {
       }
 
       // copy data
-      memcpy(rgb.data()+i*3*width*width, image.data(), 3*width*width);
+      memcpy(data.data()+i*3*width*width, image.data(), 3*width*width);
       image.clear();
 
       // mark as defined
@@ -3825,7 +3874,7 @@ void mjCTexture::LoadCubeSeparate(const mjVFS* vfs) {
       for (int k=0; k<width; k++) {
         for (int s=0; s<width; s++) {
           for (int j=0; j<3; j++) {
-            rgb[i*3*width*width + 3*(k*width+s) + j] = (mjtByte)(255*rgb1[j]);
+            data[i*3*width*width + 3*(k*width+s) + j] = (mjtByte)(255*rgb1[j]);
           }
         }
       }
@@ -3848,6 +3897,9 @@ void mjCTexture::Compile(const mjVFS* vfs) {
 
     // adjust height of cube texture
     if (type != mjTEXTURE_2D) {
+      if (width >= std::numeric_limits<int>::max()/6) {
+        throw mjCError(this, "Invalid width of builtin texture");
+      }
       height = 6*width;
     } else {
       if (height<1) {
@@ -3855,9 +3907,14 @@ void mjCTexture::Compile(const mjVFS* vfs) {
       }
     }
 
+    std::int64_t size = static_cast<std::int64_t>(width)*height;
+    if (size >= std::numeric_limits<int>::max() / nchannel || size <= 0) {
+      throw mjCError(this, "Builtin texture too large");
+    }
     // allocate data
-    rgb.assign(3*width*height, 0);
-    if (rgb.empty()) {
+    try {
+      data.assign(nchannel*size, 0);
+    } catch (const std::bad_alloc& e) {
       throw mjCError(this, "Could not allocate memory for texture");
     }
 
@@ -3877,7 +3934,7 @@ void mjCTexture::Compile(const mjVFS* vfs) {
     }
 
     // make filename
-    std::string filename = mjuu_combinePaths(model->modelfiledir_, model->texturedir_, file_);
+    std::string filename = mjuu_combinePaths(model->texturedir_, file_);
 
     // dispatch
     if (type==mjTEXTURE_2D) {
@@ -3913,7 +3970,7 @@ void mjCTexture::Compile(const mjVFS* vfs) {
   }
 
   // make sure someone allocated data; SHOULD NOT OCCUR
-  if (rgb.empty()) {
+  if (data.empty()) {
     throw mjCError(this, "texture '%s' (id %d) was not specified", name.c_str(), id);
   }
 }
@@ -3926,10 +3983,13 @@ void mjCTexture::Compile(const mjVFS* vfs) {
 mjCMaterial::mjCMaterial(mjCModel* _model, mjCDef* _def) {
   mjs_defaultMaterial(&spec);
   elemtype = mjOBJ_MATERIAL;
+  textures_.assign(mjNTEXROLE, "");
+  spec_textures_.assign(mjNTEXROLE, "");
 
   // clear internal
-  spec_texture_.clear();
-  texid = -1;
+  for (int i=0; i<mjNTEXROLE; i++) {
+    texid[i] = -1;
+  }
 
   // reset to default if given
   if (_def) {
@@ -3968,16 +4028,16 @@ mjCMaterial& mjCMaterial::operator=(const mjCMaterial& other) {
 void mjCMaterial::PointToLocal() {
   spec.element = static_cast<mjsElement*>(this);
   spec.name = &name;
-  spec.texture = &spec_texture_;
+  spec.textures = &spec_textures_;
   spec.info = &info;
-  texture = nullptr;
+  textures = nullptr;
 }
 
 
 
 void mjCMaterial::CopyFromSpec() {
   *static_cast<mjsMaterial*>(this) = spec;
-  texture_ = spec_texture_;
+  textures_ = spec_textures_;
 }
 
 
@@ -3986,8 +4046,10 @@ void mjCMaterial::NameSpace(const mjCModel* m) {
   if (!name.empty()) {
     name = m->prefix + name + m->suffix;
   }
-  if (!spec_texture_.empty() && model != m) {
-    spec_texture_ = m->prefix + spec_texture_ + m->suffix;
+  for (int i=0; i<mjNTEXROLE; i++) {
+    if (!spec_textures_[i].empty() && model != m) {
+      spec_textures_[i] = m->prefix + spec_textures_[i] + m->suffix;
+    }
   }
 }
 

@@ -282,6 +282,8 @@ def crb(m: Model, d: Data) -> Data:
   crb_cdof = jax.vmap(math.inert_mul)(crb_dof, d.cdof)
   qm = support.make_m(m, crb_cdof, d.cdof, m.dof_armature)
   d = d.replace(qM=qm)
+  if support.is_sparse(m):
+    d = d.replace(_qM_sparse=qm)
 
   return d
 
@@ -309,7 +311,9 @@ def factor_m(m: Model, d: Data) -> Data:
       if j == -1:
         break
       out_beg, out_end = tuple(m.dof_Madr[j : j + 2])
-      updates.setdefault(depth[j], []).append((out_beg, out_end, madr_d, madr_ij))
+      updates.setdefault(depth[j], []).append(
+          (out_beg, out_end, madr_d, madr_ij)
+      )
 
   qld = d.qM
 
@@ -340,6 +344,7 @@ def factor_m(m: Model, d: Data) -> Data:
   qld = (qld / qld[jp.array(madr_ds)]).at[m.dof_Madr].set(qld_diag)
 
   d = d.replace(qLD=qld, qLDiagInv=1 / qld_diag)
+  d = d.replace(_qLD_sparse=d.qLD, _qLDiagInv_sparse=d.qLDiagInv)
 
   return d
 
@@ -460,6 +465,20 @@ def rne(m: Model, d: Data) -> Data:
   return d
 
 
+def tendon(m: Model, d: Data) -> Data:
+  """Computes tendon lengths and moments."""
+  if not m.ntendon:
+    return d
+
+  ten_id = np.repeat(np.arange(m.ntendon), m.tendon_num)
+  length = m.wrap_prm * d.qpos[m.jnt_qposadr[m.wrap_objid]]
+  ten_length = jax.ops.segment_sum(length, ten_id, m.ntendon)
+  ten_j = jp.zeros((m.ntendon, m.nv))
+  ten_j = ten_j.at[ten_id, m.jnt_dofadr[m.wrap_objid]].set(m.wrap_prm)
+
+  return d.replace(ten_length=ten_length, ten_J=ten_j)
+
+
 def _site_dof_mask(m: Model) -> np.ndarray:
   """Creates a dof mask for site transmissions."""
   mask = np.ones((m.nu, m.nv))
@@ -491,7 +510,6 @@ def _site_dof_mask(m: Model) -> np.ndarray:
 
 def transmission(m: Model, d: Data) -> Data:
   """Computes actuator/transmission lengths and moments."""
-  # TODO: consider combining transmission calculation into fwd_actuation.
   if not m.nu:
     return d
 
@@ -542,6 +560,9 @@ def transmission(m: Model, d: Data) -> Data:
       jac = jp.concatenate((jacp, jacr), axis=1) * site_dof_mask[:, None]
       wrench = jp.concatenate((frame_xmat @ gear[:3], frame_xmat @ gear[3:]))
       moment = jac @ wrench
+    elif trntype == TrnType.TENDON:
+      length = d.ten_length[trnid[0]] * gear[:1]
+      moment = d.ten_J[trnid[0]] * gear[0]
     else:
       raise RuntimeError(f'unrecognized trntype: {TrnType(trntype)}')
 

@@ -2,6 +2,35 @@
 Changelog
 =========
 
+Version 3.2.1 (Aug 5, 2024)
+---------------------------
+
+General
+^^^^^^^
+1. Renamed ``mjModel.tex_rbg`` to ``mjModel.tex_data``.
+2. Added a new :ref:`autoreset<option-flag-autoreset>` flag to disable automatic reset when NaNs or infinities are
+   detected.
+3. Added sub-elements to the MJCF :ref:`material<asset-material>` element, to allow specification of multiple textures
+   for rendering (e.g., :ref:`occlusion-roughness-metallic<material-orm>`). Note that the MuJoCo renderer doesn't
+   support these new features, and they are made available for use with external renderers.
+
+MJX
+^^^
+4. Added more fields to ``mjx.Model`` and ``mjx.Data`` for further compatibility with the corresponding MuJoCo structs.
+5. Added support for :ref:`fixed tendons <tendon-fixed>`.
+6. Added support for tendon length limits (``mjCNSTR_LIMIT_TENDON`` in :ref:`mjtConstraint`).
+7. Added support for tendon equality constraints (``mjEQ_TENDON`` in :ref:`mjtEq`).
+8. Added support for tendon actuator transmission (``mjTRN_TENDON`` in :ref:`mjtTrn`).
+
+Python bindings
+^^^^^^^^^^^^^^^
+9. Added support for asset dictionary argument in ``mujoco.spec.from_file``, ``mujoco.spec.from_string`` and
+   ``mujoco.spec.compile``.
+
+Bug fixes
+^^^^^^^^^
+10. Fixed a bug where implicit integrators did not take into account disabled actuators (:github:issue:`1838`).
+
 Version 3.2.0 (Jul 15, 2024)
 ----------------------------
 
@@ -87,6 +116,7 @@ Bug fixes
 ^^^^^^^^^
 22. Fix an issue where ``mj_copyData`` (or ``copy.copy()`` in the Python bindings) was not copying contact information
     correctly (:github:issue:`1710`).
+23. Fix an issue with saving to XML that caused frames to be written multiple times (:github:issue:`1802`).
 
 Version 3.1.6 (Jun 3, 2024)
 ---------------------------
