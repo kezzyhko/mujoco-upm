@@ -25,7 +25,7 @@
 #include "engine/engine_util_misc.h"
 
 #ifdef _MSC_VER
-#pragma warning (disable: 4305) // tell MSVC to not complain that float x = 0.1 should be 0.1f
+  #pragma warning (disable: 4305)  // disable MSVC warning: truncation from 'double' to 'float'
 #endif
 
 
@@ -68,8 +68,9 @@ const char* mjVISSTRING[mjNVISFLAG][3] = {
   {"Convex &Hull",    "0", "H"},
   {"Te&xture",        "1", "X"},
   {"&Joint",          "0", "J"},
-  {"Act&uator",       "0", "U"},
   {"Camera",          "0", "Q"},
+  {"Act&uator",       "0", "U"},
+  {"Act&ivation",     "0", ","},
   {"Light",           "0", "Z"},
   {"Tendon",          "1", "V"},
   {"Range Finder",    "1", "Y"},
@@ -216,6 +217,7 @@ void mjv_defaultOption(mjvOption* vopt) {
     vopt->jointgroup[i] = state;
     vopt->tendongroup[i] = state;
     vopt->actuatorgroup[i] = state;
+    vopt->skingroup[i] = state;
   }
 
   for (int i=0; i<mjNVISFLAG; i++) {

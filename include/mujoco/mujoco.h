@@ -24,7 +24,7 @@ extern "C" {
 #endif
 
 // header version; should match the library version as returned by mj_version()
-#define mjVERSION_HEADER 220
+#define mjVERSION_HEADER 221
 
 // needed to define size_t, fabs and log10
 #include "stdlib.h"
@@ -437,7 +437,7 @@ MJAPI void mj_differentiatePos(const mjModel* m, mjtNum* qvel, mjtNum dt,
 // Integrate position with given velocity.
 MJAPI void mj_integratePos(const mjModel* m, mjtNum* qpos, const mjtNum* qvel, mjtNum dt);
 
-// Normalize all quaterions in qpos-type vector.
+// Normalize all quaternions in qpos-type vector.
 MJAPI void mj_normalizeQuat(const mjModel* m, mjtNum* qpos);
 
 // Map from body local to global Cartesian coordinates.
@@ -732,7 +732,7 @@ MJAPI void mju_warning_s(const char* msg, const char* text);
 // Clear user error and memory handlers.
 MJAPI void mju_clearHandlers(void);
 
-// Allocate memory; byte-align on 8; pad size to multiple of 8.
+// Allocate memory; byte-align on 64; pad size to multiple of 64.
 MJAPI void* mju_malloc(size_t size);
 
 // Free memory, using free() by default.
@@ -956,13 +956,13 @@ MJAPI void mju_subQuat(mjtNum res[3], const mjtNum qa[4], const mjtNum qb[4]);
 // Convert quaternion to 3D rotation matrix.
 MJAPI void mju_quat2Mat(mjtNum res[9], const mjtNum quat[4]);
 
-// Convert 3D rotation matrix to quaterion.
+// Convert 3D rotation matrix to quaternion.
 MJAPI void mju_mat2Quat(mjtNum quat[4], const mjtNum mat[9]);
 
 // Compute time-derivative of quaternion, given 3D rotational velocity.
 MJAPI void mju_derivQuat(mjtNum res[4], const mjtNum quat[4], const mjtNum vel[3]);
 
-// Integrate quaterion given 3D angular velocity.
+// Integrate quaternion given 3D angular velocity.
 MJAPI void mju_quatIntegrate(mjtNum quat[4], const mjtNum vel[3], mjtNum scale);
 
 // Construct quaternion performing rotation from z-axis to given vector.
@@ -1000,7 +1000,7 @@ MJAPI int mju_cholUpdate(mjtNum* mat, mjtNum* x, int n, int flg_plus);
 MJAPI int mju_eig3(mjtNum eigval[3], mjtNum eigvec[9], mjtNum quat[4], const mjtNum mat[9]);
 
 
-//---------------------- Miscellaneous --------------------------------------------------
+//---------------------- Miscellaneous -------------------------------------------------------------
 
 // Muscle active force, prm = (range[2], force, scale, lmin, lmax, vmax, fpmax, fvmax).
 MJAPI mjtNum mju_muscleGain(mjtNum len, mjtNum vel, const mjtNum lengthrange[2],
@@ -1027,6 +1027,9 @@ MJAPI mjtNum mju_min(mjtNum a, mjtNum b);
 
 // Return max(a,b) with single evaluation of a and b.
 MJAPI mjtNum mju_max(mjtNum a, mjtNum b);
+
+// Clip x to the range [min, max].
+MJAPI mjtNum mju_clip(mjtNum x, mjtNum min, mjtNum max);
 
 // Return sign of x: +1, -1 or 0.
 MJAPI mjtNum mju_sign(mjtNum x);
@@ -1078,6 +1081,16 @@ MJAPI char* mju_strncpy(char *dst, const char *src, int n);
 
 // Sigmoid function over 0<=x<=1 constructed from half-quadratics.
 MJAPI mjtNum mju_sigmoid(mjtNum x);
+
+
+//---------------------- Derivatives ---------------------------------------------------------------
+
+// Finite differenced state-transition and control-transition matrices dx(t+h) = A*dx(t) + B*du(t).
+//   required output matrix dimensions:
+//      A: (2*nv+na x 2*nv+na)
+//      B: (2*nv+na x nu)
+MJAPI void mjd_transitionFD(const mjModel* m, mjData* d, mjtNum eps, mjtByte centered,
+                            mjtNum* A, mjtNum* B);
 
 
 #if defined(__cplusplus)

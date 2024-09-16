@@ -120,16 +120,6 @@ mjCAlternative::mjCAlternative() {
 // used for geom, site, body and camera frames
 const char* mjCAlternative::Set(double* quat, double* inertia,
                                 bool degree, const char* sequence) {
-  // check for multiple defitions
-  int ndef = (int)mjuu_defined(axisangle[0]) +
-             (int)mjuu_defined(xyaxes[0]) +
-             (int)mjuu_defined(zaxis[0]) +
-             (int)mjuu_defined(euler[0]) +
-             (int)mjuu_defined(fullinertia[0]);
-  if (ndef>1) {
-    return "too many alternative definitions";
-  }
-
   // set quat using axisangle
   if (mjuu_defined(axisangle[0])) {
     // convert to radians if necessary, normalize axis
@@ -644,6 +634,10 @@ void mjCBody::MakeLocal(double* _locpos, double* _locquat,
   }
 }
 
+// set explicit_inertial to true
+void mjCBody::MakeInertialExplicit() {
+  explicit_inertial = true;
+}
 
 
 // compiler
@@ -2232,7 +2226,8 @@ void mjCTexture::LoadCustom(string filename, const mjVFS* vfs,
       mju_free(buffer);
     }
 
-    throw mjCError(this, "non-positive texture dimensions in file '%s'", filename.c_str());
+    throw mjCError(this, "Non-PNG texture, assuming custom binary file format,\n"
+                         "non-positive texture dimensions in file '%s'", filename.c_str());
   }
 
   // check buffer size
@@ -2241,7 +2236,8 @@ void mjCTexture::LoadCustom(string filename, const mjVFS* vfs,
       mju_free(buffer);
     }
 
-    throw mjCError(this, "unexpected file size in file '%s'", filename.c_str());
+    throw mjCError(this, "Non-PNG texture, assuming custom binary file format,\n"
+                         "unexpected file size in file '%s'", filename.c_str());
   }
 
   // allocate and copy
@@ -3537,7 +3533,7 @@ void mjCSensor::Compile(void) {
 
     // get sensorized object id
     objid = pobj->id;
-  } else {
+  } else if (type != mjSENS_CLOCK) {
     throw mjCError(this, "invalid type in sensor '%s' (id = %d)", name.c_str(), id);
   }
 
@@ -3808,6 +3804,12 @@ void mjCSensor::Compile(void) {
     }
     break;
 
+  case mjSENS_CLOCK:
+    dim = 1;
+    needstage = mjSTAGE_POS;
+    datatype = mjDATATYPE_REAL;
+    break;
+
   case mjSENS_USER:
     // check for negative dim
     if (dim<0) {
@@ -3984,6 +3986,7 @@ mjCKey::mjCKey(mjCModel* _model) {
   act.clear();
   mpos.clear();
   mquat.clear();
+  ctrl.clear();
 }
 
 
@@ -3995,6 +3998,7 @@ mjCKey::~mjCKey() {
   act.clear();
   mpos.clear();
   mquat.clear();
+  ctrl.clear();
 }
 
 
@@ -4067,4 +4071,15 @@ void mjCKey::Compile(const mjModel* m) {
   } else if (mquat.size()!=4*m->nmocap) {
     throw mjCError(this, "key %d: invalid mquat size", 0, id);
   }
+
+  // ctrl: allocate or check size
+  if (ctrl.empty()) {
+    ctrl.resize(m->nu);
+    for (i=0; i<m->nu; i++) {
+      ctrl[i] = 0;
+    }
+  } else if (ctrl.size()!=m->nu) {
+    throw mjCError(this, "key %d: invalid ctrl size", 0, id);
+  }
+
 }

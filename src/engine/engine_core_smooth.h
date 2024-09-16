@@ -48,10 +48,18 @@ void mj_crbSkip(const mjModel* m, mjData* d, int skipsimple);
 // composite rigid body inertia algorithm
 MJAPI void mj_crb(const mjModel* m, mjData* d);
 
+// sparse L'*D*L factorizaton of inertia-like matrix M, assumed spd
+MJAPI void mj_factorI(const mjModel* m, mjData* d, const mjtNum* M, mjtNum* qLD, mjtNum* qLDiagInv,
+                      mjtNum* qLDiagSqrtInv);
+
 // sparse L'*D*L factorizaton of the inertia matrix M, assumed spd
 MJAPI void mj_factorM(const mjModel* m, mjData* d);
 
 // sparse backsubstitution:  x = inv(L'*D*L)*y
+MJAPI void mj_solveLD(const mjModel* m, mjData* d, mjtNum* x, const mjtNum* y, int n,
+                      const mjtNum* qLD, const mjtNum* qLDiagInv);
+
+// sparse backsubstitution:  x = inv(L'*D*L)*y, use factorization in d
 MJAPI void mj_solveM(const mjModel* m, mjData* d, mjtNum* x, const mjtNum* y, int n);
 
 // half of sparse backsubstitution:  x = sqrt(inv(D))*inv(L')*y
@@ -72,9 +80,10 @@ MJAPI void mj_subtreeVel(const mjModel* m, mjData* d);
 
 //------------------------- fluid model ------------------------------------------------------------
 
-
+// fluid forces based on inertia-box approximation
 void mj_inertiaBoxFluidModel(const mjModel* m, mjData* d, int i);
 
+// fluid forces based on ellipsoid approximation
 void mj_ellipsoidFluidModel(const mjModel* m, mjData* d, int bodyid);
 
 // compute forces due to added mass (potential flow)

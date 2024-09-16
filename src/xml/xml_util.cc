@@ -19,11 +19,15 @@
 #include <cstdlib>
 #include <cstring>
 #include <iostream>
+#include <limits>
+#include <optional>
 #include <sstream>
 #include <string>
+#include <type_traits>
 #include <vector>
 
 #include "cc/array_safety.h"
+#include "engine/engine_util_errmem.h"
 #include "xml/xml_util.h"
 #include "xml/xml_numeric_format.h"
 
@@ -38,6 +42,32 @@ using tinyxml2::XMLAttribute;
 using tinyxml2::XMLElement;
 
 namespace mju = ::mujoco::util;
+
+template <typename T>
+std::optional<T> ParseInfOrNan(const std::string& s) {
+  const char* str = s.c_str();
+  if constexpr (std::is_floating_point_v<T>) {
+    T sign = 1;
+    if (s.size() == 4 && s[0] == '-') {
+      sign = -1;
+      ++str;
+    } else if (s.size() != 3) {
+      return std::nullopt;
+    }
+    if (std::numeric_limits<T>::has_infinity &&
+        (str[0] == 'i' || str[0] == 'I') &&
+        (str[1] == 'n' || str[1] == 'N') &&
+        (str[2] == 'f' || str[2] == 'F')) {
+      return sign * std::numeric_limits<T>::infinity();
+    } else if (std::numeric_limits<T>::has_quiet_NaN &&
+               (str[0] == 'n' || str[0] == 'N') &&
+               (str[1] == 'a' || str[1] == 'A') &&
+               (str[2] == 'n' || str[2] == 'N')) {
+      return sign * std::numeric_limits<T>::quiet_NaN();
+    }
+  }
+  return std::nullopt;
+}
 
 }  // namespace
 
@@ -483,15 +513,16 @@ XMLElement* mjXSchema::Check(XMLElement* elem, int level) {
 
 //---------------------------------- class mjXUtil implementation ----------------------------------
 
-// compare two vectors: double
-bool mjXUtil::SameVector(const double* vec1, const double* vec2, int n) {
+// compare two vectors
+template<typename T>
+bool mjXUtil::SameVector(const T* vec1, const T* vec2, int n) {
   if (!vec1 || !vec2) {
     return false;
   }
 
   bool same = true;
   for (int i=0; i<n; i++) {
-    if (fabs(vec1[i] - vec2[i]) > 1E-10) {
+    if (std::abs(vec1[i] - vec2[i]) > std::numeric_limits<T>::epsilon()) {
       same = false;
     }
   }
@@ -499,24 +530,10 @@ bool mjXUtil::SameVector(const double* vec1, const double* vec2, int n) {
   return same;
 }
 
-
-
-// compare two vectors: double
-bool mjXUtil::SameVector(const float* vec1, const float* vec2, int n) {
-  if (!vec1 || !vec2) {
-    return false;
-  }
-
-  bool same = true;
-  for (int i=0; i<n; i++) {
-    if (fabs(vec1[i] - vec2[i]) > 1E-7) {
-      same = false;
-    }
-  }
-
-  return same;
-}
-
+template bool mjXUtil::SameVector(const double* vec1, const double* vec2, int n);
+template bool mjXUtil::SameVector(const float* vec1, const float* vec2, int n);
+template bool mjXUtil::SameVector(const int* vec1, const int* vec2, int n);
+template bool mjXUtil::SameVector(const mjtByte* vec1, const mjtByte* vec2, int n);
 
 
 // find string in map, return corresponding integer (-1: not found)
@@ -549,8 +566,9 @@ string mjXUtil::FindValue(const mjMap* map, int mapsz, int value) {
 //  "len" is the number of floats or doubles to be read
 //  the content is returned in "text", the numeric data in "data"
 //  return true if attribute found, false if not found and not required
+template<typename T>
 int mjXUtil::ReadAttr(XMLElement* elem, const char* attr, const int len,
-                      double* data, string& text, bool required, bool exact) {
+                      T* data, string& text, bool required, bool exact) {
   const char* pstr = elem->Attribute(attr);
 
   // check if attribute exists
@@ -567,208 +585,56 @@ int mjXUtil::ReadAttr(XMLElement* elem, const char* attr, const int len,
 
   // get input stream
   istringstream strm(text);
+  std::string token;
 
   // read numbers
-  int i;
-  for (i=0; i<len; i++) {
-    strm >> data[i];
-    if (strm.eof()) {
-      i++;
-      break;
-    } else if (strm.bad()) {
-      throw mjXError(elem, "problem reading attribute '%s'", attr);
+  int i = 0;
+  while (!strm.eof() && i < len) {
+    strm >> token;
+    istringstream token_strm(token);
+    token_strm >> data[i];
+    if (token_strm.fail() || !token_strm.eof()) {
+      // C++ standard libraries do not always parse inf and nan as valid floating point values.
+      std::optional<T> maybe_result = ParseInfOrNan<T>(token);
+      if (maybe_result.has_value()) {
+        data[i] = *maybe_result;
+      } else {
+        throw mjXError(elem, "problem reading attribute '%s'", attr);
+      }
     }
-  }
-
-  // determine available length
-  int available = i;
-  if (strm.good()) {
-    double dummy;
-    strm >> dummy;
-    if (!strm.bad() && !strm.fail()) {
-      available++;
+    if constexpr (std::is_floating_point_v<T>) {
+      if (std::isnan(data[i])) {
+        mju_warning("XML contains a 'NaN'. Please check it carefully.");
+      }
     }
+    ++i;
   }
+  strm >> std::ws;
 
-  // check
-  if (exact && available<len) {
+  // check if there is not enough data
+  if (exact && i < len) {
     throw mjXError(elem, "attribute '%s' does not have enough data", attr);
   }
-  if (available>len) {
+
+  // check if there is too much data
+  if (!strm.eof()) {
     throw mjXError(elem, "attribute '%s' has too much data", attr);
   }
 
   return i;
 }
 
+template int mjXUtil::ReadAttr(XMLElement* elem, const char* attr, const int len,
+                               double* data, string& text, bool required, bool exact);
 
+template int mjXUtil::ReadAttr(XMLElement* elem, const char* attr, const int len,
+                               float* data, string& text, bool required, bool exact);
 
-// float version
-int mjXUtil::ReadAttr(XMLElement* elem, const char* attr, const int len,
-                      float* data, string& text, bool required, bool exact) {
-  const char* pstr = elem->Attribute(attr);
+template int mjXUtil::ReadAttr(XMLElement* elem, const char* attr, const int len,
+                               int* data, string& text, bool required, bool exact);
 
-  // check if attribute exists
-  if (!pstr) {
-    if (required) {
-      throw mjXError(elem, "required attribute missing: '%s'", attr);
-    } else {
-      return 0;
-    }
-  }
-
-  // convert to string, remove trailing white space
-  text = string(pstr);
-  text.erase(text.find_last_not_of(" \t\n\r\f\v") + 1);
-
-  // get input stream
-  istringstream strm(text);
-
-  // read numbers
-  int i;
-  for (i=0; i<len; i++) {
-    strm >> data[i];
-    if (strm.eof()) {
-      i++;
-      break;
-    } else if (strm.bad()) {
-      throw mjXError(elem, "problem reading attribute '%s'", attr);
-    }
-  }
-
-  // determine available length
-  int available = i;
-  if (strm.good()) {
-    float dummy;
-    strm >> dummy;
-    if (!strm.bad() && !strm.fail()) {
-      available++;
-    }
-  }
-
-  // check
-  if (exact && available<len) {
-    throw mjXError(elem, "attribute '%s' does not have enough data", attr);
-  }
-  if (available>len) {
-    throw mjXError(elem, "attribute '%s' has too much data", attr);
-  }
-
-  return i;
-}
-
-
-
-// int version
-int mjXUtil::ReadAttr(XMLElement* elem, const char* attr, const int len,
-                      int* data, string& text, bool required, bool exact) {
-  const char* pstr = elem->Attribute(attr);
-
-  // check if attribute exists
-  if (!pstr) {
-    if (required) {
-      throw mjXError(elem, "required attribute missing: '%s'", attr);
-    } else {
-      return 0;
-    }
-  }
-
-  // convert to string, remove trailing white space
-  text = string(pstr);
-  text.erase(text.find_last_not_of(" \t\n\r\f\v") + 1);
-
-  // get input stream
-  istringstream strm(text);
-
-  // read numbers
-  int i;
-  for (i=0; i<len; i++) {
-    strm >> data[i];
-    if (strm.eof()) {
-      i++;
-      break;
-    } else if (strm.bad()) {
-      throw mjXError(elem, "problem reading attribute '%s'", attr);
-    }
-  }
-
-  // determine available length
-  int available = i;
-  if (strm.good()) {
-    mjtByte dummy;
-    strm >> dummy;
-    if (!strm.bad() && !strm.fail()) {
-      available++;
-    }
-  }
-
-  // check
-  if (exact && available<len) {
-    throw mjXError(elem, "attribute '%s' does not have enough data", attr);
-  }
-  if (available>len) {
-    throw mjXError(elem, "attribute '%s' has too much data", attr);
-  }
-
-  return i;
-}
-
-
-
-// byte version
-int mjXUtil::ReadAttr(XMLElement* elem, const char* attr, const int len,
-                      mjtByte* data, string& text, bool required, bool exact) {
-  const char* pstr = elem->Attribute(attr);
-
-  // check if attribute exists
-  if (!pstr) {
-    if (required) {
-      throw mjXError(elem, "required attribute missing: '%s'", attr);
-    } else {
-      return 0;
-    }
-  }
-
-  // convert to string, remove trailing white space
-  text = string(pstr);
-  text.erase(text.find_last_not_of(" \t\n\r\f\v") + 1);
-
-  // get input stream
-  istringstream strm(text);
-
-  // read numbers
-  int i, tmp;
-  for (i=0; i<len; i++) {
-    strm >> tmp;
-    data[i] = (mjtByte)(tmp & 0xFF);
-    if (strm.eof()) {
-      i++;
-      break;
-    } else if (strm.bad()) {
-      throw mjXError(elem, "problem reading attribute '%s'", attr);
-    }
-  }
-
-  // determine available length
-  int available = i;
-  if (strm.good()) {
-    mjtByte dummy;
-    strm >> dummy;
-    if (!strm.bad() && !strm.fail()) {
-      available++;
-    }
-  }
-
-  // check
-  if (exact && available<len) {
-    throw mjXError(elem, "attribute '%s' does not have enough data", attr);
-  }
-  if (available>len) {
-    throw mjXError(elem, "attribute '%s' has too much data", attr);
-  }
-
-  return i;
-}
+template int mjXUtil::ReadAttr(XMLElement* elem, const char* attr, const int len,
+                               mjtByte* data, string& text, bool required, bool exact);
 
 
 
@@ -957,13 +823,13 @@ bool mjXUtil::MapValue(XMLElement* elem, const char* attr, int* data,
 
 // check if double is int
 static bool isint(double x) {
-  return ((fabs(x - floor(x)) < 1E-12) || (fabs(x - ceil(x)) < 1E-12));
+  return ((std::abs(x - floor(x)) < 1E-12) || (std::abs(x - ceil(x)) < 1E-12));
 }
 
 
 // round to nearest int
 static int Round(double x) {
-  if (fabs(x - floor(x)) < fabs(x - ceil(x))) {
+  if (std::abs(x - floor(x)) < std::abs(x - ceil(x))) {
     return (int)floor(x);
   } else {
     return (int)ceil(x);
@@ -971,161 +837,58 @@ static int Round(double x) {
 }
 
 
-// write attribute- double
-void mjXUtil::WriteAttr(XMLElement* elem, string name, int n, double* data,
-                        const double* def) {
-  char buf[100];
-  string value;
-  value.clear();
-
+// write attribute
+template<typename T>
+void mjXUtil::WriteAttr(XMLElement* elem, string name, int n, T* data, const T* def) {
   // make sure all are defined
-  for (int i=0; i<n; i++) {
-    if (std::isnan(data[i])) {
-      return;
-    }
-  }
-
-  // skip default attributes
-  if (SameVector(data, def, n)) {
-    return;
-  }
-
-  // process all numbers
-  for (int i=0; i<n; i++) {
-    // add space between numbers
-    if (i>0) {
-      value = value + " ";
-    }
-
-    // write integer or float
-    if (isint(data[i])) {
-      mju::sprintf_arr(buf, "%d", Round(data[i]));
-    } else {
-      mju::sprintf_arr(buf, mujoco::_mjPRIVATE__get_xml_precision(), data[i]);
-    }
-
-    // append number
-    value = value + buf;
-  }
-
-  // set attribute as string
-  WriteAttrTxt(elem, name, value);
-}
-
-
-
-// write attribute- float
-void mjXUtil::WriteAttr(XMLElement* elem, string name, int n, float* data,
-                        const float* def) {
-  char buf[100];
-  string value;
-  value.clear();
-
-  // skip default attributes
-  if (SameVector(data, def, n)) {
-    return;
-  }
-
-  // process all numbers
-  for (int i=0; i<n; i++) {
-    // add space between numbers
-    if (i>0) {
-      value = value + " ";
-    }
-
-    // write integer or float
-    if (isint(data[i])) {
-      mju::sprintf_arr(buf, "%d", Round(data[i]));
-    } else {
-      mju::sprintf_arr(buf, "%g", data[i]);
-    }
-
-    // append number
-    value = value + buf;
-  }
-
-  // set attribute as string
-  WriteAttrTxt(elem, name, value);
-}
-
-
-
-// write attribute- byte
-void mjXUtil::WriteAttr(XMLElement* elem, string name, int n, mjtByte* data,
-                        const mjtByte* def) {
-  char buf[100];
-  string value;
-  value.clear();
-
-  // skip default attributes
-  if (def) {
-    bool skip = true;
-    for (int i=0; i<n; i++)
-      if (data[i] != def[i]) {
-        skip = false;
-      }
-
-    if (skip) {
-      return;
-    }
-  }
-
-  // process all numbers
-  for (int i=0; i<n; i++) {
-    // add space between numbers
-    if (i>0) {
-      value = value + " ";
-    }
-
-    // write integer
-    mju::sprintf_arr(buf, "%d", data[i]);
-
-    // append number
-    value = value + buf;
-  }
-
-  // set attribute as string
-  WriteAttrTxt(elem, name, value);
-}
-
-
-// write attribute- int
-void mjXUtil::WriteAttr(XMLElement* elem, string name, int n, int* data,
-                        const int* def) {
-  char buf[100];
-  string value;
-  value.clear();
-
-  // skip default attributes
-  if (def) {
-    bool skip = true;
+  if constexpr (std::is_floating_point_v<T>) {
     for (int i=0; i<n; i++) {
-      if (data[i] != def[i]) {
-        skip = false;
+      if (std::isnan(data[i])) {
+        return;
       }
     }
-    if (skip) {
-      return;
-    }
   }
+
+  // skip default attributes
+  if (SameVector(data, def, n)) {
+    return;
+  }
+
+  // increase precision for testing
+  stringstream stream;
+  stream.precision(mujoco::_mjPRIVATE__get_xml_precision());
 
   // process all numbers
   for (int i=0; i<n; i++) {
     // add space between numbers
     if (i>0) {
-      value = value + " ";
+      stream << " ";
     }
 
-    // write integer
-    mju::sprintf_arr(buf, "%d", data[i]);
-
     // append number
-    value = value + buf;
+    if (isint(data[i])) {
+      stream << Round(data[i]);
+    } else {
+      stream << data[i];
+    }
   }
 
   // set attribute as string
-  WriteAttrTxt(elem, name, value);
+  WriteAttrTxt(elem, name, stream.str());
 }
+
+
+template void mjXUtil::WriteAttr(XMLElement* elem, string name, int n,
+                                 double* data, const double* def);
+
+template void mjXUtil::WriteAttr(XMLElement* elem, string name, int n,
+                                 float* data, const float* def);
+
+template void mjXUtil::WriteAttr(XMLElement* elem, string name, int n,
+                                 int* data, const int* def);
+
+template void mjXUtil::WriteAttr(XMLElement* elem, string name, int n,
+                                 mjtByte* data, const mjtByte* def);
 
 
 // write vector<double> attribute, default = zero array

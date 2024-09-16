@@ -40,6 +40,7 @@ void mj_kinematics(const mjModel* m, mjData* d) {
   // set world position and orientation
   mju_zero3(d->xpos);
   mju_unit4(d->xquat);
+  mju_zero3(d->xipos);
   mju_zero(d->xmat, 9);
   mju_zero(d->ximat, 9);
   d->xmat[0] = d->xmat[4] = d->xmat[8] = 1;
@@ -48,7 +49,7 @@ void mj_kinematics(const mjModel* m, mjData* d) {
   // normalize all quaternions in qpos
   mj_normalizeQuat(m, d->qpos);
 
-  // normalize mocap quaterions
+  // normalize mocap quaternions
   for (int i=0; i<m->nmocap; i++) {
     mju_normalize4(d->mocap_quat+4*i);
   }
@@ -854,20 +855,20 @@ void mj_crb(const mjModel* m, mjData* d) {
 
 
 
-// sparse L'*D*L factorizaton of the inertia matrix M, assumed spd
-void mj_factorM(const mjModel* m, mjData* d) {
+// sparse L'*D*L factorizaton of inertia-like matrix M, assumed spd
+void mj_factorI(const mjModel* m, mjData* d, const mjtNum* M, mjtNum* qLD, mjtNum* qLDiagInv,
+                mjtNum* qLDiagSqrtInv) {
   int cnt;
   int Madr_kk, Madr_ki;
   mjtNum tmp;
 
   // local copies of key variables
-  mjtNum* qLD = d->qLD;
   int* dof_Madr = m->dof_Madr;
   int* dof_parentid = m->dof_parentid;
   int nv = m->nv;
 
   // copy M into LD
-  mju_copy(d->qLD, d->qM, m->nM);
+  mju_copy(qLD, M, m->nM);
 
   // dense backward loop over dofs (regular only, simple diagonal already copied)
   for (int k=nv-1; k>=0; k--) {
@@ -911,9 +912,19 @@ void mj_factorM(const mjModel* m, mjData* d) {
 
   // compute 1/diag(D), 1/sqrt(diag(D))
   for (int i=0; i<nv; i++) {
-    d->qLDiagInv[i] = 1.0/qLD[dof_Madr[i]];
-    d->qLDiagSqrtInv[i] = 1.0/mju_sqrt(qLD[dof_Madr[i]]);
+    mjtNum qLDi = qLD[dof_Madr[i]];
+    qLDiagInv[i] = 1.0/qLDi;
+    if (qLDiagSqrtInv) {
+      qLDiagSqrtInv[i] = 1.0/mju_sqrt(qLDi);
+    }
   }
+}
+
+
+
+// sparse L'*D*L factorizaton of the inertia matrix M, assumed spd
+void mj_factorM(const mjModel* m, mjData* d) {
+  mj_factorI(m, d, d->qM, d->qLD, d->qLDiagInv, d->qLDiagSqrtInv);
 }
 
 
@@ -921,11 +932,11 @@ void mj_factorM(const mjModel* m, mjData* d) {
 // sparse backsubstitution:  x = inv(L'*D*L)*y
 //  L is in lower triangle of qLD; D is on diagonal of qLD
 //  handle n vectors at once
-void mj_solveM(const mjModel* m, mjData* d, mjtNum* x, const mjtNum* y, int n) {
+void mj_solveLD(const mjModel* m, mjData* d, mjtNum* x, const mjtNum* y, int n,
+                const mjtNum* qLD, const mjtNum* qLDiagInv) {
   mjtNum tmp;
 
   // local copies of key variables
-  mjtNum *qLD = d->qLD, *qLDiagInv = d->qLDiagInv;
   int* dof_Madr = m->dof_Madr;
   int* dof_parentid = m->dof_parentid;
   int nv = m->nv;
@@ -1034,6 +1045,14 @@ void mj_solveM(const mjModel* m, mjData* d, mjtNum* x, const mjtNum* y, int n) {
       }
     }
   }
+}
+
+
+
+// sparse backsubstitution:  x = inv(L'*D*L)*y
+//  use factorization in d
+void mj_solveM(const mjModel* m, mjData* d, mjtNum* x, const mjtNum* y, int n) {
+  mj_solveLD(m, d, x, y, n, d->qLD, d->qLDiagInv);
 }
 
 
@@ -1319,7 +1338,7 @@ void mj_subtreeVel(const mjModel* m, mjData* d) {
 
 //---------------------------------- fluid models --------------------------------------------------
 
-
+// fluid forces based on inertia-box approximation
 void mj_inertiaBoxFluidModel(const mjModel* m, mjData* d, int i) {
   mjtNum lvel[6], wind[6], lwind[6], lfrc[6], bfrc[6], box[3], diam, *inertia;
   inertia = m->body_inertia + 3*i;
@@ -1380,38 +1399,7 @@ void mj_inertiaBoxFluidModel(const mjModel* m, mjData* d, int i) {
 
 
 
-// all semi-axes of a geom
-static void geomSemiaxes(const mjModel* m, int geom_id, mjtNum semiaxes[3]) {
-  mjtNum* size = m->geom_size + 3*geom_id;
-  switch (m->geom_type[geom_id]) {
-  case mjGEOM_SPHERE:
-    semiaxes[0] = size[0];
-    semiaxes[1] = size[0];
-    semiaxes[2] = size[0];
-    break;
-
-  case mjGEOM_CAPSULE:
-    semiaxes[0] = size[0];
-    semiaxes[1] = size[0];
-    semiaxes[2] = size[1] + size[0];
-    break;
-
-  case mjGEOM_CYLINDER:
-    semiaxes[0] = size[0];
-    semiaxes[1] = size[0];
-    semiaxes[2] = size[1];
-    break;
-
-  default:
-    semiaxes[0] = size[0];
-    semiaxes[1] = size[1];
-    semiaxes[2] = size[2];
-  }
-}
-
-
-
-// fluid interaction forces based on ellipsoid approximation
+// fluid forces based on ellipsoid approximation
 void mj_ellipsoidFluidModel(const mjModel* m, mjData* d, int bodyid) {
   mjtNum lvel[6], wind[6], lwind[6], lfrc[6], bfrc[6];
   mjtNum geom_interaction_coef, magnus_lift_coef, kutta_lift_coef;
@@ -1421,7 +1409,7 @@ void mj_ellipsoidFluidModel(const mjModel* m, mjData* d, int bodyid) {
   for (int j=0; j<m->body_geomnum[bodyid]; j++) {
     const int geomid = m->body_geomadr[bodyid] + j;
 
-    geomSemiaxes(m, geomid, semiaxes);
+    mju_geomSemiAxes(m, geomid, semiaxes);
 
     readFluidGeomInteraction(
         m->geom_fluid + mjNFLUID*geomid, &geom_interaction_coef,
@@ -1604,7 +1592,7 @@ void mj_viscousForces(
           A_proj*blunt_drag_coef + slender_drag_coef*(A_max - A_proj));
   const mjtNum drag_ang_coef =  // linear plus quadratic
       fluid_viscosity * lin_visc_torq_coef +
-      fluid_density * mju_norm3(mom_visc) * ang_drag_coef;
+      fluid_density * mju_norm3(mom_visc);
 
   local_force[0] -= drag_ang_coef * ang_vel[0];
   local_force[1] -= drag_ang_coef * ang_vel[1];

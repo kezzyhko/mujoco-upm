@@ -403,6 +403,7 @@ mjtGain
    typedef enum _mjtGain
    {
        mjGAIN_FIXED        = 0,        // fixed gain
+       mjGAIN_AFFINE,                  // const + kp*length + kv*velocity
        mjGAIN_MUSCLE,                  // muscle FLV curve computed by mju_muscleGain()
        mjGAIN_USER                     // user-defined gain type
    } mjtGain;
@@ -543,7 +544,7 @@ mjtSensor
        mjSENS_ACTUATORFRC,             // scalar actuator force
 
        // sensors related to ball joints
-       mjSENS_BALLQUAT,                // 4D ball joint quaterion
+       mjSENS_BALLQUAT,                // 4D ball joint quaternion
        mjSENS_BALLANGVEL,              // 3D ball joint angular velocity
 
        // joint and tendon limit sensors, in constraint space
@@ -1563,7 +1564,7 @@ mjModel
        int*      mesh_faceadr;         // first face address                       (nmesh x 1)
        int*      mesh_facenum;         // number of faces                          (nmesh x 1)
        int*      mesh_graphadr;        // graph data address; -1: no graph         (nmesh x 1)
-       float*    mesh_vert;            // vertex positions for all meshe           (nmeshvert x 3)
+       float*    mesh_vert;            // vertex positions for all meshes          (nmeshvert x 3)
        float*    mesh_normal;          // vertex normals for all meshes            (nmeshvert x 3)
        float*    mesh_texcoord;        // vertex texcoords for all meshes          (nmeshtexvert x 2)
        int*      mesh_face;            // triangle face data                       (nmeshface x 3)
@@ -1724,6 +1725,7 @@ mjModel
        mjtNum*   key_act;              // key activation                           (nkey x na)
        mjtNum*   key_mpos;             // key mocap position                       (nkey x 3*nmocap)
        mjtNum*   key_mquat;            // key mocap quaternion                     (nkey x 4*nmocap)
+       mjtNum*   key_ctrl;             // key control                              (nkey x nu)
 
        // names
        int*      name_bodyadr;         // body name pointers                       (nbody x 1)
@@ -2221,16 +2223,17 @@ mjvOption
 
 .. code-block:: C
 
-   struct _mjvOption                   // abstract visualization options
+   struct _mjvOption                      // abstract visualization options
    {
-       int      label;                 // what objects to label (mjtLabel)
-       int      frame;                 // which frame to show (mjtFrame)
-       mjtByte  geomgroup[mjNGROUP];   // geom visualization by group
-       mjtByte  sitegroup[mjNGROUP];   // site visualization by group
-       mjtByte  jointgroup[mjNGROUP];  // joint visualization by group
+       int      label;                    // what objects to label (mjtLabel)
+       int      frame;                    // which frame to show (mjtFrame)
+       mjtByte  geomgroup[mjNGROUP];      // geom visualization by group
+       mjtByte  sitegroup[mjNGROUP];      // site visualization by group
+       mjtByte  jointgroup[mjNGROUP];     // joint visualization by group
        mjtByte  tendongroup[mjNGROUP];    // tendon visualization by group
        mjtByte  actuatorgroup[mjNGROUP];  // actuator visualization by group
-       mjtByte  flags[mjNVISFLAG];     // visualization flags (indexed by mjtVisFlag)
+       mjtByte  skingroup[mjNGROUP];      // skin visualization by group
+       mjtByte  flags[mjNVISFLAG];        // visualization flags (indexed by mjtVisFlag)
    };
    typedef struct _mjvOption mjvOption;
 
@@ -3162,7 +3165,7 @@ Numeric constants
 |                  |        | array sizes which we have not fully settled. There may be reasons to increase them in  |
 |                  |        | the future, so as to accommodate extra parameters needed for more elaborate            |
 |                  |        | computations. This is why we maintain them as symbolic constants that can be easily    |
-|                  |        | changed, as opposed to the array size for representing quaterions for example - which  |
+|                  |        | changed, as opposed to the array size for representing quaternions for example - which |
 |                  |        | has no reason to change.                                                               |
 +------------------+--------+----------------------------------------------------------------------------------------+
 | mjNDYN           | 10     | The maximal number of real-valued parameters used to define the activation dynamics of |
@@ -4549,7 +4552,7 @@ mj_normalizeQuat
 
    void mj_normalizeQuat(const mjModel* m, mjtNum* qpos);
 
-Normalize all quaterions in qpos-type vector.
+Normalize all quaternions in qpos-type vector.
 
 .. _mj_local2Global:
 
@@ -5501,7 +5504,7 @@ mju_malloc
 
    void* mju_malloc(size_t size);
 
-Allocate memory; byte-align on 8; pad size to multiple of 8.
+Allocate memory; byte-align on 64; pad size to multiple of 64.
 
 .. _mju_free:
 
@@ -6184,7 +6187,7 @@ mju_mat2Quat
 
    void mju_mat2Quat(mjtNum quat[4], const mjtNum mat[9]);
 
-Convert 3D rotation matrix to quaterion.
+Convert 3D rotation matrix to quaternion.
 
 .. _mju_derivQuat:
 
@@ -6206,7 +6209,7 @@ mju_quatIntegrate
 
    void mju_quatIntegrate(mjtNum quat[4], const mjtNum vel[3], mjtNum scale);
 
-Integrate quaterion given 3D angular velocity.
+Integrate quaternion given 3D angular velocity.
 
 .. _mju_quatZ2Vec:
 
@@ -6575,6 +6578,18 @@ mju_sigmoid
    mjtNum mju_sigmoid(mjtNum x);
 
 Sigmoid function over 0<=x<=1 constructed from half-quadratics.
+
+mjd_transitionFD
+~~~~~~~~~~~~~~~~
+
+.. code-block:: C
+
+   void mjd_transitionFD(const mjModel* m, mjData* d, mjtNum eps, mjtByte centered, mjtNum* A, mjtNum* B);
+
+Finite differenced state-transition and control-transition matrices dx(t+h) = A*dx(t) + B*du(t).
+  required output matrix dimensions:
+     A: (2*nv+na x 2*nv+na)
+     B: (2*nv+na x nu)
 
 .. _Macros:
 

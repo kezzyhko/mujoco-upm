@@ -74,87 +74,6 @@ constexpr auto XArrayShapeImpl(const std::string_view dim1_str) {
   }
 }
 
-// An equals operator that works for comparing numpy arrays too.
-// Unlike other objects, the equality operator for numpy arrays returns a
-// numpy array.
-bool FieldsEqual(py::handle lhs, py::handle rhs, py::handle array_equal) {
-  // np.array_equal handles non-arrays.
-  return PyObject_IsTrue(array_equal(lhs, rhs).ptr());
-}
-
-// Returns an iterable object for iterating over attributes of T.
-template <typename T>
-py::object Dir() {
-  py::object type = py::type::of<T>();
-  auto dir = py::reinterpret_steal<py::object>(PyObject_Dir(type.ptr()));
-  if (PyErr_Occurred()) {
-    throw py::error_already_set();
-  }
-  return dir;
-}
-
-// Returns true if all public fields in lhs and rhs are equal.
-template <typename T>
-bool StructsEqual(py::object lhs, py::object rhs) {
-  // Equivalent to the following python code:
-  // if type(lhs) != type(rhs):
-  //   return False
-  // for field in dir(lhs):
-  //   if field.startswith("_"):
-  //     continue
-  //   # equal() handles equality of numpy arrays
-  //   if not equal(getattr(lhs, field, None), getattr(rhs, field, None)):
-  //     return False
-  //
-  // return True
-
-  auto np = py::module::import("numpy");
-  auto array_equal = np.attr("array_equal");
-
-  const py::handle lhs_t = py::type::handle_of(lhs);
-  const py::handle rhs_t = py::type::handle_of(rhs);
-  if (!lhs_t.is(rhs_t)) {
-    return false;
-  }
-  for (py::handle f : Dir<T>()) {
-    auto name = f.cast<std::string_view>();
-
-    if (name.empty() || name[0] == '_') {
-      continue;
-    }
-    py::object l = py::getattr(lhs, f, py::none());
-    py::object r = py::getattr(rhs, f, py::none());
-    if (!FieldsEqual(l, r, array_equal)) {
-      return false;
-    }
-  }
-  return true;
-}
-
-// Returns a string representation of a struct like object.
-template <typename T>
-std::string StructRepr(py::object self) {
-  std::ostringstream result;
-  result << "<"
-         << self.attr("__class__").attr("__name__").cast<std::string_view>();
-  for (py::handle f : Dir<T>()) {
-    auto name = f.cast<std::string_view>();
-    if (name.empty() || name[0] == '_') {
-      continue;
-    }
-
-    result << "\n  " << name << ": "
-           << self.attr(f).attr("__repr__")().cast<std::string_view>();
-  }
-  result << "\n>";
-  return result.str();
-}
-
-template <typename C, typename... O>
-void DefineStructFunctions(py::class_<C, O...> c) {
-  c.def("__eq__", StructsEqual<C>);
-  c.def("__repr__", StructRepr<C>);
-}
 }  // namespace
 
 // ==================== MJOPTION ===============================================
@@ -806,7 +725,13 @@ void MjDataWrapper::Serialize(std::ostream& output) const {
 #undef X
 
   // Write buffer contents
-  WriteBytes(output, ptr_->buffer, ptr_->nbuffer);
+  {
+    MJDATA_POINTERS_PREAMBLE((&this->metadata_))
+#define X(type, name, nr, nc)  \
+    WriteBytes(output, ptr_->name, sizeof(type)*(this->metadata_.nr)*(nc));
+    MJDATA_POINTERS
+#undef X
+  }
 }
 
 MjDataWrapper MjDataWrapper::Deserialize(std::istream& input) {
@@ -857,7 +782,13 @@ MjDataWrapper MjDataWrapper::Deserialize(std::istream& input) {
 #undef X
 
   // Read buffer contents
-  ReadBytes(input, d->buffer, d->nbuffer);
+  {
+    MJDATA_POINTERS_PREAMBLE((&m))
+#define X(type, name, nr, nc)  \
+    ReadBytes(input, d->name, sizeof(type)*(m.nr)*(nc));
+    MJDATA_POINTERS
+#undef X
+  }
   CheckInput(input, "mjData");
 
   // All bytes should have been used.
@@ -1122,6 +1053,7 @@ MjvOptionWrapper::MjWrapper()
       X(jointgroup),
       X(tendongroup),
       X(actuatorgroup),
+      X(skingroup),
       X(flags) {}
 #undef X
 
@@ -1548,7 +1480,8 @@ This is useful for example when the MJB is not available as a file on disk.)"));
       #field, [](MjModelWrapper& m, std::string_view name) -> auto& {         \
         return m.indexer().field##_by_name(name);                             \
       },                                                                      \
-      py::return_value_policy::reference_internal);
+      py::return_value_policy::reference_internal, py::arg_v("name", ""));
+
 
   MJMODEL_VIEW_GROUPS
 #undef XGROUP
@@ -1562,16 +1495,17 @@ This is useful for example when the MJB is not available as a file on disk.)"));
       #altname, [](MjModelWrapper& m, std::string_view name) -> auto& {       \
         return m.indexer().field##_by_name(name);                             \
       },                                                                      \
-      py::return_value_policy::reference_internal);
+      py::return_value_policy::reference_internal, py::arg_v("name", ""));
 
   MJMODEL_VIEW_GROUPS_ALTNAMES
 #undef XGROUP
 
-#define XGROUP(MjModelGroupedViews, field, nfield, FIELD_XMACROS)           \
-  {                                                                         \
-    using GroupedViews = MjModelGroupedViews;                               \
+#define XGROUP(MjModelGroupedViews, field, nfield, FIELD_XMACROS)              \
+  {                                                                            \
+    using GroupedViews = MjModelGroupedViews;                                  \
     py::class_<MjModelGroupedViews> groupedViews(m, "_" #MjModelGroupedViews); \
-    FIELD_XMACROS                                                           \
+    FIELD_XMACROS                                                              \
+    groupedViews.def("__repr__", StructRepr<GroupedViews>);                    \
   }
 #define X(type, prefix, var, dim0, dim1)                                    \
   groupedViews.def_property(                                                \
@@ -1821,7 +1755,7 @@ This is useful for example when the MJB is not available as a file on disk.)"));
       #field, [](MjDataWrapper& d, std::string_view name) -> auto& {         \
         return d.indexer().field##_by_name(name);                            \
       },                                                                     \
-      py::return_value_policy::reference_internal);
+      py::return_value_policy::reference_internal, py::arg_v("name", ""));
 
   MJDATA_VIEW_GROUPS
 #undef XGROUP
@@ -1835,7 +1769,7 @@ This is useful for example when the MJB is not available as a file on disk.)"));
       #altname, [](MjDataWrapper& d, std::string_view name) -> auto& {       \
         return d.indexer().field##_by_name(name);                            \
       },                                                                     \
-      py::return_value_policy::reference_internal);
+      py::return_value_policy::reference_internal, py::arg_v("name", ""));
 
   MJDATA_VIEW_GROUPS_ALTNAMES
 #undef XGROUP
@@ -1845,6 +1779,7 @@ This is useful for example when the MJB is not available as a file on disk.)"));
     using GroupedViews = MjDataGroupedViews;                                 \
     py::class_<MjDataGroupedViews> groupedViews(m, "_" #MjDataGroupedViews); \
     FIELD_XMACROS                                                            \
+    groupedViews.def("__repr__", StructRepr<GroupedViews>);                  \
   }
 #define X(type, prefix, var, dim0, dim1)                                    \
   groupedViews.def_property(                                                \
@@ -2103,6 +2038,7 @@ This is useful for example when the MJB is not available as a file on disk.)"));
   X(jointgroup);
   X(tendongroup);
   X(actuatorgroup);
+  X(skingroup);
   X(flags);
 #undef X
 

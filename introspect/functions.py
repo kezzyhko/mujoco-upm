@@ -2558,7 +2558,7 @@ FUNCTIONS: Mapping[str, FunctionDecl] = dict([
                  ),
              ),
          ),
-         doc='Normalize all quaterions in qpos-type vector.',
+         doc='Normalize all quaternions in qpos-type vector.',
      )),
     ('mj_local2Global',
      FunctionDecl(
@@ -4659,7 +4659,7 @@ FUNCTIONS: Mapping[str, FunctionDecl] = dict([
                  type=ValueType(name='size_t'),
              ),
          ),
-         doc='Allocate memory; byte-align on 8; pad size to multiple of 8.',
+         doc='Allocate memory; byte-align on 64; pad size to multiple of 64.',
      )),
     ('mju_free',
      FunctionDecl(
@@ -6049,7 +6049,7 @@ FUNCTIONS: Mapping[str, FunctionDecl] = dict([
                  ),
              ),
          ),
-         doc='Convert 3D rotation matrix to quaterion.',
+         doc='Convert 3D rotation matrix to quaternion.',
      )),
     ('mju_derivQuat',
      FunctionDecl(
@@ -6104,7 +6104,7 @@ FUNCTIONS: Mapping[str, FunctionDecl] = dict([
                  type=ValueType(name='mjtNum'),
              ),
          ),
-         doc='Integrate quaterion given 3D angular velocity.',
+         doc='Integrate quaternion given 3D angular velocity.',
      )),
     ('mju_quatZ2Vec',
      FunctionDecl(
@@ -6573,6 +6573,26 @@ FUNCTIONS: Mapping[str, FunctionDecl] = dict([
          ),
          doc='Return max(a,b) with single evaluation of a and b.',
      )),
+    ('mju_clip',
+     FunctionDecl(
+         name='mju_clip',
+         return_type=ValueType(name='mjtNum'),
+         parameters=(
+             FunctionParameterDecl(
+                 name='x',
+                 type=ValueType(name='mjtNum'),
+             ),
+             FunctionParameterDecl(
+                 name='min',
+                 type=ValueType(name='mjtNum'),
+             ),
+             FunctionParameterDecl(
+                 name='max',
+                 type=ValueType(name='mjtNum'),
+             ),
+         ),
+         doc='Clip x to the range [min, max].',
+     )),
     ('mju_sign',
      FunctionDecl(
          name='mju_sign',
@@ -6872,5 +6892,45 @@ FUNCTIONS: Mapping[str, FunctionDecl] = dict([
              ),
          ),
          doc='Sigmoid function over 0<=x<=1 constructed from half-quadratics.',
+     )),
+    ('mjd_transitionFD',
+     FunctionDecl(
+         name='mjd_transitionFD',
+         return_type=ValueType(name='void'),
+         parameters=(
+             FunctionParameterDecl(
+                 name='m',
+                 type=PointerType(
+                     inner_type=ValueType(name='mjModel', is_const=True),
+                 ),
+             ),
+             FunctionParameterDecl(
+                 name='d',
+                 type=PointerType(
+                     inner_type=ValueType(name='mjData'),
+                 ),
+             ),
+             FunctionParameterDecl(
+                 name='eps',
+                 type=ValueType(name='mjtNum'),
+             ),
+             FunctionParameterDecl(
+                 name='centered',
+                 type=ValueType(name='mjtByte'),
+             ),
+             FunctionParameterDecl(
+                 name='A',
+                 type=PointerType(
+                     inner_type=ValueType(name='mjtNum'),
+                 ),
+             ),
+             FunctionParameterDecl(
+                 name='B',
+                 type=PointerType(
+                     inner_type=ValueType(name='mjtNum'),
+                 ),
+             ),
+         ),
+         doc='Finite differenced state-transition and control-transition matrices dx(t+h) = A*dx(t) + B*du(t).   required output matrix dimensions:      A: (2*nv+na x 2*nv+na)      B: (2*nv+na x nu)',  # pylint: disable=line-too-long
      )),
 ])

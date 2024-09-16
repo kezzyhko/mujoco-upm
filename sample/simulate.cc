@@ -877,6 +877,13 @@ void makegroup(int oldstate) {
     {mjITEM_CHECKBYTE,  "Actuator 3",       2, vopt.actuatorgroup+3,    ""},
     {mjITEM_CHECKBYTE,  "Actuator 4",       2, vopt.actuatorgroup+4,    ""},
     {mjITEM_CHECKBYTE,  "Actuator 5",       2, vopt.actuatorgroup+5,    ""},
+    {mjITEM_SEPARATOR,  "Skin groups", 1},
+    {mjITEM_CHECKBYTE,  "Skin 0",           2, vopt.skingroup,          ""},
+    {mjITEM_CHECKBYTE,  "Skin 1",           2, vopt.skingroup+1,        ""},
+    {mjITEM_CHECKBYTE,  "Skin 2",           2, vopt.skingroup+2,        ""},
+    {mjITEM_CHECKBYTE,  "Skin 3",           2, vopt.skingroup+3,        ""},
+    {mjITEM_CHECKBYTE,  "Skin 4",           2, vopt.skingroup+4,        ""},
+    {mjITEM_CHECKBYTE,  "Skin 5",           2, vopt.skingroup+5,        ""},
     {mjITEM_END}
   };
 
@@ -1435,6 +1442,7 @@ void uiEvent(mjuiState* state) {
         mju_copy(d->act, m->key_act+i*m->na, m->na);
         mju_copy(d->mocap_pos, m->key_mpos+i*3*m->nmocap, 3*m->nmocap);
         mju_copy(d->mocap_quat, m->key_mquat+i*4*m->nmocap, 4*m->nmocap);
+        mju_copy(d->ctrl, m->key_ctrl+i*m->nu, m->nu);
         mj_forward(m, d);
         profilerupdate();
         sensorupdate();
@@ -1449,6 +1457,7 @@ void uiEvent(mjuiState* state) {
         mju_copy(m->key_act+i*m->na, d->act, m->na);
         mju_copy(m->key_mpos+i*3*m->nmocap, d->mocap_pos, 3*m->nmocap);
         mju_copy(m->key_mquat+i*4*m->nmocap, d->mocap_quat, 4*m->nmocap);
+        mju_copy(m->key_ctrl+i*m->nu, d->ctrl, m->nu);
         break;
       }
     }

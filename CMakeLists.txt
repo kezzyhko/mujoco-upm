@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-cmake_minimum_required(VERSION 3.18)
+cmake_minimum_required(VERSION 3.16)
 
 # Make CMAKE_C_VISIBILITY_PRESET work properly.
 set(CMAKE_POLICY_DEFAULT_CMP0063 NEW)
@@ -28,7 +28,7 @@ set(MSVC_INCREMENTAL_DEFAULT ON)
 
 project(
   mujoco
-  VERSION 2.2.0
+  VERSION 2.2.1
   DESCRIPTION "MuJoCo Physics Simulator"
   HOMEPAGE_URL "https://mujoco.org"
 )
@@ -66,7 +66,7 @@ set(MUJOCO_HEADERS
 add_library(mujoco SHARED)
 target_include_directories(
   mujoco
-  PUBLIC $<BUILD_INTERFACE:${CMAKE_SOURCE_DIR}/include>
+  PUBLIC $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
          $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}/>
   PRIVATE src
 )
@@ -136,8 +136,9 @@ if(APPLE AND MUJOCO_BUILD_MACOS_FRAMEWORKS)
     COMMAND mkdir -p $<TARGET_FILE_DIR:mujoco>/Resources
     COMMAND mv ${CMAKE_CURRENT_SOURCE_DIR}/dist/Info.framework.plist
             $<TARGET_FILE_DIR:mujoco>/Resources/Info.plist
+    COMMAND ${TAPI} stubify $<TARGET_FILE:mujoco> -o $<TARGET_FILE_DIR:mujoco>/mujoco.tbd
     COMMAND ln -fhs A $<TARGET_FILE_DIR:mujoco>/../Current
-    COMMAND ${TAPI} stubify $<TARGET_FILE:mujoco> -o $<TARGET_FILE_DIR:mujoco>/../../mujoco.tbd
+    COMMAND ln -fhs Versions/Current/mujoco.tbd $<TARGET_FILE_DIR:mujoco>/../../mujoco.tbd
     COMMAND ln -fhs Versions/Current/Headers $<TARGET_FILE_DIR:mujoco>/../../Headers
     COMMAND ln -fhs Versions/Current/Modules $<TARGET_FILE_DIR:mujoco>/../../Modules
     COMMAND ln -fhs Versions/Current/Resources $<TARGET_FILE_DIR:mujoco>/../../Resources
@@ -158,11 +159,9 @@ endif()
 if(BUILD_TESTING AND MUJOCO_BUILD_TESTS)
   enable_testing()
   add_subdirectory(test)
-endif()
-
-if(BUILD_TESTING AND MUJOCO_TEST_PYTHON_UTIL)
-  enable_testing()
-  add_subdirectory(python/mujoco/util)
+  if(MUJOCO_TEST_PYTHON_UTIL)
+    add_subdirectory(python/mujoco/util)
+  endif()
 endif()
 
 if(NOT (APPLE AND MUJOCO_BUILD_MACOS_FRAMEWORKS))

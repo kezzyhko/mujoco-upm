@@ -419,6 +419,37 @@ mjtNum mju_wrap(mjtNum* wpnt, const mjtNum* x0, const mjtNum* x1,
 
 
 
+// all 3 semi-axes of a geom
+void mju_geomSemiAxes(const mjModel* m, int geom_id, mjtNum semiaxes[3]) {
+  mjtNum* size = m->geom_size + 3*geom_id;
+  switch (m->geom_type[geom_id]) {
+  case mjGEOM_SPHERE:
+    semiaxes[0] = size[0];
+    semiaxes[1] = size[0];
+    semiaxes[2] = size[0];
+    break;
+
+  case mjGEOM_CAPSULE:
+    semiaxes[0] = size[0];
+    semiaxes[1] = size[0];
+    semiaxes[2] = size[1] + size[0];
+    break;
+
+  case mjGEOM_CYLINDER:
+    semiaxes[0] = size[0];
+    semiaxes[1] = size[0];
+    semiaxes[2] = size[1];
+    break;
+
+  default:
+    semiaxes[0] = size[0];
+    semiaxes[1] = size[1];
+    semiaxes[2] = size[2];
+  }
+}
+
+
+
 //------------------------------ actuator models ---------------------------------------------------
 
 // muscle active force, prm = (range[2], force, scale, lmin, lmax, vmax, fpmax, fvmax)
@@ -524,10 +555,10 @@ mjtNum mju_muscleBias(mjtNum len, const mjtNum lengthrange[2],
 // muscle activation dynamics, prm = (tau_act, tau_deact)
 mjtNum mju_muscleDynamics(mjtNum ctrl, mjtNum act, const mjtNum prm[2]) {
   // clamp control
-  mjtNum ctrlclamp = mjMIN(1, mjMAX(0, ctrl));
+  mjtNum ctrlclamp = mju_clip(ctrl, 0, 1);
 
   // clamp activation
-  mjtNum actclamp = mjMIN(1, mjMAX(0, act));
+  mjtNum actclamp = mju_clip(act, 0, 1);
 
   // compute time constant as in Millard et al. (2013) https://doi.org/10.1115/1.4023390
   mjtNum tau;
@@ -683,6 +714,19 @@ mjtNum mju_max(mjtNum a, mjtNum b) {
     return a;
   } else {
     return b;
+  }
+}
+
+
+
+// clip x to the range [min, max]
+mjtNum mju_clip(mjtNum x, mjtNum min, mjtNum max) {
+  if (x<min) {
+    return min;
+  } else if (x>max) {
+    return max;
+  } else {
+    return x;
   }
 }
 
@@ -928,8 +972,13 @@ const char* mju_warningText(int warning, int info) {
     mjSNPRINTF(str, "Nan, Inf or huge value in QACC at DOF %d. The simulation is unstable.", info);
     break;
 
+  case mjWARN_BADCTRL:
+    mjSNPRINTF(str, "Nan, Inf or huge value in CTRL at ACTUATOR %d. The simulation is unstable.",
+               info);
+    break;
+
   default:
-    mjSTRNCPY(str, "Unknown warning type");
+    mjSNPRINTF(str, "Unknown warning type %d.", warning);
   }
 
   return str;

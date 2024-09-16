@@ -40,12 +40,12 @@ UI framework
 Getting started
 ~~~~~~~~~~~~~~~
 
-MuJoCo is an open source project. Pre-built dynamic libraries are available for x86_64 and arm64 machines running
+MuJoCo is an open-source project. Pre-built dynamic libraries are available for x86_64 and arm64 machines running
 Windows, Linux, and macOS. These can be downloaded from the `GitHub Releases page <https://github.com/deepmind/mujoco/releases>`_.
 Users who do not intend to develop or modify core MuJoCo code are encouraged to use our pre-built libraries, as these
-come bundled with the same versions of dependencies those that we regularly test against, and benefit from build flags
+come bundled with the same versions of dependencies that we regularly test against, and benefit from build flags
 that have been tuned for performance. Our pre-built libraries are almost entirely self-contained and do not require
-other any library to be present, other than the standard C runtime. We also hide all symbols corresponding apart from
+any other library to be present, outside the standard C runtime. We also hide all symbols apart from
 those that form MuJoCo's public API, thus ensuring that it can coexist with any other libraries that may be loaded into
 the process (including other versions of libraries that MuJoCo depends on).
 
@@ -340,11 +340,11 @@ illustration of how the new UI framework is intended to be used. Below is a scre
 ..  youtube:: 0ORsj_E17B0
     :align: center
 
-Interaction is done with the mouse; see the built-in help for summary of available commands. Briefly, an object is
-selected by left-double-click. The user can then apply forces and torques on the selected object by holding Ctrl and
-dragging the mouse. Dragging the mouse alone (without Ctrl) moves the camera. There are keyboard shortcuts for pausing
-the simulation, resetting, and re-loading the model file. The latter functionality is very useful while editing the
-model in an XML editor.
+Interaction is done with the mouse; built-in help with a summary of available commands is available by pressing the 'F1'
+key. Briefly, an object is selected by left-double-click. The user can then apply forces and torques on the selected
+object by holding Ctrl and dragging the mouse. Dragging the mouse alone (without Ctrl) moves the camera. There are
+keyboard shortcuts for pausing the simulation, resetting, and re-loading the model file. The latter functionality is
+very useful while editing the model in an XML editor.
 
 The code is quite long yet reasonably commented, so it is best to just read it. Here we provide a high-level overview.
 The ``main()`` function initializes both MuJoCo and GLFW, opens a window, and install GLFW callbacks for mouse and
@@ -1136,7 +1136,7 @@ the standard convention, we set A_rowadr[r] = r*n. MuJoCo uses sparse matrices i
 To represent 3D orientations and rotations, MuJoCo uses unit quaternions - namely 4D unit vectors arranged as q = (w,
 x, y, z). Here (x, y, z) is the rotation axis unit vector scaled by sin(a/2), where a is the rotation angle in
 radians, and w = cos(a/2). Thus the quaternion corresponding to a null rotation is (1, 0, 0, 0). This is the default
-setting of all quaterions in MJCF.
+setting of all quaternions in MJCF.
 
 MuJoCo also uses 6D spatial vectors internally. These are quantities in mjData prefixed with 'c', namely cvel, cacc,
 cdot, etc. They are spatial motion and force vectors that combine a 3D rotational component followed by a 3D

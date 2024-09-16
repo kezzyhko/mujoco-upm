@@ -18,7 +18,7 @@
 #include <mujoco/mjtnum.h>
 #include <mujoco/mjmodel.h>
 
-#define mjNGROUP        6         // number of geom, site, joint groups with visflags
+#define mjNGROUP        6         // number of geom, site, joint, skin groups with visflags
 #define mjMAXLIGHT      100       // maximum number of lights in a scene
 #define mjMAXOVERLAY    500       // maximum number of characters in overlay text
 #define mjMAXLINE       100       // maximum number of lines per plot
@@ -99,8 +99,9 @@ typedef enum mjtVisFlag_ {        // flags enabling model element visualization
   mjVIS_CONVEXHULL    = 0,        // mesh convex hull
   mjVIS_TEXTURE,                  // textures
   mjVIS_JOINT,                    // joints
-  mjVIS_ACTUATOR,                 // actuators
   mjVIS_CAMERA,                   // cameras
+  mjVIS_ACTUATOR,                 // actuators
+  mjVIS_ACTIVATION,               // activations
   mjVIS_LIGHT,                    // lights
   mjVIS_TENDON,                   // tendons
   mjVIS_RANGEFINDER,              // rangefinder sensors
@@ -249,15 +250,16 @@ typedef struct mjvLight_ mjvLight;
 
 //---------------------------------- mjvOption -----------------------------------------------------
 
-struct mjvOption_ {               // abstract visualization options
-  int      label;                 // what objects to label (mjtLabel)
-  int      frame;                 // which frame to show (mjtFrame)
-  mjtByte  geomgroup[mjNGROUP];   // geom visualization by group
-  mjtByte  sitegroup[mjNGROUP];   // site visualization by group
-  mjtByte  jointgroup[mjNGROUP];  // joint visualization by group
-  mjtByte  tendongroup[mjNGROUP]; // tendon visualization by group
+struct mjvOption_ {                  // abstract visualization options
+  int      label;                    // what objects to label (mjtLabel)
+  int      frame;                    // which frame to show (mjtFrame)
+  mjtByte  geomgroup[mjNGROUP];      // geom visualization by group
+  mjtByte  sitegroup[mjNGROUP];      // site visualization by group
+  mjtByte  jointgroup[mjNGROUP];     // joint visualization by group
+  mjtByte  tendongroup[mjNGROUP];    // tendon visualization by group
   mjtByte  actuatorgroup[mjNGROUP];  // actuator visualization by group
-  mjtByte  flags[mjNVISFLAG];     // visualization flags (indexed by mjtVisFlag)
+  mjtByte  skingroup[mjNGROUP];      // skin visualization by group
+  mjtByte  flags[mjNVISFLAG];        // visualization flags (indexed by mjtVisFlag)
 };
 typedef struct mjvOption_ mjvOption;
 
@@ -268,20 +270,20 @@ struct mjvScene_ {                // abstract scene passed to OpenGL renderer
   // abstract geoms
   int      maxgeom;               // size of allocated geom buffer
   int      ngeom;                 // number of geoms currently in buffer
-  mjvGeom* geoms;                 // buffer for geoms
-  int*     geomorder;             // buffer for ordering geoms by distance to camera
+  mjvGeom* geoms;                 // buffer for geoms (ngeom)
+  int*     geomorder;             // buffer for ordering geoms by distance to camera (ngeom)
 
   // skin data
   int      nskin;                 // number of skins
-  int*     skinfacenum;           // number of faces in skin
-  int*     skinvertadr;           // address of skin vertices
-  int*     skinvertnum;           // number of vertices in skin
-  float*   skinvert;              // skin vertex data
-  float*   skinnormal;            // skin normal data
+  int*     skinfacenum;           // number of faces in skin (nskin)
+  int*     skinvertadr;           // address of skin vertices (nskin)
+  int*     skinvertnum;           // number of vertices in skin (nskin)
+  float*   skinvert;              // skin vertex data (nskin)
+  float*   skinnormal;            // skin normal data (nskin)
 
   // OpenGL lights
   int      nlight;                // number of lights currently in buffer
-  mjvLight lights[mjMAXLIGHT];    // buffer for lights
+  mjvLight lights[mjMAXLIGHT];    // buffer for lights (nlight)
 
   // OpenGL cameras
   mjvGLCamera camera[2];          // left and right camera

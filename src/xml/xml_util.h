@@ -76,7 +76,7 @@ class mjXSchema {
 
 // key(string) : value(int) map
 struct _mjMap {
-  std::string key;
+  const char* key;
   int value;
 };
 typedef struct _mjMap mjMap;
@@ -89,8 +89,8 @@ class mjXUtil {
   virtual ~mjXUtil() = default;
 
   // compare two vectors
-  static bool SameVector(const double* vec1, const double* vec2, int n);
-  static bool SameVector(const float* vec1, const float* vec2, int n);
+  template<typename T>
+  static bool SameVector(const T* vec1, const T* vec2, int n);
 
   // find key in map, return value (-1: not found)
   static int FindKey(const mjMap* map, int mapsz, std::string key);
@@ -98,24 +98,10 @@ class mjXUtil {
   // find value in map, return key ("": not found)
   static std::string FindValue(const mjMap* map, int mapsz, int value);
 
-  // read DOUBLE array from attribute, return number read
+  // read any type from attribute, return number read
+  template<typename T>
   static int ReadAttr(tinyxml2::XMLElement* elem, const char* attr, const int len,
-                      double* data, std::string& text,
-                      bool required = false, bool exact = true);
-
-  // read FLOAT array from attribute, return number read
-  static int ReadAttr(tinyxml2::XMLElement* elem, const char* attr, const int len,
-                      float* data, std::string& text,
-                      bool required = false, bool exact = true);
-
-  // read INT array from attribute, return number read
-  static int ReadAttr(tinyxml2::XMLElement* elem, const char* attr, const int len,
-                      int* data, std::string& text,
-                      bool required = false, bool exact = true);
-
-  // read BYTE array from attribute, return number read
-  static int ReadAttr(tinyxml2::XMLElement* elem, const char* attr, const int len,
-                      mjtByte* data, std::string& text,
+                      T* data, std::string& text,
                       bool required = false, bool exact = true);
 
   // read DOUBLE array into C++ vector, return number read
@@ -150,21 +136,10 @@ class mjXUtil {
   static bool MapValue(tinyxml2::XMLElement* elem, const char* attr, int* data,
                        const mjMap* map, int mapSz, bool required = false);
 
-  // write attribute- double
-  static void WriteAttr(tinyxml2::XMLElement* elem, std::string name, int n, double* data,
-                        const double* def = 0);
-
-  // write attribute- float
-  static void WriteAttr(tinyxml2::XMLElement* elem, std::string name, int n, float* data,
-                        const float* def = 0);
-
-  // write attribute- byte
-  static void WriteAttr(tinyxml2::XMLElement* elem, std::string name, int n, mjtByte* data,
-                        const mjtByte* def = 0);
-
-  // write attribute- int
-  static void WriteAttr(tinyxml2::XMLElement* elem, std::string name, int n, int* data,
-                        const int* def = 0);
+  // write attribute- any type
+  template<typename T>
+  static void WriteAttr(tinyxml2::XMLElement* elem, std::string name, int n, T* data,
+                        const T* def = 0);
 
   // write vector<double> attribute, with and without default
   static void WriteVector(tinyxml2::XMLElement* elem, std::string name, std::vector<double>& vec);

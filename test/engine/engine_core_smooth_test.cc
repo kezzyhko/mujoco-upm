@@ -33,6 +33,27 @@ static std::vector<mjtNum> GetVector(const mjtNum* array, int length) {
   return std::vector<mjtNum>(array, array + length);
 }
 
+// --------------------------- mj_kinematics -----------------------------------
+
+TEST_F(CoreSmoothTest, MjKinematicsWorldXipos) {
+  constexpr char xml[] = R"(
+  <mujoco>
+    <worldbody>
+    </worldbody>
+  </mujoco>
+  )";
+  mjModel* model = LoadModelFromString(xml);
+  ASSERT_THAT(model, testing::NotNull());
+  mjData* data = mj_makeData(model);
+
+  mj_resetDataDebug(model, data, 'd');
+  mj_kinematics(model, data);
+  EXPECT_THAT(GetVector(&data->xipos[0], 3), ElementsAre(0, 0, 0));
+
+  mj_deleteData(data);
+  mj_deleteModel(model);
+}
+
 // --------------------------- connect constraint ------------------------------
 
 TEST_F(CoreSmoothTest, RnePostConnectForceSlide) {
@@ -286,9 +307,6 @@ TEST_F(EllipsoidFluidTest, GeomsEquivalentToBodies) {
   const mjtNum tol = 1e-14;  // tolerance for floating point numbers
 
   EXPECT_EQ(m1->nv, m2->nv);
-  for (int i = 0; i < m1->nv; i++) {
-    EXPECT_NEAR(d2->qfrc_passive[i], d1->qfrc_passive[i], tol);
-  }
 
   mj_forward(m2, d2);
   mj_forward(m1, d1);

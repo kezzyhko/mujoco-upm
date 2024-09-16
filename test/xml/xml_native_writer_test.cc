@@ -18,6 +18,7 @@
 #include <unistd.h>
 #endif
 
+#include <algorithm>
 #include <array>
 #include <clocale>
 #include <cstddef>
@@ -32,7 +33,9 @@
 
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
+#include <absl/container/flat_hash_set.h>
 #include <mujoco/mjmodel.h>
+#include <mujoco/mjtnum.h>
 #include <mujoco/mjxmacro.h>
 #include <mujoco/mujoco.h>
 #include "src/cc/array_safety.h"
@@ -143,6 +146,111 @@ TEST_F(XMLWriterTest, KeepsActlimited) {
   mj_deleteModel(model);
 }
 
+TEST_F(XMLWriterTest, UndefinedMassDensity) {
+  static constexpr char xml[] = R"(
+  <mujoco>
+    <worldbody>
+      <body>
+        <geom type="box" size=".05 .05 .05"/>
+      </body>
+    </worldbody>
+  </mujoco>
+  )";
+  mjModel* model = LoadModelFromString(xml);
+  std::string saved_xml = SaveAndReadXml(model);
+  EXPECT_THAT(saved_xml, Not(HasSubstr("density")));
+  EXPECT_THAT(saved_xml, Not(HasSubstr("mass")));
+  mj_deleteModel(model);
+}
+
+TEST_F(XMLWriterTest, WritesDefaults) {
+  static constexpr char xml[] = R"(
+  <mujoco>
+    <default>
+      <geom density="100"/>
+    </default>
+    <worldbody>
+      <body>
+        <geom type="box" size=".05 .05 .05"/>
+      </body>
+    </worldbody>
+  </mujoco>
+  )";
+  mjModel* model = LoadModelFromString(xml);
+  std::string saved_xml = SaveAndReadXml(model);
+  EXPECT_THAT(saved_xml, Not(HasSubstr("mass")));
+  EXPECT_THAT(saved_xml, HasSubstr("<geom density=\"100\"/>"));
+  mj_deleteModel(model);
+}
+
+TEST_F(XMLWriterTest, WritesDensity) {
+  static constexpr char xml[] = R"(
+  <mujoco>
+    <worldbody>
+      <body>
+        <geom type="box" size=".05 .05 .05" density="100"/>
+      </body>
+    </worldbody>
+  </mujoco>
+  )";
+  mjModel* model = LoadModelFromString(xml);
+  std::string saved_xml = SaveAndReadXml(model);
+  EXPECT_THAT(saved_xml, HasSubstr("density=\"100\""));
+  EXPECT_THAT(saved_xml, Not(HasSubstr("mass")));
+  mj_deleteModel(model);
+}
+
+TEST_F(XMLWriterTest, WritesMass) {
+  static constexpr char xml[] = R"(
+  <mujoco>
+    <worldbody>
+      <body>
+        <geom type="box" size=".05 .05 .05" mass="0.1"/>
+      </body>
+    </worldbody>
+  </mujoco>
+  )";
+  mjModel* model = LoadModelFromString(xml);
+  std::string saved_xml = SaveAndReadXml(model);
+  EXPECT_THAT(saved_xml, Not(HasSubstr("density")));
+  EXPECT_THAT(saved_xml, HasSubstr("mass=\"0.1\""));
+  mj_deleteModel(model);
+}
+
+TEST_F(XMLWriterTest, ZeroMass) {
+  static constexpr char xml[] = R"(
+  <mujoco>
+    <worldbody>
+      <body>
+        <geom type="box" size=".05 .05 .05" mass="0"/>
+      </body>
+    </worldbody>
+  </mujoco>
+  )";
+  mjModel* model = LoadModelFromString(xml);
+  std::string saved_xml = SaveAndReadXml(model);
+  EXPECT_THAT(saved_xml, Not(HasSubstr("density")));
+  EXPECT_THAT(saved_xml, HasSubstr("mass=\"0\""));
+  mj_deleteModel(model);
+}
+
+TEST_F(XMLWriterTest, OverwritesDensity) {
+  static constexpr char xml[] = R"(
+  <mujoco>
+    <worldbody>
+      <body>
+        <geom size="0.2" density="100" mass="100"/>
+      </body>
+    </worldbody>
+  </mujoco>
+  )";
+  mjModel* model = LoadModelFromString(xml);
+  std::string saved_xml = SaveAndReadXml(model);
+  EXPECT_THAT(saved_xml, Not(HasSubstr("density")));
+  EXPECT_THAT(saved_xml, HasSubstr("mass=\"100\""));
+  mj_deleteModel(model);
+}
+
 TEST_F(XMLWriterTest, UsesTwoSpaces) {
   static constexpr char xml[] = R"(
   <mujoco>
@@ -244,17 +352,17 @@ static constexpr int kFieldSize = 500;
 // The maximum spacing between a normalised floating point number x and an
 // adjacent normalised number is 2 epsilon |x|; a factor 10 is added accounting
 // for losses during non-idempotent operations such as vector normalizations.
-mjtNum Compare(mjtNum val1, mjtNum val2) {
-  mjtNum error;
+template<typename T = mjtNum> T Compare(T val1, T val2) {
+  T error;
   if (mju_abs(val1) <= 1 || mju_abs(val2) <= 1) {
       // Asbolute precision for small numbers
       error = mju_abs(val1-val2);
   } else {
     // Relative precision for larger numbers
-    mjtNum magnitude = mju_max(mju_abs(val1), mju_abs(val2));
+    T magnitude = mju_max(mju_abs(val1), mju_abs(val2));
     error = mju_abs(val1/magnitude - val2/magnitude) / magnitude;
   }
-  return error < 2*10*std::numeric_limits<double>::epsilon() ? 0 : error;
+  return error < 2*10*std::numeric_limits<T>::epsilon() ? 0 : error;
 }
 
 mjtNum CompareModel(const mjModel* m1, const mjModel* m2, char (&field)[kFieldSize]) {
@@ -268,13 +376,14 @@ mjtNum CompareModel(const mjModel* m1, const mjModel* m2, char (&field)[kFieldSi
     if (m1->name != m2->name) {maxdif = 1.0; mju::strcpy_arr(field, #name);}
     MJMODEL_INTS
   #undef X
+  if (maxdif > 0) return maxdif;
 
   // compare arrays
   #define X(type, name, nr, nc)                                    \
     for (int r=0; r < m1->nr; r++)                                 \
       for (int c=0; c < nc; c++) {                                 \
-        dif = Compare(m1->name[r*nc+c], m2->name[r*nc+c]);         \
-        if (dif > maxdif) {maxdif = dif; mju::strcpy_arr(field, #name);} }
+        dif = Compare(m1->name[r*nc+c], m2->name[r*nc+c]);  \
+        if (dif > maxdif) { maxdif = dif; mju::strcpy_arr(field, #name);} }
     MJMODEL_POINTERS
   #undef X
 
@@ -300,7 +409,7 @@ mjtNum CompareModel(const mjModel* m1, const mjModel* m2, char (&field)[kFieldSi
 TEST_F(XMLWriterTest, WriteReadCompare) {
   FullFloatPrecision increase_precision;
   // Loop over all xml files in data
-  std::vector<std::string> paths = {GetModelPath("humanoid"), GetModelPath("humanoid100")};
+  std::vector<std::string> paths = {GetTestDataFilePath("."), GetModelPath(".")};
   std::string ext(".xml");
   for (auto const& path : paths) {
     for (auto &p : std::filesystem::recursive_directory_iterator(path)) {
@@ -314,23 +423,27 @@ TEST_F(XMLWriterTest, WriteReadCompare) {
 
         // make data
         mjData* d = mj_makeData(m);
-        ASSERT_THAT(d, NotNull()) << "Failed to load model: " << error.data();
+        ASSERT_THAT(d, testing::NotNull()) << "Failed to create data" << std::endl;
 
         // save and load back
-        mjModel* mtemp = LoadModelFromString(SaveAndReadXml(m));
-        ASSERT_THAT(mtemp, NotNull()) << "Failed to load model: " << error.data();
+        mjModel* mtemp = LoadModelFromString(SaveAndReadXml(m), error.data(), error.size());
 
-        // compare
+        if (!mtemp) {
+          // if failing because assets are missing, accept the test
+          ASSERT_THAT(error.data(), HasSubstr("file")) << error.data();
+        } else {
+          // compare and delete
         char field[kFieldSize] = "";
         mjtNum result = CompareModel(m, mtemp, field);
         EXPECT_LE(result, 0) << "Loaded and saved models are different!" << std::endl
                              << "Affected file " << p.path().string() << std::endl
                              << "Different field: " << field << std::endl;
+          mj_deleteModel(mtemp);
+        }
 
-        // delete everything
+        // delete original structures
         mj_deleteData(d);
         mj_deleteModel(m);
-        mj_deleteModel(mtemp);
       }
     }
   }

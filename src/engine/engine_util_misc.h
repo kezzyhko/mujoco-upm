@@ -40,7 +40,8 @@ MJAPI mjtNum mju_muscleBias(mjtNum len, const mjtNum lengthrange[2],
 // muscle activation dynamics, prm = (tau_act, tau_deact)
 MJAPI mjtNum mju_muscleDynamics(mjtNum ctrl, mjtNum act, const mjtNum prm[2]);
 
-
+// all 3 semi-axes of a geom
+MJAPI void mju_geomSemiAxes(const mjModel* m, int geom_id, mjtNum semiaxes[3]);
 
 //------------------------------ misclellaneous ----------------------------------------------------
 
@@ -68,6 +69,9 @@ MJAPI mjtNum mju_min(mjtNum a, mjtNum b);
 
 // max function, single evaluation of a and b
 MJAPI mjtNum mju_max(mjtNum a, mjtNum b);
+
+// clip x to the range [min, max]
+MJAPI mjtNum mju_clip(mjtNum x, mjtNum min, mjtNum max);
 
 // sign function
 MJAPI mjtNum mju_sign(mjtNum x);

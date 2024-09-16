@@ -125,6 +125,7 @@ void mjXWriter::OneSkin(XMLElement* elem, mjCSkin* pskin) {
   WriteAttrTxt(elem, "name", pskin->name);
   WriteAttrTxt(elem, "file", pskin->file);
   WriteAttrTxt(elem, "material", pskin->material);
+  WriteAttrInt(elem, "group", pskin->group, 0);
   WriteAttr(elem, "rgba", 4, pskin->rgba, mydef.geom.rgba);
   WriteAttr(elem, "inflate", 1, &pskin->inflate, &zero);
 
@@ -289,6 +290,14 @@ void mjXWriter::OneGeom(XMLElement* elem, mjCGeom* pgeom, mjCDef* def) {
   WriteAttr(elem, "margin", 1, &pgeom->margin, &def->geom.margin);
   WriteAttr(elem, "gap", 1, &pgeom->gap, &def->geom.gap);
   WriteAttr(elem, "gap", 1, &pgeom->gap, &def->geom.gap);
+  WriteAttrKey(elem, "fluidshape", fluid_map, 2, pgeom->fluid_switch, def->geom.fluid_switch);
+  WriteAttr(elem, "fluidcoef", 5, pgeom->fluid_coefs, def->geom.fluid_coefs);
+  if (mjuu_defined(pgeom->_mass)) {
+    double mass = pgeom->GetVolume() * def->geom.density;
+    WriteAttr(elem, "mass", 1, &pgeom->mass, &mass);
+  } else {
+    WriteAttr(elem, "density", 1, &pgeom->density, &def->geom.density);
+  }
   if (pgeom->material != def->geom.material) {
     WriteAttrTxt(elem, "material", pgeom->material);
   }
@@ -1534,6 +1543,11 @@ void mjXWriter::Sensor(XMLElement* root) {
       WriteAttrTxt(elem, "body", psen->objname);
       break;
 
+    // global sensors
+    case mjSENS_CLOCK:
+      elem = InsertEnd(section, "clock");
+      break;
+
     // user-defined sensor
     case mjSENS_USER:
       elem = InsertEnd(section, "user");
@@ -1553,6 +1567,12 @@ void mjXWriter::Sensor(XMLElement* root) {
     WriteAttr(elem, "cutoff", 1, &psen->cutoff, &zero);
     WriteAttr(elem, "noise", 1, &psen->noise, &zero);
     WriteVector(elem, "user", psen->userdata);
+
+    // add reference if present
+    if (psen->reftype > 0) {
+      WriteAttrTxt(elem, "reftype", mju_type2Str(psen->reftype));
+      WriteAttrTxt(elem, "refname", psen->refname);
+    }
   }
 
   // remove section if empty
@@ -1646,6 +1666,15 @@ void mjXWriter::Keyframe(XMLElement* root) {
             break;
           }
         }
+      }
+    }
+
+    // check ctrl and write
+    for (int j=0; j<model->nu; j++) {
+      if (pk->ctrl[j]!=0) {
+        WriteAttr(elem, "ctrl", model->nu, pk->ctrl.data());
+        change = true;
+        break;
       }
     }
 

@@ -1628,6 +1628,7 @@ void mjCModel::CopyObjects(mjModel* m) {
     // set fields
     m->skin_matid[i] = psk->matid;
     copyvec(m->skin_rgba+4*i, psk->rgba, 4);
+    m->skin_group[i] = psk->group;
     m->skin_inflate[i] = psk->inflate;
     m->skin_vertadr[i] = vert_adr;
     m->skin_vertnum[i] = psk->vert.size()/3;
@@ -1934,6 +1935,8 @@ void mjCModel::CopyObjects(mjModel* m) {
     for (j=0; j<nmocap; j++) {
       mju_normalize4(m->key_mquat+i*4*nmocap+4*j);
     }
+
+    copyvec(m->key_ctrl+i*nu, keys[i]->ctrl.data(), nu);
   }
 
   // save qpos0 in user model (to recognize changed key_qpos in write)
@@ -2494,7 +2497,7 @@ mjModel* mjCModel::Compile(const mjVFS* vfs) {
 
         // error
         if (!ok) {
-          throw mjCError(b, "mass and inertia of moving bodies must be positive");
+          throw mjCError(b, "mass and inertia of moving bodies must be larger than mjMINVAL");
         }
       }
     }
@@ -2548,7 +2551,7 @@ mjModel* mjCModel::Compile(const mjVFS* vfs) {
       throw mjCError(0, "could not create mjData");
     }
 
-    // normalize keyframe quaterions
+    // normalize keyframe quaternions
     for (i=0; i<m->nkey; i++) {
       mj_normalizeQuat(m, m->key_qpos+i*m->nq);
     }
@@ -2876,6 +2879,9 @@ bool mjCModel::CopyBack(const mjModel* m) {
     if (nmocap) {
       copyvec(pk->mpos.data(), m->key_mpos + i*3*nmocap, 3*nmocap);
       copyvec(pk->mquat.data(), m->key_mquat + i*4*nmocap, 4*nmocap);
+    }
+    if (nu) {
+      copyvec(pk->ctrl.data(), m->key_ctrl + i*nu, nu);
     }
   }
 

@@ -32,9 +32,15 @@ void mju_rotVecQuat(mjtNum res[3], const mjtNum vec[3], const mjtNum quat[4]) {
 
   // regular processing
   else {
-    mjtNum mat[9];
-    mju_quat2Mat(mat, quat);
-    mju_rotVecMat(res, vec, mat);
+    mjtNum tmp[3];
+    // tmp = q_w * v + cross(q_xyz, v)
+    tmp[0] = quat[0]*vec[0] + quat[2]*vec[2] - quat[3]*vec[1];
+    tmp[1] = quat[0]*vec[1] + quat[3]*vec[0] - quat[1]*vec[2];
+    tmp[2] = quat[0]*vec[2] + quat[1]*vec[1] - quat[2]*vec[0];
+    // res = v + 2 * cross(q_xyz, t)
+    res[0] = vec[0] + 2 * (quat[2]*tmp[2] - quat[3]*tmp[1]);
+    res[1] = vec[1] + 2 * (quat[3]*tmp[0] - quat[1]*tmp[2]);
+    res[2] = vec[2] + 2 * (quat[1]*tmp[1] - quat[2]*tmp[0]);
   }
 }
 
@@ -165,7 +171,7 @@ void mju_quat2Mat(mjtNum res[9], const mjtNum quat[4]) {
 
 
 
-// convert 3D rotation matrix to quaterion
+// convert 3D rotation matrix to quaternion
 void mju_mat2Quat(mjtNum quat[4], const mjtNum mat[9]) {
   // q0 largest
   if (mat[0]+mat[4]+mat[8]>0) {
@@ -214,7 +220,7 @@ void mju_derivQuat(mjtNum res[4], const mjtNum quat[4], const mjtNum vel[3]) {
 
 
 
-// integrate quaterion given 3D angular velocity
+// integrate quaternion given 3D angular velocity
 void mju_quatIntegrate(mjtNum quat[4], const mjtNum vel[3], mjtNum scale) {
   mjtNum angle, tmp[4], qrot[4];
 
@@ -257,7 +263,7 @@ void mju_quatZ2Vec(mjtNum quat[4], const mjtNum vec[3]) {
     return;
   }
 
-  // make quaterion from angle and axis
+  // make quaternion from angle and axis
   a = mju_atan2(a, mju_dot3(vn, z));
   mju_axisAngle2Quat(quat, axis, a);
 }

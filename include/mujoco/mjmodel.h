@@ -199,6 +199,7 @@ typedef enum mjtDyn_ {            // type of actuator dynamics
 
 typedef enum mjtGain_ {           // type of actuator gain
   mjGAIN_FIXED        = 0,        // fixed gain
+  mjGAIN_AFFINE,                  // const + kp*length + kv*velocity
   mjGAIN_MUSCLE,                  // muscle FLV curve computed by mju_muscleGain()
   mjGAIN_USER                     // user-defined gain type
 } mjtGain;
@@ -282,7 +283,7 @@ typedef enum mjtSensor_ {         // type of sensor
   mjSENS_ACTUATORFRC,             // scalar actuator force
 
   // sensors related to ball joints
-  mjSENS_BALLQUAT,                // 4D ball joint quaterion
+  mjSENS_BALLQUAT,                // 4D ball joint quaternion
   mjSENS_BALLANGVEL,              // 3D ball joint angular velocity
 
   // joint and tendon limit sensors, in constraint space
@@ -308,6 +309,9 @@ typedef enum mjtSensor_ {         // type of sensor
   mjSENS_SUBTREECOM,              // 3D center of mass of subtree
   mjSENS_SUBTREELINVEL,           // 3D linear velocity of subtree
   mjSENS_SUBTREEANGMOM,           // 3D angular momentum of subtree
+
+  // global sensors
+  mjSENS_CLOCK,                   // simulation time
 
   // user-defined sensor
   mjSENS_USER                     // sensor data provided by mjcb_sensor callback
@@ -723,7 +727,7 @@ struct mjModel_ {
   int*      mesh_faceadr;         // first face address                       (nmesh x 1)
   int*      mesh_facenum;         // number of faces                          (nmesh x 1)
   int*      mesh_graphadr;        // graph data address; -1: no graph         (nmesh x 1)
-  float*    mesh_vert;            // vertex positions for all meshe           (nmeshvert x 3)
+  float*    mesh_vert;            // vertex positions for all meshes          (nmeshvert x 3)
   float*    mesh_normal;          // vertex normals for all meshes            (nmeshvert x 3)
   float*    mesh_texcoord;        // vertex texcoords for all meshes          (nmeshtexvert x 2)
   int*      mesh_face;            // triangle face data                       (nmeshface x 3)
@@ -731,6 +735,7 @@ struct mjModel_ {
 
   // skins
   int*      skin_matid;           // skin material id; -1: none               (nskin x 1)
+  int*      skin_group;           // group for visibility                     (nskin x 1)
   float*    skin_rgba;            // skin rgba                                (nskin x 4)
   float*    skin_inflate;         // inflate skin in normal direction         (nskin x 1)
   int*      skin_vertadr;         // first vertex address                     (nskin x 1)
@@ -886,6 +891,7 @@ struct mjModel_ {
   mjtNum*   key_act;              // key activation                           (nkey x na)
   mjtNum*   key_mpos;             // key mocap position                       (nkey x 3*nmocap)
   mjtNum*   key_mquat;            // key mocap quaternion                     (nkey x 4*nmocap)
+  mjtNum*   key_ctrl;             // key control                              (nkey x nu)
 
   // names
   int*      name_bodyadr;         // body name pointers                       (nbody x 1)

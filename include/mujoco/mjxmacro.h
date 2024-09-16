@@ -135,6 +135,7 @@
     int nq = m->nq;                         \
     int nv = m->nv;                         \
     int na = m->na;                         \
+    int nu = m->nu;                         \
     int nmocap = m->nmocap;
 
 
@@ -267,6 +268,7 @@
     X( int,     mesh_face,             nmeshface,     3                    ) \
     X( int,     mesh_graph,            nmeshgraph,    1                    ) \
     X( int,     skin_matid,            nskin,         1                    ) \
+    X( int,     skin_group,            nskin,         1                    ) \
     X( float,   skin_rgba,             nskin,         4                    ) \
     X( float,   skin_inflate,          nskin,         1                    ) \
     X( int,     skin_vertadr,          nskin,         1                    ) \
@@ -394,6 +396,7 @@
     X( mjtNum,  key_act,               nkey,          MJ_M(na)             ) \
     X( mjtNum,  key_mpos,              nkey,          MJ_M(nmocap)*3       ) \
     X( mjtNum,  key_mquat,             nkey,          MJ_M(nmocap)*4       ) \
+    X( mjtNum,  key_ctrl,              nkey,          MJ_M(nu)             ) \
     X( int,     name_bodyadr,          nbody,         1                    ) \
     X( int,     name_jntadr,           njnt,          1                    ) \
     X( int,     name_geomadr,          ngeom,         1                    ) \
@@ -509,6 +512,8 @@
     X( mjtNum,    efc_aref,          njmax,       1           ) \
     X( mjtNum,    subtree_linvel,    nbody,       3           ) \
     X( mjtNum,    subtree_angmom,    nbody,       3           ) \
+    X( mjtNum,    qH,                nM,          1           ) \
+    X( mjtNum,    qHDiagInv,         nv,          1           ) \
     X( int,       D_rownnz,          nv,          1           ) \
     X( int,       D_rowadr,          nv,          1           ) \
     X( int,       D_colind,          nD,          1           ) \

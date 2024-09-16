@@ -19,7 +19,9 @@
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
 #include <mujoco/mjmodel.h>
+#include <mujoco/mjtnum.h>
 #include <mujoco/mujoco.h>
+#include "src/cc/array_safety.h"
 #include "src/engine/engine_io.h"
 #include "test/fixture.h"
 
@@ -38,11 +40,18 @@ static const char* const kDampedActuatorsPath =
 using ::testing::Pointwise;
 using ::testing::DoubleNear;
 using ::testing::Ne;
-using ForwardTest = MujocoTest;
+using ::testing::HasSubstr;
 
 // --------------------------- activation limits -------------------------------
 
-TEST_F(ForwardTest, ActLimited) {
+struct ActLimitedTestCase {
+  std::string test_name;
+  mjtIntegrator integrator;
+};
+
+using ParametrizedForwardTest = ::testing::TestWithParam<ActLimitedTestCase>;
+
+TEST_P(ParametrizedForwardTest, ActLimited) {
   static constexpr char xml[] = R"(
   <mujoco>
     <option timestep="0.01"/>
@@ -63,15 +72,17 @@ TEST_F(ForwardTest, ActLimited) {
   mjModel* model = LoadModelFromString(xml);
   mjData* data = mj_makeData(model);
 
+  model->opt.integrator = GetParam().integrator;
+
   data->ctrl[0] = 1.0;
   // integrating up from 0, we will hit the clamp after 99 steps
   for (int i=0; i<200; i++) {
     mj_step(model, data);
     // always greater than lower bound
-    ASSERT_GT(data->act[0], -1);
+    EXPECT_GT(data->act[0], -1);
     // after 99 steps we hit the upper bound
-    if (i < 99) ASSERT_LT(data->act[0], 1);
-    if (i >= 99) ASSERT_EQ(data->act[0], 1);
+    if (i < 99) EXPECT_LT(data->act[0], 1);
+    if (i >= 99) EXPECT_EQ(data->act[0], 1);
   }
 
   data->ctrl[0] = -1.0;
@@ -79,12 +90,62 @@ TEST_F(ForwardTest, ActLimited) {
   for (int i=0; i<300; i++) {
     mj_step(model, data);
     // always smaller than upper bound
-    ASSERT_LT(data->act[0], model->actuator_actrange[1]);
+    EXPECT_LT(data->act[0], model->actuator_actrange[1]);
     // after 199 steps we hit the lower bound
-    if (i < 199) ASSERT_GT(data->act[0], model->actuator_actrange[0]);
-    if (i >= 199) ASSERT_EQ(data->act[0], model->actuator_actrange[0]);
+    if (i < 199) EXPECT_GT(data->act[0], model->actuator_actrange[0]);
+    if (i >= 199) EXPECT_EQ(data->act[0], model->actuator_actrange[0]);
   }
 
+  mj_deleteData(data);
+  mj_deleteModel(model);
+}
+
+INSTANTIATE_TEST_SUITE_P(
+    ParametrizedForwardTest, ParametrizedForwardTest,
+    testing::ValuesIn<ActLimitedTestCase>({
+        {"Euler", mjINT_EULER},
+        {"Implicit", mjINT_IMPLICIT},
+        {"RK4", mjINT_RK4},
+    }),
+    [](const testing::TestParamInfo<ParametrizedForwardTest::ParamType>& info) {
+      return info.param.test_name;
+    });
+
+// --------------------------- damping actuator --------------------------------
+
+using ForwardTest = MujocoTest;
+
+TEST_F(ForwardTest, DamperDampens) {
+  static constexpr char xml[] = R"(
+  <mujoco>
+    <worldbody>
+      <body>
+        <geom size="1"/>
+        <joint name="jnt" type="slide" axis="1 0 0" range="-10 10"/>
+      </body>
+    </worldbody>
+    <actuator>
+      <motor joint="jnt"/>
+      <damper joint="jnt" kv="1000" ctrlrange="0 100"/>
+    </actuator>
+  </mujoco>
+  )";
+  mjModel* model = LoadModelFromString(xml);
+  mjData* data = mj_makeData(model);
+
+  // move the joint
+  data->ctrl[0] = 100.0;
+  data->ctrl[1] = 0.0;
+  for (int i=0; i<100; i++)
+    mj_step(model, data);
+
+  // stop the joint with damping
+  data->ctrl[0] = 0.0;
+  data->ctrl[1] = 100.0;
+  for (int i=0; i<1000; i++)
+    mj_step(model, data);
+
+  EXPECT_LE(data->qvel[0], std::numeric_limits<double>::epsilon());
   mj_deleteData(data);
   mj_deleteModel(model);
 }
@@ -208,6 +269,76 @@ TEST_F(ImplicitIntegratorTest, EnergyConservation) {
   EXPECT_LT(fabs(energyRK4), fabs(energyImplicit));
   // expect implicit to be better than Euler
   EXPECT_LT(fabs(energyImplicit), fabs(energyEuler));
+
+  mj_deleteData(data);
+  mj_deleteModel(model);
+}
+
+// --------------------------- control clamping --------------------------------
+
+TEST_F(ForwardTest, ControlClamping) {
+  static constexpr char xml[] = R"(
+  <mujoco>
+    <worldbody>
+      <body>
+        <geom size="1"/>
+        <joint name="slide" type="slide" axis="1 0 0"/>
+      </body>
+    </worldbody>
+    <actuator>
+      <motor name="unclamped" joint="slide"/>
+      <motor name="clamped" joint="slide" ctrllimited="true" ctrlrange="-1 1"/>
+    </actuator>
+  </mujoco>
+  )";
+  mjModel* model = LoadModelFromString(xml);
+  mjData* data = mj_makeData(model);
+
+  // for the unclamped actuator, ctrl={1, 2} produce different accelerations
+  data->ctrl[0] = 1;
+  mj_forward(model, data);
+  mjtNum qacc1 = data->qacc[0];
+  data->ctrl[0] = 2;
+  mj_forward(model, data);
+  mjtNum qacc2 = data->qacc[0];
+  EXPECT_NE(qacc1, qacc2);
+
+  // for the clamped actuator, ctrl={1, 2} produce identical accelerations
+  data->ctrl[1] = 1;
+  mj_forward(model, data);
+  qacc1 = data->qacc[0];
+  data->ctrl[1] = 2;
+  mj_forward(model, data);
+  qacc2 = data->qacc[0];
+  EXPECT_EQ(qacc1, qacc2);
+
+  // data->ctrl[1] remains pristine
+  EXPECT_EQ(data->ctrl[1], 2);
+
+  // install warning handler
+  static char warning[1024];
+  warning[0] = '\0';
+  mju_user_warning = [](const char* msg) {
+    util::strcpy_arr(warning, msg);
+  };
+
+  // for the unclamped actuator, huge raises warning
+  data->ctrl[0] = 10*mjMAXVAL;
+  mj_forward(model, data);
+  EXPECT_THAT(warning, HasSubstr("Nan, Inf or huge value in CTRL at ACTUATOR 0"));
+
+  // for the clamped actuator, huge does not raise warning
+  mj_resetData(model, data);
+  warning[0] = '\0';
+  data->ctrl[1] = 10*mjMAXVAL;
+  mj_forward(model, data);
+  EXPECT_EQ(warning[0], '\0');
+
+  // for the clamped actuator, NaN raises warning
+  mj_resetData(model, data);
+  data->ctrl[1] = std::numeric_limits<double>::quiet_NaN();
+  mj_forward(model, data);
+  EXPECT_THAT(warning, HasSubstr("Nan, Inf or huge value in CTRL at ACTUATOR 1"));
 
   mj_deleteData(data);
   mj_deleteModel(model);

@@ -157,37 +157,43 @@ void mj_fwdActuation(const mjModel* m, mjData* d) {
   mjtNum gain, bias, tau;
   mjtNum *prm, *moment = d->actuator_moment, *force = d->actuator_force;
 
-  // clear results
+  // clear outputs
   mju_zero(d->qfrc_actuator, nv);
-  if (nu) {
-    mju_zero(d->actuator_force, nu);
-  }
-
-  // check controls, set to 0 if any are bad
-  for (int i=0; i<nu; i++) {
-    if (mju_isBad(d->ctrl[i])) {
-      mj_warning(d, mjWARN_BADCTRL, i);
-      mju_zero(d->ctrl, nu);
-      break;
-    }
-  }
+  mju_zero(d->actuator_force, nu);
 
   // disabled or no actuation: return
   if (nu==0 || mjDISABLED(mjDSBL_ACTUATION)) {
     return;
   }
 
-  // force = gain .* [ctrl/act] + bias
-  for (int i=0; i<nu; i++) {
-    // clamp ctrl
-    if (m->actuator_ctrllimited[i] && !mjDISABLED(mjDSBL_CLAMPCTRL)) {
-      if (d->ctrl[i] < m->actuator_ctrlrange[2*i]) {
-        d->ctrl[i] = m->actuator_ctrlrange[2*i];
-      } else if (d->ctrl[i] > m->actuator_ctrlrange[2*i+1]) {
-        d->ctrl[i] = m->actuator_ctrlrange[2*i+1];
+  // local, clamped copy of ctrl
+  mjMARKSTACK;
+  mjtNum *ctrl = mj_stackAlloc(d, nu);
+  if (mjDISABLED(mjDSBL_CLAMPCTRL)) {
+    mju_copy(ctrl, d->ctrl, nu);
+  } else {
+    for (int i=0; i<nu; i++) {
+      // clamp ctrl
+      if (m->actuator_ctrllimited[i]) {
+        mjtNum *ctrlrange = m->actuator_ctrlrange + 2*i;
+        ctrl[i] = mju_clip(d->ctrl[i], ctrlrange[0], ctrlrange[1]);
+      } else {
+        ctrl[i] = d->ctrl[i];
       }
     }
+  }
 
+  // check controls, set all to 0 if any are bad
+  for (int i=0; i<nu; i++) {
+    if (mju_isBad(ctrl[i])) {
+      mj_warning(d, mjWARN_BADCTRL, i);
+      mju_zero(ctrl, nu);
+      break;
+    }
+  }
+
+  // force = gain .* [ctrl/act] + bias
+  for (int i=0; i<nu; i++) {
     // extract gain info
     prm = m->actuator_gainprm + mjNGAIN*i;
 
@@ -195,6 +201,10 @@ void mj_fwdActuation(const mjModel* m, mjData* d) {
     switch (m->actuator_gaintype[i]) {
     case mjGAIN_FIXED:              // fixed gain: prm = gain
       gain = prm[0];
+      break;
+
+    case mjGAIN_AFFINE:             // affine: prm = [const, kp, kv]
+      gain = prm[0] + prm[1]*d->actuator_length[i] + prm[2]*d->actuator_velocity[i];
       break;
 
     case mjGAIN_MUSCLE:             // muscle gain
@@ -215,7 +225,7 @@ void mj_fwdActuation(const mjModel* m, mjData* d) {
 
     // set force = gain .* [ctrl/act]
     if (m->actuator_dyntype[i]==mjDYN_NONE) {
-      force[i] = gain * d->ctrl[i];
+      force[i] = gain * ctrl[i];
     } else {
       force[i] = gain * d->act[i-(nu-na)];
     }
@@ -255,11 +265,8 @@ void mj_fwdActuation(const mjModel* m, mjData* d) {
   // clamp actuator_force
   for (int i=0; i<nu; i++) {
     if (m->actuator_forcelimited[i]) {
-      if (force[i]<m->actuator_forcerange[2*i]) {
-        force[i] = m->actuator_forcerange[2*i];
-      } else if (force[i]>m->actuator_forcerange[2*i+1]) {
-        force[i] = m->actuator_forcerange[2*i+1];
-      }
+      mjtNum *forcerange = m->actuator_forcerange + 2*i;
+      force[i] = mju_clip(force[i], forcerange[0], forcerange[1]);
     }
   }
 
@@ -275,16 +282,16 @@ void mj_fwdActuation(const mjModel* m, mjData* d) {
     // compute act_dot according to dynamics type
     switch (m->actuator_dyntype[i]) {
     case mjDYN_INTEGRATOR:          // simple integrator
-      d->act_dot[j] = d->ctrl[i];
+      d->act_dot[j] = ctrl[i];
       break;
 
     case mjDYN_FILTER:              // linear filter: prm = tau
       tau = mju_max(mjMINVAL, prm[0]);
-      d->act_dot[j] = (d->ctrl[i] - d->act[j]) / tau;
+      d->act_dot[j] = (ctrl[i] - d->act[j]) / tau;
       break;
 
     case mjDYN_MUSCLE:              // muscle model: prm = (tau_act, tau_deact)
-      d->act_dot[j] = mju_muscleDynamics(d->ctrl[i], d->act[j], prm);
+      d->act_dot[j] = mju_muscleDynamics(ctrl[i], d->act[j], prm);
       break;
 
     default:                        // user dynamics
@@ -295,7 +302,7 @@ void mj_fwdActuation(const mjModel* m, mjData* d) {
       }
     }
   }
-
+  mjFREESTACK;
   TM_END(mjTIMER_ACTUATION);
 }
 
@@ -449,14 +456,38 @@ void mj_fwdConstraint(const mjModel* m, mjData* d) {
 
 //-------------------------- integrators  ----------------------------------------------------------
 
-// Euler integrator, semi-implicit in velocity
-void mj_Euler(const mjModel* m, mjData* d) {
+// advance state and time given activation derivatives, acceleration, and optional velocity
+static void mj_advance(const mjModel* m, mjData* d,
+                       const mjtNum* act_dot, const mjtNum* qacc, const mjtNum* qvel) {
+  // advance activations and clamp
+  if (m->na) {
+    mju_addToScl(d->act, act_dot, m->opt.timestep, m->na);
+
+    // clamp activations
+    for (int i=0; i<m->na; i++) {
+      int iu = i + m->nu - m->na;
+      if (m->actuator_actlimited[iu]) {
+        mjtNum* actrange = m->actuator_actrange + 2*iu;
+        d->act[i] = mju_clip(d->act[i], actrange[0], actrange[1]);
+      }
+    }
+  }
+
+  // advance velocities
+  mju_addToScl(d->qvel, qacc, m->opt.timestep, m->nv);
+
+  // advance positions with qvel if given, d->qvel otherwise (semi-implicit)
+  mj_integratePos(m, d->qpos, qvel ? qvel : d->qvel, m->opt.timestep);
+
+  // advance time
+  d->time += m->opt.timestep;
+}
+
+// Euler integrator, semi-implicit in velocity, possibly skipping factorisation
+void mj_EulerSkip(const mjModel* m, mjData* d, int skipfactor) {
+
   int i, nv = m->nv, nM = m->nM;
   mjMARKSTACK;
-  mjtNum* saveM = mj_stackAlloc(d, nM);
-  mjtNum* saveLD = mj_stackAlloc(d, nM);
-  mjtNum* saveLDiagInv = mj_stackAlloc(d, nv);
-  mjtNum* saveLDiagSqrtInv = mj_stackAlloc(d, nv);
   mjtNum* qfrc = mj_stackAlloc(d, nv);
   mjtNum* qacc = mj_stackAlloc(d, nv);
 
@@ -469,65 +500,40 @@ void mj_Euler(const mjModel* m, mjData* d) {
 
   // no damping: explicit velocity integration
   if (i>=nv) {
-    mju_addToScl(d->qvel, d->qacc, m->opt.timestep, nv);
+    mju_copy(qacc, d->qacc, nv);
   }
 
   // damping: integrate implicitly
   else {
-    // save M and factorization
-    mju_copy(saveM, d->qM, nM);
-    mju_copy(saveLD, d->qLD, nM);
-    mju_copy(saveLDiagInv, d->qLDiagInv, nv);
-    mju_copy(saveLDiagSqrtInv, d->qLDiagSqrtInv, nv);
+    if (!skipfactor) {
+      mjtNum* MhB = mj_stackAlloc(d, nM);
 
-    // add hB to diagonal of M
-    for (i=0; i<nv; i++) {
-      d->qM[m->dof_Madr[i]] += m->opt.timestep * m->dof_damping[i];
+      // MhB = M + h*diag(B)
+      mju_copy(MhB, d->qM, m->nM);
+      for (i=0; i<nv; i++) {
+        MhB[m->dof_Madr[i]] += m->opt.timestep * m->dof_damping[i];
+      }
+
+      // factor
+      mj_factorI(m, d, MhB, d->qH, d->qHDiagInv, 0);
     }
-
-    // factor
-    mj_factorM(m, d);
 
     // solve
     mju_add(qfrc, d->qfrc_smooth, d->qfrc_constraint, nv);
-    mj_solveM(m, d, qacc, qfrc, 1);
-
-    // integrate velocity
-    mju_addToScl(d->qvel, qacc, m->opt.timestep, nv);
-
-    // restore M and factorization
-    mju_copy(d->qM, saveM, nM);
-    mju_copy(d->qLD, saveLD, nM);
-    mju_copy(d->qLDiagInv, saveLDiagInv, nv);
-    mju_copy(d->qLDiagSqrtInv, saveLDiagSqrtInv, nv);
+    mj_solveLD(m, d, qacc, qfrc, 1, d->qH, d->qHDiagInv);
   }
 
-  // update act
-  if (m->na) {
-    mju_addToScl(d->act, d->act_dot, m->opt.timestep, m->na);
-
-    // clamp activations
-    for (i=0; i<m->na; i++) {
-      int iu = i + m->nu - m->na;
-      if (m->actuator_actlimited[iu]) {
-        mjtNum min = m->actuator_actrange[2*iu];
-        mjtNum max = m->actuator_actrange[2*iu+1];
-        if (d->act[i]<min) {
-          d->act[i] = min;
-        } else if (d->act[i]>max) {
-          d->act[i] = max;
-        }
-      }
-    }
-  }
-
-  // update qpos using new qvel
-  mj_integratePos(m, d->qpos, d->qvel, m->opt.timestep);
-
-  // advance time
-  d->time += m->opt.timestep;
+  // advance state and time
+  mj_advance(m, d, d->act_dot, qacc, NULL);
 
   mjFREESTACK;
+}
+
+
+
+// Euler integrator, semi-implicit in velocity
+void mj_Euler(const mjModel* m, mjData* d) {
+  mj_EulerSkip(m, d, 0);
 }
 
 
@@ -624,28 +630,14 @@ void mj_RungeKutta(const mjModel* m, mjData* d, int N) {
     mju_addToScl(dX+nv, F[j], B[j], nv+na);
   }
 
-  // compute Xfinal
-  d->time = time + h;
-  mju_copy(d->qpos, X[0], nq+nv+na);
-  mj_integratePos(m, d->qpos, dX, h);
-  mju_addToScl(d->qvel, dX+nv, h, nv);
-  if (na) {
-    mju_addToScl(d->act, dX+2*nv, h, na);
+  // reset state and time
+  d->time = time;
+  mju_copy(d->qpos, X[0], nq);
+  mju_copy(d->qvel, X[0]+nq, nv);
+  mju_copy(d->act, X[0]+nq+nv, na);
 
-    // clamp activations
-    for (int i=0; i<m->na; i++) {
-      int iu = i + m->nu - m->na;
-      if (m->actuator_actlimited[iu]) {
-        mjtNum min = m->actuator_actrange[2*iu];
-        mjtNum max = m->actuator_actrange[2*iu+1];
-        if (d->act[i]<min) {
-          d->act[i] = min;
-        } else if (d->act[i]>max) {
-          d->act[i] = max;
-        }
-      }
-    }
-  }
+  // advance state and time
+  mj_advance(m, d, dX+2*nv, dX+nv, dX);
 
   mjFREESTACK;
 }
@@ -654,26 +646,28 @@ void mj_RungeKutta(const mjModel* m, mjData* d, int N) {
 
 //-------------------------- top-level API ---------------------------------------------------------
 
-// fully implicit in velocity
-void mj_implicit(const mjModel *m, mjData *d) {
+// fully implicit in velocity, possibly skipping factorization
+void mj_implicitSkip(const mjModel *m, mjData *d, int skipfactor) {
   int nv = m->nv;
 
   mjMARKSTACK;
   mjtNum *qfrc = mj_stackAlloc(d, nv);
   mjtNum *qacc = mj_stackAlloc(d, nv);
 
-  // construct sparse structure in d->D_xxx
-  mj_makeMSparse(m, d, d->D_rownnz, d->D_rowadr, d->D_colind);
+  if (!skipfactor) {
+    // construct sparse structure in d->D_xxx
+    mj_makeMSparse(m, d, d->D_rownnz, d->D_rowadr, d->D_colind);
 
-  // compute analytical derivative qDeriv
-  mjd_smooth_vel(m, d);
+    // compute analytical derivative qDeriv
+    mjd_smooth_vel(m, d);
 
-  // set qLU = qM - dt*qDeriv
-  mj_setMSparse(m, d, d->qLU, d->D_rownnz, d->D_rowadr, d->D_colind);
-  mju_addToScl(d->qLU, d->qDeriv, -m->opt.timestep, m->nD);
+    // set qLU = qM - dt*qDeriv
+    mj_setMSparse(m, d, d->qLU, d->D_rownnz, d->D_rowadr, d->D_colind);
+    mju_addToScl(d->qLU, d->qDeriv, -m->opt.timestep, m->nD);
 
-  // factorize qLU, use qacc as scratch space
-  mju_factorLUSparse(d->qLU, nv, (int*)qacc, d->D_rownnz, d->D_rowadr, d->D_colind);
+    // factorize qLU, use qacc as scratch space
+    mju_factorLUSparse(d->qLU, nv, (int*)qacc, d->D_rownnz, d->D_rowadr, d->D_colind);
+  }
 
   // set qfrc = qfrc_smooth + qfrc_constraint
   mju_add(qfrc, d->qfrc_smooth, d->qfrc_constraint, nv);
@@ -681,21 +675,17 @@ void mj_implicit(const mjModel *m, mjData *d) {
   // solve for qacc: (qM - dt*qDeriv) * qacc = qfrc
   mju_solveLUSparse(qacc, d->qLU, qfrc, nv, d->D_rownnz, d->D_rowadr, d->D_colind);
 
-  // update qvel
-  mju_addToScl(d->qvel, qacc, m->opt.timestep, nv);
-
-  // update act
-  if (m->na) {
-    mju_addToScl(d->act, d->act_dot, m->opt.timestep, m->na);
-  }
-
-  // update qpos using new qvel
-  mj_integratePos(m, d->qpos, d->qvel, m->opt.timestep);
-
-  // advance time
-  d->time += m->opt.timestep;
+  // advance state and time
+  mj_advance(m, d, d->act_dot, qacc, NULL);
 
   mjFREESTACK
+}
+
+
+
+// fully implicit in velocity
+void mj_implicit(const mjModel *m, mjData *d) {
+  mj_implicitSkip(m, d, 0);
 }
 
 

@@ -34,7 +34,7 @@ TEST_XML = r"""
   </visual>
   <worldbody>
     <geom name="myplane" type="plane" size="10 10 1"/>
-    <body pos="0 0 0.1">
+    <body name="mybox" pos="0 0 0.1">
       <geom name="mybox" type="box" size="0.1 0.1 0.1" mass="0.25"/>
       <freejoint name="myfree"/>
     </body>
@@ -163,6 +163,46 @@ class MuJoCoBindingsTest(parameterized.TestCase):
     self.data.actuator('myactuator').ctrl = 7
     np.testing.assert_array_equal(self.data.ctrl[actuator_id], [7])
 
+  def test_named_indexing_invalid_names_in_model(self):
+    with self.assertRaisesRegex(
+        KeyError,
+        r"Invalid name 'badgeom'\. Valid names: \['mybox', 'myplane'\]"):
+      self.model.geom('badgeom')
+
+  def test_named_indexing_no_name_argument_in_model(self):
+    with self.assertRaisesRegex(
+        KeyError,
+        r"Invalid name ''\. Valid names: \['myball', 'myfree', 'myhinge'\]"):
+      self.model.joint()
+
+  def test_named_indexing_invalid_names_in_data(self):
+    with self.assertRaisesRegex(
+        KeyError,
+        r"Invalid name 'badgeom'\. Valid names: \['mybox', 'myplane'\]"):
+      self.data.geom('badgeom')
+
+  def test_named_indexing_no_name_argument_in_model(self):
+    with self.assertRaisesRegex(
+        KeyError,
+        r"Invalid name ''\. Valid names: \['myball', 'myfree', 'myhinge'\]"):
+      self.data.jnt()
+
+  def test_named_indexing_invalid_index_in_model(self):
+    with self.assertRaisesRegex(
+      IndexError, r'Invalid index 3\. Valid indices from 0 to 2'):
+      self.model.geom(3)
+    with self.assertRaisesRegex(
+        IndexError, r'Invalid index -1\. Valid indices from 0 to 2'):
+      self.model.geom(-1)
+
+  def test_named_indexing_invalid_index_in_data(self):
+    with self.assertRaisesRegex(
+      IndexError, r'Invalid index 3\. Valid indices from 0 to 2'):
+      self.data.geom(3)
+    with self.assertRaisesRegex(
+        IndexError, r'Invalid index -1\. Valid indices from 0 to 2'):
+      self.data.geom(-1)
+
   def test_named_indexing_geom_size(self):
     box_id = mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_GEOM, 'mybox')
     self.assertIs(self.model.geom('mybox'), self.model.geom(box_id))
@@ -222,6 +262,25 @@ class MuJoCoBindingsTest(parameterized.TestCase):
                                   np.reshape(range(36), (6, 6)))
     self.data.joint('myfree').cdof = 42
     np.testing.assert_array_equal(self.data.cdof[dof_idx:dof_idx+6], [[42]*6]*6)
+
+  def test_named_indexing_repr_in_data(self):
+    expected_repr = '''<_MjDataGeomViews
+  xmat: array([0., 0., 0., 0., 0., 0., 0., 0., 0.])
+  xpos: array([0., 0., 0.])
+>'''
+    self.assertEqual(expected_repr, repr(self.data.geom('mybox')))
+
+  def test_named_indexing_body_repr_in_data(self):
+    view_repr = repr(self.data.body('mybox'))
+    self.assertStartsWith(view_repr, '<_MjDataBodyViews')
+    self.assertIn('xpos: array([0., 0., 0.])', view_repr)
+    self.assertEndsWith(view_repr, '>')
+
+  def test_named_indexing_repr_in_model(self):
+    view_repr = repr(self.model.geom('mybox'))
+    self.assertStartsWith(view_repr, '<_MjModelGeomViews')
+    self.assertIn('size: array([0.1, 0.1, 0.1])', view_repr)
+    self.assertEndsWith(view_repr, '>')
 
   def test_addresses_differ_between_structs(self):
     model2 = mujoco.MjModel.from_xml_string(TEST_XML)
@@ -909,6 +968,7 @@ Euler integrator, semi-implicit in velocity.
   def test_mj_ray(self):
     # mj_ray has tricky argument types
     geomid = np.zeros(1, np.int32)
+    mujoco.mj_forward(self.model, self.data)
     mujoco.mj_ray(self.model, self.data, [0, 0, 0], [0, 0, 1], None, 0, 0,
                   geomid)
     mujoco.mj_ray(self.model, self.data, [0, 0, 0], [0, 0, 1],

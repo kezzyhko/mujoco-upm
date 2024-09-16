@@ -35,8 +35,8 @@
   #endif
 #endif
 
-#define mjVERSION 220
-#define mjVERSIONSTRING "2.2.0"
+#define mjVERSION 221
+#define mjVERSIONSTRING "2.2.1"
 
 // names of disable flags
 const char* mjDISABLESTRING[mjNDISABLE] = {
@@ -1199,7 +1199,7 @@ void mj_integratePos(const mjModel* m, mjtNum* qpos, const mjtNum* qvel, mjtNum 
 
 
 
-// normalize all quaterions in qpos-type vector
+// normalize all quaternions in qpos-type vector
 void mj_normalizeQuat(const mjModel* m, mjtNum* qpos) {
   // find quaternion fields and normalize
   for (int i=0; i<m->njnt; i++) {

@@ -27,9 +27,29 @@
 #include "engine/engine_util_errmem.h"
 #include "engine/engine_vfs.h"
 
-#ifdef _MSC_VER
-#pragma warning (disable: 4305)  // tell MSVC to not complain that float x = 0.1 should be 0.1f
+#ifdef ADDRESS_SANITIZER
+  #include <sanitizer/asan_interface.h>
+#elif defined(_MSC_VER)
+  #define ASAN_POISON_MEMORY_REGION(addr, size)
+  #define ASAN_UNPOISON_MEMORY_REGION(addr, size)
+#else
+  #define ASAN_POISON_MEMORY_REGION(addr, size) ((void)(addr), (void)(size))
+  #define ASAN_UNPOISON_MEMORY_REGION(addr, size) ((void)(addr), (void)(size))
 #endif
+
+#ifdef MEMORY_SANITIZER
+  #include <sanitizer/msan_interface.h>
+#endif
+
+#ifdef _MSC_VER
+  #pragma warning (disable: 4305)  // disable MSVC warning: truncation from 'double' to 'float'
+#endif
+
+#ifndef __has_builtin
+#define __has_builtin(x) 0
+#endif
+
+#define PTRDIFF(x, y) ((void*)(x) - (void*)(y))
 
 
 //------------------------------ mjLROpt -----------------------------------------------------------
@@ -234,13 +254,9 @@ void mj_defaultStatistic(mjStatistic* stat) {
 static const int ID = 54321;
 
 
-// number of bytes to be skipped to achieve alignment
-static unsigned int SKIP(intptr_t offset, unsigned int align) {
-  // replace structure with int size (mjContact starts with int)
-  if (align>sizeof(mjtNum)) {
-    align = sizeof(int);
-  }
-
+// number of bytes to be skipped to achieve 64-byte alignment
+static unsigned int SKIP(intptr_t offset) {
+  const unsigned int align = 64;
   // compute skipped bytes
   return (align - (offset % align)) % align;
 }
@@ -322,9 +338,10 @@ static void mj_setPtrModel(mjModel* m) {
   MJMODEL_POINTERS_PREAMBLE(m);
 
   // assign pointers with padding
-#define X(type, name, nr, nc)                                           \
-  m->name = (type*)(ptr + SKIP((intptr_t)ptr, sizeof(type)));           \
-  ptr += SKIP((intptr_t)ptr, sizeof(type)) + sizeof(type)*(m->nr)*(nc);
+#define X(type, name, nr, nc)                             \
+  m->name = (type*)(ptr + SKIP((intptr_t)ptr));           \
+  ASAN_POISON_MEMORY_REGION(ptr, PTRDIFF(m->name, ptr));  \
+  ptr += SKIP((intptr_t)ptr) + sizeof(type)*(m->nr)*(nc);
 
   MJMODEL_POINTERS
 #undef X
@@ -335,6 +352,31 @@ static void mj_setPtrModel(mjModel* m) {
     printf("expected size: %d,  actual size: %d\n", m->nbuffer, sz);
     mju_error("mjModel buffer size mismatch");
   }
+}
+
+
+// increases buffer size without causing integer overflow, returns 0 if
+// operation would cause overflow
+// performs the following operations:
+// *nbuffer += SKIP(*offset) + type_size*nr*nc;
+// *offset += SKIP(*offset) + type_size*nr*nc;
+static int safeAddToBufferSize(intptr_t* offset, int* nbuffer, size_t type_size, int nr, int nc) {
+#if (__has_builtin(__builtin_add_overflow) && __has_builtin(__builtin_mul_overflow)) \
+    || (defined(__GNUC__) && __GNUC__ >= 5)
+  // supported by GCC and Clang
+  int to_add = 0;
+  if (__builtin_mul_overflow(nc, nr, &to_add)) return 0;
+  if (__builtin_mul_overflow(to_add, type_size, &to_add)) return 0;
+  if (__builtin_add_overflow(to_add, SKIP(*offset), &to_add)) return 0;
+  if (__builtin_add_overflow(*nbuffer, to_add, nbuffer)) return 0;
+  if (__builtin_add_overflow(*offset, to_add, offset)) return 0;
+#else
+  // TODO: offer a safe implementation for MSVC or other compilers that don't have the builtins
+  *nbuffer += SKIP(*offset) + type_size*nr*nc;
+  *offset += SKIP(*offset) + type_size*nr*nc;
+#endif
+
+  return 1;
 }
 
 
@@ -422,9 +464,12 @@ mjModel* mj_makeModel(int nq, int nv, int nu, int na, int nbody, int njnt,
 
   // compute buffer size
   m->nbuffer = 0;
-#define X(type, name, nr, nc)                                            \
-  m->nbuffer += SKIP(offset, sizeof(type)) + sizeof(type)*(m->nr)*(nc);  \
-  offset += SKIP(offset, sizeof(type)) + sizeof(type)*(m->nr)*(nc);
+#define X(type, name, nr, nc)                                                \
+  if (!safeAddToBufferSize(&offset, &m->nbuffer, sizeof(type), m->nr, nc)) { \
+    mju_warning("Invalid model: " #name " too large.");                      \
+    mj_deleteModel(m);                                                       \
+    return 0;                                                                \
+  }
 
   MJMODEL_POINTERS
 #undef X
@@ -437,6 +482,10 @@ mjModel* mj_makeModel(int nq, int nv, int nu, int na, int nbody, int njnt,
 
   // clear, set pointers in buffer
   memset(m->buffer, 0, m->nbuffer);
+#ifdef MEMORY_SANITIZER
+  // Tell msan to treat the entire buffer as uninitialized
+  __msan_allocated_memory(m->buffer, m->nbuffer);
+#endif
   mj_setPtrModel(m);
 
   // set default options
@@ -468,9 +517,13 @@ mjModel* mj_copyModel(mjModel* dest, const mjModel* src) {
                         src->nuser_cam, src->nuser_tendon, src->nuser_actuator, src->nuser_sensor,
                         src->nnames);
   }
+  if (!dest) {
+    mju_error("Failed to make mjModel. Invalid sizes.");
+  }
 
   // check sizes
   if (dest->nbuffer != src->nbuffer) {
+    mj_deleteModel(dest);
     mju_error("dest and src models have different buffer size");
   }
 
@@ -480,8 +533,14 @@ mjModel* mj_copyModel(mjModel* dest, const mjModel* src) {
   dest->buffer = save_bufptr;
   mj_setPtrModel(dest);
 
-  // copy buffer, respect padding
-  memcpy((char*)dest->buffer, (char*)src->buffer, src->nbuffer);
+  // copy buffer
+  {
+    MJMODEL_POINTERS_PREAMBLE(src)
+    #define X(type, name, nr, nc)  \
+      memcpy((char*)dest->name, (const char*)src->name, sizeof(type)*(src->nr)*nc);
+    MJMODEL_POINTERS
+    #undef X
+  }
 
   return dest;
 }
@@ -512,14 +571,26 @@ void mj_saveModel(const mjModel* m, const char* filename, void* buffer, int buff
     fwrite((void*)&m->opt, sizeof(mjOption), 1, fp);
     fwrite((void*)&m->vis, sizeof(mjVisual), 1, fp);
     fwrite((void*)&m->stat, sizeof(mjStatistic), 1, fp);
-    fwrite((void*)m->buffer, 1, m->nbuffer, fp);
+    {
+      MJMODEL_POINTERS_PREAMBLE(m)
+      #define X(type, name, nr, nc)  \
+        fwrite((void*)m->name, sizeof(type), (m->nr)*(nc), fp);
+      MJMODEL_POINTERS
+      #undef X
+    }
   } else {
     bufwrite(header, sizeof(int)*4, buffer_sz, buffer, &ptrbuf);
     bufwrite(m, sizeof(int)*getnint(), buffer_sz, buffer, &ptrbuf);
     bufwrite((void*)&m->opt, sizeof(mjOption), buffer_sz, buffer, &ptrbuf);
     bufwrite((void*)&m->vis, sizeof(mjVisual), buffer_sz, buffer, &ptrbuf);
     bufwrite((void*)&m->stat, sizeof(mjStatistic), buffer_sz, buffer, &ptrbuf);
-    bufwrite((void*)m->buffer, m->nbuffer, buffer_sz, buffer, &ptrbuf);
+    {
+      MJMODEL_POINTERS_PREAMBLE(m)
+      #define X(type, name, nr, nc)  \
+        bufwrite((void*)m->name, sizeof(type)*(m->nr)*(nc), buffer_sz, buffer, &ptrbuf);
+      MJMODEL_POINTERS
+      #undef X
+    }
   }
 
   if (fp) {
@@ -614,7 +685,7 @@ mjModel* mj_loadModel(const char* filename, const mjVFS* vfs) {
                    info[28], info[29], info[30], info[31], info[32], info[33], info[34],
                    info[35], info[36], info[37], info[38], info[39], info[40], info[41],
                    info[42], info[43], info[44], info[45], info[46], info[47], info[48]);
-  if (m->nbuffer!=info[getnint()-1]) {
+  if (!m || m->nbuffer!=info[getnint()-1]) {
     if (fp) {
       fclose(fp);
     }
@@ -630,25 +701,41 @@ mjModel* mj_loadModel(const char* filename, const mjVFS* vfs) {
   if (fp) {
     if (fread((void*)&m->opt, sizeof(mjOption), 1, fp) != 1) {
       mju_warning("Model file does not have a complete mjOption");
+      mj_deleteModel(m);
       return 0;
     }
     if (fread((void*)&m->vis, sizeof(mjVisual), 1, fp) != 1) {
       mju_warning("Model file does not have a complete mjVisual");
+      mj_deleteModel(m);
       return 0;
     }
     if (fread((void*)&m->stat, sizeof(mjStatistic), 1, fp) != 1) {
       mju_warning("Model file does not have a complete mjStatistic");
+      mj_deleteModel(m);
       return 0;
     }
-    if (fread(m->buffer, 1, m->nbuffer, fp) != m->nbuffer) {
-      mju_warning("Model file does not contain a large enough buffer");
-      return 0;
+    {
+      MJMODEL_POINTERS_PREAMBLE(m)
+      #define X(type, name, nr, nc)                                            \
+        if (fread(m->name, sizeof(type), (m->nr)*(nc), fp) != (m->nr)*(nc)) {  \
+          mju_warning("Model file does not contain a large enough buffer");    \
+          mj_deleteModel(m);                                                   \
+          return 0;                                                            \
+        }
+      MJMODEL_POINTERS
+      #undef X
     }
   } else {
     bufread((void*)&m->opt, sizeof(mjOption), buffer_sz, buffer, &ptrbuf);
     bufread((void*)&m->vis, sizeof(mjVisual), buffer_sz, buffer, &ptrbuf);
     bufread((void*)&m->stat, sizeof(mjStatistic), buffer_sz, buffer, &ptrbuf);
-    bufread(m->buffer, m->nbuffer, buffer_sz, buffer, &ptrbuf);
+    {
+      MJMODEL_POINTERS_PREAMBLE(m)
+      #define X(type, name, nr, nc)  \
+        bufread(m->name, sizeof(type)*(m->nr)*(nc), buffer_sz, buffer, &ptrbuf);
+      MJMODEL_POINTERS
+      #undef X
+    }
   }
 
   // make sure file size is correct
@@ -712,9 +799,10 @@ static void mj_setPtrData(const mjModel* m, mjData* d) {
   MJDATA_POINTERS_PREAMBLE(m);
 
   // assign pointers with padding
-#define X(type, name, nr, nc)                                           \
-  d->name = (type*)(ptr + SKIP((intptr_t)ptr, sizeof(type)));           \
-  ptr += SKIP((intptr_t)ptr, sizeof(type)) + sizeof(type)*(m->nr)*(nc);
+#define X(type, name, nr, nc)                             \
+  d->name = (type*)(ptr + SKIP((intptr_t)ptr));           \
+  ASAN_POISON_MEMORY_REGION(ptr, PTRDIFF(d->name, ptr));  \
+  ptr += SKIP((intptr_t)ptr) + sizeof(type)*(m->nr)*(nc);
 
   MJDATA_POINTERS
 #undef X
@@ -743,9 +831,12 @@ static mjData* _makeData(const mjModel* m) {
 
   // compute buffer size
   d->nbuffer = 0;
-#define X(type, name, nr, nc)                                            \
-  d->nbuffer += SKIP(offset, sizeof(type)) + sizeof(type)*(m->nr)*(nc);  \
-  offset += SKIP(offset, sizeof(type)) + sizeof(type)*(m->nr)*(nc);
+#define X(type, name, nr, nc)                                                \
+  if (!safeAddToBufferSize(&offset, &d->nbuffer, sizeof(type), m->nr, nc)) { \
+    mju_warning("Invalid data: " #name " too large.");                       \
+    mj_deleteData(d);                                                        \
+    return 0;                                                                \
+  }
 
   MJDATA_POINTERS
 #undef X
@@ -810,7 +901,13 @@ mjData* mj_copyData(mjData* dest, const mjModel* m, const mjData* src) {
   mj_setPtrData(m, dest);
 
   // copy buffer
-  memcpy((char*)dest->buffer, (char*)src->buffer, src->nbuffer);
+  {
+    MJDATA_POINTERS_PREAMBLE(m)
+    #define X(type, name, nr, nc)  \
+      memcpy((char*)dest->name, (const char*)src->name, sizeof(type)*(m->nr)*nc);
+    MJDATA_POINTERS
+    #undef X
+  }
 
   return dest;
 }
@@ -873,27 +970,40 @@ static void _resetData(const mjModel* m, mjData* d, unsigned char debug_value) {
   //------------------------------ clear buffer, set defaults
 
   // fill buffer with debug_value (normally 0)
+#ifdef ADDRESS_SANITIZER
+  {
+    #define X(type, name, nr, nc) memset(d->name, (int)debug_value, sizeof(type)*(m->nr)*(nc));
+    MJDATA_POINTERS_PREAMBLE(m)
+    MJDATA_POINTERS
+    #undef X
+  }
+#else
   memset(d->buffer, (int)debug_value, d->nbuffer);
+#endif
+
+#ifdef MEMORY_SANITIZER
+  // Tell msan to treat the entire buffer as uninitialized
+  __msan_allocated_memory(d->buffer, d->nbuffer);
+#endif
+
+  // zero out arrays that are not affected by mj_forward
+  mju_zero(d->qpos, m->nq);
+  mju_zero(d->qvel, m->nv);
+  mju_zero(d->act, m->na);
+  mju_zero(d->ctrl, m->nu);
+  mju_zero(d->qfrc_applied, m->nv);
+  mju_zero(d->xfrc_applied, 6*m->nbody);
+  mju_zero(d->qacc, m->nv);
+  mju_zero(d->qacc_warmstart, m->nv);
+  mju_zero(d->act_dot, m->na);
+  mju_zero(d->userdata, m->nuserdata);
+  mju_zero(d->sensordata, m->nsensordata);
+  mju_zero(d->mocap_pos, 3*m->nmocap);
+  mju_zero(d->mocap_quat, 4*m->nmocap);
 
   // copy qpos0 from model
   if (m->qpos0) {
     memcpy(d->qpos, m->qpos0, m->nq*sizeof(mjtNum));
-  }
-
-  // debugging: zero the rest of the main input section
-  if (debug_value) {
-    mju_zero(d->qvel, m->nv);
-    mju_zero(d->act, m->na);
-    mju_zero(d->ctrl, m->nu);
-    mju_zero(d->qfrc_applied, m->nv);
-    mju_zero(d->xfrc_applied, 6*m->nbody);
-    mju_zero(d->qacc, m->nv);
-    mju_zero(d->qacc_warmstart, m->nv);
-    mju_zero(d->act_dot, m->na);
-    mju_zero(d->userdata, m->nuserdata);
-    mju_zero(d->sensordata, m->nsensordata);
-    mju_zero(d->mocap_pos, 3*m->nmocap);
-    mju_zero(d->mocap_quat, 4*m->nmocap);
   }
 
   // set mocap_pos/quat = body_pos/quat for mocap bodies
@@ -941,6 +1051,7 @@ void mj_resetDataKeyframe(const mjModel* m, mjData* d, int key) {
     mju_copy(d->act,  m->key_act+ key*m->na, m->na);
     mju_copy(d->mocap_pos,  m->key_mpos+key*3*m->nmocap, 3*m->nmocap);
     mju_copy(d->mocap_quat, m->key_mquat+key*4*m->nmocap, 4*m->nmocap);
+    mju_copy(d->ctrl, m->key_ctrl+key*m->nu, m->nu);
   }
 }
 
@@ -977,6 +1088,7 @@ static int sensorSize(mjtSensor sensor_type, int nuser_sensor) {
   case mjSENS_TENDONLIMITPOS:
   case mjSENS_TENDONLIMITVEL:
   case mjSENS_TENDONLIMITFRC:
+  case mjSENS_CLOCK:
     return 1;
 
   case mjSENS_ACCELEROMETER:

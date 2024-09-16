@@ -67,6 +67,7 @@ mjCComposite::mjCComposite(void) {
   mjuu_setvec(skinrgba, 1, 1, 1, 1);
   skininflate = 0;
   skinsubgrid = 0;
+  skingroup = 0;
 
   // clear add flags
   for (int i=0; i<mjNCOMPKINDS; i++) {
@@ -764,6 +765,8 @@ mjCBody* mjCComposite::AddClothBody(mjCModel* model, mjCBody* body,
     body->inertia[0] = body->mass*(size[1]*size[1]+size[2]*size[2])/3;
     body->inertia[1] = body->mass*(size[0]*size[0]+size[2]*size[2])/3;
     body->inertia[2] = body->mass*(size[0]*size[0]+size[1]*size[1])/3;
+
+    body->MakeInertialExplicit();
   }
 
   // add site
@@ -1051,6 +1054,7 @@ void mjCComposite::MakeSkin2(mjCModel* model) {
   skin->material = skinmaterial;
   mjuu_copyvec(skin->rgba, skinrgba, 4);
   skin->inflate = skininflate;
+  skin->group = skingroup;
 
   // populate mesh: two sides
   for (int i=0; i<2; i++) {
@@ -1471,6 +1475,7 @@ void mjCComposite::MakeSkin2Subgrid(mjCModel* model) {
   skin->material = skinmaterial;
   mjuu_copyvec(skin->rgba, skinrgba, 4);
   skin->inflate = skininflate;
+  skin->group = skingroup;
 
   // populate mesh: two sides
   mjtNum S = spacing/(1+skinsubgrid);
@@ -1641,6 +1646,7 @@ void mjCComposite::MakeSkin3(mjCModel* model) {
   skin->material = skinmaterial;
   mjuu_copyvec(skin->rgba, skinrgba, 4);
   skin->inflate = skininflate;
+  skin->group = skingroup;
 
   // box
   if (type==mjCOMPTYPE_BOX) {
