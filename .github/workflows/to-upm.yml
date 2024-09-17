@@ -28,6 +28,11 @@ jobs:
         ref: upm
     - name: Setup user
       uses: fregante/setup-git-user@v2
+    - name: Set version in package.json
+      uses: jaywcjlove/github-action-package@main
+      with:
+        path: ./unity/package.json
+        version: ${{ env.UPM_VERSION }}
     - name: Merge 1
       continue-on-error: true
       run: |
@@ -38,10 +43,6 @@ jobs:
         git commit --no-edit
         git push
         echo "MERGE_COMMIT_HASH=$(git rev-parse --verify HEAD)" >> $GITHUB_ENV
-    - name: Set version in package.json
-      uses: jaywcjlove/github-action-package@main
-      with:
-        version: ${{ env.UPM_VERSION }}
     - name: Create release
       uses: actions/create-release@v1
       env:
