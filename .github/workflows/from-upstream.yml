@@ -35,6 +35,7 @@ jobs:
         GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         REPO_FULL_NAME: ${{ github.repository }}
       run: |
+        gh repo set-default $REPO_FULL_NAME
         UPM_TAGS="$(git tag --merged origin/upm)"
         MAIN_TAGS="$(git tag --merged origin/main)"
         NEW_TAGS=$(grep -Fxvf <(echo "$UPM_TAGS") <(echo "$MAIN_TAGS"))
@@ -44,12 +45,12 @@ jobs:
         do
           echo "===== $TAG"
           echo "Creating workflow..."
-          gh workflow run to-upm.yml --repo $REPO_FULL_NAME --field tag_name=$TAG
+          gh workflow run to-upm.yml --field tag_name=$TAG
           echo "Workflow created, getting id..."
           sleep 5s
-          RUN_ID=$(gh run list --repo $REPO_FULL_NAME --json databaseId --workflow to-upm.yml --limit 1 --jq '.[0].databaseId') # https://stackoverflow.com/a/77825187/6702274
+          RUN_ID=$(gh run list --json databaseId --workflow to-upm.yml --limit 1 --jq '.[0].databaseId') # https://stackoverflow.com/a/77825187/6702274
           echo "Got id $RUN_ID, watching..."
-          gh run watch $RUN_ID --repo $REPO_FULL_NAME --exit-status
+          gh run watch $RUN_ID --exit-status
           echo "Workflow finished"
           echo "====="
         done
