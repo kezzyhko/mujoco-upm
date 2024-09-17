@@ -41,6 +41,7 @@ jobs:
 
         echo "$NEW_TAGS" | while read TAG
         do
+          [ -z "$TAG" ] && continue #skip empty lines
           echo "===== $TAG"
           echo "Creating workflow..."
           gh workflow run to-upm.yml --field tag_name=$TAG
