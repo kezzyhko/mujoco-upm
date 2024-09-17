@@ -28,6 +28,15 @@ jobs:
         ref: upm
     - name: Setup user
       uses: fregante/setup-git-user@v2
+    - name: Set version in package.json
+      uses: jaywcjlove/github-action-package@main
+      with:
+        path: ./unity/package.json
+        version: ${{ env.UPM_VERSION }}
+    - name: Commit
+      run: |
+        git add .
+        git commit -m "Update version in package.json"
     - name: Merge 1
       continue-on-error: true
       run: |
