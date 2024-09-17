@@ -38,6 +38,10 @@ jobs:
         git commit --no-edit
         git push
         echo "MERGE_COMMIT_HASH=$(git rev-parse --verify HEAD)" >> $GITHUB_ENV
+    - name: Set version in package.json
+      uses: jaywcjlove/github-action-package@main
+      with:
+        version: ${{ env.UPM_VERSION }}
     - name: Create release
       uses: actions/create-release@v1
       env:
