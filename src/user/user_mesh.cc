@@ -220,6 +220,10 @@ void mjCMesh::PointToLocal() {
 
 
 void mjCMesh::NameSpace(const mjCModel* m) {
+  if (name.empty()) {
+    std::string stripped = mjuu_strippath(spec_file_);
+    name = mjuu_stripext(stripped);
+  }
   mjCBase::NameSpace(m);
   if (modelfiledir_.empty()) {
     modelfiledir_ = FilePath(m->spec_modelfiledir_);
@@ -252,6 +256,12 @@ void mjCMesh::CopyFromSpec() {
   szgraph_ = 0;
   center_ = NULL;
   graph_ = NULL;
+
+  // use filename if name is missing
+  if (name.empty()) {
+    std::string stripped = mjuu_strippath(file_);
+    name = mjuu_stripext(stripped);
+  }
 }
 
 
@@ -2034,6 +2044,11 @@ void mjCSkin::PointToLocal() {
 
 
 void mjCSkin::NameSpace(const mjCModel* m) {
+  // use filename if name is missing
+  if (name.empty()) {
+    std::string stripped = mjuu_strippath(spec_file_);
+    name = mjuu_stripext(stripped);
+  }
   for (auto& name : spec_bodyname_) {
     name = m->prefix + name + m->suffix;
   }
@@ -2059,6 +2074,12 @@ void mjCSkin::CopyFromSpec() {
   bindquat_ = spec_bindquat_;
   vertid_ = spec_vertid_;
   vertweight_ = spec_vertweight_;
+
+  // use filename if name is missing
+  if (name.empty()) {
+    std::string stripped = mjuu_strippath(file_);
+    name = mjuu_stripext(stripped);
+  }
 }
 
 
@@ -2898,15 +2919,6 @@ void mjCFlex::Compile(const mjVFS* vfs) {
     if (model->Bodies()[vbodyid]->plugin.instance) {
       mjCPlugin* plugin_instance =
           static_cast<mjCPlugin*>(model->Bodies()[vbodyid]->plugin.instance);
-      if (young > 0) {
-        plugin_instance->config_attribs["young"] = std::to_string(young);
-      }
-      if (poisson > 0) {
-        plugin_instance->config_attribs["poisson"] = std::to_string(poisson);
-      }
-      if (thickness > 0) {
-        plugin_instance->config_attribs["thickness"] = std::to_string(thickness);
-      }
       if (damping > 0) {
         plugin_instance->config_attribs["damping"] = std::to_string(damping);
       }
