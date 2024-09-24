@@ -55,7 +55,6 @@
 #include <mujoco/mjtnum.h>
 #include "engine/engine_crossplatform.h"
 #include "engine/engine_plugin.h"
-#include "engine/engine_sort.h"
 #include "engine/engine_util_errmem.h"
 #include "user/user_cache.h"
 #include "user/user_model.h"
@@ -246,7 +245,7 @@ void mjCMesh::CopyFromSpec() {
   facetexcoord_ = spec_facetexcoord_;
   maxhullvert_ = spec.maxhullvert;
   plugin.active = spec.plugin.active;
-  plugin.instance = spec.plugin.instance;
+  plugin.element = spec.plugin.element;
   plugin.name = spec.plugin.name;
   plugin.instance_name = spec.plugin.instance_name;
 
@@ -270,7 +269,7 @@ mjCMesh::~mjCMesh() {
   if (center_) mju_free(center_);
   if (graph_) mju_free(graph_);
   if (spec.plugin.active && spec.plugin.instance_name->empty()) {
-    model->DeleteElement(spec.plugin.instance);
+    model->DeleteElement(spec.plugin.element);
   }
 }
 
@@ -289,9 +288,9 @@ void mjCMesh::LoadSDF() {
                    name.c_str(), id);
   }
 
-  mjCPlugin* plugin_instance = static_cast<mjCPlugin*>(plugin.instance);
+  mjCPlugin* plugin_instance = static_cast<mjCPlugin*>(plugin.element);
   model->ResolvePlugin(this, plugin_name, plugin_instance_name, &plugin_instance);
-  plugin.instance = plugin_instance;
+  plugin.element = plugin_instance;
   const mjpPlugin* pplugin = mjp_getPluginAtSlot(plugin_instance->spec.plugin_slot);
   if (!(pplugin->capabilityflags & mjPLUGIN_SDF)) {
     throw mjCError(this, "plugin '%s' does not support signed distance fields", pplugin->name);
@@ -843,33 +842,31 @@ void mjCMesh::FitGeom(mjCGeom* geom, double* meshpos) {
 
 
 // comparison function for vertex sorting
-quicksortfunc(vertcompare, context, el1, el2) {
-  float* vert = (float*) context;
-  float x1 = vert[3*(*(int*)el1)] + 1e-2*vert[1+3*(*(int*)el1)] + 1e-4*vert[2+3*(*(int*)el1)];
-  float x2 = vert[3*(*(int*)el2)] + 1e-2*vert[1+3*(*(int*)el2)] + 1e-4*vert[2+3*(*(int*)el2)];
-
-  if (x1 < x2) {
-    return -1;
-  } else if (x1 == x2) {
-    return 0;
-  } else {
-    return 1;
+bool vertcompare(int index1, int index2, const std::vector<float>& vert) {
+  for (int i = 0; i < 3; i++) {
+    if (vert[3*index1 + i] < vert[3*index2 + i]) {
+      return true;
+    }
+    if (vert[3*index1 + i] > vert[3*index2 + i]) {
+      return false;
+    }
   }
+  return false;
 }
 
 // remove repeated vertices
 void mjCMesh::RemoveRepeated() {
   int repeated = 0;
 
-  // allocate sort and redirection indices, set to identity
-  auto index = std::unique_ptr<int[]>(new int[nvert()]);
-  auto redirect = std::unique_ptr<int[]>(new int[nvert()]);
+  std::vector<int> index(nvert());
+  std::vector<int> redirect(nvert());
   for (int i=0; i < nvert(); i++) {
     index[i] = redirect[i] = i;
   }
 
-  // sort vertices
-  mjQUICKSORT(index.get(), nvert(), sizeof(int), vertcompare, vert_.data());
+  std::stable_sort(index.begin(), index.end(), [&vert = vert_](int a, int b) {
+    return vertcompare(a, b, vert);
+  });
 
   // find repeated vertices, set redirect
   for (int i=1; i < nvert(); i++) {
@@ -2919,9 +2916,9 @@ void mjCFlex::Compile(const mjVFS* vfs) {
   useredge = VectorToString(edgeidx_);
 
   for (const auto& vbodyid : vertbodyid) {
-    if (model->Bodies()[vbodyid]->plugin.instance) {
+    if (model->Bodies()[vbodyid]->plugin.element) {
       mjCPlugin* plugin_instance =
-          static_cast<mjCPlugin*>(model->Bodies()[vbodyid]->plugin.instance);
+          static_cast<mjCPlugin*>(model->Bodies()[vbodyid]->plugin.element);
       if (damping > 0) {
         plugin_instance->config_attribs["damping"] = std::to_string(damping);
       }
