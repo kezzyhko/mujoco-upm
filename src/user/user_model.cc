@@ -341,6 +341,7 @@ mjCModel& mjCModel::operator+=(const mjCModel& other) {
     std::unordered_map<mjCPlugin*, mjCPlugin*> plugin_map;
     for (const auto& plugin : other.plugins_) {
       plugins_.push_back(new mjCPlugin(*plugin));
+      plugins_.back()->NameSpace(&other);
       plugin_map[plugin] = plugins_.back();
     }
     mapplugin(plugin_map, bodies_);
@@ -921,6 +922,13 @@ mjsElement* mjCModel::NextObject(mjsElement* object, mjtObj type) {
 
   switch (type) {
     case mjOBJ_BODY:
+      if (!object) {
+        return bodies_[0]->spec.element;
+      } else if (object == bodies_[0]->spec.element) {
+        return bodies_[0]->NextChild(NULL, type, /*recursive=*/true);
+      } else {
+        return bodies_[0]->NextChild(object, type, /*recursive=*/true);
+      }
     case mjOBJ_SITE:
     case mjOBJ_GEOM:
     case mjOBJ_JOINT:
