@@ -8576,19 +8576,14 @@ STRUCTS: Mapping[str, StructDecl] = dict([
                  type=PointerType(
                      inner_type=ValueType(name='mjString'),
                  ),
-                 doc='name',
-             ),
-             StructFieldDecl(
-                 name='instance_name',
-                 type=PointerType(
-                     inner_type=ValueType(name='mjString'),
-                 ),
                  doc='instance name',
              ),
              StructFieldDecl(
-                 name='plugin_slot',
-                 type=ValueType(name='int'),
-                 doc='global registered slot number of the plugin',
+                 name='plugin_name',
+                 type=PointerType(
+                     inner_type=ValueType(name='mjString'),
+                 ),
+                 doc='plugin name',
              ),
              StructFieldDecl(
                  name='active',
