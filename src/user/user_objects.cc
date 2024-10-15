@@ -848,7 +848,7 @@ mjCBody& mjCBody::operator+=(const mjCFrame& other) {
   mjCBody* subtree = other.body;
   other.model->prefix = other.prefix;
   other.model->suffix = other.suffix;
-  other.model->StoreKeyframes();
+  other.model->StoreKeyframes(model);
 
   // attach defaults
   if (other.model != model) {
@@ -1808,7 +1808,7 @@ mjCFrame& mjCFrame::operator=(const mjCFrame& other) {
 mjCFrame& mjCFrame::operator+=(const mjCBody& other) {
   other.model->prefix = other.prefix;
   other.model->suffix = other.suffix;
-  other.model->StoreKeyframes();
+  other.model->StoreKeyframes(model);
   other.model->prefix = "";
   other.model->suffix = "";
 
@@ -6397,6 +6397,12 @@ void mjCSensor::Compile(void) {
     // objects must be different
     if (objtype == reftype && obj == ref) {
       throw mjCError(this, "1st body/geom must be different from 2nd body/geom");
+    }
+
+    // height fields are not necessarily convex and are not yet supported
+    if (static_cast<mjCGeom*>(obj)->Type() == mjGEOM_HFIELD ||
+        static_cast<mjCGeom*>(ref)->Type() == mjGEOM_HFIELD) {
+      throw mjCError(this, "height fields are not supported in geom distance sensors");
     }
 
     // set

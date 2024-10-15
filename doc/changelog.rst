@@ -24,13 +24,15 @@ MJX
 - Added support for :ref:`spatial tendons <tendon-spatial>` with pulleys and external sphere and cylinder wrapping.
 - Added sphere-cylinder and sphere-ellipsoid collision functions (:github:issue:`2126`).
 - Fixed a bug with frictionloss constraints.
-- Added ``TENDONPOS`` sensor.
+- Added ``TENDONPOS`` and ``TENDONVEL`` sensors.
 - Fixed a bug with the computation of tangential contact forces in ``_decode_pyramid``.
 
 Bug fixes
 ^^^^^^^^^
 - Fixed a bug where ``actuator_force`` was not set in MJX (:github:issue:`2068`).
 - Fixed bug where MJX data tendon fields were incorrect after calling ``mjx.put_data``.
+- The compiler now returns an error if height fields are used with :ref:`collision sensors<collision-sensors>` as they
+  are not yet supported.
 
 
 Version 3.2.3 (Sep 16, 2024)
