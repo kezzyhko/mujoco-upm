@@ -351,6 +351,7 @@
     X   ( mjtNum,  flexedge_invweight0,   nflexedge,     1                    ) \
     XMJV( mjtNum,  flex_radius,           nflex,         1                    ) \
     X   ( mjtNum,  flex_stiffness,        nflexelem,     21                   ) \
+    X   ( mjtNum,  flex_damping,          nflex,         1                    ) \
     X   ( mjtNum,  flex_edgestiffness,    nflex,         1                    ) \
     X   ( mjtNum,  flex_edgedamping,      nflex,         1                    ) \
     X   ( mjtByte, flex_edgeequality,     nflex,         1                    ) \
@@ -679,7 +680,7 @@
     X( mjContact, contact, MJ_D(ncon), 1 )
 
 // array fields of mjData that are used in the primal problem
-#define MJDATA_ARENA_POINTERS_PRIMAL                   \
+#define MJDATA_ARENA_POINTERS_SOLVER                   \
     X( int,      efc_type,          MJ_D(nefc),    1 ) \
     X( int,      efc_id,            MJ_D(nefc),    1 ) \
     X( int,      efc_J_rownnz,      MJ_D(nefc),    1 ) \
@@ -728,7 +729,7 @@
 // array fields of mjData that live in d->arena
 #define MJDATA_ARENA_POINTERS          \
     MJDATA_ARENA_POINTERS_CONTACT      \
-    MJDATA_ARENA_POINTERS_PRIMAL       \
+    MJDATA_ARENA_POINTERS_SOLVER       \
     MJDATA_ARENA_POINTERS_DUAL         \
     MJDATA_ARENA_POINTERS_ISLAND
 
@@ -746,12 +747,12 @@
     X( int,       maxuse_con         ) \
     X( int,       maxuse_efc         ) \
     X( int,       solver_nisland     ) \
+    X( int,       ncon               ) \
     X( int,       ne                 ) \
     X( int,       nf                 ) \
     X( int,       nl                 ) \
     X( int,       nefc               ) \
     X( int,       nnzJ               ) \
-    X( int,       ncon               ) \
     X( int,       nisland            ) \
     X( mjtNum,    time               ) \
     X( uintptr_t, threadpool         )

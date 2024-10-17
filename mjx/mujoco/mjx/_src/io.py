@@ -29,6 +29,14 @@ import numpy as np
 import scipy
 
 
+def _strip_weak_type(tree):
+  def f(leaf):
+    if isinstance(leaf, jax.Array):
+      return leaf.astype(jax.dtypes.canonicalize_dtype(leaf.dtype))
+    return leaf
+  return jax.tree_util.tree_map(f, tree)
+
+
 def _make_option(o: mujoco.MjOption) -> types.Option:
   """Returns mjx.Option given mujoco.MjOption."""
   if o.integrator not in set(types.IntegratorType):
@@ -110,6 +118,30 @@ def put_model(
       if t == mujoco.mjtGeom.mjGEOM_MESH:
         mesh_geomid.add(g)
 
+  # check for spatial tendon internal geom wrapping
+  if m.ntendon:
+    # find sphere or cylinder geoms (if any exist)
+    (wrap_id_geom,) = np.nonzero(
+        (m.wrap_type == mujoco.mjtWrap.mjWRAP_SPHERE)
+        | (m.wrap_type == mujoco.mjtWrap.mjWRAP_CYLINDER)
+    )
+    wrap_objid_geom = m.wrap_objid[wrap_id_geom]
+    geom_pos = m.geom_pos[wrap_objid_geom]
+    geom_size = m.geom_size[wrap_objid_geom, 0]
+
+    # find sidesites (if any exist)
+    side_id = np.round(m.wrap_prm[wrap_id_geom]).astype(int)
+    side = m.site_pos[side_id]
+
+    # check for sidesite inside geom
+    if np.any(
+        (np.linalg.norm(side - geom_pos, axis=1) < geom_size) & (side_id >= 0)
+    ):
+      raise NotImplementedError(
+          'Internal wrapping with sphere and cylinder geoms is not'
+          ' implemented for spatial tendons.'
+      )
+
   for enum_field, enum_type, mj_type in (
       (m.actuator_biastype, types.BiasType, mujoco.mjtBias),
       (m.actuator_dyntype, types.DynType, mujoco.mjtDyn),
@@ -148,7 +180,8 @@ def put_model(
 
   model = types.Model(**{k: copy.copy(v) for k, v in fields.items()})
 
-  return jax.device_put(model, device=device)
+  model = jax.device_put(model, device=device)
+  return _strip_weak_type(model)
 
 
 def make_data(

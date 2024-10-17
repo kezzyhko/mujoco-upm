@@ -76,7 +76,7 @@ Users who wish to build MuJoCo from source should consult the [build from
 source] section of the documentation. However, please note that the commit at
 the tip of the `main` branch may be unstable.
 
-### Python (>= 3.8)
+### Python (>= 3.9)
 
 The native Python bindings, which come pre-packaged with a copy of MuJoCo, can
 be installed from [PyPI] via:
@@ -109,8 +109,7 @@ GitHub [Issues](https://github.com/google-deepmind/mujoco/issues) are reserved
 for bug reports, feature requests and other development-related subjects.
 
 ## Related software
-MuJoCo forms the backbone of many environment packages, but these are too many
-to list here individually. Below we focus on bindings and converters.
+MuJoCo is the backbone for numerous environment packages. Below we list several bindings and converters.
 
 ### Bindings
 

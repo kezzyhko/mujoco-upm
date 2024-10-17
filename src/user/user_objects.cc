@@ -762,6 +762,7 @@ mjCBody::mjCBody(mjCModel* _model) {
   margin = 0;
   mjuu_zerovec(xpos0, 3);
   mjuu_setvec(xquat0, 1, 0, 0, 0);
+  last_attached = nullptr;
 
   // clear object lists
   bodies.clear();
@@ -801,7 +802,8 @@ mjCBody& mjCBody::operator=(const mjCBody& other) {
     sites.clear();
     cameras.clear();
     lights.clear();
-    id = other.id;
+    id = -1;
+    subtreedofs = 0;
 
     // add elements to lists
     *this += other;
@@ -846,7 +848,7 @@ mjCBody& mjCBody::operator+=(const mjCFrame& other) {
   mjCBody* subtree = other.body;
   other.model->prefix = other.prefix;
   other.model->suffix = other.suffix;
-  other.model->StoreKeyframes();
+  other.model->StoreKeyframes(model);
 
   // attach defaults
   if (other.model != model) {
@@ -860,7 +862,9 @@ mjCBody& mjCBody::operator+=(const mjCFrame& other) {
   frames.back()->body = this;
   frames.back()->model = model;
   frames.back()->frame = other.frame;
+  frames.back()->NameSpace(other.model);
   int i = frames.size();
+  last_attached = &frames.back()->spec;
 
   // map input frames to index in this->frames
   std::map<mjCFrame*, int> fmap;
@@ -894,6 +898,11 @@ mjCBody& mjCBody::operator+=(const mjCFrame& other) {
 
   // attach referencing elements
   *model += *other.model;
+
+  // leave the source model in a clean state
+  if (other.model != model) {
+    other.model->key_pending_.clear();
+  }
 
   // clear namespace and return body
   other.model->prefix.clear();
@@ -948,8 +957,8 @@ void mjCBody::PointToLocal() {
   spec.name = &name;
   spec.childclass = &classname;
   spec.userdata = &spec_userdata_;
-  spec.plugin.name = &plugin_name;
-  spec.plugin.instance_name = (&plugin_instance_name);
+  spec.plugin.plugin_name = &plugin_name;
+  spec.plugin.name = (&plugin_instance_name);
   spec.info = &info;
   userdata = nullptr;
 }
@@ -959,9 +968,9 @@ void mjCBody::CopyFromSpec() {
   *static_cast<mjsBody*>(this) = spec;
   userdata_ = spec_userdata_;
   plugin.active = spec.plugin.active;
-  plugin.instance = spec.plugin.instance;
+  plugin.element = spec.plugin.element;
+  plugin.plugin_name = spec.plugin.plugin_name;
   plugin.name = spec.plugin.name;
-  plugin.instance_name = spec.plugin.instance_name;
 }
 
 
@@ -984,6 +993,10 @@ mjCBody::~mjCBody() {
   sites.clear();
   cameras.clear();
   lights.clear();
+
+  if (spec.plugin.active && spec.plugin.name->empty()) {
+    model->DeleteElement(spec.plugin.element);
+  }
 }
 
 
@@ -1002,6 +1015,9 @@ void mjCBody::NameSpace_(const mjCModel* m, bool propagate) {
   }
   if (!classname.empty() && m != model) {
     classname = m->prefix + classname + m->suffix;
+  }
+  if (!plugin_instance_name.empty()) {
+    plugin_instance_name = m->prefix + plugin_instance_name + m->suffix;
   }
 
   for (auto& body : bodies) {
@@ -1032,6 +1048,10 @@ void mjCBody::NameSpace_(const mjCModel* m, bool propagate) {
 
   for (auto& light : lights) {
     light->NameSpace(m);
+  }
+
+  for (auto& frame : frames) {
+    frame->NameSpace(m);
   }
 }
 
@@ -1145,6 +1165,39 @@ mjCLight* mjCBody::AddLight(mjCDef* _def) {
 
 
 
+// create a frame in the parent body and move all contents of this body into it
+mjCFrame* mjCBody::ToFrame() {
+  if (parentid < 0) {
+    // TODO: store the parent pointer instead of using the id
+    throw mjCError(this, "parent body is not defined, please compile the model first");
+  }
+  mjCBody* parent = model->Bodies()[parentid];
+  mjCFrame* newframe = parent->AddFrame(frame);
+  mjuu_copyvec(newframe->spec.pos, spec.pos, 3);
+  mjuu_copyvec(newframe->spec.quat, spec.quat, 4);
+  parent->bodies.insert(parent->bodies.end(), bodies.begin(), bodies.end());
+  parent->geoms.insert(parent->geoms.end(), geoms.begin(), geoms.end());
+  parent->joints.insert(parent->joints.end(), joints.begin(), joints.end());
+  parent->sites.insert(parent->sites.end(), sites.begin(), sites.end());
+  parent->cameras.insert(parent->cameras.end(), cameras.begin(), cameras.end());
+  parent->lights.insert(parent->lights.end(), lights.begin(), lights.end());
+  parent->frames.insert(parent->frames.end(), frames.begin(), frames.end());
+  bodies.clear();
+  geoms.clear();
+  joints.clear();
+  sites.clear();
+  cameras.clear();
+  lights.clear();
+  frames.clear();
+  parent->bodies.erase(
+      std::remove_if(parent->bodies.begin(), parent->bodies.end(),
+                     [this](mjCBody* body) { return body == this; }),
+      parent->bodies.end());
+  return newframe;
+}
+
+
+
 // get number of objects of specified type
 int mjCBody::NumObjects(mjtObj type) {
   switch (type) {
@@ -1254,7 +1307,7 @@ mjCBase* mjCBody::FindObject(mjtObj type, std::string _name, bool recursive) {
 
 
 template <class T>
-mjsElement* mjCBody::GetNext(std::vector<T*>& list, const mjsElement* child, bool recursive) {
+mjsElement* mjCBody::GetNext(const std::vector<T*>& list, const mjsElement* child, bool* found) {
   if (list.empty()) {
     // no children
     return nullptr;
@@ -1268,15 +1321,14 @@ mjsElement* mjCBody::GetNext(std::vector<T*>& list, const mjsElement* child, boo
   for (unsigned int i = 0; i < list.size()-1; i++) {
     // next child is in this body
     if (list[i]->spec.element == child) {
+      *found = true;
       return list[i+1]->spec.element;
     }
   }
 
-  if (recursive && list.back()->spec.element == child) {
-    // next child is in next body
-    for (int i=0; i<(int)bodies.size(); i++) {
-      return bodies[i]->NextChild(NULL, child->elemtype, true);
-    }
+  if (list.back()->spec.element == child) {
+    // next child is in another body
+    *found = true;
   }
 
   return nullptr;
@@ -1285,7 +1337,7 @@ mjsElement* mjCBody::GetNext(std::vector<T*>& list, const mjsElement* child, boo
 
 
 // get next child of given type
-mjsElement* mjCBody::NextChild(mjsElement* child, mjtObj type, bool recursive) {
+mjsElement* mjCBody::NextChild(const mjsElement* child, mjtObj type, bool recursive, bool* found) {
   if (type == mjOBJ_UNKNOWN) {
     if (!child) {
       throw mjCError(this, "child type must be specified if no child element is given");
@@ -1296,37 +1348,45 @@ mjsElement* mjCBody::NextChild(mjsElement* child, mjtObj type, bool recursive) {
     throw mjCError(this, "child element is not of requested type");
   }
 
+  bool found_ = false;
+  if (!found) {
+    found = &found_;
+  }
+
   mjsElement* candidate = nullptr;
   switch (type) {
     case mjOBJ_BODY:
     case mjOBJ_XBODY:
-      candidate = GetNext(bodies, child, recursive);
+      candidate = GetNext(bodies, child, found);
       break;
     case mjOBJ_JOINT:
-      candidate = GetNext(joints, child, recursive);
+      candidate = GetNext(joints, child, found);
       break;
     case mjOBJ_GEOM:
-      candidate = GetNext(geoms, child, recursive);
+      candidate = GetNext(geoms, child, found);
       break;
     case mjOBJ_SITE:
-      candidate = GetNext(sites, child, recursive);
+      candidate = GetNext(sites, child, found);
       break;
     case mjOBJ_CAMERA:
-      candidate = GetNext(cameras, child, recursive);
+      candidate = GetNext(cameras, child, found);
       break;
     case mjOBJ_LIGHT:
-      candidate = GetNext(lights, child, recursive);
+      candidate = GetNext(lights, child, found);
       break;
     case mjOBJ_FRAME:
-      candidate = GetNext(frames, child, recursive);
+      candidate = GetNext(frames, child, found);
       break;
     default:
+      throw mjCError(this,
+                     "Body.NextChild supports the types: body, frame, geom, "
+                     "site, light, camera");
       break;
   }
 
   if (!candidate && recursive) {
     for (int i=0; i<(int)bodies.size(); i++) {
-      candidate = bodies[i]->NextChild(child, type, true);
+      candidate = bodies[i]->NextChild(*found ? nullptr : child, type, recursive, found);
       if (candidate) {
         return candidate;
       }
@@ -1482,11 +1542,6 @@ void mjCBody::Compile(void) {
   }
   userdata_.resize(model->nuser_body);
 
-  // pos defaults to (0,0,0)
-  if (!mjuu_defined(pos[0])) {
-     mjuu_setvec(pos, 0, 0, 0);
-  }
-
   // normalize user-defined quaternions
   mjuu_normvec(quat, 4);
   mjuu_normvec(iquat, 4);
@@ -1498,15 +1553,34 @@ void mjCBody::Compile(void) {
   }
 
   // check and process orientation alternatives for body
-  const char* err = ResolveOrientation(quat, model->degree, model->eulerseq, alt);
-  if (err) {
-    throw mjCError(this, "error '%s' in frame alternative", err);
+  if (alt.type != mjORIENTATION_QUAT) {
+    const char* err = ResolveOrientation(quat, model->degree, model->eulerseq, alt);
+    if (err) {
+      throw mjCError(this, "error '%s' in frame alternative", err);
+    }
   }
 
-  // check and process orientation alternatives for inertia
-  const char* ierr = mjuu_fullInertia(iquat, inertia, this->fullinertia);
-  if (ierr) {
-    throw mjCError(this, "error '%s' in inertia alternative", ierr);
+  // check orientation alternatives for inertia
+  if (mjuu_defined(fullinertia[0]) && ialt.type != mjORIENTATION_QUAT) {
+    throw mjCError(this, "fullinertia and inertial orientation cannot both be specified");
+  }
+  if (mjuu_defined(fullinertia[0]) && (inertia[0] || inertia[1] || inertia[2])) {
+    throw mjCError(this, "fullinertia and diagonal inertia cannot both be specified");
+  }
+
+  // process orientation alternatives for inertia
+  if (mjuu_defined(fullinertia[0])) {
+    const char* err = mjuu_fullInertia(iquat, inertia, this->fullinertia);
+    if (err) {
+      throw mjCError(this, "error '%s' in fullinertia", err);
+    }
+  }
+
+  if (ialt.type != mjORIENTATION_QUAT) {
+    const char* err = ResolveOrientation(iquat, model->degree, model->eulerseq, ialt);
+    if (err) {
+      throw mjCError(this, "error '%s' in inertia alternative", err);
+    }
   }
 
   // compile all geoms
@@ -1524,21 +1598,10 @@ void mjCBody::Compile(void) {
     InertiaFromGeom();
   }
 
-  // both pos and ipos undefined: error
-  if (!mjuu_defined(ipos[0]) && !mjuu_defined(pos[0])) {
-    throw mjCError(this, "body pos and ipos are both undefined");
-  }
-
   // ipos undefined: copy body frame into inertial
-  else if (!mjuu_defined(ipos[0])) {
+  if (!mjuu_defined(ipos[0])) {
     mjuu_copyvec(ipos, pos, 3);
     mjuu_copyvec(iquat, quat, 4);
-  }
-
-  // pos undefined: copy inertial frame into body frame
-  else if (!mjuu_defined(pos[0])) {
-    mjuu_copyvec(pos, ipos, 3);
-    mjuu_copyvec(quat, iquat, 4);
   }
 
   // check and correct mass and inertia
@@ -1662,10 +1725,10 @@ void mjCBody::Compile(void) {
           name.c_str(), id);
     }
 
-    mjCPlugin* plugin_instance = static_cast<mjCPlugin*>(plugin.instance);
+    mjCPlugin* plugin_instance = static_cast<mjCPlugin*>(plugin.element);
     model->ResolvePlugin(this, plugin_name, plugin_instance_name, &plugin_instance);
-    plugin.instance = plugin_instance;
-    const mjpPlugin* pplugin = mjp_getPluginAtSlot(plugin_instance->spec.plugin_slot);
+    plugin.element = plugin_instance;
+    const mjpPlugin* pplugin = mjp_getPluginAtSlot(plugin_instance->plugin_slot);
     if (!(pplugin->capabilityflags & mjPLUGIN_PASSIVE)) {
       throw mjCError(this, "plugin '%s' does not support passive forces", pplugin->name);
     }
@@ -1716,6 +1779,7 @@ mjCFrame::mjCFrame(mjCModel* _model, mjCFrame* _frame) {
   model = _model;
   body = NULL;
   frame = _frame ? _frame : NULL;
+  last_attached = nullptr;
   PointToLocal();
   CopyFromSpec();
 }
@@ -1744,7 +1808,7 @@ mjCFrame& mjCFrame::operator=(const mjCFrame& other) {
 mjCFrame& mjCFrame::operator+=(const mjCBody& other) {
   other.model->prefix = other.prefix;
   other.model->suffix = other.suffix;
-  other.model->StoreKeyframes();
+  other.model->StoreKeyframes(model);
   other.model->prefix = "";
   other.model->suffix = "";
 
@@ -1764,9 +1828,15 @@ mjCFrame& mjCFrame::operator+=(const mjCBody& other) {
 
   // add to body children
   body->bodies.push_back(subtree);
+  last_attached = &body->bodies.back()->spec;
 
   // attach referencing elements
   *model += *other.model;
+
+  // leave the source model in a clean state
+  if (other.model != model) {
+    other.model->key_pending_.clear();
+  }
 
   // clear suffixes and return
   other.model->suffix.clear();
@@ -1881,6 +1951,8 @@ mjCJoint& mjCJoint::operator=(const mjCJoint& other) {
     this->spec = other.spec;
     *static_cast<mjCJoint_*>(this) = static_cast<const mjCJoint_&>(other);
     *static_cast<mjsJoint*>(this) = static_cast<const mjsJoint&>(other);
+    qposadr_ = -1;
+    dofadr_ = -1;
   }
   PointToLocal();
   return *this;
@@ -2123,6 +2195,14 @@ mjCGeom::mjCGeom(const mjCGeom& other) {
 
 
 
+mjCGeom::~mjCGeom() {
+  if (spec.plugin.active && spec.plugin.name->empty()) {
+    model->DeleteElement(spec.plugin.element);
+  }
+}
+
+
+
 mjCGeom& mjCGeom::operator=(const mjCGeom& other) {
   if (this != &other) {
     this->spec = other.spec;
@@ -2144,8 +2224,8 @@ void mjCGeom::PointToLocal(void) {
   spec.material = &spec_material_;
   spec.meshname = &spec_meshname_;
   spec.hfieldname = &spec_hfieldname_;
-  spec.plugin.name = &plugin_name;
-  spec.plugin.instance_name = &plugin_instance_name;
+  spec.plugin.plugin_name = &plugin_name;
+  spec.plugin.name = &plugin_instance_name;
   userdata = nullptr;
   hfieldname = nullptr;
   meshname = nullptr;
@@ -2161,9 +2241,9 @@ void mjCGeom::CopyFromSpec() {
   meshname_ = spec_meshname_;
   material_ = spec_material_;
   plugin.active = spec.plugin.active;
-  plugin.instance = spec.plugin.instance;
+  plugin.element = spec.plugin.element;
+  plugin.plugin_name = spec.plugin.plugin_name;
   plugin.name = spec.plugin.name;
-  plugin.instance_name = spec.plugin.instance_name;
 }
 
 
@@ -2183,6 +2263,9 @@ void mjCGeom::NameSpace(const mjCModel* m) {
   }
   if (!spec_meshname_.empty() && model != m) {
     spec_meshname_ = m->prefix + spec_meshname_ + m->suffix;
+  }
+  if (!plugin_instance_name.empty()) {
+    plugin_instance_name = m->prefix + plugin_instance_name + m->suffix;
   }
 }
 
@@ -2898,10 +2981,10 @@ void mjCGeom::Compile(void) {
           this, "neither 'plugin' nor 'instance' is specified for geom");
     }
 
-    mjCPlugin* plugin_instance = static_cast<mjCPlugin*>(plugin.instance);
+    mjCPlugin* plugin_instance = static_cast<mjCPlugin*>(plugin.element);
     model->ResolvePlugin(this, plugin_name, plugin_instance_name, &plugin_instance);
-    plugin.instance = plugin_instance;
-    const mjpPlugin* pplugin = mjp_getPluginAtSlot(plugin_instance->spec.plugin_slot);
+    plugin.element = plugin_instance;
+    const mjpPlugin* pplugin = mjp_getPluginAtSlot(plugin_instance->plugin_slot);
     if (!(pplugin->capabilityflags & mjPLUGIN_SDF)) {
       throw mjCError(this, "plugin '%s' does not support sign distance fields", pplugin->name);
     }
@@ -3399,11 +3482,22 @@ void mjCHField::CopyFromSpec() {
     nrow = 0;
     ncol = 0;
   }
+
+  // use filename if name is missing
+  if (name.empty()) {
+    std::string stripped = mjuu_strippath(file_);
+    name = mjuu_stripext(stripped);
+  }
 }
 
 
 
 void mjCHField::NameSpace(const mjCModel* m) {
+  // use filename if name is missing
+  if (name.empty()) {
+    std::string stripped = mjuu_strippath(spec_file_);
+    name = mjuu_stripext(stripped);
+  }
   mjCBase::NameSpace(m);
   if (modelfiledir_.empty()) {
     modelfiledir_ = FilePath(m->spec_modelfiledir_);
@@ -3648,11 +3742,22 @@ void mjCTexture::CopyFromSpec() {
     // clear precompiled asset. TODO: use asset cache
     data_.clear();
   }
+
+  // use filename if name is missing
+  if (name.empty()) {
+    std::string stripped = mjuu_strippath(file_);
+    name = mjuu_stripext(stripped);
+  }
 }
 
 
 
 void mjCTexture::NameSpace(const mjCModel* m) {
+  // use filename if name is missing
+  if (name.empty()) {
+    std::string stripped = mjuu_strippath(spec_file_);
+    name = mjuu_stripext(stripped);
+  }
   mjCBase::NameSpace(m);
   if (modelfiledir_.empty()) {
     modelfiledir_ = FilePath(m->spec_modelfiledir_);
@@ -5515,6 +5620,14 @@ mjCActuator::mjCActuator(const mjCActuator& other) {
 
 
 
+mjCActuator::~mjCActuator() {
+  if (spec.plugin.active && spec.plugin.name->empty()) {
+    model->DeleteElement(spec.plugin.element);
+  }
+}
+
+
+
 mjCActuator& mjCActuator::operator=(const mjCActuator& other) {
   if (this != &other) {
     this->spec = other.spec;
@@ -5566,8 +5679,8 @@ void mjCActuator::PointToLocal() {
   spec.target = &spec_target_;
   spec.refsite = &spec_refsite_;
   spec.slidersite = &spec_slidersite_;
-  spec.plugin.name = &plugin_name;
-  spec.plugin.instance_name = &plugin_instance_name;
+  spec.plugin.plugin_name = &plugin_name;
+  spec.plugin.name = &plugin_instance_name;
   spec.info = &info;
   userdata = nullptr;
   target = nullptr;
@@ -5580,6 +5693,9 @@ void mjCActuator::PointToLocal() {
 void mjCActuator::NameSpace(const mjCModel* m) {
   if (!name.empty()) {
     name = m->prefix + name + m->suffix;
+  }
+  if (!plugin_instance_name.empty()) {
+    plugin_instance_name = m->prefix + plugin_instance_name + m->suffix;
   }
   spec_target_ = m->prefix + spec_target_ + m->suffix;
   spec_refsite_ = m->prefix + spec_refsite_ + m->suffix;
@@ -5595,9 +5711,9 @@ void mjCActuator::CopyFromSpec() {
   refsite_ = spec_refsite_;
   slidersite_ = spec_slidersite_;
   plugin.active = spec.plugin.active;
-  plugin.instance = spec.plugin.instance;
+  plugin.element = spec.plugin.element;
+  plugin.plugin_name = spec.plugin.plugin_name;
   plugin.name = spec.plugin.name;
-  plugin.instance_name = spec.plugin.instance_name;
 }
 
 
@@ -5824,10 +5940,10 @@ void mjCActuator::Compile(void) {
           name.c_str(), id);
     }
 
-    mjCPlugin* plugin_instance = static_cast<mjCPlugin*>(plugin.instance);
+    mjCPlugin* plugin_instance = static_cast<mjCPlugin*>(plugin.element);
     model->ResolvePlugin(this, plugin_name, plugin_instance_name, &plugin_instance);
-    plugin.instance = plugin_instance;
-    const mjpPlugin* pplugin = mjp_getPluginAtSlot(plugin_instance->spec.plugin_slot);
+    plugin.element = plugin_instance;
+    const mjpPlugin* pplugin = mjp_getPluginAtSlot(plugin_instance->plugin_slot);
     if (!(pplugin->capabilityflags & mjPLUGIN_ACTUATOR)) {
       throw mjCError(this, "plugin '%s' does not support actuators", pplugin->name);
     }
@@ -5869,6 +5985,14 @@ mjCSensor::mjCSensor(const mjCSensor& other) {
 
 
 
+mjCSensor::~mjCSensor() {
+  if (spec.plugin.active && spec.plugin.name->empty()) {
+    model->DeleteElement(spec.plugin.element);
+  }
+}
+
+
+
 mjCSensor& mjCSensor::operator=(const mjCSensor& other) {
   if (this != &other) {
     this->spec = other.spec;
@@ -5889,8 +6013,8 @@ void mjCSensor::PointToLocal() {
   spec.userdata = &spec_userdata_;
   spec.objname = &spec_objname_;
   spec.refname = &spec_refname_;
-  spec.plugin.name = &plugin_name;
-  spec.plugin.instance_name = &plugin_instance_name;
+  spec.plugin.plugin_name = &plugin_name;
+  spec.plugin.name = &plugin_instance_name;
   spec.info = &info;
   userdata = nullptr;
   objname = nullptr;
@@ -5902,6 +6026,9 @@ void mjCSensor::PointToLocal() {
 void mjCSensor::NameSpace(const mjCModel* m) {
   if (!name.empty()) {
     name = m->prefix + name + m->suffix;
+  }
+  if (!plugin_instance_name.empty()) {
+    plugin_instance_name = m->prefix + plugin_instance_name + m->suffix;
   }
   prefix = m->prefix;
   suffix = m->suffix;
@@ -5915,9 +6042,9 @@ void mjCSensor::CopyFromSpec() {
   objname_ = spec_objname_;
   refname_ = spec_refname_;
   plugin.active = spec.plugin.active;
-  plugin.instance = spec.plugin.instance;
+  plugin.element = spec.plugin.element;
+  plugin.plugin_name = spec.plugin.plugin_name;
   plugin.name = spec.plugin.name;
-  plugin.instance_name = spec.plugin.instance_name;
 }
 
 
@@ -6274,6 +6401,12 @@ void mjCSensor::Compile(void) {
       throw mjCError(this, "1st body/geom must be different from 2nd body/geom");
     }
 
+    // height fields are not necessarily convex and are not yet supported
+    if (static_cast<mjCGeom*>(obj)->Type() == mjGEOM_HFIELD ||
+        static_cast<mjCGeom*>(ref)->Type() == mjGEOM_HFIELD) {
+      throw mjCError(this, "height fields are not supported in geom distance sensors");
+    }
+
     // set
     needstage = mjSTAGE_POS;
     if (type==mjSENS_GEOMDIST) {
@@ -6320,10 +6453,10 @@ void mjCSensor::Compile(void) {
 
     // resolve plugin instance, or create one if using the "plugin" attribute shortcut
     {
-      mjCPlugin* plugin_instance = static_cast<mjCPlugin*>(plugin.instance);
+      mjCPlugin* plugin_instance = static_cast<mjCPlugin*>(plugin.element);
       model->ResolvePlugin(this, plugin_name, plugin_instance_name, &plugin_instance);
-      plugin.instance = plugin_instance;
-      const mjpPlugin* pplugin = mjp_getPluginAtSlot(plugin_instance->spec.plugin_slot);
+      plugin.element = plugin_instance;
+      const mjpPlugin* pplugin = mjp_getPluginAtSlot(plugin_instance->plugin_slot);
       if (!(pplugin->capabilityflags & mjPLUGIN_SENSOR)) {
         throw mjCError(this, "plugin '%s' does not support sensors", pplugin->name);
       }
@@ -6826,16 +6959,17 @@ void mjCKey::Compile(const mjModel* m) {
 mjCPlugin::mjCPlugin(mjCModel* _model) {
   name = "";
   nstate = -1;
+  plugin_slot = -1;
   parent = this;
   model = _model;
   name.clear();
-  instance_name.clear();
+  plugin_name.clear();
 
   // public interface
   mjs_defaultPlugin(&spec);
   elemtype = mjOBJ_PLUGIN;
+  spec.plugin_name = &plugin_name;
   spec.name = &name;
-  spec.instance_name = &instance_name;
   spec.info = &info;
 }
 
@@ -6843,6 +6977,7 @@ mjCPlugin::mjCPlugin(mjCModel* _model) {
 
 mjCPlugin::mjCPlugin(const mjCPlugin& other) {
   *this = other;
+  id = -1;
 }
 
 
@@ -6852,6 +6987,7 @@ mjCPlugin& mjCPlugin::operator=(const mjCPlugin& other) {
     this->spec = other.spec;
     *static_cast<mjCPlugin_*>(this) = static_cast<const mjCPlugin_&>(other);
     parent = this;
+    plugin_slot = other.plugin_slot;
   }
   return *this;
 }
@@ -6860,7 +6996,9 @@ mjCPlugin& mjCPlugin::operator=(const mjCPlugin& other) {
 
 // compiler
 void mjCPlugin::Compile(void) {
-  const mjpPlugin* plugin = mjp_getPluginAtSlot(spec.plugin_slot);
+  mjCPlugin* plugin_instance = this;
+  model->ResolvePlugin(this, plugin_name, name, &plugin_instance);
+  const mjpPlugin* plugin = mjp_getPluginAtSlot(plugin_slot);
 
   // clear precompiled
   flattened_attributes.clear();

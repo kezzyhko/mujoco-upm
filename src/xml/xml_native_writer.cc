@@ -180,6 +180,13 @@ void mjXWriter::OneFlex(XMLElement* elem, const mjCFlex* flex) {
     elem->DeleteChild(cont);
   }
 
+  // elasticity subelement
+  XMLElement* elastic = InsertEnd(elem, "elasticity");
+  WriteAttr(elastic, "young", 1, &flex->young, &defflex.young);
+  WriteAttr(elastic, "poisson", 1, &flex->poisson, &defflex.poisson);
+  WriteAttr(elastic, "thickness", 1, &flex->thickness, &defflex.thickness);
+  WriteAttr(elastic, "damping", 1, &flex->damping, &defflex.damping);
+
   // edge subelement
   XMLElement* edge = InsertEnd(elem, "edge");
   WriteAttr(edge, "stiffness", 1, &flex->edgestiffness, &defflex.edgestiffness);
@@ -813,15 +820,15 @@ void mjXWriter::OneActuator(XMLElement* elem, const mjCActuator* actuator, mjCDe
 
 // write plugin
 void mjXWriter::OnePlugin(XMLElement* elem, const mjsPlugin* plugin) {
-  const string instance_name = string(mjs_getString(plugin->instance_name));
-  const string plugin_name = string(mjs_getString(plugin->name));
+  const string instance_name = string(mjs_getString(plugin->name));
+  const string plugin_name = string(mjs_getString(plugin->plugin_name));
   if (!instance_name.empty()) {
     WriteAttrTxt(elem, "instance", instance_name);
   } else {
     WriteAttrTxt(elem, "plugin", plugin_name);
     const mjpPlugin* pplugin = mjp_getPluginAtSlot(
-        static_cast<mjCPlugin*>(plugin->instance)->spec.plugin_slot);
-    const char* c = &(static_cast<mjCPlugin*>(plugin->instance)->flattened_attributes[0]);
+        static_cast<mjCPlugin*>(plugin->element)->plugin_slot);
+    const char* c = &(static_cast<mjCPlugin*>(plugin->element)->flattened_attributes[0]);
     for (int i = 0; i < pplugin->nattribute; ++i) {
       string value(c);
       if (!value.empty()) {
@@ -1331,7 +1338,7 @@ void mjXWriter::Extension(XMLElement* root) {
     }
 
     // check if we need to open a new <plugin> section
-    const mjpPlugin* plugin = mjp_getPluginAtSlot(pp->spec.plugin_slot);
+    const mjpPlugin* plugin = mjp_getPluginAtSlot(pp->plugin_slot);
     if (plugin != last_plugin) {
       plugin_elem = InsertEnd(section, "plugin");
       WriteAttrTxt(plugin_elem, "plugin", plugin->name);
@@ -1710,11 +1717,6 @@ void mjXWriter::Body(XMLElement* elem, mjCBody* body, mjCFrame* frame, string_vi
                                ? fframe->classname
                                : body->classname;
         Body(OneFrame(elem, fframe), body, fframe, childclass);
-      }
-
-      // stop if we reached the frame of the current child body, ignore if there are no bodies
-      if (bframe && bframe == fframe) {
-        break;
       }
     }
 

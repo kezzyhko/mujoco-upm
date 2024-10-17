@@ -44,10 +44,12 @@ struct _mjCCDStatus {
   int has_distances;          // set to true if attempted to recover distance info
 
   // statistics for debugging purposes
+  mjtNum gjk_dist;             // the distance returned by GJK
   int gjk_iterations;         // number of iterations that GJK ran
   int epa_iterations;         // number of iterations that EPA ran (negative if EPA did not run)
   mjtNum simplex1[12];        // the simplex that GJK returned for obj1
   mjtNum simplex2[12];        // the simplex that GJK returned for obj2
+  mjtNum simplex[12];         // the simplex that GJK returned for the Minkowski difference
   int nsimplex;               // size of simplex 1 & 2
 };
 typedef struct _mjCCDStatus mjCCDStatus;

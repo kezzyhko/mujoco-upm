@@ -170,6 +170,7 @@ class SolverType(enum.IntEnum):
 
   Members:
     CG: Conjugate gradient (primal)
+    NEWTON: Newton (primal)
   """
   # unsupported: PGS
   CG = mujoco.mjtSolver.mjSOL_CG
@@ -197,11 +198,16 @@ class WrapType(enum.IntEnum):
 
   Members:
     JOINT: constant moment arm
+    PULLEY: pulley used to split tendon
     SITE: pass through site
+    SPHERE: wrap around sphere
+    CYLINDER: wrap around (infinite) cylinder
   """
   JOINT = mujoco.mjtWrap.mjWRAP_JOINT
+  PULLEY = mujoco.mjtWrap.mjWRAP_PULLEY
   SITE = mujoco.mjtWrap.mjWRAP_SITE
-  # unsupported: NONE, PULLEY, SPHERE, CYLINDER
+  SPHERE = mujoco.mjtWrap.mjWRAP_SPHERE
+  CYLINDER = mujoco.mjtWrap.mjWRAP_CYLINDER
 
 
 class TrnType(enum.IntEnum):
@@ -209,12 +215,15 @@ class TrnType(enum.IntEnum):
 
   Members:
     JOINT: force on joint
+    JOINTINPARENT: force on joint, expressed in parent frame
+    TENDON: force on tendon
     SITE: force on site
   """
   JOINT = mujoco.mjtTrn.mjTRN_JOINT
+  JOINTINPARENT = mujoco.mjtTrn.mjTRN_JOINTINPARENT
   SITE = mujoco.mjtTrn.mjTRN_SITE
   TENDON = mujoco.mjtTrn.mjTRN_TENDON
-  # unsupported: JOINTINPARENT, SLIDERCRANK, BODY
+  # unsupported: SLIDERCRANK, BODY
 
 
 class DynType(enum.IntEnum):
@@ -302,6 +311,7 @@ class SensorType(enum.IntEnum):
     CAMPROJECTION: camera projection
     RANGEFINDER: rangefinder
     JOINTPOS: joint position
+    TENDONPOS: scalar tendon position
     ACTUATORPOS: actuator position
     BALLQUAT: ball joint orientation
     FRAMEPOS: frame position
@@ -314,6 +324,7 @@ class SensorType(enum.IntEnum):
     VELOCIMETER: 3D linear velocity, in local frame
     GYRO: 3D angular velocity, in local frame
     JOINTVEL: joint velocity
+    TENDONVEL: scalar tendon velocity
     ACTUATORVEL: actuator velocity
     BALLANGVEL: ball joint angular velocity
     FRAMELINVEL: 3D linear velocity
@@ -332,6 +343,7 @@ class SensorType(enum.IntEnum):
   CAMPROJECTION = mujoco.mjtSensor.mjSENS_CAMPROJECTION
   RANGEFINDER = mujoco.mjtSensor.mjSENS_RANGEFINDER
   JOINTPOS = mujoco.mjtSensor.mjSENS_JOINTPOS
+  TENDONPOS = mujoco.mjtSensor.mjSENS_TENDONPOS
   ACTUATORPOS = mujoco.mjtSensor.mjSENS_ACTUATORPOS
   BALLQUAT = mujoco.mjtSensor.mjSENS_BALLQUAT
   FRAMEPOS = mujoco.mjtSensor.mjSENS_FRAMEPOS
@@ -344,6 +356,7 @@ class SensorType(enum.IntEnum):
   VELOCIMETER = mujoco.mjtSensor.mjSENS_VELOCIMETER
   GYRO = mujoco.mjtSensor.mjSENS_GYRO
   JOINTVEL = mujoco.mjtSensor.mjSENS_JOINTVEL
+  TENDONVEL = mujoco.mjtSensor.mjSENS_TENDONVEL
   ACTUATORVEL = mujoco.mjtSensor.mjSENS_ACTUATORVEL
   BALLANGVEL = mujoco.mjtSensor.mjSENS_BALLANGVEL
   FRAMELINVEL = mujoco.mjtSensor.mjSENS_FRAMELINVEL
@@ -768,6 +781,7 @@ class Model(PyTreeNode):
     name_meshadr: mesh name pointers                          (nmesh,)
     name_pairadr: geom pair name pointers                     (npair,)
     name_eqadr: equality constraint name pointers             (neq,)
+    name_tendonadr: tendon name pointers                      (ntendon,)
     name_actuatoradr: actuator name pointers                  (nu,)
     name_sensoradr: sensor name pointers                      (nsensor,)
     name_numericadr: numeric name pointers                    (nnumeric,)
@@ -1029,9 +1043,9 @@ class Model(PyTreeNode):
   tendon_length0: jax.Array
   tendon_invweight0: jax.Array
   tendon_hasfrictionloss: np.ndarray = _restricted_to('mjx')
-  wrap_type: np.ndarray = _restricted_to('mujoco')
-  wrap_objid: np.ndarray = _restricted_to('mujoco')
-  wrap_prm: np.ndarray = _restricted_to('mujoco')
+  wrap_type: np.ndarray
+  wrap_objid: np.ndarray
+  wrap_prm: np.ndarray
   actuator_trntype: np.ndarray
   actuator_dyntype: np.ndarray
   actuator_gaintype: np.ndarray
@@ -1081,6 +1095,7 @@ class Model(PyTreeNode):
   name_hfieldadr: np.ndarray
   name_pairadr: np.ndarray
   name_eqadr: np.ndarray
+  name_tendonadr: np.ndarray
   name_actuatoradr: np.ndarray
   name_sensoradr: np.ndarray
   name_numericadr: np.ndarray
@@ -1263,8 +1278,8 @@ class Data(PyTreeNode):
   xfrc_applied: jax.Array
   eq_active: jax.Array
   # mocap data:
-  mocap_pos: jax.Array = _restricted_to('mujoco')
-  mocap_quat: jax.Array = _restricted_to('mujoco')
+  mocap_pos: jax.Array
+  mocap_quat: jax.Array
   # dynamics:
   qacc: jax.Array
   act_dot: jax.Array
@@ -1297,15 +1312,15 @@ class Data(PyTreeNode):
   flexedge_J_colind: jax.Array = _restricted_to('mujoco')  # pylint:disable=invalid-name
   flexedge_J: jax.Array = _restricted_to('mujoco')  # pylint:disable=invalid-name
   flexedge_length: jax.Array = _restricted_to('mujoco')
-  ten_wrapadr: jax.Array = _restricted_to('mujoco')
-  ten_wrapnum: jax.Array = _restricted_to('mujoco')
+  ten_wrapadr: jax.Array
+  ten_wrapnum: jax.Array
   ten_J_rownnz: jax.Array = _restricted_to('mujoco')  # pylint:disable=invalid-name
   ten_J_rowadr: jax.Array = _restricted_to('mujoco')  # pylint:disable=invalid-name
   ten_J_colind: jax.Array = _restricted_to('mujoco')  # pylint:disable=invalid-name
   ten_J: jax.Array  # pylint:disable=invalid-name
   ten_length: jax.Array
-  wrap_obj: jax.Array = _restricted_to('mujoco')
-  wrap_xpos: jax.Array = _restricted_to('mujoco')
+  wrap_obj: jax.Array
+  wrap_xpos: jax.Array
   actuator_length: jax.Array
   actuator_moment: jax.Array
   crb: jax.Array

@@ -29,6 +29,7 @@
 #include "user/user_model.h"
 #include "user/user_objects.h"
 #include "user/user_cache.h"
+#include "user/user_util.h"
 
 namespace {
 
@@ -95,21 +96,26 @@ mjModel* mj_compile(mjSpec* s, const mjVFS* vfs) {
   mjCModel* modelC = static_cast<mjCModel*>(s->element);
   std::string state_name = "state";
   mjtNum time = 0;
-  if (d) {
-    time = d->time;
-    modelC->SaveState(state_name, d->qpos, d->qvel, d->act, d->ctrl, d->mocap_pos, d->mocap_quat);
-  }
-  if (!modelC->Compile(vfs, &m)) {
+  try {
     if (d) {
-      mj_deleteData(d);
+      time = d->time;
+      modelC->SaveState(state_name, d->qpos, d->qvel, d->act, d->ctrl, d->mocap_pos, d->mocap_quat);
     }
+    if (!modelC->Compile(vfs, &m)) {
+      if (d) {
+        mj_deleteData(d);
+      }
+      return -1;
+    };
+    if (d) {
+      modelC->MakeData(m, &d);
+      modelC->RestoreState(state_name, m->qpos0, m->body_pos, m->body_quat, d->qpos, d->qvel,
+                          d->act, d->ctrl, d->mocap_pos, d->mocap_quat);
+      d->time = time;
+    }
+  } catch (mjCError& e) {
+    modelC->SetError(e);
     return -1;
-  };
-  if (d) {
-    modelC->MakeData(m, &d);
-    modelC->RestoreState(state_name, m->qpos0, m->body_pos, m->body_quat, d->qpos, d->qvel,
-                         d->act, d->ctrl, d->mocap_pos, d->mocap_quat);
-    d->time = time;
   }
   return 0;
 }
@@ -117,33 +123,70 @@ mjModel* mj_compile(mjSpec* s, const mjVFS* vfs) {
 
 
 // attach body to a frame of the parent
-int mjs_attachBody(mjsFrame* parent, const mjsBody* child,
-                   const char* prefix, const char* suffix) {
+mjsBody* mjs_attachBody(mjsFrame* parent, const mjsBody* child,
+                        const char* prefix, const char* suffix) {
+  if (!parent) {
+    mju_error("parent frame is null");
+    return nullptr;
+  }
   mjCFrame* frame_parent = static_cast<mjCFrame*>(parent->element);
   mjCBody* child_body = static_cast<mjCBody*>(child->element);
   try {
     *frame_parent += std::string(prefix) + *child_body + std::string(suffix);
   } catch (mjCError& e) {
     frame_parent->model->SetError(e);
-    return -1;
+    return nullptr;
   }
-  return 0;
+  mjsBody* attached_body = frame_parent->last_attached;
+  frame_parent->last_attached = nullptr;
+  return attached_body;
 }
 
 
 
 // attach frame to a parent body
-int mjs_attachFrame(mjsBody* parent, const mjsFrame* child,
-                    const char* prefix, const char* suffix) {
+mjsFrame* mjs_attachFrame(mjsBody* parent, const mjsFrame* child,
+                          const char* prefix, const char* suffix) {
+  if (!parent) {
+    mju_error("parent body is null");
+    return nullptr;
+  }
   mjCBody* body_parent = static_cast<mjCBody*>(parent->element);
   mjCFrame* child_frame = static_cast<mjCFrame*>(child->element);
   try {
     *body_parent += std::string(prefix) + *child_frame + std::string(suffix);
   } catch (mjCError& e) {
     body_parent->model->SetError(e);
-    return -1;
+    return nullptr;
   }
-  return 0;
+  mjsFrame* attached_frame = body_parent->last_attached;
+  body_parent->last_attached = nullptr;
+  return attached_frame;
+}
+
+
+
+// attach child body to a parent site
+mjsBody* mjs_attachToSite(mjsSite* parent, const mjsBody* child,
+                           const char* prefix, const char* suffix) {
+  if (!parent) {
+    mju_error("parent site is null");
+    return nullptr;
+  }
+  mjSpec* spec = mjs_getSpec(parent->element);
+  mjCSite* site = static_cast<mjCSite*>(parent->element);
+  mjCBody* body = site->Body();
+  mjCFrame* frame = body->AddFrame(site->frame);
+  frame->SetParent(body);
+  frame->spec.pos[0] = site->spec.pos[0];
+  frame->spec.pos[1] = site->spec.pos[1];
+  frame->spec.pos[2] = site->spec.pos[2];
+  frame->spec.quat[0] = site->spec.quat[0];
+  frame->spec.quat[1] = site->spec.quat[1];
+  frame->spec.quat[2] = site->spec.quat[2];
+  frame->spec.quat[3] = site->spec.quat[3];
+  mjs_resolveOrientation(frame->spec.quat, spec->degree, spec->eulerseq, &site->spec.alt);
+  return mjs_attachBody(&frame->spec, child, prefix, suffix);
 }
 
 
@@ -160,7 +203,12 @@ const char* mjs_getError(mjSpec* s) {
 int mjs_detachBody(mjSpec* s, mjsBody* b) {
   mjCModel* model = static_cast<mjCModel*>(s->element);
   mjCBody* body = static_cast<mjCBody*>(b->element);
-  *model -= *body;
+  try {
+    *model -= *body;
+  } catch (mjCError& e) {
+    model->SetError(e);
+    return -1;
+  }
   delete body;
   return 0;
 }
@@ -177,8 +225,10 @@ int mjs_isWarning(mjSpec* s) {
 
 // delete model
 void mj_deleteSpec(mjSpec* s) {
-  mjCModel* model = static_cast<mjCModel*>(s->element);
-  delete model;
+  if (s) {
+    mjCModel* model = static_cast<mjCModel*>(s->element);
+    delete model;
+  }
 }
 
 
@@ -187,6 +237,20 @@ void mj_deleteSpec(mjSpec* s) {
 void mjs_addSpec(mjSpec* s, mjSpec* child) {
   mjCModel* model = static_cast<mjCModel*>(s->element);
   model->AppendSpec(child);
+}
+
+
+
+// activate plugin
+int mjs_activatePlugin(mjSpec* s, const char* name) {
+  int plugin_slot = -1;
+  const mjpPlugin* plugin = mjp_getPlugin(name, &plugin_slot);
+  if (!plugin) {
+    return -1;
+  }
+  mjCModel* model = static_cast<mjCModel*>(s->element);
+  model->ActivatePlugin(plugin, plugin_slot);
+  return 0;
 }
 
 
@@ -471,7 +535,7 @@ mjsKey* mjs_addKey(mjSpec* s) {
 mjsPlugin* mjs_addPlugin(mjSpec* s) {
   mjCModel* modelC = static_cast<mjCModel*>(s->element);
   mjCPlugin* plugin = modelC->AddPlugin();
-  plugin->spec.instance = static_cast<mjsElement*>(plugin);
+  plugin->spec.element = static_cast<mjsElement*>(plugin);
   return &plugin->spec;
 }
 
@@ -492,9 +556,9 @@ mjsDefault* mjs_addDefault(mjSpec* s, const char* classname, const mjsDefault* p
 
 
 
-// get objects
-mjSpec* mjs_getSpec(mjsBody* body) {
-  return &(static_cast<mjCBody*>(body->element)->model->spec);
+// get spec from body
+mjSpec* mjs_getSpec(mjsElement* element) {
+  return &(static_cast<mjCBase*>(element)->model->spec);
 }
 
 
@@ -607,6 +671,17 @@ const char* mjs_resolveOrientation(double quat[4], mjtByte degree, const char* s
 
 
 
+// Transform body into a frame.
+mjsFrame* mjs_bodyToFrame(mjsBody** body) {
+  mjCBody* bodyC = static_cast<mjCBody*>((*body)->element);
+  mjCFrame* frameC = bodyC->ToFrame();
+  delete bodyC;
+  *body = nullptr;
+  return &frameC->spec;
+}
+
+
+
 // get id
 int mjs_getId(mjsElement* element) {
   if (!element) {
@@ -626,17 +701,27 @@ void mjs_setDefault(mjsElement* element, mjsDefault* defspec) {
 
 
 // return first child of selected type
-mjsElement* mjs_firstChild(mjsBody* body, mjtObj type) {
+mjsElement* mjs_firstChild(mjsBody* body, mjtObj type, int recurse) {
   mjCBody* bodyC = static_cast<mjCBody*>(body->element);
-  return bodyC->NextChild(NULL, type);
+  try {
+    return bodyC->NextChild(NULL, type, recurse);
+  } catch (mjCError& e) {
+    bodyC->model->SetError(e);
+    return nullptr;
+  }
 }
 
 
 
 // return body's next child; return NULL if child is last
-mjsElement* mjs_nextChild(mjsBody* body, mjsElement* child) {
+mjsElement* mjs_nextChild(mjsBody* body, mjsElement* child, int recurse) {
   mjCBody* bodyC = static_cast<mjCBody*>(body->element);
-  return bodyC->NextChild(child);
+  try {
+    return bodyC->NextChild(child, child->elemtype, recurse);
+  } catch(mjCError& e) {
+    bodyC->model->SetError(e);
+    return nullptr;
+  }
 }
 
 
@@ -887,6 +972,16 @@ mjsMaterial* mjs_asMaterial(mjsElement* element) {
 
 
 
+// return plugin given mjsElement
+mjsPlugin* mjs_asPlugin(mjsElement* element) {
+  if (element && element->elemtype == mjOBJ_PLUGIN) {
+    return &(static_cast<mjCPlugin*>(element)->spec);
+  }
+  return nullptr;
+}
+
+
+
 // copy buffer to destination buffer
 void mjs_setBuffer(mjByteVec* dest, const void* array, int size) {
   const std::byte* buffer = static_cast<const std::byte*>(array);
@@ -995,20 +1090,10 @@ const double* mjs_getDouble(const mjDoubleVec* source, int* size) {
 
 // set plugin attributes
 void mjs_setPluginAttributes(mjsPlugin* plugin, void* attributes) {
-  mjCPlugin* pluginC = static_cast<mjCPlugin*>(plugin->instance);
+  mjCPlugin* pluginC = static_cast<mjCPlugin*>(plugin->element);
   std::map<std::string, std::string, std::less<>>* config_attribs =
       reinterpret_cast<std::map<std::string, std::string, std::less<>>*>(attributes);
   pluginC->config_attribs = std::move(*config_attribs);
-}
-
-
-
-// Set active plugins.
-void mjs_setActivePlugins(mjSpec* s, void* activeplugins) {
-  mjCModel* modelC = static_cast<mjCModel*>(s->element);
-  std::vector<std::pair<const mjpPlugin*, int>>* active_plugins =
-      reinterpret_cast<std::vector<std::pair<const mjpPlugin*, int>>*>(activeplugins);
-  modelC->SetActivePlugins(std::move(*active_plugins));
 }
 
 

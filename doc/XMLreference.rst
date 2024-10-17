@@ -1891,7 +1891,7 @@ This element specifies other MJCF models which may be used for :ref:`attachment<
 
 .. _asset-model-name:
 
-:at:`name`: :at-val:`string, required`
+:at:`name`: :at-val:`string, optional`
    Name of the sub-model, used for referencing in :ref:`attach<body-attach>`. If unspecified, the
    :ref:`model name<mujoco-model>` is used.
 
@@ -2200,13 +2200,14 @@ rotations as unit quaternions.
 .. _body-joint-armature:
 
 :at:`armature`: :at-val:`real, "0"`
-   Armature inertia (or rotor inertia, or reflected inertia) of all degrees of freedom created by this joint. These are
-   constants added to the diagonal of the inertia matrix in generalized coordinates. They make the simulation more
-   stable, and often increase physical realism. This is because when a motor is attached to the system with a
-   transmission that amplifies the motor force by c, the inertia of the rotor (i.e., the moving part of the motor) is
-   amplified by c*c. The same holds for gears in the early stages of planetary gear boxes. These extra inertias often
-   dominate the inertias of the robot parts that are represented explicitly in the model, and the armature attribute is
-   the way to model them.
+   Additional inertia associated with movement of the joint that is not due to body mass. This added inertia is usually
+   due to a rotor (a.k.a `armature <https://en.wikipedia.org/wiki/Armature_(electrical)>`__) spinning faster than the
+   joint itself due to a geared transmission; in this case the added inertia is known as "reflected inertia" and its
+   value is the rotational inertia of the spinning element multiplied by the square of the gear ratio. The value applies
+   to all degrees of freedom created by this joint.
+
+   Besides increasing the realism of joints with geared transmission, positive :at:`armature` significantly improves
+   simulation stability, even for small values, and is a recommended possible fix when encountering stability issues.
 
 .. _body-joint-damping:
 
@@ -3847,16 +3848,16 @@ defaults and assets) will be copied in to the top-level model. :el:`attach` is a
 all attachments will appear in the saved XML file.
 
 .. admonition:: Known issues
-   :class: attention
+   :class: note
 
-   The :el:`attach` meta-element is new and not well tested. Please report any issues you encounter to the development
-   team. Additionally, the following known limitations exist, to be addressed in a future release:
+   The following known limitations exist, to be addressed in a future release:
 
-   - The world body cannot be attached.
    - An entire model cannot be attached (i.e. including all elements, referenced or not).
    - All assets from the child model will be copied in, whether they are referenced or not.
-   - Self-attach or circular references are not checked for and will lead to infinite loops.
-   - :ref:`Keyframes<keyframe>` are attached once, so they are not replicated in nested attachments.
+   - Circular references are not checked for and will lead to infinite loops.
+   - When attaching a model with :ref:`keyframes<keyframe>`, model compilation is required for the re-indexing to be
+     finalized. If a second attachment is performed without compilation, the keyframes from the first attachment will be
+     lost.
 
 .. _body-attach-model:
 
@@ -4153,6 +4154,12 @@ these mechanisms to be combined as desired.
 
 :el-prefix:`flex/` |-| **elasticity** (?)
 '''''''''''''''''''''''''''''''''''''''''
+
+The elasticity model is a `Saint Venant-Kirchhoff
+<https://en.wikipedia.org/wiki/Hyperelastic_material#Saint_Venant%E2%80%93Kirchhoff_model>`__ model discretized with
+piecewise linear finite elements, intended to simulate the compression or elongation of hyperelastic materials subjected
+to large displacements (finite rotations) and small strains, since it uses a nonlinear strain-displacement but a linear
+stress-strain relationship.. See also :ref:`deformable <CDeformable>` objects.
 
 .. _flex-elasticity-young:
 
@@ -8013,7 +8020,7 @@ if omitted.
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 | This element sets the attributes of the dummy :ref:`mesh <asset-mesh>` element of the defaults class.
-| The only mesh attribute available here is: :ref:`scale <asset-mesh-scale>`.
+| The available attributes are: :ref:`scale <asset-mesh-scale>` and :ref:`scale <asset-mesh-maxhullvert>`.
 
 
 .. _default-material:

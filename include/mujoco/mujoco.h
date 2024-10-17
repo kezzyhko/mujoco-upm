@@ -16,7 +16,7 @@
 #define MUJOCO_MUJOCO_H_
 
 // header version; should match the library version as returned by mj_version()
-#define mjVERSION_HEADER 323
+#define mjVERSION_HEADER 324
 
 // needed to define size_t, fabs and log10
 #include <stdlib.h>
@@ -240,6 +240,9 @@ MJAPI mjSpec* mj_copySpec(const mjSpec* s);
 
 // Free memory allocation in mjSpec.
 MJAPI void mj_deleteSpec(mjSpec* s);
+
+// Activate plugin. Returns 0 on success.
+MJAPI int mjs_activatePlugin(mjSpec* s, const char* name);
 
 
 //---------------------------------- Printing ------------------------------------------------------
@@ -1404,13 +1407,17 @@ MJAPI void mju_taskJoin(mjTask* task);
 
 //---------------------------------- Attachment ----------------------------------------------------
 
-// Attach child body to a parent frame, return 0 on success.
-MJAPI int mjs_attachBody(mjsFrame* parent, const mjsBody* child,
-                         const char* prefix, const char* suffix);
+// Attach child body to a parent frame, return the attached body if success or NULL otherwise.
+MJAPI mjsBody* mjs_attachBody(mjsFrame* parent, const mjsBody* child,
+                              const char* prefix, const char* suffix);
 
-// Attach child frame to a parent body, return 0 on success.
-MJAPI int mjs_attachFrame(mjsBody* parent, const mjsFrame* child,
-                          const char* prefix, const char* suffix);
+// Attach child frame to a parent body, return the attached frame if success or NULL otherwise.
+MJAPI mjsFrame* mjs_attachFrame(mjsBody* parent, const mjsFrame* child,
+                                const char* prefix, const char* suffix);
+
+// Attach child body to a parent site, return the attached body if success or NULL otherwise.
+MJAPI mjsBody* mjs_attachToSite(mjsSite* parent, const mjsBody* child,
+                                const char* prefix, const char* suffix);
 
 // Detach body from mjSpec, remove all references and delete the body, return 0 on success.
 MJAPI int mjs_detachBody(mjSpec* s, mjsBody* b);
@@ -1521,7 +1528,7 @@ MJAPI mjsMaterial* mjs_addMaterial(mjSpec* s, mjsDefault* def);
 //---------------------------------- Find and get utilities ----------------------------------------
 
 // Get spec from body.
-MJAPI mjSpec* mjs_getSpec(mjsBody* body);
+MJAPI mjSpec* mjs_getSpec(mjsElement* element);
 
 // Find body in spec by name.
 MJAPI mjsBody* mjs_findBody(mjSpec* s, const char* name);
@@ -1547,86 +1554,18 @@ MJAPI mjsDefault* mjs_getSpecDefault(mjSpec* s);
 // Get element id.
 MJAPI int mjs_getId(mjsElement* element);
 
-// Return body's first child of given type.
-MJAPI mjsElement* mjs_firstChild(mjsBody* body, mjtObj type);
+// Return body's first child of given type. If recurse is nonzero, also search the body's subtree.
+MJAPI mjsElement* mjs_firstChild(mjsBody* body, mjtObj type, int recurse);
 
 // Return body's next child of the same type; return NULL if child is last.
-MJAPI mjsElement* mjs_nextChild(mjsBody* body, mjsElement* child);
+// If recurse is nonzero, also search the body's subtree.
+MJAPI mjsElement* mjs_nextChild(mjsBody* body, mjsElement* child, int recurse);
 
 // Return spec's first element of selected type.
 MJAPI mjsElement* mjs_firstElement(mjSpec* s, mjtObj type);
 
 // Return spec's next element; return NULL if element is last.
 MJAPI mjsElement* mjs_nextElement(mjSpec* s, mjsElement* element);
-
-// Safely cast an element as mjsBody, or return NULL if the element is not an mjsBody.
-MJAPI mjsBody* mjs_asBody(mjsElement* element);
-
-// Safely cast an element as mjsGeom, or return NULL if the element is not an mjsGeom.
-MJAPI mjsGeom* mjs_asGeom(mjsElement* element);
-
-// Safely cast an element as mjsJoint, or return NULL if the element is not an mjsJoint.
-MJAPI mjsJoint* mjs_asJoint(mjsElement* element);
-
-// Safely cast an element as mjsSite, or return NULL if the element is not an mjsSite.
-MJAPI mjsSite* mjs_asSite(mjsElement* element);
-
-// Safely cast an element as mjsCamera, or return NULL if the element is not an mjsCamera.
-MJAPI mjsCamera* mjs_asCamera(mjsElement* element);
-
-// Safely cast an element as mjsLight, or return NULL if the element is not an mjsLight.
-MJAPI mjsLight* mjs_asLight(mjsElement* element);
-
-// Safely cast an element as mjsFrame, or return NULL if the element is not an mjsFrame.
-MJAPI mjsFrame* mjs_asFrame(mjsElement* element);
-
-// Safely cast an element as mjsActuator, or return NULL if the element is not an mjsActuator.
-MJAPI mjsActuator* mjs_asActuator(mjsElement* element);
-
-// Safely cast an element as mjsSensor, or return NULL if the element is not an mjsSensor.
-MJAPI mjsSensor* mjs_asSensor(mjsElement* element);
-
-// Safely cast an element as mjsFlex, or return NULL if the element is not an mjsFlex.
-MJAPI mjsFlex* mjs_asFlex(mjsElement* element);
-
-// Safely cast an element as mjsPair, or return NULL if the element is not an mjsPair.
-MJAPI mjsPair* mjs_asPair(mjsElement* element);
-
-// Safely cast an element as mjsEquality, or return NULL if the element is not an mjsEquality.
-MJAPI mjsEquality* mjs_asEquality(mjsElement* element);
-
-// Safely cast an element as mjsExclude, or return NULL if the element is not an mjsExclude.
-MJAPI mjsExclude* mjs_asExclude(mjsElement* element);
-
-// Safely cast an element as mjsTendon, or return NULL if the element is not an mjsTendon.
-MJAPI mjsTendon* mjs_asTendon(mjsElement* element);
-
-// Safely cast an element as mjsNumeric, or return NULL if the element is not an mjsNumeric.
-MJAPI mjsNumeric* mjs_asNumeric(mjsElement* element);
-
-// Safely cast an element as mjsText, or return NULL if the element is not an mjsText.
-MJAPI mjsText* mjs_asText(mjsElement* element);
-
-// Safely cast an element as mjsTuple, or return NULL if the element is not an mjsTuple.
-MJAPI mjsTuple* mjs_asTuple(mjsElement* element);
-
-// Safely cast an element as mjsKey, or return NULL if the element is not an mjsKey.
-MJAPI mjsKey* mjs_asKey(mjsElement* element);
-
-// Safely cast an element as mjsMesh, or return NULL if the element is not an mjsMesh.
-MJAPI mjsMesh* mjs_asMesh(mjsElement* element);
-
-// Safely cast an element as mjsHField, or return NULL if the element is not an mjsHField.
-MJAPI mjsHField* mjs_asHField(mjsElement* element);
-
-// Safely cast an element as mjsSkin, or return NULL if the element is not an mjsSkin.
-MJAPI mjsSkin* mjs_asSkin(mjsElement* element);
-
-// Safely cast an element as mjsTexture, or return NULL if the element is not an mjsTexture.
-MJAPI mjsTexture* mjs_asTexture(mjsElement* element);
-
-// Safely cast an element as mjsMaterial, or return NULL if the element is not an mjsMaterial.
-MJAPI mjsMaterial* mjs_asMaterial(mjsElement* element);
 
 
 //---------------------------------- Attribute setters ---------------------------------------------
@@ -1676,9 +1615,6 @@ MJAPI const double* mjs_getDouble(const mjDoubleVec* source, int* size);
 
 //---------------------------------- Spec utilities ------------------------------------------------
 
-// Set active plugins.
-MJAPI void mjs_setActivePlugins(mjSpec* s, void* activeplugins);
-
 // Set element's default.
 MJAPI void mjs_setDefault(mjsElement* element, mjsDefault* def);
 
@@ -1689,6 +1625,8 @@ MJAPI void mjs_setFrame(mjsElement* dest, mjsFrame* frame);
 MJAPI const char* mjs_resolveOrientation(double quat[4], mjtByte degree, const char* sequence,
                                          const mjsOrientation* orientation);
 
+// Transform body into a frame.
+MJAPI mjsFrame* mjs_bodyToFrame(mjsBody** body);
 
 //---------------------------------- Element initialization  ---------------------------------------
 
@@ -1766,6 +1704,81 @@ MJAPI void mjs_defaultKey(mjsKey* key);
 
 // Default plugin attributes.
 MJAPI void mjs_defaultPlugin(mjsPlugin* plugin);
+
+
+//---------------------------------- Element casting -----------------------------------------------
+
+// Safely cast an element as mjsBody, or return NULL if the element is not an mjsBody.
+MJAPI mjsBody* mjs_asBody(mjsElement* element);
+
+// Safely cast an element as mjsGeom, or return NULL if the element is not an mjsGeom.
+MJAPI mjsGeom* mjs_asGeom(mjsElement* element);
+
+// Safely cast an element as mjsJoint, or return NULL if the element is not an mjsJoint.
+MJAPI mjsJoint* mjs_asJoint(mjsElement* element);
+
+// Safely cast an element as mjsSite, or return NULL if the element is not an mjsSite.
+MJAPI mjsSite* mjs_asSite(mjsElement* element);
+
+// Safely cast an element as mjsCamera, or return NULL if the element is not an mjsCamera.
+MJAPI mjsCamera* mjs_asCamera(mjsElement* element);
+
+// Safely cast an element as mjsLight, or return NULL if the element is not an mjsLight.
+MJAPI mjsLight* mjs_asLight(mjsElement* element);
+
+// Safely cast an element as mjsFrame, or return NULL if the element is not an mjsFrame.
+MJAPI mjsFrame* mjs_asFrame(mjsElement* element);
+
+// Safely cast an element as mjsActuator, or return NULL if the element is not an mjsActuator.
+MJAPI mjsActuator* mjs_asActuator(mjsElement* element);
+
+// Safely cast an element as mjsSensor, or return NULL if the element is not an mjsSensor.
+MJAPI mjsSensor* mjs_asSensor(mjsElement* element);
+
+// Safely cast an element as mjsFlex, or return NULL if the element is not an mjsFlex.
+MJAPI mjsFlex* mjs_asFlex(mjsElement* element);
+
+// Safely cast an element as mjsPair, or return NULL if the element is not an mjsPair.
+MJAPI mjsPair* mjs_asPair(mjsElement* element);
+
+// Safely cast an element as mjsEquality, or return NULL if the element is not an mjsEquality.
+MJAPI mjsEquality* mjs_asEquality(mjsElement* element);
+
+// Safely cast an element as mjsExclude, or return NULL if the element is not an mjsExclude.
+MJAPI mjsExclude* mjs_asExclude(mjsElement* element);
+
+// Safely cast an element as mjsTendon, or return NULL if the element is not an mjsTendon.
+MJAPI mjsTendon* mjs_asTendon(mjsElement* element);
+
+// Safely cast an element as mjsNumeric, or return NULL if the element is not an mjsNumeric.
+MJAPI mjsNumeric* mjs_asNumeric(mjsElement* element);
+
+// Safely cast an element as mjsText, or return NULL if the element is not an mjsText.
+MJAPI mjsText* mjs_asText(mjsElement* element);
+
+// Safely cast an element as mjsTuple, or return NULL if the element is not an mjsTuple.
+MJAPI mjsTuple* mjs_asTuple(mjsElement* element);
+
+// Safely cast an element as mjsKey, or return NULL if the element is not an mjsKey.
+MJAPI mjsKey* mjs_asKey(mjsElement* element);
+
+// Safely cast an element as mjsMesh, or return NULL if the element is not an mjsMesh.
+MJAPI mjsMesh* mjs_asMesh(mjsElement* element);
+
+// Safely cast an element as mjsHField, or return NULL if the element is not an mjsHField.
+MJAPI mjsHField* mjs_asHField(mjsElement* element);
+
+// Safely cast an element as mjsSkin, or return NULL if the element is not an mjsSkin.
+MJAPI mjsSkin* mjs_asSkin(mjsElement* element);
+
+// Safely cast an element as mjsTexture, or return NULL if the element is not an mjsTexture.
+MJAPI mjsTexture* mjs_asTexture(mjsElement* element);
+
+// Safely cast an element as mjsMaterial, or return NULL if the element is not an mjsMaterial.
+MJAPI mjsMaterial* mjs_asMaterial(mjsElement* element);
+
+// Safely cast an element as mjsPlugin, or return NULL if the element is not an mjsPlugin.
+MJAPI mjsPlugin* mjs_asPlugin(mjsElement* element);
 
 #ifdef __cplusplus
 }

@@ -109,7 +109,7 @@ public const int mjMAXLINEPNT = 1000;
 public const int mjMAXPLANEGRID = 200;
 public const bool THIRD_PARTY_MUJOCO_MJXMACRO_H_ = true;
 public const bool THIRD_PARTY_MUJOCO_MUJOCO_H_ = true;
-public const int mjVERSION_HEADER = 323;
+public const int mjVERSION_HEADER = 324;
 
 
 // ------------------------------------Enums------------------------------------
@@ -4841,12 +4841,12 @@ public unsafe struct mjData_ {
   public mjTimerStat_ timer12;
   public mjTimerStat_ timer13;
   public mjTimerStat_ timer14;
+  public int ncon;
   public int ne;
   public int nf;
   public int nl;
   public int nefc;
   public int nnzJ;
-  public int ncon;
   public int nisland;
   public double time;
   public fixed double energy[2];
@@ -5425,6 +5425,7 @@ public unsafe struct mjModel_ {
   public double* flexedge_invweight0;
   public double* flex_radius;
   public double* flex_stiffness;
+  public double* flex_damping;
   public double* flex_edgestiffness;
   public double* flex_edgedamping;
   public byte* flex_edgeequality;
@@ -5784,6 +5785,8 @@ public unsafe struct mjuiThemeColor_ {
   public fixed float thumb[3];
   public fixed float secttitle[3];
   public fixed float secttitle2[3];
+  public fixed float secttitleuncheck[3];
+  public fixed float secttitleuncheck2[3];
   public fixed float secttitlecheck[3];
   public fixed float secttitlecheck2[3];
   public fixed float sectfont[3];

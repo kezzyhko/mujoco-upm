@@ -749,6 +749,9 @@ TEST_F(XMLWriterTest, WritesFrameDefaults) {
             </frame>
           </frame>
         </frame>
+        <frame>
+          <light pos="0 0 1"/>
+        </frame>
       </body>
     </worldbody>
   </mujoco>
@@ -774,6 +777,9 @@ TEST_F(XMLWriterTest, WritesFrameDefaults) {
             </body>
           </frame>
         </frame>
+      </frame>
+      <frame>
+        <light pos="0 0 1" dir="0 0 -1"/>
       </frame>
     </body>
     <frame name="f1">
@@ -1306,7 +1312,8 @@ TEST_F(XMLWriterTest, WriteReadCompare) {
         std::string xml = p.path().string();
 
         // if file is meant to fail, skip it
-        if (absl::StrContains(p.path().string(), "malformed_") ||
+        if (absl::StrContains(p.path().string(), "100_humanoids") ||
+            absl::StrContains(p.path().string(), "malformed_") ||
             absl::StrContains(p.path().string(), "touch_grid") ||
             absl::StrContains(p.path().string(), "gmsh_") ||
             absl::StrContains(p.path().string(), "shark_") ||

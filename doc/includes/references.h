@@ -164,12 +164,12 @@ struct mjData_ {
   mjTimerStat   timer[mjNTIMER];              // timer statistics
 
   // variable sizes
+  int     ncon;              // number of detected contacts
   int     ne;                // number of equality constraints
   int     nf;                // number of friction constraints
   int     nl;                // number of limit constraints
   int     nefc;              // number of constraints
   int     nnzJ;              // number of non-zeros in constraint Jacobian
-  int     ncon;              // number of detected contacts
   int     nisland;           // number of detected constraint islands
 
   // global properties
@@ -385,7 +385,7 @@ struct mjData_ {
   int*    island_efcadr;     // start address in island_efcind                   (nisland x 1)
   int*    island_efcind;     // island constraint indices                        (nefc x 1)
 
-  // computed by mj_projectConstraint (dual solver)
+  // computed by mj_projectConstraint (PGS solver)
   int*    efc_AR_rownnz;     // number of non-zeros in AR                        (nefc x 1)
   int*    efc_AR_rowadr;     // row start address in colind array                (nefc x 1)
   int*    efc_AR_colind;     // column indices in sparse AR                      (nefc x nefc)
@@ -1172,6 +1172,7 @@ struct mjModel_ {
   mjtNum*   flexedge_invweight0;  // edge inv. weight in qpos0                (nflexedge x 1)
   mjtNum*   flex_radius;          // radius around primitive element          (nflex x 1)
   mjtNum*   flex_stiffness;       // finite element stiffness matrix          (nflexelem x 21)
+  mjtNum*   flex_damping;         // Rayleigh's damping coefficient           (nflex x 1)
   mjtNum*   flex_edgestiffness;   // edge stiffness                           (nflex x 1)
   mjtNum*   flex_edgedamping;     // edge damping                             (nflex x 1)
   mjtByte*  flex_edgeequality;    // is edge equality constraint defined      (nflex x 1)
@@ -1737,10 +1738,9 @@ typedef struct mjsOrientation_ {   // alternative orientation specifiers
   double euler[3];                 // Euler angles
 } mjsOrientation;
 typedef struct mjsPlugin_ {        // plugin specification
-  mjsElement* instance;            // element type
-  mjString* name;                  // name
-  mjString* instance_name;         // instance name
-  int plugin_slot;                 // global registered slot number of the plugin
+  mjsElement* element;             // element type
+  mjString* name;                  // instance name
+  mjString* plugin_name;           // plugin name
   mjtByte active;                  // is the plugin active
   mjString* info;                  // message appended to compiler errors
 } mjsPlugin;
@@ -2387,8 +2387,10 @@ struct mjuiThemeColor_ {          // UI visualization theme color
   float thumb[3];                 // scrollbar thumb
   float secttitle[3];             // section title
   float secttitle2[3];            // section title: bottom color
-  float secttitlecheck[3];        // section title with checkbox
-  float secttitlecheck2[3];       // section title with checkbox: bottom color
+  float secttitleuncheck[3];      // section title with unchecked box
+  float secttitleuncheck2[3];     // section title with unchecked box: bottom color
+  float secttitlecheck[3];        // section title with checked box
+  float secttitlecheck2[3];       // section title with checked box: bottom color
   float sectfont[3];              // section font
   float sectsymbol[3];            // section symbol
   float sectpane[3];              // section pane
@@ -2464,7 +2466,7 @@ struct mjuiSection_ {             // UI section
   int state;                      // section state (mjtSection)
   int modifier;                   // 0: none, 1: control, 2: shift; 4: alt
   int shortcut;                   // shortcut key; 0: undefined
-  int checkbox;                   // 0: none, 1: hidden, 2: unchecked, 2: checked
+  int checkbox;                   // 0: none, 1: unchecked, 2: checked
   int nitem;                      // number of items in use
   mjuiItem item[mjMAXUIITEM];     // preallocated array of items
 
@@ -3168,6 +3170,7 @@ int mj_setLengthRange(mjModel* m, mjData* d, int index,
 mjSpec* mj_makeSpec(void);
 mjSpec* mj_copySpec(const mjSpec* s);
 void mj_deleteSpec(mjSpec* s);
+int mjs_activatePlugin(mjSpec* s, const char* name);
 void mj_printFormattedModel(const mjModel* m, const char* filename, const char* float_format);
 void mj_printModel(const mjModel* m, const char* filename);
 void mj_printFormattedData(const mjModel* m, mjData* d, const char* filename,
@@ -3549,10 +3552,12 @@ void mju_threadPoolEnqueue(mjThreadPool* thread_pool, mjTask* task);
 void mju_threadPoolDestroy(mjThreadPool* thread_pool);
 void mju_defaultTask(mjTask* task);
 void mju_taskJoin(mjTask* task);
-int mjs_attachBody(mjsFrame* parent, const mjsBody* child,
-                   const char* prefix, const char* suffix);
-int mjs_attachFrame(mjsBody* parent, const mjsFrame* child,
-                    const char* prefix, const char* suffix);
+mjsBody* mjs_attachBody(mjsFrame* parent, const mjsBody* child,
+                        const char* prefix, const char* suffix);
+mjsFrame* mjs_attachFrame(mjsBody* parent, const mjsFrame* child,
+                          const char* prefix, const char* suffix);
+mjsBody* mjs_attachToSite(mjsSite* parent, const mjsBody* child,
+                          const char* prefix, const char* suffix);
 int mjs_detachBody(mjSpec* s, mjsBody* b);
 mjsBody* mjs_addBody(mjsBody* body, mjsDefault* def);
 mjsSite* mjs_addSite(mjsBody* body, mjsDefault* def);
@@ -3585,7 +3590,7 @@ mjsHField* mjs_addHField(mjSpec* s);
 mjsSkin* mjs_addSkin(mjSpec* s);
 mjsTexture* mjs_addTexture(mjSpec* s);
 mjsMaterial* mjs_addMaterial(mjSpec* s, mjsDefault* def);
-mjSpec* mjs_getSpec(mjsBody* body);
+mjSpec* mjs_getSpec(mjsElement* element);
 mjsBody* mjs_findBody(mjSpec* s, const char* name);
 mjsElement* mjs_findElement(mjSpec* s, mjtObj type, const char* name);
 mjsBody* mjs_findChild(mjsBody* body, const char* name);
@@ -3594,33 +3599,10 @@ mjsDefault* mjs_getDefault(mjsElement* element);
 mjsDefault* mjs_findDefault(mjSpec* s, const char* classname);
 mjsDefault* mjs_getSpecDefault(mjSpec* s);
 int mjs_getId(mjsElement* element);
-mjsElement* mjs_firstChild(mjsBody* body, mjtObj type);
-mjsElement* mjs_nextChild(mjsBody* body, mjsElement* child);
+mjsElement* mjs_firstChild(mjsBody* body, mjtObj type, int recurse);
+mjsElement* mjs_nextChild(mjsBody* body, mjsElement* child, int recurse);
 mjsElement* mjs_firstElement(mjSpec* s, mjtObj type);
 mjsElement* mjs_nextElement(mjSpec* s, mjsElement* element);
-mjsBody* mjs_asBody(mjsElement* element);
-mjsGeom* mjs_asGeom(mjsElement* element);
-mjsJoint* mjs_asJoint(mjsElement* element);
-mjsSite* mjs_asSite(mjsElement* element);
-mjsCamera* mjs_asCamera(mjsElement* element);
-mjsLight* mjs_asLight(mjsElement* element);
-mjsFrame* mjs_asFrame(mjsElement* element);
-mjsActuator* mjs_asActuator(mjsElement* element);
-mjsSensor* mjs_asSensor(mjsElement* element);
-mjsFlex* mjs_asFlex(mjsElement* element);
-mjsPair* mjs_asPair(mjsElement* element);
-mjsEquality* mjs_asEquality(mjsElement* element);
-mjsExclude* mjs_asExclude(mjsElement* element);
-mjsTendon* mjs_asTendon(mjsElement* element);
-mjsNumeric* mjs_asNumeric(mjsElement* element);
-mjsText* mjs_asText(mjsElement* element);
-mjsTuple* mjs_asTuple(mjsElement* element);
-mjsKey* mjs_asKey(mjsElement* element);
-mjsMesh* mjs_asMesh(mjsElement* element);
-mjsHField* mjs_asHField(mjsElement* element);
-mjsSkin* mjs_asSkin(mjsElement* element);
-mjsTexture* mjs_asTexture(mjsElement* element);
-mjsMaterial* mjs_asMaterial(mjsElement* element);
 void mjs_setBuffer(mjByteVec* dest, const void* array, int size);
 void mjs_setString(mjString* dest, const char* text);
 void mjs_setStringVec(mjStringVec* dest, const char* text);
@@ -3634,11 +3616,11 @@ void mjs_setDouble(mjDoubleVec* dest, const double* array, int size);
 void mjs_setPluginAttributes(mjsPlugin* plugin, void* attributes);
 const char* mjs_getString(const mjString* source);
 const double* mjs_getDouble(const mjDoubleVec* source, int* size);
-void mjs_setActivePlugins(mjSpec* s, void* activeplugins);
 void mjs_setDefault(mjsElement* element, mjsDefault* def);
 void mjs_setFrame(mjsElement* dest, mjsFrame* frame);
 const char* mjs_resolveOrientation(double quat[4], mjtByte degree, const char* sequence,
                                    const mjsOrientation* orientation);
+mjsFrame* mjs_bodyToFrame(mjsBody** body);
 void mjs_defaultSpec(mjSpec* spec);
 void mjs_defaultOrientation(mjsOrientation* orient);
 void mjs_defaultBody(mjsBody* body);
@@ -3664,4 +3646,28 @@ void mjs_defaultText(mjsText* text);
 void mjs_defaultTuple(mjsTuple* tuple);
 void mjs_defaultKey(mjsKey* key);
 void mjs_defaultPlugin(mjsPlugin* plugin);
+mjsBody* mjs_asBody(mjsElement* element);
+mjsGeom* mjs_asGeom(mjsElement* element);
+mjsJoint* mjs_asJoint(mjsElement* element);
+mjsSite* mjs_asSite(mjsElement* element);
+mjsCamera* mjs_asCamera(mjsElement* element);
+mjsLight* mjs_asLight(mjsElement* element);
+mjsFrame* mjs_asFrame(mjsElement* element);
+mjsActuator* mjs_asActuator(mjsElement* element);
+mjsSensor* mjs_asSensor(mjsElement* element);
+mjsFlex* mjs_asFlex(mjsElement* element);
+mjsPair* mjs_asPair(mjsElement* element);
+mjsEquality* mjs_asEquality(mjsElement* element);
+mjsExclude* mjs_asExclude(mjsElement* element);
+mjsTendon* mjs_asTendon(mjsElement* element);
+mjsNumeric* mjs_asNumeric(mjsElement* element);
+mjsText* mjs_asText(mjsElement* element);
+mjsTuple* mjs_asTuple(mjsElement* element);
+mjsKey* mjs_asKey(mjsElement* element);
+mjsMesh* mjs_asMesh(mjsElement* element);
+mjsHField* mjs_asHField(mjsElement* element);
+mjsSkin* mjs_asSkin(mjsElement* element);
+mjsTexture* mjs_asTexture(mjsElement* element);
+mjsMaterial* mjs_asMaterial(mjsElement* element);
+mjsPlugin* mjs_asPlugin(mjsElement* element);
 // NOLINTEND

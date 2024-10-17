@@ -188,7 +188,7 @@ The following features are **fully supported** in MJX:
    * - :ref:`Joint <mjtJoint>`
      - ``FREE``, ``BALL``, ``SLIDE``, ``HINGE``
    * - :ref:`Transmission <mjtTrn>`
-     - ``TRN_JOINT``, ``TRN_SITE``, ``TRN_TENDON``
+     - ``JOINT``, ``JOINTINPARENT``, ``SITE``, ``TENDON``
    * - :ref:`Actuator Dynamics <mjtDyn>`
      - ``NONE``, ``INTEGRATOR``, ``FILTER``, ``FILTEREXACT``
    * - :ref:`Actuator Gain <mjtGain>`
@@ -196,7 +196,7 @@ The following features are **fully supported** in MJX:
    * - :ref:`Actuator Bias <mjtBias>`
      - ``NONE``, ``AFFINE``
    * - :ref:`Tendon Wrapping <mjtWrap>`
-     - ``JOINT``, ``SITE``
+     - ``JOINT``, ``SITE``, ``PULLEY``
    * - :ref:`Geom <mjtGeom>`
      - ``PLANE``, ``HFIELD``, ``SPHERE``, ``CAPSULE``, ``BOX``, ``MESH`` are fully implemented. ``ELLIPSOID`` and
        ``CYLINDER`` are implemented but only collide with other primitives, note that ``BOX`` is implemented as a mesh.
@@ -217,11 +217,11 @@ The following features are **fully supported** in MJX:
    * - :ref:`Tendons <tendon>`
      - :ref:`Fixed <tendon-fixed>`
    * - :ref:`Sensors <mjtSensor>`
-     - ``MAGNETOMETER``, ``CAMPROJECTION``, ``RANGEFINDER``, ``JOINTPOS``, ``ACTUATORPOS``, ``BALLQUAT``, ``FRAMEPOS``,
-       ``FRAMEXAXIS``, ``FRAMEYAXIS``, ``FRAMEZAXIS``, ``FRAMEQUAT``, ``SUBTREECOM``, ``CLOCK``, ``VELOCIMETER``,
-       ``GYRO``, ``JOINTVEL``, ``ACTUATORVEL``, ``BALLANGVEL``, ``FRAMELINVEL``, ``FRAMEANGVEL``, ``SUBTREELINVEL``,
-       ``SUBTREEANGMOM``, ``ACCELEROMETER``, ``FORCE``, ``TORQUE``, ``ACTUATORFRC``, ``JOINTACTFRC``, ``FRAMELINACC``,
-       ``FRAMEANGACC``.
+     - ``MAGNETOMETER``, ``CAMPROJECTION``, ``RANGEFINDER``, ``JOINTPOS``, ``TENDONPOS``, ``ACTUATORPOS``, ``BALLQUAT``,
+       ``FRAMEPOS``, ``FRAMEXAXIS``, ``FRAMEYAXIS``, ``FRAMEZAXIS``, ``FRAMEQUAT``, ``SUBTREECOM``, ``CLOCK``,
+       ``VELOCIMETER``, ``GYRO``, ``JOINTVEL``, ``TENDONVEL``, ``ACTUATORVEL``, ``BALLANGVEL``, ``FRAMELINVEL``,
+       ``FRAMEANGVEL``, ``SUBTREELINVEL``, ``SUBTREEANGMOM``, ``ACCELEROMETER``, ``FORCE``, ``TORQUE``, ``ACTUATORFRC``,
+       ``JOINTACTFRC``, ``FRAMELINACC``, ``FRAMEANGACC``.
 
 The following features are **in development** and coming soon:
 
@@ -247,7 +247,7 @@ The following features are **in development** and coming soon:
    * - :ref:`Actuator Bias <mjtBias>`
      - ``MUSCLE``
    * - :ref:`Tendon Wrapping <mjtWrap>`
-     - ``PULLEY``, ``SPHERE``, ``CYLINDER``
+     - ``SPHERE``, ``CYLINDER``
    * - Fluid Model
      - :ref:`flEllipsoid`
    * - :ref:`Tendons <tendon>`
@@ -270,7 +270,7 @@ The following features are **unsupported**:
    * - :ref:`margin<body-geom-margin>` and :ref:`gap<body-geom-gap>`
      - Unimplemented for collisions with ``Mesh`` :ref:`Geom <mjtGeom>`.
    * - :ref:`Transmission <mjtTrn>`
-     - ``TRN_JOINTINPARENT``, ``TRN_SLIDERCRANK``, ``TRN_BODY``
+     - ``SLIDERCRANK``, ``BODY``
    * - :ref:`Actuator Dynamics <mjtDyn>`
      - ``USER``
    * - :ref:`Actuator Gain <mjtGain>`

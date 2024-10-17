@@ -2694,6 +2694,11 @@ void mjXReader::OneFlexcomp(XMLElement* elem, mjsBody* body, const mjVFS* vfs) {
     ReadAttr(elasticity, "thickness", 1, &dflex.thickness, text);
   }
 
+  // check errors
+  if (elasticity && fcomp.equality) {
+    throw mjXError(elem, "elasticity and edge constraints cannot both be present");
+  }
+
   // contact
   XMLElement* cont = FirstChildElement(elem, "contact");
   if (cont) {
@@ -2764,10 +2769,10 @@ void mjXReader::OnePlugin(XMLElement* elem, mjsPlugin* plugin) {
   string instance_name = "";
   ReadAttrTxt(elem, "plugin", name);
   ReadAttrTxt(elem, "instance", instance_name);
-  mjs_setString(plugin->name, name.c_str());
-  mjs_setString(plugin->instance_name, instance_name.c_str());
+  mjs_setString(plugin->plugin_name, name.c_str());
+  mjs_setString(plugin->name, instance_name.c_str());
   if (instance_name.empty()) {
-    plugin->instance = mjs_addPlugin(spec)->instance;
+    plugin->element = mjs_addPlugin(spec)->element;
     ReadPluginConfigs(elem, plugin);
   } else {
     spec->hasImplicitPluginElem = true;
@@ -2877,7 +2882,6 @@ void mjXReader::Default(XMLElement* section, const mjsDefault* def, const mjVFS*
 // extension section parser
 void mjXReader::Extension(XMLElement* section) {
   XMLElement* elem = FirstChildElement(section);
-  std::vector<std::pair<const mjpPlugin*, int>> active_plugins;
 
   while (elem) {
     // get sub-element name
@@ -2885,22 +2889,9 @@ void mjXReader::Extension(XMLElement* section) {
 
     if (name == "plugin") {
       string plugin_name;
-      int plugin_slot = -1;
       ReadAttrTxt(elem, "plugin", plugin_name, /* required = */ true);
-      const mjpPlugin* plugin = mjp_getPlugin(plugin_name.c_str(), &plugin_slot);
-      if (!plugin) {
-        throw mjXError(elem, "unknown plugin '%s'", plugin_name.c_str());
-      }
-
-      bool already_declared = false;
-      for (const auto& [existing_plugin, existing_slot] : active_plugins) {
-        if (plugin == existing_plugin) {
-          already_declared = true;
-          break;
-        }
-      }
-      if (!already_declared) {
-        active_plugins.emplace_back(std::make_pair(plugin, plugin_slot));
+      if (mjs_activatePlugin(spec, plugin_name.c_str())) {
+        throw mjXError(elem, "plugin %s not found", plugin_name.c_str());
       }
 
       XMLElement* child = FirstChildElement(elem);
@@ -2912,6 +2903,7 @@ void mjXReader::Extension(XMLElement* section) {
           }
           string name;
           mjsPlugin* p = mjs_addPlugin(spec);
+          mjs_setString(p->plugin_name, plugin_name.c_str());
           mjs_setString(p->info, ("line " + std::to_string(elem->GetLineNum())).c_str());
           ReadAttrTxt(child, "name", name, /* required = */ true);
           mjs_setString(p->name, name.c_str());
@@ -2919,7 +2911,6 @@ void mjXReader::Extension(XMLElement* section) {
             throw mjXError(child, "plugin instance must have a name");
           }
           ReadPluginConfigs(child, p);
-          p->plugin_slot = plugin_slot;
         }
         child = NextSiblingElement(child);
       }
@@ -2928,8 +2919,6 @@ void mjXReader::Extension(XMLElement* section) {
     // advance to next element
     elem = NextSiblingElement(elem);
   }
-
-  mjs_setActivePlugins(spec, &active_plugins);
 }
 
 
@@ -3231,9 +3220,7 @@ void mjXReader::Asset(XMLElement* section, const mjVFS* vfs) {
       }
       ReadAttrInt(elem, "width", &texture->width);
       ReadAttrInt(elem, "height", &texture->height);
-      if (!ReadAttrInt(elem, "nchannel", &texture->nchannel)) {
-        texture->nchannel = 3;
-      }
+      ReadAttrInt(elem, "nchannel", &texture->nchannel);
       ReadAttr(elem, "rgb1", 3, texture->rgb1, text);
       ReadAttr(elem, "rgb2", 3, texture->rgb2, text);
       ReadAttr(elem, "markrgb", 3, texture->markrgb, text);
@@ -3443,7 +3430,7 @@ void mjXReader::Body(XMLElement* section, mjsBody* body, mjsFrame* frame,
       bool alt = ReadAlternative(elem, body->ialt);
       bool full = ReadAttr(elem, "fullinertia", 6, body->fullinertia, text);
       if (alt && full) {
-        throw mjXError(elem, "fullinertia and orientation specifiers cannot be used together");
+        throw mjXError(elem, "fullinertia and inertial orientation cannot both be specified");
       }
     }
 
@@ -3624,13 +3611,15 @@ void mjXReader::Body(XMLElement* section, mjsBody* body, mjsFrame* frame,
         UpdateString(suffix, count, i);
 
         // attach to parent
-        if (mjs_attachFrame(body, pframe, /*prefix=*/"", suffix.c_str()) != 0) {
+        if (!mjs_attachFrame(body, pframe, /*prefix=*/"", suffix.c_str())) {
           throw mjXError(elem, mjs_getError(spec));
         }
       }
 
       // delete subtree
-      mjs_detachBody(spec, subtree);
+      if (mjs_detachBody(spec, subtree)) {
+        throw mjXError(elem, mjs_getError(spec));
+      }
     }
 
     // body sub-element
@@ -3701,7 +3690,7 @@ void mjXReader::Body(XMLElement* section, mjsBody* body, mjsFrame* frame,
         if (!child) {
           throw mjXError(0, "could not find body '%s''%s'", body_name.c_str());
         }
-        if (mjs_attachBody(pframe, child, prefix.c_str(), "") != 0) {
+        if (!mjs_attachBody(pframe, child, prefix.c_str(), "")) {
           throw mjXError(elem, mjs_getError(spec));
         }
       } else {

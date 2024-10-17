@@ -2476,6 +2476,13 @@ STRUCTS: Mapping[str, StructDecl] = dict([
                  doc='finite element stiffness matrix          (nflexelem x 21)',  # pylint: disable=line-too-long
              ),
              StructFieldDecl(
+                 name='flex_damping',
+                 type=PointerType(
+                     inner_type=ValueType(name='mjtNum'),
+                 ),
+                 doc="Rayleigh's damping coefficient           (nflex x 1)",
+             ),
+             StructFieldDecl(
                  name='flex_edgestiffness',
                  type=PointerType(
                      inner_type=ValueType(name='mjtNum'),
@@ -4290,6 +4297,11 @@ STRUCTS: Mapping[str, StructDecl] = dict([
                  doc='timer statistics',
              ),
              StructFieldDecl(
+                 name='ncon',
+                 type=ValueType(name='int'),
+                 doc='number of detected contacts',
+             ),
+             StructFieldDecl(
                  name='ne',
                  type=ValueType(name='int'),
                  doc='number of equality constraints',
@@ -4313,11 +4325,6 @@ STRUCTS: Mapping[str, StructDecl] = dict([
                  name='nnzJ',
                  type=ValueType(name='int'),
                  doc='number of non-zeros in constraint Jacobian',
-             ),
-             StructFieldDecl(
-                 name='ncon',
-                 type=ValueType(name='int'),
-                 doc='number of detected contacts',
              ),
              StructFieldDecl(
                  name='nisland',
@@ -8558,7 +8565,7 @@ STRUCTS: Mapping[str, StructDecl] = dict([
          declname='struct mjsPlugin_',
          fields=(
              StructFieldDecl(
-                 name='instance',
+                 name='element',
                  type=PointerType(
                      inner_type=ValueType(name='mjsElement'),
                  ),
@@ -8569,19 +8576,14 @@ STRUCTS: Mapping[str, StructDecl] = dict([
                  type=PointerType(
                      inner_type=ValueType(name='mjString'),
                  ),
-                 doc='name',
-             ),
-             StructFieldDecl(
-                 name='instance_name',
-                 type=PointerType(
-                     inner_type=ValueType(name='mjString'),
-                 ),
                  doc='instance name',
              ),
              StructFieldDecl(
-                 name='plugin_slot',
-                 type=ValueType(name='int'),
-                 doc='global registered slot number of the plugin',
+                 name='plugin_name',
+                 type=PointerType(
+                     inner_type=ValueType(name='mjString'),
+                 ),
+                 doc='plugin name',
              ),
              StructFieldDecl(
                  name='active',
@@ -11445,12 +11447,28 @@ STRUCTS: Mapping[str, StructDecl] = dict([
                  doc='section title: bottom color',
              ),
              StructFieldDecl(
+                 name='secttitleuncheck',
+                 type=ArrayType(
+                     inner_type=ValueType(name='float'),
+                     extents=(3,),
+                 ),
+                 doc='section title with unchecked box',
+             ),
+             StructFieldDecl(
+                 name='secttitleuncheck2',
+                 type=ArrayType(
+                     inner_type=ValueType(name='float'),
+                     extents=(3,),
+                 ),
+                 doc='section title with unchecked box: bottom color',
+             ),
+             StructFieldDecl(
                  name='secttitlecheck',
                  type=ArrayType(
                      inner_type=ValueType(name='float'),
                      extents=(3,),
                  ),
-                 doc='section title with checkbox',
+                 doc='section title with checked box',
              ),
              StructFieldDecl(
                  name='secttitlecheck2',
@@ -11458,7 +11476,7 @@ STRUCTS: Mapping[str, StructDecl] = dict([
                      inner_type=ValueType(name='float'),
                      extents=(3,),
                  ),
-                 doc='section title with checkbox: bottom color',
+                 doc='section title with checked box: bottom color',
              ),
              StructFieldDecl(
                  name='sectfont',
@@ -11734,7 +11752,7 @@ STRUCTS: Mapping[str, StructDecl] = dict([
              StructFieldDecl(
                  name='checkbox',
                  type=ValueType(name='int'),
-                 doc='0: none, 1: hidden, 2: unchecked, 2: checked',
+                 doc='0: none, 1: unchecked, 2: checked',
              ),
              StructFieldDecl(
                  name='nitem',

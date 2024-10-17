@@ -321,15 +321,24 @@ class mjCBody : public mjCBody_, private mjsBody {
   // used by mjXWriter and mjCModel
   const std::vector<double>& get_userdata() { return userdata_; }
 
-  // get next child of given type
-  mjsElement* NextChild(mjsElement* child, mjtObj type = mjOBJ_UNKNOWN, bool recursive = false);
+  // get next child of given type recursively; if `child` is found while traversing the tree,
+  // then `found` is set to true and the next element encountered is returned;
+  // returns nullptr if the next child is not found or if `child` is the last element, returns
+  // the next child after the input `child` otherwise
+  mjsElement* NextChild(const mjsElement* child, mjtObj type = mjOBJ_UNKNOWN,
+                        bool recursive = false, bool* found = nullptr);
 
   // reset keyframe references for allowing self-attach
   void ForgetKeyframes() const;
 
+  // create a frame and move all contents of this body into it
+  mjCFrame* ToFrame();
+
   // get mocap position and quaternion
   mjtNum* mpos(const std::string& state_name);
   mjtNum* mquat(const std::string& state_name);
+
+  mjsFrame* last_attached;  // last attached frame to this body
 
  private:
   mjCBody(const mjCBody& other, mjCModel* _model);  // copy constructor
@@ -358,7 +367,7 @@ class mjCBody : public mjCBody_, private mjsBody {
 
   // gets next child of the same type in this body
   template <class T>
-  mjsElement* GetNext(std::vector<T*>& list, const mjsElement* child, bool recursive = false);
+  mjsElement* GetNext(const std::vector<T*>& list, const mjsElement* child, bool* found);
 };
 
 
@@ -398,6 +407,8 @@ class mjCFrame : public mjCFrame_, private mjsFrame {
 
   bool IsAncestor(const mjCFrame* child) const;  // true if child is contained in this frame
 
+  mjsBody* last_attached;  // last attached body to this frame
+
  private:
   void Compile(void);                          // compiler
 
@@ -414,8 +425,6 @@ class mjCJoint_ : public mjCBase {
   mjCBody* body;                   // joint's body
 
   // variable used for temporarily storing the state of the joint
-  int qposadr_;                                        // address of dof in data->qpos
-  int dofadr_;                                         // address of dof in data->qvel
   std::map<std::string, std::array<mjtNum, 7>> qpos_;  // qpos at the previous step
   std::map<std::string, std::array<mjtNum, 6>> qvel_;  // qvel at the previous step
 
@@ -462,6 +471,10 @@ class mjCJoint : public mjCJoint_, private mjsJoint {
  private:
   int Compile(void);               // compiler; return dofnum
   void PointToLocal(void);
+
+  // variables that should not be copied during copy assignment
+  int qposadr_;                                        // address of dof in data->qpos
+  int dofadr_;                                         // address of dof in data->qvel
 };
 
 
@@ -511,6 +524,7 @@ class mjCGeom : public mjCGeom_, private mjsGeom {
   mjCGeom(mjCModel* = nullptr, mjCDef* = nullptr);
   mjCGeom(const mjCGeom& other);
   mjCGeom& operator=(const mjCGeom& other);
+  ~mjCGeom();
 
   using mjCBase::name;
   mjsGeom spec;                       // variables set by user
@@ -518,6 +532,7 @@ class mjCGeom : public mjCGeom_, private mjsGeom {
   void SetInertia(void);              // compute and set geom inertia
   bool IsVisual(void) const { return visual_; }
   void SetNotVisual(void) { visual_ = false; }
+  mjtGeom Type() const { return type; }
 
   // Compute all coefs modeling the interaction with the surrounding fluid.
   void SetFluidCoefs(void);
@@ -577,6 +592,9 @@ class mjCSite : public mjCSite_, private mjsSite {
   mjCSite& operator=(const mjCSite& other);
 
   mjsSite spec;                   // variables set by user
+
+  // site's body
+  mjCBody* Body() const { return body; }
 
   // use strings from mjCBase rather than mjStrings from mjsSite
   using mjCBase::name;
@@ -695,6 +713,7 @@ class mjCFlex_ : public mjCBase {
   mjCBoundingVolumeHierarchy tree;        // bounding volume hierarchy
   std::vector<double> elemaabb_;          // element bounding volume
   std::vector<int> edgeidx_;              // element edge ids
+  std::vector<double> stiffness;          // elasticity stiffness matrix
 
   // variable-size data
   std::vector<std::string> vertbody_;     // vertex body names
@@ -818,6 +837,8 @@ class mjCMesh_ : public mjCBase {
 };
 
 class mjCMesh: public mjCMesh_, private mjsMesh {
+  friend class mjCModel;
+
  public:
   mjCMesh(mjCModel* = nullptr, mjCDef* = nullptr);
   mjCMesh(const mjCMesh& other);
@@ -1400,7 +1421,7 @@ class mjCPlugin_ : public mjCBase {
   std::vector<char> flattened_attributes;  // config attributes flattened in plugin-declared order;
 
  protected:
-  std::string instance_name;
+  std::string plugin_name;
 };
 
 class mjCPlugin : public mjCPlugin_ {
@@ -1412,7 +1433,8 @@ class mjCPlugin : public mjCPlugin_ {
   mjCPlugin(const mjCPlugin& other);
   mjCPlugin& operator=(const mjCPlugin& other);
   mjsPlugin spec;
-  mjCBase* parent;   // parent object (only used when generating error message)
+  mjCBase* parent;  // parent object (only used when generating error message)
+  int plugin_slot;  // global registered slot number of the plugin
 
  private:
   void Compile(void);              // compiler
@@ -1455,6 +1477,7 @@ class mjCActuator : public mjCActuator_, private mjsActuator {
   mjCActuator(mjCModel* = nullptr, mjCDef* = nullptr);
   mjCActuator(const mjCActuator& other);
   mjCActuator& operator=(const mjCActuator& other);
+  ~mjCActuator();
 
   mjsActuator spec;
   using mjCBase::name;
@@ -1515,6 +1538,7 @@ class mjCSensor : public mjCSensor_, private mjsSensor {
   mjCSensor(mjCModel*);
   mjCSensor(const mjCSensor& other);
   mjCSensor& operator=(const mjCSensor& other);
+  ~mjCSensor();
 
   mjsSensor spec;
   using mjCBase::name;
