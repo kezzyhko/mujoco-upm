@@ -1081,6 +1081,13 @@ MJAPI void mju_transformSpatial(mjtNum res[6], const mjtNum vec[6], int flg_forc
                                 const mjtNum rotnew2old[9]);
 
 
+//---------------------------------- Sparse math ---------------------------------------------------
+
+// Convert matrix from sparse to dense.
+MJAPI void mju_sparse2dense(mjtNum* res, const mjtNum* mat, int nr, int nc,
+                            const int* rownnz, const int* rowadr, const int* colind);
+
+
 //---------------------------------- Quaternions ---------------------------------------------------
 
 // Rotate vector by quaternion.
@@ -1526,6 +1533,9 @@ MJAPI mjsMaterial* mjs_addMaterial(mjSpec* s, mjsDefault* def);
 
 // Get spec from body.
 MJAPI mjSpec* mjs_getSpec(mjsElement* element);
+
+// Find spec (model asset) by name.
+MJAPI mjSpec* mjs_findSpec(mjSpec* spec, const char* name);
 
 // Find body in spec by name.
 MJAPI mjsBody* mjs_findBody(mjSpec* s, const char* name);
