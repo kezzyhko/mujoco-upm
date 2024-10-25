@@ -1683,22 +1683,15 @@ typedef enum mjtOrientation_ {     // type of orientation specifier
 typedef struct mjsElement_ {       // element type, do not modify
   mjtObj elemtype;                 // element type
 } mjsElement;
-typedef struct mjSpec_ {           // model specification
-  mjsElement* element;             // element type
-  mjString* modelname;             // model name
-
-  // compiler settings
+typedef struct mjsCompiler_ {      // compiler options
   mjtByte autolimits;              // infer "limited" attribute based on range
   double boundmass;                // enforce minimum body mass
   double boundinertia;             // enforce minimum body diagonal inertia
   double settotalmass;             // rescale masses and inertias; <=0: ignore
   mjtByte balanceinertia;          // automatically impose A + B >= C rule
-  mjtByte strippath;               // automatically strip paths from mesh files
   mjtByte fitaabb;                 // meshfit to aabb instead of inertia box
   mjtByte degree;                  // angles in radians or degrees
   char eulerseq[3];                // sequence for euler rotations
-  mjString* meshdir;               // mesh and hfield directory
-  mjString* texturedir;            // texture directory
   mjtByte discardvisual;           // discard visual geoms in parser
   mjtByte convexhull;              // compute mesh convex hulls
   mjtByte usethread;               // use multiple threads to speed up compiler
@@ -1707,6 +1700,16 @@ typedef struct mjSpec_ {           // model specification
   int inertiagrouprange[2];        // range of geom groups used to compute inertia
   int alignfree;                   // align free joints with inertial frame
   mjLROpt LRopt;                   // options for lengthrange computation
+} mjsCompiler;
+typedef struct mjSpec_ {           // model specification
+  mjsElement* element;             // element type
+  mjString* modelname;             // model name
+
+  // compiler data
+  mjsCompiler compiler;            // compiler options
+  mjtByte strippath;               // automatically strip paths from mesh files
+  mjString* meshdir;               // mesh and hfield directory
+  mjString* texturedir;            // texture directory
 
   // engine data
   mjOption option;                 // physics options
@@ -3429,8 +3432,6 @@ mjtNum mju_dot3(const mjtNum vec1[3], const mjtNum vec2[3]);
 mjtNum mju_dist3(const mjtNum pos1[3], const mjtNum pos2[3]);
 void mju_mulMatVec3(mjtNum res[3], const mjtNum mat[9], const mjtNum vec[3]);
 void mju_mulMatTVec3(mjtNum res[3], const mjtNum mat[9], const mjtNum vec[3]);
-void mju_rotVecMat(mjtNum res[3], const mjtNum vec[3], const mjtNum mat[9]);
-void mju_rotVecMatT(mjtNum res[3], const mjtNum vec[3], const mjtNum mat[9]);
 void mju_cross(mjtNum res[3], const mjtNum a[3], const mjtNum b[3]);
 void mju_zero4(mjtNum res[4]);
 void mju_unit4(mjtNum res[4]);

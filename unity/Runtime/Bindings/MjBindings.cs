@@ -5717,6 +5717,26 @@ public unsafe struct mjrContext_ {
 }
 
 [StructLayout(LayoutKind.Sequential)]
+public unsafe struct mjsCompiler_ {
+  public byte autolimits;
+  public double boundmass;
+  public double boundinertia;
+  public double settotalmass;
+  public byte balanceinertia;
+  public byte fitaabb;
+  public byte degree;
+  public fixed sbyte eulerseq[3];
+  public byte discardvisual;
+  public byte convexhull;
+  public byte usethread;
+  public byte fusestatic;
+  public int inertiafromgeom;
+  public fixed int inertiagrouprange[2];
+  public int alignfree;
+  public mjLROpt_ LRopt;
+}
+
+[StructLayout(LayoutKind.Sequential)]
 public unsafe struct mjuiState_ {
   public int nrect;
   public mjrRect_ rect0;
@@ -7120,12 +7140,6 @@ public static unsafe extern void mju_mulMatVec3(double* res, double* mat, double
 
 [DllImport("mujoco", CallingConvention = CallingConvention.Cdecl)]
 public static unsafe extern void mju_mulMatTVec3(double* res, double* mat, double* vec);
-
-[DllImport("mujoco", CallingConvention = CallingConvention.Cdecl)]
-public static unsafe extern void mju_rotVecMat(double* res, double* vec, double* mat);
-
-[DllImport("mujoco", CallingConvention = CallingConvention.Cdecl)]
-public static unsafe extern void mju_rotVecMatT(double* res, double* vec, double* mat);
 
 [DllImport("mujoco", CallingConvention = CallingConvention.Cdecl)]
 public static unsafe extern void mju_cross(double* res, double* a, double* b);
