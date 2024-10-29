@@ -24,6 +24,11 @@ MJX
 
 Bug fixes
 ^^^^^^^^^
+- Fixed several bugs related to connect and weld constraints with site semantics (fixes :github:issue:`2179`, reported
+  by :github:user:`yinfanyi`). The introduction of site specification to connects and welds in 3.2.3 conditionally
+  changed the semantics of `mjData.eq_obj1id` and `mjData.eq_obj2id`, but these changes were not properly propagated in
+  several places leading to incorrect computations of constraint inertia, readings of affected force/torque sensors and
+  runtime enabling/disabling of such constraints.
 - Fixed a bug in slider-crank :ref:`transmission<geTransmission>`. The bug was introduced in 3.0.0.
 
 Version 3.2.4 (Oct 15, 2024)
@@ -891,7 +896,7 @@ General
    used to determine the type of the asset file without resorting to pulling the type from the file extension.
 #. Added analytic derivatives for quaternion :ref:`subtraction<mjd_subQuat>` and :ref:`integration<mjd_quatIntegrate>`
    (rotation with an angular velocity). Derivatives are in the 3D tangent space.
-#. Added :ref:`mjv_connector` which has identical functionality to :ref:`mjv_makeConnector`, but with more convenient
+#. Added :ref:`mjv_connector` which has identical functionality to ``mjv_makeConnector``, but with more convenient
    "from-to" argument parametrization. ``mjv_makeConnector`` is now deprecated.
 #. Bumped oldest supported MacOS from version 10.12 to 11. MacOS 11 is the oldest version still maintained by Apple.
 
