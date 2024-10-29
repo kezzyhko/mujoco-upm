@@ -14,10 +14,7 @@
 
 // Tests for engine/engine_sensor.c.
 
-#include <array>
-#include <cstddef>
-#include <cstdio>
-#include <string>
+#include <vector>
 
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
@@ -32,21 +29,65 @@
 namespace mujoco {
 namespace {
 
+const mjtNum tol = 1e-14;  // nearness tolerance for floating point numbers
+
 // returns as a vector the measured values from sensor with index `id`
-static std::vector<mjtNum> GetSensor(const mjModel* model, const mjData* data, int id) {
-  return std::vector<mjtNum>(data->sensordata + model->sensor_adr[id],
-                             data->sensordata + model->sensor_adr[id] + model->sensor_dim[id]);
+static std::vector<mjtNum> GetSensor(const mjModel* model,
+                                     const mjData* data,
+                                     int id) {
+  return std::vector<mjtNum>(
+      data->sensordata + model->sensor_adr[id],
+      data->sensordata + model->sensor_adr[id] + model->sensor_dim[id]);
 }
-
-
-// --------------------- test relative frame sensors  --------------------------
 
 using ::testing::Pointwise;
 using ::testing::DoubleNear;
 using ::testing::StrEq;
-using RelativeFrameSensorTest = MujocoTest;
 
-const mjtNum tol = 1e-14;  // nearness tolerance for floating point numbers
+using SensorTest = MujocoTest;
+
+// --------------------- test sensor disableflag  ------------------------------
+
+// hand-picked positions and orientations for simple expected values
+TEST_F(SensorTest, DisableSensors) {
+  constexpr char xml[] = R"(
+  <mujoco>
+    <sensor>
+      <clock/>
+    </sensor>
+  </mujoco>
+  )";
+  mjModel* model = LoadModelFromString(xml);
+  mjData* data = mj_makeData(model);
+
+  // before calling anything, check that sensors are initialised to 0
+  EXPECT_EQ(data->sensordata[0], 0.0);
+
+  // call mj_step, mj_step1, expect clock to be incremented by timestep
+  mj_step(model, data);
+  mj_step1(model, data);
+  EXPECT_EQ(data->sensordata[0], model->opt.timestep);
+
+  // disable sensors, call mj_step, mj_step1, expect clock to not increment
+  model->opt.disableflags |= mjDSBL_SENSOR;
+  mj_step(model, data);
+  mj_step1(model, data);
+  EXPECT_EQ(data->time, 2*model->opt.timestep);
+  EXPECT_EQ(data->sensordata[0], model->opt.timestep);
+
+  // re-enable sensors, call mj_step, mj_step1, expect clock to match time
+  model->opt.disableflags = 0;
+  mj_step(model, data);
+  mj_step1(model, data);
+  EXPECT_EQ(data->time, data->sensordata[0]);
+
+  mj_deleteData(data);
+  mj_deleteModel(model);
+}
+
+// --------------------- test relative frame sensors  --------------------------
+
+using RelativeFrameSensorTest = MujocoTest;
 
 // hand-picked positions and orientations for simple expected values
 TEST_F(RelativeFrameSensorTest, ReferencePosMat) {
@@ -66,7 +107,7 @@ TEST_F(RelativeFrameSensorTest, ReferencePosMat) {
     </sensor>
   </mujoco>
   )";
-  mjModel* model = LoadModelFromString(xml, 0, 0);
+  mjModel* model = LoadModelFromString(xml);
   mjData* data = mj_makeData(model);
   mj_forward(model, data);
 
@@ -104,7 +145,7 @@ TEST_F(RelativeFrameSensorTest, ReferenceQuatMat) {
     </sensor>
   </mujoco>
   )";
-  mjModel* model = LoadModelFromString(xml, 0, 0);
+  mjModel* model = LoadModelFromString(xml);
   mjData* data = mj_makeData(model);
 
   // call mj_forward and convert orientation matrix to quaternion
@@ -151,7 +192,7 @@ TEST_F(RelativeFrameSensorTest, ReferencePosMatQuat) {
     </sensor>
   </mujoco>
   )";
-  mjModel* model = LoadModelFromString(xml, 0, 0);
+  mjModel* model = LoadModelFromString(xml);
   constexpr int nsensordata = 32;
   ASSERT_EQ(model->nsensordata, nsensordata);
   mjData* data = mj_makeData(model);
@@ -161,20 +202,16 @@ TEST_F(RelativeFrameSensorTest, ReferencePosMatQuat) {
   std::vector expected_values(data->sensordata, data->sensordata+nsensordata/2);
 
   // set qpos to arbitrary values, call mj_forward
-  for (int i=0; i<7; i++) {
+  for (int i=0; i < 7; i++) {
     data->qpos[i] = i+1;
   }
   mj_forward(model, data);
-
-  // note that in the loop above the quat is unnormalized, but that's ok,
-  // quaternions are automatically normalized in place:
-  EXPECT_NEAR(mju_norm(data->qpos+3, 4), 1.0, tol);
 
   // get values from relative sensors after moving the object
   std::vector actual_values(data->sensordata+nsensordata/2,
                             data->sensordata+nsensordata);
 
-  // object and reference have moved together, we expect values to not unchange
+  // object and reference have moved together, we expect values to not change
   EXPECT_THAT(actual_values, Pointwise(DoubleNear(tol), expected_values));
 
   mj_deleteData(data);
@@ -201,7 +238,7 @@ TEST_F(RelativeFrameSensorTest, FrameVelLinearFixed) {
     </sensor>
   </mujoco>
   )";
-  mjModel* model = LoadModelFromString(xml, 0, 0);
+  mjModel* model = LoadModelFromString(xml);
   mjData* data = mj_makeData(model);
   data->qvel[0] = mju_sqrt(2);
   data->qvel[1] = 1;
@@ -216,7 +253,7 @@ TEST_F(RelativeFrameSensorTest, FrameVelLinearFixed) {
   mj_deleteModel(model);
 }
 
-// object and reference in the same body, expect angular velocites to be zero
+// object and reference in the same body, expect angular velocities to be zero
 TEST_F(RelativeFrameSensorTest, FrameVelAngFixed) {
   constexpr char xml[] = R"(
   <mujoco>
@@ -233,14 +270,14 @@ TEST_F(RelativeFrameSensorTest, FrameVelAngFixed) {
     </sensor>
   </mujoco>
   )";
-  mjModel* model = LoadModelFromString(xml, 0, 0);
+  mjModel* model = LoadModelFromString(xml);
   mjData* data = mj_makeData(model);
 
   // set joint velocities and call forward dynamics
   data->qvel[0] = 1;
   mj_forward(model, data);
 
-  // obj and ref rotate together, relative angular velocites should be zero
+  // obj and ref rotate together, relative angular velocities should be zero
   std::vector angvel = GetSensor(model, data, 0);
   EXPECT_THAT(angvel, Pointwise(DoubleNear(tol), {0, 0, 0}));
 
@@ -268,7 +305,7 @@ TEST_F(RelativeFrameSensorTest, FrameVelAngOpposing) {
     </sensor>
   </mujoco>
   )";
-  mjModel* model = LoadModelFromString(xml, 0, 0);
+  mjModel* model = LoadModelFromString(xml);
   mjData* data = mj_makeData(model);
 
   // set joint velocities and call forward dynamics
@@ -311,7 +348,7 @@ TEST_F(RelativeFrameSensorTest, FrameVelGeneral) {
     </sensor>
   </mujoco>
   )";
-  mjModel* model = LoadModelFromString(xml, 0, 0);
+  mjModel* model = LoadModelFromString(xml);
   mjData* data = mj_makeData(model);
   mjtNum dt = 1e-6;  // timestep used for finite differencing
 
@@ -372,22 +409,141 @@ TEST_F(SensorTest, Clock) {
     </sensor>
   </mujoco>
   )";
-  mjModel* model = LoadModelFromString(xml, 0, 0);
+  mjModel* model = LoadModelFromString(xml);
   mjData* data = mj_makeData(model);
 
   // call step 4 times, checking that clock works as expected
-  for (int i=0; i<5; i++) {
+  for (int i=0; i < 5; i++) {
     mj_step(model, data);
-    mj_step1(model, data); // update values of position-based sensors
+    mj_step1(model, data);  // update values of position-based sensors
     EXPECT_EQ(data->sensordata[0], data->time);
     EXPECT_EQ(data->sensordata[1], mju_min(data->time, 3e-3));
   }
 
-  // chack names
+  // check names
   const char* name0 = mj_id2name(model, mjOBJ_SENSOR, 0);
   EXPECT_EQ(name0, nullptr);
   const char* name1 = mj_id2name(model, mjOBJ_SENSOR, 1);
   EXPECT_THAT(name1, StrEq("clampedclock"));
+
+  mj_deleteData(data);
+  mj_deleteModel(model);
+}
+
+// test clock sensor
+TEST_F(SensorTest, CollisionSequential) {
+  constexpr char xml[] = R"(
+  <mujoco>
+    <worldbody>
+      <geom name="plane" type="plane" size="1 1 1"/>
+      <geom name="sphere1" pos="0 0 1" size="0.2"/>
+      <geom name="sphere2" pos="1 0 1" size="0.3"/>
+    </worldbody>
+    <sensor>
+      <distance name="0"  geom1="plane"   geom2="sphere1" cutoff="1"/>
+      <distance name="1"  geom1="sphere2" geom2="plane" cutoff="1"/>
+      <distance name="2"  geom1="sphere1" geom2="sphere2" cutoff="1"/>
+      <normal   name="3"  geom1="plane"   geom2="sphere1" cutoff="1"/>
+      <normal   name="4"  geom1="sphere2" geom2="plane" cutoff="1"/>
+      <normal   name="5"  geom1="sphere1" geom2="sphere2" cutoff="1"/>
+      <fromto   name="6"  geom1="plane"   geom2="sphere1" cutoff="1"/>
+      <fromto   name="7"  geom1="sphere2" geom2="plane" cutoff="1"/>
+      <fromto   name="8"  geom1="sphere1" geom2="sphere2" cutoff="1"/>
+      <!-- sequential sensors with identical signature -->
+      <distance name="9"  geom1="plane"   geom2="sphere1" cutoff="1"/>
+      <fromto   name="10" geom1="plane"   geom2="sphere1" cutoff="1"/>
+      <normal   name="11" geom1="plane"   geom2="sphere1" cutoff="1"/>
+      <normal   name="12"  geom1="sphere1" geom2="sphere2" cutoff="1"/>
+      <fromto   name="13"  geom1="sphere1" geom2="sphere2" cutoff="1"/>
+      <distance name="14"  geom1="sphere1" geom2="sphere2" cutoff="1"/>
+
+    </sensor>
+  </mujoco>
+  )";
+  mjModel* model = LoadModelFromString(xml);
+  mjData* data = mj_makeData(model);
+  mj_forward(model, data);
+
+  EXPECT_DOUBLE_EQ(data->sensordata[0], 0.8);
+  EXPECT_DOUBLE_EQ(data->sensordata[1], 0.7);
+  EXPECT_DOUBLE_EQ(data->sensordata[2], 0.5);
+
+  mjtNum eps = 1e-14;
+
+  EXPECT_THAT(GetSensor(model, data, 3),
+              Pointwise(DoubleNear(eps), std::vector<mjtNum>{0, 0, 1}));
+  EXPECT_THAT(GetSensor(model, data, 4),
+              Pointwise(DoubleNear(eps), std::vector<mjtNum>{0, 0, -1}));
+  EXPECT_THAT(GetSensor(model, data, 5),
+              Pointwise(DoubleNear(eps), std::vector<mjtNum>{1, 0, 0}));
+  EXPECT_THAT(GetSensor(model, data, 6),
+              Pointwise(DoubleNear(eps),
+                        std::vector<mjtNum>{0, 0, 0, 0, 0, .8}));
+  EXPECT_THAT(GetSensor(model, data, 7),
+              Pointwise(DoubleNear(eps),
+                        std::vector<mjtNum>{1, 0, .7, 1, 0, 0}));
+  EXPECT_THAT(GetSensor(model, data, 8),
+              Pointwise(DoubleNear(eps),
+                        std::vector<mjtNum>{.2, 0, 1, .7, 0, 1}));
+
+  EXPECT_THAT(GetSensor(model, data, 9),
+              Pointwise(DoubleNear(eps), GetSensor(model, data, 0)));
+  EXPECT_THAT(GetSensor(model, data, 10),
+              Pointwise(DoubleNear(eps), GetSensor(model, data, 6)));
+  EXPECT_THAT(GetSensor(model, data, 11),
+              Pointwise(DoubleNear(eps), GetSensor(model, data, 3)));
+  EXPECT_THAT(GetSensor(model, data, 12),
+              Pointwise(DoubleNear(eps), GetSensor(model, data, 5)));
+  EXPECT_THAT(GetSensor(model, data, 13),
+              Pointwise(DoubleNear(eps), GetSensor(model, data, 8)));
+  EXPECT_THAT(GetSensor(model, data, 14),
+              Pointwise(DoubleNear(eps), GetSensor(model, data, 2)));
+
+  mj_deleteData(data);
+  mj_deleteModel(model);
+}
+
+// ------------------------- camera sensor tests  ------------------------------
+
+// test clock sensor
+TEST_F(SensorTest, CameraProjection) {
+  constexpr char xml[] = R"(
+  <mujoco>
+    <worldbody>
+      <body pos="1.1 0 1">
+        <geom type="box" size=".1 .6 .375"/>
+        <site name="frontorigin" pos="-.1  .6  .375"/>
+        <site name="frontcorner" pos="-.1 -.6 -.375"/>
+      </body>
+      <body pos="-1.1 0 1">
+        <geom type="box" size=".1 .6 .375"/>
+        <site name="backcenter" pos="-.1 0 0"/>
+      </body>
+      <camera pos="0 0 1" xyaxes="0 -1 0 0 0 1" fovy="41.11209"
+              resolution="1920 1200" name="fixedcamera"/>
+    </worldbody>
+    <sensor>
+      <camprojection site="frontorigin" camera="fixedcamera"/>
+      <camprojection site="frontcorner" camera="fixedcamera"/>
+      <camprojection site="backcenter" camera="fixedcamera"/>
+    </sensor>
+  </mujoco>
+  )";
+  mjModel* model = LoadModelFromString(xml);
+  mjData* data = mj_makeData(model);
+
+  // call step to update sensors
+  mj_step(model, data);
+  mj_step1(model, data);  // update values of position-based sensors
+  EXPECT_THAT(model->cam_resolution[0], 1920);
+  EXPECT_THAT(model->cam_resolution[1], 1200);
+  mjtNum eps = 1e-4;
+  EXPECT_NEAR(data->sensordata[0], 0, eps);
+  EXPECT_NEAR(data->sensordata[1], 0, eps);
+  EXPECT_NEAR(data->sensordata[2], 1920, eps);
+  EXPECT_NEAR(data->sensordata[3], 1200, eps);
+  EXPECT_NEAR(data->sensordata[4], 960, eps);
+  EXPECT_NEAR(data->sensordata[5], 600, eps);
 
   mj_deleteData(data);
   mj_deleteModel(model);

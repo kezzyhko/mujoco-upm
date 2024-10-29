@@ -74,8 +74,8 @@ public class MjcfGenerationContextTests {
     Assert.That(mjcf.OuterXml, Does.Contain("tolerance"));
     Assert.That(mjcf.OuterXml, Does.Contain("noslip_iterations"));
     Assert.That(mjcf.OuterXml, Does.Contain("noslip_tolerance"));
-    Assert.That(mjcf.OuterXml, Does.Contain("mpr_iterations"));
-    Assert.That(mjcf.OuterXml, Does.Contain("mpr_tolerance"));
+    Assert.That(mjcf.OuterXml, Does.Contain("ccd_iterations"));
+    Assert.That(mjcf.OuterXml, Does.Contain("ccd_tolerance"));
   }
 
   [Test]
@@ -99,18 +99,6 @@ public class MjcfGenerationContextTests {
     var element = new XmlDocument().CreateElement("test");
     context.GenerateMjcf(element);
     Assert.That(element.OuterXml, Does.Contain("vertex=\"1 0 0 0 0 1 0 1 0 \""));
-  }
-
-  [Test]
-  public void SettingNUserSensorValuesKeepsTheHigherValue() {
-    var context = new MjcfGenerationContext();
-    context.NUserSensor = 5;
-    context.NUserSensor = 6;
-    context.NUserSensor = 1;
-    Assert.That(context.NUserSensor, Is.EqualTo(6));
-    var element = new XmlDocument().CreateElement("test");
-    context.GenerateMjcf(element);
-    Assert.That(element.OuterXml, Does.Contain("nuser_sensor=\"6\""));
   }
 
   #region Test setup.

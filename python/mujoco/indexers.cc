@@ -13,16 +13,13 @@
 // limitations under the License.
 
 #include <algorithm>
-#include <memory>
 #include <optional>
 #include <string>
 #include <string_view>
 #include <utility>
-#include <variant>
 #include <vector>
 
 #include "indexers.h"
-#include "mjdata_meta.h"
 #include "raw.h"
 #include "util/crossplatform.h"
 
@@ -39,9 +36,9 @@ namespace {
 //     each name in the `names` array.
 //   names: Character arrays consisting of the concatenation of all names.
 template <typename IntPtr, typename CharPtr>
-NameToIDMap MakeMap(int count, IntPtr name_offsets, CharPtr names)
+NameToID MakeNameToID(int count, IntPtr name_offsets, CharPtr names)
 {
-  NameToIDMap name_to_id;
+  NameToID name_to_id;
   for (int index = 0; index < count; ++index) {
     const char* name = &names[name_offsets[index]];
     if (name[0] != '\0') {
@@ -51,6 +48,23 @@ NameToIDMap MakeMap(int count, IntPtr name_offsets, CharPtr names)
   return name_to_id;
 }
 
+// Parses raw mjModel to create a mapping from array indices to names.
+//
+// Args:
+//   count: Number of names in the map.
+//   name_offsets: Array consisting of indices that correspond to the start of
+//     each name in the `names` array.
+//   names: Character arrays consisting of the concatenation of all names.
+template <typename IntPtr, typename CharPtr>
+IDToName MakeIDToName(int count, IntPtr name_offsets, CharPtr names) {
+  IDToName id_to_name;
+  for (int index = 0; index < count; ++index) {
+    const char* name = &names[name_offsets[index]];
+    id_to_name.emplace_back(name);
+  }
+  return id_to_name;
+};
+
 // Makes an array view into an mjModel/mjData struct field at a given index.
 //
 // Template args:
@@ -59,7 +73,6 @@ NameToIDMap MakeMap(int count, IntPtr name_offsets, CharPtr names)
 //     the MuJoCo category of the entity itself, e.g. nbody indicates that the
 //     field belongs to a body.
 //   T: Scalar data type of the field.
-//   M: Either raw::MjModel or MjDataMetadata.
 //
 // Args:
 //   base_ptr: Pointer to the first entry in the entire field.
@@ -70,35 +83,35 @@ NameToIDMap MakeMap(int count, IntPtr name_offsets, CharPtr names)
 //     additional dimension of the size len(qvel) of the particular joint.
 //   m: Used for dereferencing MjSize.
 //   owner: The base object whose lifetime is tied to the returned array.
-template <auto MjSize, typename T, typename M>
+template <auto MjSize, typename T>
 py::array_t<T> MakeArray(T* base_ptr, int index, std::vector<int>&& shape,
-                         const M& m, py::handle owner) {
+                         const raw::MjModel& m, py::handle owner) {
   int offset;
-  if (MjSize == &M::nq) {
+  if (MjSize == &raw::MjModel::nq) {
     offset = m.jnt_qposadr[index];
     shape.insert(
         shape.begin(),
         ((index < m.njnt-1) ? m.jnt_qposadr[index+1] : m.nq) - offset);
-  } else if (MjSize == &M::nv) {
+  } else if (MjSize == &raw::MjModel::nv) {
     offset = m.jnt_dofadr[index];
     shape.insert(
         shape.begin(),
         ((index < m.njnt-1) ? m.jnt_dofadr[index+1] : m.nv) - offset);
-  } else if (MjSize == &M::nhfielddata) {
+  } else if (MjSize == &raw::MjModel::nhfielddata) {
     offset = m.hfield_adr[index];
     shape.insert(shape.begin(), m.hfield_ncol[index]);
     shape.insert(shape.begin(), m.hfield_nrow[index]);
-  } else if (MjSize == &M::ntexdata) {
+  } else if (MjSize == &raw::MjModel::ntexdata) {
     offset = m.tex_adr[index];
     shape.insert(shape.begin(), m.tex_width[index]);
     shape.insert(shape.begin(), m.tex_height[index]);
-  } else if (MjSize == &M::nsensordata) {
+  } else if (MjSize == &raw::MjModel::nsensordata) {
     offset = m.sensor_adr[index];
     shape.insert(shape.begin(), m.sensor_dim[index]);
-  } else if (MjSize == &M::nnumericdata) {
+  } else if (MjSize == &raw::MjModel::nnumericdata) {
     offset = m.numeric_adr[index];
     shape.insert(shape.begin(), m.numeric_size[index]);
-  } else if (MjSize == &M::ntupledata) {
+  } else if (MjSize == &raw::MjModel::ntupledata) {
     offset = m.tuple_adr[index];
     shape.insert(shape.begin(), m.tuple_size[index]);
   } else {
@@ -118,35 +131,57 @@ py::array_t<T> MakeArray(T* base_ptr, int index, std::vector<int>&& shape,
 }
 }  // namespace
 
-// M is either a raw::MjModel or MjDataMetadata.
-template <typename M>
-NameToIDMaps::NameToIDMaps(const M& m)
-    : body(MakeMap(m.nbody, m.name_bodyadr, m.names)),
-      jnt(MakeMap(m.njnt, m.name_jntadr, m.names)),
-      geom(MakeMap(m.ngeom, m.name_geomadr, m.names)),
-      site(MakeMap(m.nsite, m.name_siteadr, m.names)),
-      cam(MakeMap(m.ncam, m.name_camadr, m.names)),
-      light(MakeMap(m.nlight, m.name_lightadr, m.names)),
-      mesh(MakeMap(m.nmesh, m.name_meshadr, m.names)),
-      skin(MakeMap(m.nskin, m.name_skinadr, m.names)),
-      hfield(MakeMap(m.nhfield, m.name_hfieldadr, m.names)),
-      tex(MakeMap(m.ntex, m.name_texadr, m.names)),
-      mat(MakeMap(m.nmat, m.name_matadr, m.names)),
-      pair(MakeMap(m.npair, m.name_pairadr, m.names)),
-      exclude(MakeMap(m.nexclude, m.name_excludeadr, m.names)),
-      eq(MakeMap(m.neq, m.name_eqadr, m.names)),
-      tendon(MakeMap(m.ntendon, m.name_tendonadr, m.names)),
-      actuator(MakeMap(m.nu, m.name_actuatoradr, m.names)),
-      sensor(MakeMap(m.nsensor, m.name_sensoradr, m.names)),
-      numeric(MakeMap(m.nnumeric, m.name_numericadr, m.names)),
-      text(MakeMap(m.ntext, m.name_textadr, m.names)),
-      tuple(MakeMap(m.ntuple, m.name_tupleadr, m.names)),
-      key(MakeMap(m.nkey, m.name_keyadr, m.names)) {}
+NameToIDMappings::NameToIDMappings(const raw::MjModel& m)
+    : body(MakeNameToID(m.nbody, m.name_bodyadr, m.names)),
+      jnt(MakeNameToID(m.njnt, m.name_jntadr, m.names)),
+      geom(MakeNameToID(m.ngeom, m.name_geomadr, m.names)),
+      site(MakeNameToID(m.nsite, m.name_siteadr, m.names)),
+      cam(MakeNameToID(m.ncam, m.name_camadr, m.names)),
+      light(MakeNameToID(m.nlight, m.name_lightadr, m.names)),
+      mesh(MakeNameToID(m.nmesh, m.name_meshadr, m.names)),
+      skin(MakeNameToID(m.nskin, m.name_skinadr, m.names)),
+      hfield(MakeNameToID(m.nhfield, m.name_hfieldadr, m.names)),
+      tex(MakeNameToID(m.ntex, m.name_texadr, m.names)),
+      mat(MakeNameToID(m.nmat, m.name_matadr, m.names)),
+      pair(MakeNameToID(m.npair, m.name_pairadr, m.names)),
+      exclude(MakeNameToID(m.nexclude, m.name_excludeadr, m.names)),
+      eq(MakeNameToID(m.neq, m.name_eqadr, m.names)),
+      tendon(MakeNameToID(m.ntendon, m.name_tendonadr, m.names)),
+      actuator(MakeNameToID(m.nu, m.name_actuatoradr, m.names)),
+      sensor(MakeNameToID(m.nsensor, m.name_sensoradr, m.names)),
+      numeric(MakeNameToID(m.nnumeric, m.name_numericadr, m.names)),
+      text(MakeNameToID(m.ntext, m.name_textadr, m.names)),
+      tuple(MakeNameToID(m.ntuple, m.name_tupleadr, m.names)),
+      key(MakeNameToID(m.nkey, m.name_keyadr, m.names)) {}
+
+IDToNameMappings::IDToNameMappings(const raw::MjModel& m)
+    : body(MakeIDToName(m.nbody, m.name_bodyadr, m.names)),
+      jnt(MakeIDToName(m.njnt, m.name_jntadr, m.names)),
+      geom(MakeIDToName(m.ngeom, m.name_geomadr, m.names)),
+      site(MakeIDToName(m.nsite, m.name_siteadr, m.names)),
+      cam(MakeIDToName(m.ncam, m.name_camadr, m.names)),
+      light(MakeIDToName(m.nlight, m.name_lightadr, m.names)),
+      mesh(MakeIDToName(m.nmesh, m.name_meshadr, m.names)),
+      skin(MakeIDToName(m.nskin, m.name_skinadr, m.names)),
+      hfield(MakeIDToName(m.nhfield, m.name_hfieldadr, m.names)),
+      tex(MakeIDToName(m.ntex, m.name_texadr, m.names)),
+      mat(MakeIDToName(m.nmat, m.name_matadr, m.names)),
+      pair(MakeIDToName(m.npair, m.name_pairadr, m.names)),
+      exclude(MakeIDToName(m.nexclude, m.name_excludeadr, m.names)),
+      eq(MakeIDToName(m.neq, m.name_eqadr, m.names)),
+      tendon(MakeIDToName(m.ntendon, m.name_tendonadr, m.names)),
+      actuator(MakeIDToName(m.nu, m.name_actuatoradr, m.names)),
+      sensor(MakeIDToName(m.nsensor, m.name_sensoradr, m.names)),
+      numeric(MakeIDToName(m.nnumeric, m.name_numericadr, m.names)),
+      text(MakeIDToName(m.ntext, m.name_textadr, m.names)),
+      tuple(MakeIDToName(m.ntuple, m.name_tupleadr, m.names)),
+      key(MakeIDToName(m.nkey, m.name_keyadr, m.names)) {}
 
 MjModelIndexer::MjModelIndexer(raw::MjModel* m, py::handle owner)
     : m_(m),
       owner_(owner),
-      name_to_id_(*m)
+      name_to_id_(*m),
+      id_to_name_(*m)
 #define XGROUP(MjModelFieldGroupedViews, field, nfield, FIELD_XMACROS) \
   , field##_(m->nfield, std::nullopt)
       MJMODEL_VIEW_GROUPS
@@ -160,7 +195,8 @@ MjModelIndexer::MjModelIndexer(raw::MjModel* m, py::handle owner)
     }                                                                  \
     auto& indexer = field##_[i];                                       \
     if (!indexer.has_value()) {                                        \
-      indexer.emplace(i, m_, owner_);                                  \
+      const std::string& name = id_to_name_.field[i];                  \
+      indexer.emplace(i, name, m_, owner_);                            \
     }                                                                  \
     return *indexer;                                                   \
   }
@@ -179,12 +215,13 @@ MJMODEL_VIEW_GROUPS
 MJMODEL_VIEW_GROUPS
 #undef XGROUP
 
-MjDataIndexer::MjDataIndexer(raw::MjData* d, const MjDataMetadata* m,
+MjDataIndexer::MjDataIndexer(raw::MjData* d, const raw::MjModel* m,
                              py::handle owner)
     : d_(d),
       m_(m),
       owner_(owner),
-      name_to_id_(*m)
+      name_to_id_(*m),
+      id_to_name_(*m)
 #define XGROUP(MjDataGroupedViews, field, nfield, FIELD_XMACROS) \
   , field##_(m->nfield, std::nullopt)
       MJDATA_VIEW_GROUPS
@@ -198,7 +235,8 @@ MjDataIndexer::MjDataIndexer(raw::MjData* d, const MjDataMetadata* m,
     }                                                               \
     auto& indexer = field##_[i];                                    \
     if (!indexer.has_value()) {                                     \
-      indexer.emplace(i, d_, m_, owner_);                           \
+      const std::string& name = id_to_name_.field[i];               \
+      indexer.emplace(i, name, d_, m_, owner_);                     \
     }                                                               \
     return *indexer;                                                \
   }
@@ -323,7 +361,7 @@ MJMODEL_KEYFRAME
 #define X(type, prefix, var, dim0, dim1)                            \
   py::array_t<type> XGROUP::var() {                               \
     if (!var##_.has_value()) {                                      \
-      var##_.emplace(MakeArray<&MjDataMetadata::dim0>(              \
+      var##_.emplace(MakeArray<&raw::MjModel::dim0>(              \
           d_->prefix##var, index_, MAKE_SHAPE(dim1), *m_, owner_)); \
     }                                                               \
     return *var##_;                                                 \
@@ -371,7 +409,7 @@ MJDATA_TENDON
 
 // Returns an error message when a non-existent name is requested from an
 // indexer, which includes all valid names.
-std::string KeyErrorMessage(const NameToIDMap& map, std::string_view name) {
+std::string KeyErrorMessage(const NameToID& map, std::string_view name) {
   // Make a sorted list of valid names
   std::vector<std::string_view> valid_names;
   valid_names.reserve(map.size());

@@ -15,12 +15,12 @@
 #ifndef MUJOCO_SRC_XML_XML_BASE_H_
 #define MUJOCO_SRC_XML_XML_BASE_H_
 
+#include <cstdlib>
 #include <string>
 
 #include "tinyxml2.h"
 #include <mujoco/mjmodel.h>
-#include "user/user_model.h"
-#include "user/user_objects.h"
+#include <mujoco/mjspec.h>
 #include "xml/xml_util.h"
 
 
@@ -42,7 +42,6 @@ extern const int gain_sz;
 extern const int bias_sz;
 extern const int stage_sz;
 extern const int datatype_sz;
-extern const mjMap coordinate_map[];
 extern const mjMap angle_map[];
 extern const mjMap enable_map[];
 extern const mjMap bool_map[];
@@ -68,6 +67,9 @@ extern const mjMap gain_map[];
 extern const mjMap bias_map[];
 extern const mjMap stage_map[];
 extern const mjMap datatype_map[];
+extern const mjMap meshtype_map[];
+extern const mjMap meshinertia_map[];
+extern const mjMap flexself_map[];
 
 
 //---------------------------------- Base XML class ------------------------------------------------
@@ -78,19 +80,21 @@ class mjXBase : public mjXUtil {
   virtual ~mjXBase() = default;
 
   // parse: implemented in derived parser classes
-  virtual void Parse(tinyxml2::XMLElement* root) {};
+  virtual void Parse(tinyxml2::XMLElement* root, const mjVFS* vfs = nullptr) {};
 
   // write: implemented in derived writer class
-  virtual void Write(FILE* fp) {};
+  virtual std::string Write(char *error, std::size_t error_sz) {
+    return "";
+  };
 
   // set the model allocated externally
-  void SetModel(mjCModel*);
+  virtual void SetModel(const mjSpec*, const mjModel* = nullptr);
 
   // read alternative orientation specification
-  static void ReadAlternative(tinyxml2::XMLElement* elem, mjCAlternative& alt);
+  static int ReadAlternative(tinyxml2::XMLElement* elem, mjsOrientation& alt);
 
  protected:
-  mjCModel* model;                    // internally-allocated mjCModel object
+  mjSpec* spec;                    // internally-allocated model
 };
 
 #endif  // MUJOCO_SRC_XML_XML_BASE_H_

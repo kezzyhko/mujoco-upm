@@ -40,23 +40,7 @@ namespace Mujoco {
       var filename = "filename";
       var contents = "contents";
       _vfs.AddFile(filename, contents);
-      Assert.That(_vfs.FilesCount, Is.EqualTo(1));
-    }
-
-    [Test]
-    public unsafe void LocatingFileUsingMujocoLib() {
-      var filename = "filename";
-      _vfs.AddFile(filename, "contents");
-      Assert.That(_vfs.FindFile(filename), Is.EqualTo(0));
-    }
-
-    [Test]
-    public unsafe void AddedFileContentsAreCorrect() {
-      var filename = "filename";
-      var contents = "contents";
-      _vfs.AddFile(filename, contents);
-      var filedata = Marshal.PtrToStringAnsi(_vfs.Data.filedata[0]);
-      Assert.That(filedata, Is.EqualTo(contents));
+      Assert.That(() => { _vfs.AddFile(filename, contents); }, Throws.Exception);  // duplicate file
     }
   }
 }

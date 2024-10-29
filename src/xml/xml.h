@@ -16,17 +16,20 @@
 #define MUJOCO_SRC_XML_XML_H_
 
 #include <string>
+#include <string_view>
 
 #include <mujoco/mjmodel.h>
-#include "user/user_model.h"
+#include <mujoco/mjspec.h>
 
-// Top level API
+// Main parser function
+mjSpec* ParseXML(const char* filename, const mjVFS* vfs, char* error, int nerror);
+
+// Returns a newly-allocated mjSpec, loaded from the contents of xml.
+// On failure returns nullptr and populates the error array if present.
+mjSpec* ParseSpecFromString(std::string_view xml, const mjVFS* vfs = nullptr,
+                            char* error = nullptr, int nerror = 0);
 
 // Main writer function
-bool mjWriteXML(mjCModel* model, std::string filename, char* error, int error_sz);
-
-// Main parser function: from file or VFS
-mjCModel* mjParseXML(const char* filename, const mjVFS* vfs, char* error, int error_sz);
-
+std::string WriteXML(const mjModel* m, const mjSpec* spec, char* error, int nerror);
 
 #endif  // MUJOCO_SRC_XML_XML_H_

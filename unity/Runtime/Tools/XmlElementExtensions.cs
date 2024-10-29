@@ -15,6 +15,7 @@
 using System;
 using System.Linq;
 using System.Xml;
+using System.Globalization;
 using UnityEngine;
 
 namespace Mujoco {
@@ -36,6 +37,28 @@ public static class XmlElementExtensions {
     }
   }
 
+  public static bool GetLimitedAttribute(
+      this XmlElement element, string name, bool rangeDefined) {
+    var strValue = element.GetStringAttribute(name, "auto");
+    if (strValue == "auto" && rangeDefined && element.GetAutolimitsEnabled()) return true;
+    if (strValue == "auto") return false;
+
+    bool parsedValue;
+    if (bool.TryParse(strValue, out parsedValue)) {
+      return parsedValue;
+    } else {
+      throw new ArgumentException($"'{strValue}' is not a bool.");
+    }
+  }
+
+  public static bool GetAutolimitsEnabled(
+      this XmlElement element) {
+    bool autolimits = (element.OwnerDocument?.GetElementsByTagName("compiler")[0]?["compiler"])
+                      ?.GetBoolAttribute("autolimits", true) ??
+                      true;
+    return autolimits;
+  }
+
   public static float GetFloatAttribute(
       this XmlElement element, string name, float defaultValue = 0.0f) {
     if (!element.HasAttribute(name)) {
@@ -43,7 +66,7 @@ public static class XmlElementExtensions {
     }
     var strValue = element.GetAttribute(name);
     float parsedValue;
-    if (float.TryParse(strValue, out parsedValue)) {
+    if (float.TryParse(strValue, NumberStyles.Any, CultureInfo.InvariantCulture, out parsedValue)) {
       return parsedValue;
     } else {
       throw new ArgumentException($"'{strValue}' is not a float.");
@@ -151,7 +174,7 @@ public static class XmlElementExtensions {
     var result = new float[resultLength];
     for (var i = 0; i < components.Length; ++i) {
       float componentValue;
-      if (float.TryParse(components[i], out componentValue)) {
+      if (float.TryParse(components[i], NumberStyles.Any, CultureInfo.InvariantCulture, out componentValue)) {
         result[i] = componentValue;
       } else {
         throw new ArgumentException($"'{components[i]}' is not a float.");

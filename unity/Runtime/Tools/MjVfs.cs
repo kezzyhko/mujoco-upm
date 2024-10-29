@@ -40,39 +40,22 @@ public sealed class MjVfs : IDisposable {
     }
   }
 
-  // Number of files added to the filesystem.
-  public int FilesCount {
-    get { return Data.nfile; }
-  }
-
   // Adds a new file to the virtual filesystem.
   public unsafe void AddFile(string filename, string contents) {
-    var result = mj_makeEmptyFileVFS(_unmanagedVfs.ToPointer(), filename, contents.Length);
-    if (result != 0) {
-      throw new Exception(
-          "VFS error (" + result + ") encountered while creating an empty file");
+    var contents_bytes = Encoding.UTF8.GetBytes(contents);
+    fixed (byte* bytes = contents_bytes)
+    {
+      IntPtr ptr = (IntPtr) bytes;
+      var result = mj_addBufferVFS(_unmanagedVfs.ToPointer(), filename, ptr.ToPointer(),
+                                   contents_bytes.Length);
+      if (result != 0) {
+        throw new Exception("VFS error (" + result + ") encountered while creating an empty file");
+      }
     }
-    var fileIndex = mj_findFileVFS(_unmanagedVfs.ToPointer(), filename);
-    if (fileIndex < 0) {
-      throw new IndexOutOfRangeException("VFS didn't properly create the empty file.");
-    }
-    SetFileContents(fileIndex, contents);
-  }
-
-  // Searches the VFS for the specified file and returns its index.
-  // The index then can be used to retrieve the file contents from Data.filedata array.
-  public unsafe int FindFile(string filename) {
-    return mj_findFileVFS(_unmanagedVfs.ToPointer(), filename);
   }
 
   // Loads a model from the specified file.
-  // The file is assumed to be located in the filesystem. If it's not found, the method will throw
-  // an ArgumentException.
   public unsafe MujocoLib.mjModel_* LoadXML(string filename) {
-    if (FindFile(filename) < 0) {
-      throw new ArgumentException($"File {filename} was not added to the VFS.");
-    }
-
     var errorBuf = new StringBuilder(1024);
     MujocoLib.mjModel_* model = MujocoLib.mj_loadXML(
       filename, _unmanagedVfs.ToPointer(), errorBuf, errorBuf.Capacity);
@@ -82,17 +65,10 @@ public sealed class MjVfs : IDisposable {
     return model;
   }
 
-  private unsafe void SetFileContents(int fileIndex, string contents) {
-    var data = Data;
-    Marshal.FreeHGlobal(data.filedata[fileIndex]);
-    data.filedata[fileIndex] = Marshal.StringToHGlobalAnsi(contents);
-    Data = data;
-  }
-
-  public MjVfs() {
-    _managedVfs = new _mjVFS();
+  public unsafe MjVfs() {
     _unmanagedVfs = Marshal.AllocHGlobal(Marshal.SizeOf(_managedVfs));
-    Marshal.StructureToPtr(_managedVfs, _unmanagedVfs, true);
+    mj_defaultVFS(_unmanagedVfs.ToPointer());
+    _managedVfs = (_mjVFS)Marshal.PtrToStructure(_unmanagedVfs, typeof(_mjVFS));
   }
 
   ~MjVfs() {
@@ -104,13 +80,9 @@ public sealed class MjVfs : IDisposable {
     ReleaseUnmanagedMemory();
   }
 
-  private void ReleaseUnmanagedMemory() {
+  private unsafe void ReleaseUnmanagedMemory() {
     if (_unmanagedVfs != IntPtr.Zero) {
-      var data = Data;
-      for (var fileIndex = 0; fileIndex < data.nfile; ++fileIndex) {
-        Marshal.FreeHGlobal(data.filedata[fileIndex]);
-      }
-
+      mj_deleteVFS(_unmanagedVfs.ToPointer());
       Marshal.FreeHGlobal(_unmanagedVfs);
       _unmanagedVfs = IntPtr.Zero;
     }

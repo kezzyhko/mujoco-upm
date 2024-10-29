@@ -35,6 +35,9 @@ public class MjcfGenerationContext {
   private int _numGeneratedNames = 0;
   private Dictionary<Mesh, string> _meshAssets = new Dictionary<Mesh, string>();
 
+  private Dictionary<MjHeightFieldShape, string> _hFieldAssets =
+      new Dictionary<MjHeightFieldShape, string>();
+
   public void GenerateMjcf(XmlElement mjcf) {
     GenerateConfigurationMjcf(mjcf);
     GenerateAssetsMjcf(mjcf);
@@ -51,15 +54,26 @@ public class MjcfGenerationContext {
     return _meshAssets[mesh];
   }
 
-  // Generates a Unique name for the specified component.
-  // Uniqueness of names is required for every type independently.
-  // The per-type uniqueness will be guaranteed by the combination of information used:
-  // - name of the host GameObject.
-  // - number of names that have been generated to date.
+  // Adds a mesh to the list of assets that will be added to the generated MJCF.
+  // Returns the unique name that identifies this new asset.
+  public string AddHeightFieldAsset(MjHeightFieldShape hField) {
+    if (!_hFieldAssets.ContainsKey(hField)) {
+      var uniqueName = $"hfield_{_numGeneratedNames}";
+      _numGeneratedNames++;
+      _hFieldAssets.Add(hField, uniqueName);
+    }
+    return _hFieldAssets[hField];
+  }
+
   public string GenerateName(Component comp) {
-    var name = $"{comp.gameObject.name}_{_numGeneratedNames}";
-    _numGeneratedNames++;
-    return name;
+    var settings = MjGlobalSettings.Instance;
+    if (settings?.UseRawGameObjectNames ?? false) {
+      return comp.gameObject.name;
+    } else {
+      var name = $"{comp.gameObject.name}_{_numGeneratedNames}";
+      _numGeneratedNames++;
+      return name;
+    }
   }
 
   private void GenerateConfigurationMjcf(XmlElement mjcf) {
@@ -72,22 +86,24 @@ public class MjcfGenerationContext {
         "gravity", MjEngineTool.Vector3ToMjcf(MjEngineTool.MjVector3(Physics.gravity)));
     optionMjcf.SetAttribute("timestep", MjEngineTool.MakeLocaleInvariant($"{Time.fixedDeltaTime}"));
 
-    var sizeMjcf = (XmlElement)mjcf.AppendChild(doc.CreateElement("size"));
-    sizeMjcf.SetAttribute("nuser_sensor", $"{_nuserSensor}");
-
     var settings = MjGlobalSettings.Instance;
     if (settings) {
-      settings.OptionSizeToMjcf(optionMjcf, sizeMjcf);
+      settings.GlobalsToMjcf(mjcf);
     }
   }
 
   private void GenerateAssetsMjcf(XmlElement mjcf) {
     var doc = mjcf.OwnerDocument;
     var assetMjcf = (XmlElement)mjcf.AppendChild(doc.CreateElement("asset"));
-    foreach (var asset in _meshAssets) {
+    foreach (var meshAsset in _meshAssets) {
       var meshMjcf = (XmlElement)assetMjcf.AppendChild(doc.CreateElement("mesh"));
-      meshMjcf.SetAttribute("name", asset.Value);
-      GenerateMeshMjcf(asset.Key, meshMjcf);
+      meshMjcf.SetAttribute("name", meshAsset.Value);
+      GenerateMeshMjcf(meshAsset.Key, meshMjcf);
+    }
+    foreach (var hFieldAsset in _hFieldAssets) {
+      var hFieldMjcf = (XmlElement)assetMjcf.AppendChild(doc.CreateElement("hfield"));
+      hFieldMjcf.SetAttribute("name", hFieldAsset.Value);
+      GenerateHeightFieldMjcf(hFieldAsset.Key, hFieldMjcf);
     }
   }
 
@@ -99,6 +115,32 @@ public class MjcfGenerationContext {
       vertexPositionsStr.Append(" ");
     }
     mjcf.SetAttribute("vertex", vertexPositionsStr.ToString());
+  }
+
+  private static void GenerateHeightFieldMjcf(MjHeightFieldShape hFieldComponent, XmlElement mjcf) {
+    if (hFieldComponent.ExportImage) {
+      mjcf.SetAttribute("content_type", "image/png");
+      mjcf.SetAttribute("file", hFieldComponent.FullHeightMapPath);
+      mjcf.SetAttribute("nrow", "0");
+      mjcf.SetAttribute("ncol", "0");
+    } else {
+      mjcf.SetAttribute("nrow", hFieldComponent.HeightMapLength.ToString());
+      mjcf.SetAttribute("ncol", hFieldComponent.HeightMapWidth.ToString());
+    }
+
+    var baseHeight = hFieldComponent.Terrain.transform.localPosition.y +
+                     hFieldComponent.MinimumHeight;
+    var heightRange = Mathf.Clamp(
+        hFieldComponent.MaximumHeight - hFieldComponent.MinimumHeight,
+        0.00001f,
+        Mathf.Infinity);
+    mjcf.SetAttribute(
+        "size",
+        MjEngineTool.MakeLocaleInvariant(
+            $@"{hFieldComponent.HeightMapScale.x * (hFieldComponent.HeightMapLength - 1) / 2f} {
+              hFieldComponent.HeightMapScale.z * (hFieldComponent.HeightMapWidth - 1) / 2f} {
+                heightRange} {
+                  baseHeight}"));
   }
 }
 }

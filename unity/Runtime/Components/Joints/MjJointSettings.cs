@@ -72,7 +72,7 @@ namespace Mujoco {
       var springDamper = mjcf.GetVector2Attribute("springdamper", Vector2.zero);
       TimeConstant = springDamper.x;
       DampingRatio = springDamper.y;
-      EquilibriumPose = mjcf.GetFloatAttribute("springref", 0.0f);
+      EquilibriumPose = MjSceneImportSettings.AnglesInDegrees? mjcf.GetFloatAttribute("springref", 0.0f) : mjcf.GetFloatAttribute("springref", 0.0f) * Mathf.Rad2Deg;
       Damping = mjcf.GetFloatAttribute("damping", 0.0f);
       Stiffness = mjcf.GetFloatAttribute("stiffness", 0.0f);
     }
@@ -164,7 +164,8 @@ namespace Mujoco {
       RefFriction.FromMjcf(mjcf, "solreffriction");
       ImpFriction.FromMjcf(mjcf, "solimpfriction");
       FrictionLoss = mjcf.GetFloatAttribute("frictionloss", 0.0f);
-      Limited = mjcf.GetBoolAttribute("limited", false);
+
+      Limited = mjcf.GetLimitedAttribute("limited", mjcf.HasAttribute("range"));
       Margin = mjcf.GetFloatAttribute("margin", defaultValue: 0.0f);
     }
   }

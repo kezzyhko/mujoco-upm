@@ -14,17 +14,17 @@
 
 #include <cctype>
 #include <cstddef>
-#include <cstdio>
 #include <cstring>
+#include <iostream>
 
 #include <mujoco/mujoco.h>
 
 // help
-const char helpstring[] =
+static constexpr char helpstring[] =
   "\n Usage:  compile infile outfile\n"
   "   infile can be in mjcf, urdf, mjb format\n"
   "   outfile can be in mjcf, mjb, txt format\n\n"
-  " Example:  compile model.xml model.mjb\n";
+  " Example: compile model.xml model.mjb\n";
 
 
 // deallocate and print message
@@ -36,7 +36,7 @@ int finish(const char* msg = 0, mjModel* m = 0) {
 
   // print message
   if (msg) {
-    std::printf("%s\n", msg);
+    std::cout << msg << std::endl;
   }
 
   return 0;
@@ -89,7 +89,8 @@ int filetype(const char* filename) {
 
 
 // main function
-int main(int argc, const char** argv) {
+int main(int argc, char** argv) {
+
   // model and error
   mjModel* m = 0;
   char error[1000];
@@ -109,11 +110,16 @@ int main(int argc, const char** argv) {
     return finish("Illegal combination of file formats");
   }
 
-  // make sure output file does not exist
+  // check if output file exists
   std::FILE* fp = std::fopen(argv[2], "r");
   if (fp) {
-    std::fclose(fp);
-    return finish("Output file already exists");
+    std::cout << "Output file already exists, overwrite? (Y/n) ";
+    char c;
+    std::cin >> c;
+    if (c!='y' && c!='Y') {
+      std::fclose(fp);
+      return finish();
+    }
   }
 
   // load model
@@ -134,7 +140,7 @@ int main(int argc, const char** argv) {
 
   // save model
   if (type2==typeXML) {
-    if (mj_saveLastXML(argv[2], m, error, 1000)) {
+    if (!mj_saveLastXML(argv[2], m, error, 1000)) {
       return finish(error, m);
     }
   } else if (type2==typeMJB) {

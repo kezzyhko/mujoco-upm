@@ -18,6 +18,17 @@ set(MUJOCO_TEST_WORKING_DIR ${CMAKE_CURRENT_SOURCE_DIR})
 include(GoogleTest)
 
 macro(mujoco_test name)
+  set(options)
+  set(oneValueArgs)
+  set(multiValueArgs PROPERTIES)
+  cmake_parse_arguments(
+    _ARGS
+    "${options}"
+    "${oneValueArgs}"
+    "${multiValueArgs}"
+    ${ARGN}
+  )
+
   add_executable(${name} ${name}.cc)
   target_link_libraries(${name} gtest_main mujoco)
   target_include_directories(${name} PRIVATE ${MUJOCO_TEST_INCLUDE})
@@ -34,6 +45,9 @@ macro(mujoco_test name)
       ${testList} PROPERTIES ENVIRONMENT "PATH=$<TARGET_FILE_DIR:mujoco>;$ENV{PATH}"
     )
   endif()
+  if(_ARGS_PROPERTIES)
+    set_tests_properties(${testList} PROPERTIES ${_ARGS_PROPERTIES})
+  endif()
 endmacro()
 
 add_library(fixture STATIC fixture.h fixture.cc)
@@ -43,8 +57,9 @@ target_compile_definitions(fixture PUBLIC MJSTATIC)
 target_link_libraries(
   fixture
   PUBLIC absl::core_headers
-         absl::strings
          absl::synchronization
+         absl::flat_hash_map
+         absl::flat_hash_set
          gtest
          gmock
          mujoco::mujoco
@@ -65,3 +80,5 @@ add_subdirectory(engine)
 add_subdirectory(sample)
 add_subdirectory(user)
 add_subdirectory(xml)
+add_subdirectory(plugin/elasticity)
+add_subdirectory(plugin/actuator)

@@ -29,11 +29,9 @@ namespace Mujoco {
 // exactly what the documentation specifies: http://mujoco.org/book/XMLreference.html#option .
 public enum IntegratorType {
   Euler,
-  RK4
-}
-
-public enum CollisionCheckType {
-  all
+  RK4,
+  @implicit,
+  @implicitfast
 }
 
 public enum FrictionConeType {
@@ -75,7 +73,7 @@ public struct MjcfOptionFlag {
   public EnableDisableFlag Override;
   public EnableDisableFlag Energy;
   public EnableDisableFlag FwdInv;
-  public EnableDisableFlag SensorNoise;
+  public EnableDisableFlag MultiCCD;
   public static MjcfOptionFlag Default = new MjcfOptionFlag() {
     Constraint = EnableDisableFlag.enable,
     Equality = EnableDisableFlag.enable,
@@ -92,7 +90,7 @@ public struct MjcfOptionFlag {
     Override = EnableDisableFlag.disable,
     Energy = EnableDisableFlag.disable,
     FwdInv = EnableDisableFlag.disable,
-    SensorNoise = EnableDisableFlag.disable
+    MultiCCD = EnableDisableFlag.disable
   };
 
   public void FromMjcf(XmlElement mjcf) {
@@ -114,7 +112,7 @@ public struct MjcfOptionFlag {
     Override = mjcf.GetEnumAttribute<EnableDisableFlag>("override", localDefault.Override);
     Energy = mjcf.GetEnumAttribute<EnableDisableFlag>("energy", localDefault.Energy);
     FwdInv = mjcf.GetEnumAttribute<EnableDisableFlag>("fwdinv", localDefault.FwdInv);
-    SensorNoise = mjcf.GetEnumAttribute<EnableDisableFlag>("sensornoise", localDefault.SensorNoise);
+    MultiCCD = mjcf.GetEnumAttribute<EnableDisableFlag>("multiccd", localDefault.MultiCCD);
   }
 
   public void ToMjcf(XmlElement mjcf) {
@@ -133,38 +131,23 @@ public struct MjcfOptionFlag {
     mjcf.SetAttribute("override", Override.ToString());
     mjcf.SetAttribute("energy", Energy.ToString());
     mjcf.SetAttribute("fwdinv", FwdInv.ToString());
-    mjcf.SetAttribute("sensornoise", SensorNoise.ToString());
+    mjcf.SetAttribute("multiccd", MultiCCD.ToString());
   }
 }
 
 [Serializable]
 public struct MjSizeStruct {
-  public int Njmax;
-  public int Nconmax;
-  public int Nstack;
+  public String Memory;
   public static MjSizeStruct Default = new MjSizeStruct() {
-    Njmax = 0,
-    Nconmax = 0,
-    Nstack = 0
+    Memory = "-1"
   };
 
   public void ParseMjcf(XmlElement mjcf) {
-    var localDefault = MjSizeStruct.Default;
-    Njmax = (int)mjcf.GetFloatAttribute("njmax", localDefault.Njmax);
-    Nconmax = (int)mjcf.GetFloatAttribute("nconmax", localDefault.Nconmax);
-    Nstack = (int)mjcf.GetFloatAttribute("nstack", localDefault.Nstack);
+    Memory = mjcf.GetStringAttribute("memory", "-1");
   }
 
   public XmlElement ToMjcf(XmlElement mjcf) {
-    if (Njmax > 0) {
-      mjcf.SetAttribute("njmax", $"{Njmax}");
-    }
-    if (Nconmax > 0) {
-      mjcf.SetAttribute("nconmax", $"{Nconmax}");
-    }
-    if (Nstack > 0) {
-      mjcf.SetAttribute("nstack", $"{Nstack}");
-    }
+    mjcf.SetAttribute("memory", $"{Memory}");
     return mjcf;
   }
 }
@@ -192,8 +175,6 @@ public struct MjOptionStruct {
   public SolverImpedance OverrideSolImp;
   [Tooltip("Numerical integrator.")]
   public IntegratorType Integrator;
-  [Tooltip("What collision types should be checked.")]
-  public CollisionCheckType Collision;
   [Tooltip("How to model the friction cone.")]
   public FrictionConeType Cone;
   [Tooltip("How to represent the constraint Jacobian.")]
@@ -209,9 +190,9 @@ public struct MjOptionStruct {
   [Tooltip("Threshold used for early termination of the Noslip solver.")]
   public float NoSlipTolerance;
   [Tooltip("Maximum iterations for convex mesh collisions.")]
-  public int MprIterations;
+  public int CcdIterations;
   [Tooltip("Threshold used for early termination of the MPR algorithm.")]
-  public float MprTolerance;
+  public float CcdTolerance;
 
   public MjcfOptionFlag Flag;
 
@@ -219,14 +200,13 @@ public struct MjOptionStruct {
   public static MjOptionStruct Default = new MjOptionStruct() {
     ImpRatio = 1.0f,
     Magnetic = Vector3.zero,
-    Wind = new Vector3(0.0f, -0.5f, 0.0f),
+    Wind = new Vector3(0.0f, 0.0f, 0.0f),
     Density = 0.0f,
     Viscosity = 0.0f,
     OverrideMargin = 0.0f,
     OverrideSolRef = SolverReference.Default,
     OverrideSolImp = SolverImpedance.Default,
     Integrator = IntegratorType.Euler,
-    Collision = CollisionCheckType.all,
     Cone = FrictionConeType.pyramidal,
     Jacobian = JacobianType.auto,
     Solver = ConstraintSolverType.Newton,
@@ -234,8 +214,8 @@ public struct MjOptionStruct {
     Tolerance = 1e-8f,
     NoSlipIterations = 0,
     NoSlipTolerance = 1e-6f,
-    MprIterations = 50,
-    MprTolerance = 1e-6f,
+    CcdIterations = 50,
+    CcdTolerance = 1e-6f,
     Flag = MjcfOptionFlag.Default
   };
 
@@ -269,7 +249,6 @@ public struct MjOptionStruct {
     OverrideSolImp.FromMjcf(mjcf, "o_solimp");
 
     Integrator = mjcf.GetEnumAttribute<IntegratorType>("integrator", localDefault.Integrator);
-    Collision = mjcf.GetEnumAttribute<CollisionCheckType>("collision", localDefault.Collision);
     Cone = mjcf.GetEnumAttribute<FrictionConeType>("cone", localDefault.Cone);
     Jacobian = mjcf.GetEnumAttribute<JacobianType>("jacobian", localDefault.Jacobian);
     Solver = mjcf.GetEnumAttribute<ConstraintSolverType>("solver", localDefault.Solver);
@@ -279,8 +258,8 @@ public struct MjOptionStruct {
     NoSlipIterations = (int)mjcf.GetFloatAttribute(
         "noslip_iterations", localDefault.NoSlipIterations);
     NoSlipTolerance = mjcf.GetFloatAttribute("noslip_tolerance", localDefault.NoSlipTolerance);
-    MprIterations = (int)mjcf.GetFloatAttribute("mpr_iterations", localDefault.MprIterations);
-    MprTolerance = mjcf.GetFloatAttribute("mpr_tolerance", localDefault.MprTolerance);
+    CcdIterations = (int)mjcf.GetFloatAttribute("ccd_iterations", localDefault.CcdIterations);
+    CcdTolerance = mjcf.GetFloatAttribute("ccd_tolerance", localDefault.CcdTolerance);
 
     var flagElements = mjcf.GetElementsByTagName("flag");
     if (flagElements.Count == 1) {
@@ -304,7 +283,6 @@ public struct MjOptionStruct {
     OverrideSolImp.ToMjcf(mjcf, "o_solimp");
 
     mjcf.SetAttribute("integrator", Integrator.ToString());
-    mjcf.SetAttribute("collision", Collision.ToString());
     mjcf.SetAttribute("cone", Cone.ToString());
     mjcf.SetAttribute("jacobian", Jacobian.ToString());
     mjcf.SetAttribute("solver", Solver.ToString());
@@ -313,14 +291,21 @@ public struct MjOptionStruct {
     mjcf.SetAttribute("tolerance", MjEngineTool.MakeLocaleInvariant($"{Tolerance}"));
     mjcf.SetAttribute("noslip_iterations", MjEngineTool.MakeLocaleInvariant($"{NoSlipIterations}"));
     mjcf.SetAttribute("noslip_tolerance", MjEngineTool.MakeLocaleInvariant($"{NoSlipTolerance}"));
-    mjcf.SetAttribute("mpr_iterations", MjEngineTool.MakeLocaleInvariant($"{MprIterations}"));
-    mjcf.SetAttribute("mpr_tolerance", MjEngineTool.MakeLocaleInvariant($"{MprTolerance}"));
+    mjcf.SetAttribute("ccd_iterations", MjEngineTool.MakeLocaleInvariant($"{CcdIterations}"));
+    mjcf.SetAttribute("ccd_tolerance", MjEngineTool.MakeLocaleInvariant($"{CcdTolerance}"));
 
     var flags = (XmlElement)mjcf.AppendChild(
         mjcf.OwnerDocument.CreateElement("flag"));
     Flag.ToMjcf(flags);
     return mjcf;
   }
+}
+
+[Serializable]
+public class NumericEntry {
+  public String Name;
+  [Tooltip("Space-separated list of floats.")]
+  public String Data;
 }
 
 public class MjGlobalSettings : MonoBehaviour {
@@ -331,9 +316,14 @@ public class MjGlobalSettings : MonoBehaviour {
   [Tooltip("Scales the force applied by the mouse spring.")]
   public float MouseSpringStiffness = 100;
 
+  [Tooltip("If false, numerical suffixes will be aded to ensure name uniqueness.")]
+  public bool UseRawGameObjectNames;
+
   public MjOptionStruct GlobalOptions = MjOptionStruct.Default;
 
   public MjSizeStruct GlobalSizes = MjSizeStruct.Default;
+
+  public List<NumericEntry> CustomNumeric = new List<NumericEntry>() {};
 
   public static MjGlobalSettings Instance {
     get {
@@ -345,8 +335,8 @@ public class MjGlobalSettings : MonoBehaviour {
         } else if (instances.Length == 1) {
           _instance = instances[0];
         }
-      }
-      return _instance;
+     }
+     return _instance;
     }
   }
 
@@ -361,18 +351,44 @@ public class MjGlobalSettings : MonoBehaviour {
     }
   }
 
-  public void ParseOptionSizeMjcf(XmlElement option, XmlElement size) {
-    if (option != null) {
-      GlobalOptions.ParseMjcf(option);
+  public void ParseGlobalMjcfSections(XmlElement mujocoNode) {
+
+    var optionNode = mujocoNode.SelectSingleNode("option") as XmlElement;
+    var sizeNode = mujocoNode.SelectSingleNode("size") as XmlElement;
+    var customNode = mujocoNode.SelectSingleNode("custom") as XmlElement;
+
+    if (optionNode != null) {
+      GlobalOptions.ParseMjcf(optionNode);
     }
-    if (size != null) {
-      GlobalSizes.ParseMjcf(size);
+    if (sizeNode != null) {
+      GlobalSizes.ParseMjcf(sizeNode);
+    }
+    if (customNode != null) {
+      foreach (var childNode in customNode.ChildNodes) {
+        var child = childNode as XmlElement;
+        if (child.Name == "numeric") {
+          var numeric = new NumericEntry();
+          numeric.Name = child.GetAttribute("name");
+          numeric.Data = child.GetAttribute("data");
+          CustomNumeric.Add(numeric);
+        }
+      }
     }
   }
 
-  public void OptionSizeToMjcf(XmlElement option, XmlElement size) {
-    GlobalOptions.ToMjcf(option);
-    GlobalSizes.ToMjcf(size);
+  public void GlobalsToMjcf(XmlElement mjcf) {
+    var doc = mjcf.OwnerDocument;
+    var optionMjcf = (XmlElement)mjcf.AppendChild(doc.CreateElement("option"));
+    GlobalOptions.ToMjcf(optionMjcf);
+    var sizeMjcf = (XmlElement)mjcf.AppendChild(doc.CreateElement("size"));
+    GlobalSizes.ToMjcf(sizeMjcf);
+    var customMjcf = (XmlElement)mjcf.AppendChild(doc.CreateElement("custom"));
+    foreach (var numeric in CustomNumeric) {
+      var numericMjcf = (XmlElement)customMjcf.AppendChild(doc.CreateElement("numeric"));
+      numericMjcf.SetAttribute("name", numeric.Name);
+      // TODO: add validation that data is a space-separated list of floating numbers?
+      numericMjcf.SetAttribute("data", numeric.Data);
+    }
   }
 }
 }
