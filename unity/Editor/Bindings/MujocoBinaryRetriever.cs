@@ -22,6 +22,8 @@ using UnityEngine;
 namespace Mujoco {
 public class MujocoBinaryRetriever {
 
+  public static bool DoRetrieveBinary { get; set; } = true;
+
   [InitializeOnLoadMethod]
   static void SubscribeToEvent() {
     // This causes the method to be invoked after the Editor registers the new list of packages.
@@ -30,6 +32,10 @@ public class MujocoBinaryRetriever {
 
   static void RegisteredPackagesEventHandler(
       PackageRegistrationEventArgs packageRegistrationEventArgs) {
+    if (!DoRetrieveBinary)
+    {
+      return;
+    }
     foreach (var packageInfo in packageRegistrationEventArgs.added) {
       if (packageInfo.name.Equals("org.mujoco.mujoco"))
       {
