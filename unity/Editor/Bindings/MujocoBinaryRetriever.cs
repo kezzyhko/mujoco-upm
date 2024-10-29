@@ -31,8 +31,11 @@ public class MujocoBinaryRetriever {
   static void RegisteredPackagesEventHandler(
       PackageRegistrationEventArgs packageRegistrationEventArgs) {
     foreach (var packageInfo in packageRegistrationEventArgs.added) {
-      if (packageInfo.name.Equals("org.mujoco.mujoco")) {
-        var mujocoPath = packageInfo.assetPath;
+      if (packageInfo.name.Equals("org.mujoco.mujoco"))
+      {
+        var mujocoPath = packageInfo.source is PackageSource.Embedded or PackageSource.Local
+          ? packageInfo.assetPath
+          : Application.dataPath;
         if (RuntimeInformation.IsOSPlatform(OSPlatform.OSX)) {
           if (AssetDatabase.LoadMainAssetAtPath(mujocoPath + "/mujoco.dylib") == null) {
             File.Copy(
