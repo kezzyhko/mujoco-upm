@@ -16,7 +16,7 @@
 #define MUJOCO_MUJOCO_H_
 
 // header version; should match the library version as returned by mj_version()
-#define mjVERSION_HEADER 324
+#define mjVERSION_HEADER 325
 
 // needed to define size_t, fabs and log10
 #include <stdlib.h>
@@ -116,9 +116,6 @@ MJAPI int mj_saveLastXML(const char* filename, const mjModel* m, char* error, in
 
 // Free last XML model if loaded. Called internally at each load.
 MJAPI void mj_freeLastXML(void);
-
-// Copy (possibly modified) model fields back into spec.
-MJAPI void mj_copyBack(mjSpec* s, const mjModel* m);
 
 // Save spec to XML string, return 1 on success, 0 otherwise.
 MJAPI int mj_saveXMLString(const mjSpec* s, char* xml, int xml_sz, char* error, int error_sz);
@@ -674,14 +671,6 @@ MJAPI void mjv_initGeom(mjvGeom* geom, int type, const mjtNum size[3],
 // Set (type, size, pos, mat) for connector-type geom between given points.
 // Assume that mjv_initGeom was already called to set all other properties.
 // Width of mjGEOM_LINE is denominated in pixels.
-// Deprecated: use mjv_connector.
-MJAPI void mjv_makeConnector(mjvGeom* geom, int type, mjtNum width,
-                             mjtNum a0, mjtNum a1, mjtNum a2,
-                             mjtNum b0, mjtNum b1, mjtNum b2);
-
-// Set (type, size, pos, mat) for connector-type geom between given points.
-// Assume that mjv_initGeom was already called to set all other properties.
-// Width of mjGEOM_LINE is denominated in pixels.
 MJAPI void mjv_connector(mjvGeom* geom, int type, mjtNum width,
                          const mjtNum from[3], const mjtNum to[3]);
 
@@ -978,12 +967,6 @@ MJAPI void mju_mulMatVec3(mjtNum res[3], const mjtNum mat[9], const mjtNum vec[3
 // Multiply transposed 3-by-3 matrix by vector: res = mat' * vec.
 MJAPI void mju_mulMatTVec3(mjtNum res[3], const mjtNum mat[9], const mjtNum vec[3]);
 
-// Deprecated, use mju_mulMatVec3(res, mat, vec).
-MJAPI void mju_rotVecMat(mjtNum res[3], const mjtNum vec[3], const mjtNum mat[9]);
-
-// Deprecated, use mju_mulMatTVec3(res, mat, vec).
-MJAPI void mju_rotVecMatT(mjtNum res[3], const mjtNum vec[3], const mjtNum mat[9]);
-
 // Compute cross-product: res = cross(a, b).
 MJAPI void mju_cross(mjtNum res[3], const mjtNum a[3], const mjtNum b[3]);
 
@@ -1082,6 +1065,13 @@ MJAPI void mju_sqrMatTD(mjtNum* res, const mjtNum* mat, const mjtNum* diag, int 
 MJAPI void mju_transformSpatial(mjtNum res[6], const mjtNum vec[6], int flg_force,
                                 const mjtNum newpos[3], const mjtNum oldpos[3],
                                 const mjtNum rotnew2old[9]);
+
+
+//---------------------------------- Sparse math ---------------------------------------------------
+
+// Convert matrix from sparse to dense.
+MJAPI void mju_sparse2dense(mjtNum* res, const mjtNum* mat, int nr, int nc,
+                            const int* rownnz, const int* rowadr, const int* colind);
 
 
 //---------------------------------- Quaternions ---------------------------------------------------
@@ -1529,6 +1519,9 @@ MJAPI mjsMaterial* mjs_addMaterial(mjSpec* s, mjsDefault* def);
 
 // Get spec from body.
 MJAPI mjSpec* mjs_getSpec(mjsElement* element);
+
+// Find spec (model asset) by name.
+MJAPI mjSpec* mjs_findSpec(mjSpec* spec, const char* name);
 
 // Find body in spec by name.
 MJAPI mjsBody* mjs_findBody(mjSpec* s, const char* name);

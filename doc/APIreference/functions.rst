@@ -87,15 +87,6 @@ mj_freeLastXML
 
 Free last XML model if loaded. Called internally at each load.
 
-.. _mj_copyBack:
-
-mj_copyBack
-~~~~~~~~~~~
-
-.. mujoco-include:: mj_copyBack
-
-Copy (possibly modified) model fields back into spec.
-
 .. _mj_saveXMLString:
 
 mj_saveXMLString
@@ -2116,18 +2107,6 @@ mjv_initGeom
 
 Initialize given geom fields when not NULL, set the rest to their default values.
 
-.. _mjv_makeConnector:
-
-mjv_makeConnector
-~~~~~~~~~~~~~~~~~
-
-.. mujoco-include:: mjv_makeConnector
-
-Set (type, size, pos, mat) for connector-type geom between given points.
-Assume that mjv_initGeom was already called to set all other properties.
-Width of mjGEOM_LINE is denominated in pixels.
-Deprecated: use mjv_connector.
-
 .. _mjv_connector:
 
 mjv_connector
@@ -3151,24 +3130,6 @@ mju_mulMatTVec3
 
 Multiply transposed 3-by-3 matrix by vector: res = mat' * vec.
 
-.. _mju_rotVecMat:
-
-mju_rotVecMat
-~~~~~~~~~~~~~
-
-.. mujoco-include:: mju_rotVecMat
-
-Deprecated, use mju_mulMatVec3(res, mat, vec).
-
-.. _mju_rotVecMatT:
-
-mju_rotVecMatT
-~~~~~~~~~~~~~~
-
-.. mujoco-include:: mju_rotVecMatT
-
-Deprecated, use mju_mulMatTVec3(res, mat, vec).
-
 .. _mju_cross:
 
 mju_cross
@@ -3448,6 +3409,19 @@ mju_transformSpatial
 
 Coordinate transform of 6D motion or force vector in rotation:translation format.
 rotnew2old is 3-by-3, NULL means no rotation; flg_force specifies force or motion type.
+
+.. _Sparsemath:
+
+Sparse math
+^^^^^^^^^^^
+.. _mju_sparse2dense:
+
+mju_sparse2dense
+~~~~~~~~~~~~~~~~
+
+.. mujoco-include:: mju_sparse2dense
+
+Convert matrix from sparse to dense.
 
 .. _Quaternions:
 
@@ -4134,6 +4108,15 @@ mjs_getSpec
 .. mujoco-include:: mjs_getSpec
 
 Get spec from body.
+
+.. _mjs_findSpec:
+
+mjs_findSpec
+~~~~~~~~~~~~
+
+.. mujoco-include:: mjs_findSpec
+
+Find spec (model asset) by name.
 
 .. _mjs_findBody:
 

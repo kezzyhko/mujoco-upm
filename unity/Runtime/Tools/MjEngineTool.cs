@@ -369,13 +369,16 @@ public static class MjEngineTool {
     }
   }
 
-  public static void LoadPlugins() {
-    if(!Directory.Exists("Packages/org.mujoco/Runtime/Plugins/")) return;
+  private static List<string> _plugins = new();
 
-    foreach (string pluginPath in Directory.GetFiles("Packages/org.mujoco/Runtime/Plugins/")) {
+  public static void AddPlugin(string pluginPath) {
+    _plugins.Add(pluginPath);
+  }
+
+  public static void LoadPlugins() {
+    foreach (string pluginPath in _plugins) {
       MujocoLib.mj_loadPluginLibrary(pluginPath);
     }
-
   }
 
 }

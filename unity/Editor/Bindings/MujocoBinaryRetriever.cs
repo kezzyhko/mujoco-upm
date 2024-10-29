@@ -22,6 +22,8 @@ using UnityEngine;
 namespace Mujoco {
 public class MujocoBinaryRetriever {
 
+  public static bool DoRetrieveBinary { get; set; } = true;
+
   [InitializeOnLoadMethod]
   static void SubscribeToEvent() {
     // This causes the method to be invoked after the Editor registers the new list of packages.
@@ -30,14 +32,21 @@ public class MujocoBinaryRetriever {
 
   static void RegisteredPackagesEventHandler(
       PackageRegistrationEventArgs packageRegistrationEventArgs) {
+    if (!DoRetrieveBinary)
+    {
+      return;
+    }
     foreach (var packageInfo in packageRegistrationEventArgs.added) {
-      if (packageInfo.name.Equals("org.mujoco")) {
-        var mujocoPath = packageInfo.assetPath;
+      if (packageInfo.name.Equals("org.mujoco.mujoco"))
+      {
+        var mujocoPath = packageInfo.source is PackageSource.Embedded or PackageSource.Local
+          ? packageInfo.assetPath
+          : Application.dataPath;
         if (RuntimeInformation.IsOSPlatform(OSPlatform.OSX)) {
           if (AssetDatabase.LoadMainAssetAtPath(mujocoPath + "/mujoco.dylib") == null) {
             File.Copy(
                 "/Applications/MuJoCo.app/Contents/Frameworks" +
-                "/mujoco.framework/Versions/Current/libmujoco.3.2.4.dylib",
+                "/mujoco.framework/Versions/Current/libmujoco.3.2.5.dylib",
                 mujocoPath + "/mujoco.dylib");
             AssetDatabase.Refresh();
           }
@@ -45,7 +54,7 @@ public class MujocoBinaryRetriever {
           if (AssetDatabase.LoadMainAssetAtPath(mujocoPath + "/libmujoco.so") == null) {
             File.Copy(
                 Environment.GetFolderPath(Environment.SpecialFolder.UserProfile) +
-                "/.mujoco/mujoco-3.2.4/lib/libmujoco.so.3.2.4",
+                "/.mujoco/mujoco-3.2.5/lib/libmujoco.so.3.2.5",
                 mujocoPath + "/libmujoco.so");
             AssetDatabase.Refresh();
           }

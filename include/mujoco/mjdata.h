@@ -284,11 +284,14 @@ struct mjData_ {
   int*    ten_J_colind;      // column indices in sparse Jacobian                (ntendon x nv)
   mjtNum* ten_J;             // tendon Jacobian                                  (ntendon x nv)
   mjtNum* ten_length;        // tendon lengths                                   (ntendon x 1)
-  int*    wrap_obj;          // geom id; -1: site; -2: pulley                    (nwrap*2 x 1)
-  mjtNum* wrap_xpos;         // Cartesian 3D points in all path                  (nwrap*2 x 3)
+  int*    wrap_obj;          // geom id; -1: site; -2: pulley                    (nwrap x 2)
+  mjtNum* wrap_xpos;         // Cartesian 3D points in all paths                 (nwrap x 6)
 
   // computed by mj_fwdPosition/mj_transmission
   mjtNum* actuator_length;   // actuator lengths                                 (nu x 1)
+  int*    moment_rownnz;     // number of non-zeros in actuator_moment row       (nu x 1)
+  int*    moment_rowadr;     // row start address in colind array                (nu x 1)
+  int*    moment_colind;     // column indices in sparse Jacobian                (nu x nv)
   mjtNum* actuator_moment;   // actuator moments                                 (nu x nv)
 
   // computed by mj_fwdPosition/mj_crb

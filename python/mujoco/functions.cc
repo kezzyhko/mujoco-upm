@@ -675,7 +675,6 @@ PYBIND11_MODULE(_functions, pymodule) {
   Def<traits::mjv_defaultOption>(pymodule);
   Def<traits::mjv_defaultFigure>(pymodule);
   Def<traits::mjv_initGeom>(pymodule);
-  Def<traits::mjv_makeConnector>(pymodule);
   Def<traits::mjv_connector>(pymodule);
   // Skipped: mjv_defaultScene (have MjvScene.__init__, memory managed by
   // MjvScene).
@@ -720,8 +719,6 @@ PYBIND11_MODULE(_functions, pymodule) {
   Def<traits::mju_dist3>(pymodule);
   Def<traits::mju_mulMatVec3>(pymodule);
   Def<traits::mju_mulMatTVec3>(pymodule);
-  // skipped: mju_rotVecMat
-  // skipped: mju_rotVecMatT
   Def<traits::mju_cross>(pymodule);
   Def<traits::mju_zero4>(pymodule);
   Def<traits::mju_unit4>(pymodule);
@@ -1020,6 +1017,25 @@ PYBIND11_MODULE(_functions, pymodule) {
             mat.rows(), mat.cols());
       });
   Def<traits::mju_transformSpatial>(pymodule);
+
+  // Sparse math
+  DEF_WITH_OMITTED_PY_ARGS(traits::mju_sparse2dense, "nr", "nc")(
+      pymodule,
+      [](Eigen::Ref<EigenArrayXX> res,
+         Eigen::Ref<const EigenVectorX> mat,
+         Eigen::Ref<const EigenVectorI> rownnz,
+         Eigen::Ref<const EigenVectorI> rowadr,
+         Eigen::Ref<const EigenVectorI> colind) {
+        if (res.rows() != rownnz.size()) {
+          throw py::type_error("#rows in res should equal size of rownnz");
+        }
+        if (res.rows() != rowadr.size()) {
+          throw py::type_error("#rows in res should equal size of rowadr");
+        }
+        return ::mju_sparse2dense(res.data(), mat.data(), res.rows(),
+                                  res.cols(), rownnz.data(), rowadr.data(),
+                                  colind.data());
+      });
 
   // Quaternions
   Def<traits::mju_rotVecQuat>(pymodule);
