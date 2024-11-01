@@ -169,7 +169,7 @@ struct mjData_ {
   int     nf;                // number of friction constraints
   int     nl;                // number of limit constraints
   int     nefc;              // number of constraints
-  int     nnzJ;              // number of non-zeros in constraint Jacobian
+  int     nJ;                // number of non-zeros in constraint Jacobian
   int     nisland;           // number of detected constraint islands
 
   // global properties
@@ -361,13 +361,13 @@ struct mjData_ {
   int*    efc_J_rownnz;      // number of non-zeros in constraint Jacobian row   (nefc x 1)
   int*    efc_J_rowadr;      // row start address in colind array                (nefc x 1)
   int*    efc_J_rowsuper;    // number of subsequent rows in supernode           (nefc x 1)
-  int*    efc_J_colind;      // column indices in constraint Jacobian            (nnzJ x 1)
+  int*    efc_J_colind;      // column indices in constraint Jacobian            (nJ x 1)
   int*    efc_JT_rownnz;     // number of non-zeros in constraint Jacobian row T (nv x 1)
   int*    efc_JT_rowadr;     // row start address in colind array              T (nv x 1)
   int*    efc_JT_rowsuper;   // number of subsequent rows in supernode         T (nv x 1)
-  int*    efc_JT_colind;     // column indices in constraint Jacobian          T (nnzJ x 1)
-  mjtNum* efc_J;             // constraint Jacobian                              (nnzJ x 1)
-  mjtNum* efc_JT;            // constraint Jacobian transposed                   (nnzJ x 1)
+  int*    efc_JT_colind;     // column indices in constraint Jacobian          T (nJ x 1)
+  mjtNum* efc_J;             // constraint Jacobian                              (nJ x 1)
+  mjtNum* efc_JT;            // constraint Jacobian transposed                   (nJ x 1)
   mjtNum* efc_pos;           // constraint position (equality, contact)          (nefc x 1)
   mjtNum* efc_margin;        // inclusion margin (contact)                       (nefc x 1)
   mjtNum* efc_frictionloss;  // frictionloss (friction)                          (nefc x 1)
@@ -1170,7 +1170,7 @@ struct mjModel_ {
   int*      flex_shell;           // shell fragment vertex ids (dim per frag) (nflexshelldata x 1)
   int*      flex_evpair;          // (element, vertex) collision pairs        (nflexevpair x 2)
   mjtNum*   flex_vert;            // vertex positions in local body frames    (nflexvert x 3)
-  mjtNum*   flex_xvert0;          // Cartesian vertex positions in qpos0      (nflexvert x 3)
+  mjtNum*   flex_vert0;           // vertex positions in qpos0 on [0, 1]^d    (nflexvert x 3)
   mjtNum*   flexedge_length0;     // edge lengths in qpos0                    (nflexedge x 1)
   mjtNum*   flexedge_invweight0;  // edge inv. weight in qpos0                (nflexedge x 1)
   mjtNum*   flex_radius;          // radius around primitive element          (nflex x 1)
