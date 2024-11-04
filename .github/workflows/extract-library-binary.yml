@@ -68,6 +68,9 @@ jobs:
       with:
         args: 7z e ${{ env.ARCHIVE_FILE_NAME }} ${{ env.PATH_IN_ARCHIVE }}
 
+    - name: Log folder contents
+      run: ls
+
     - name: Upload to release
       run: |
         mv ${{ env.NAME_IN_ARCHIVE }} ${{ env.FINAL_FILE_NAME }}
