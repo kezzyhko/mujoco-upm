@@ -55,3 +55,14 @@ jobs:
         tag_name: upm-${{ env.UPM_VERSION }}
         release_name: UPM - ${{ env.UPM_VERSION }}
         commitish: ${{ env.MERGE_COMMIT_HASH }}
+    - name: Add library binaries to the release
+      env:
+        GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        REPO_FULL_NAME: ${{ github.repository }}
+      run: |
+        gh repo set-default $REPO_FULL_NAME
+        PLATFORMS=(windows macos linux_arm linux_x86)
+        for PLATFORM in ${PLATFORMS[@]}; do
+          gh workflow run extract-library-binary.yml --field tag_name=${{ env.ORIGINAL_TAG_NAME }} --field platform=$PLATFORM
+        done
+
