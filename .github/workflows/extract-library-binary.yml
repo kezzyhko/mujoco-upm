@@ -63,17 +63,28 @@ jobs:
         url: https://github.com/google-deepmind/mujoco/releases/download/${{ env.TAG }}/${{ env.ARCHIVE_FILE_NAME }}
         target-path: .
 
+    - name: Install archive tool
+      run: |
+        sudo apt-get install -y p7zip-full
+
     - name: Extract library binary
-      uses: edgarrc/action-7z@v1
-      with:
-        args: 7z e ${{ env.ARCHIVE_FILE_NAME }} ${{ env.PATH_IN_ARCHIVE }}
+      run: |
+        if [[ "${{ inputs.platform }}" == *.gz ]]; then
+          7z e ${{ env.ARCHIVE_FILE_NAME }}
+        fi
+        7z e ${{ env.ARCHIVE_FILE_NAME }} -so "${{ env.PATH_IN_ARCHIVE }}" > ${{ env.FINAL_FILE_NAME }}
 
     - name: Log folder contents
       run: ls
 
     - name: Upload to release
-      run: |
-        mv ${{ env.NAME_IN_ARCHIVE }} ${{ env.FINAL_FILE_NAME }}
-        gh release upload ${{ env.TAG }} ${{ env.FINAL_FILE_NAME }}
       env:
         GITHUB_TOKEN: ${{ github.TOKEN }}
+        REPO_FULL_NAME: ${{ github.repository }}
+      run: |
+        # workaround for gh bug
+        # https://github.com/cli/cli/issues/9072#issuecomment-2106065080
+        git init
+        git remote add origin "https://github.com/$REPO_FULL_NAME"
+
+        gh release upload upm-${{ env.TAG }} ${{ env.FINAL_FILE_NAME }}
