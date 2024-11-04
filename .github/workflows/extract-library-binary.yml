@@ -75,7 +75,9 @@ jobs:
         7z e ${{ env.ARCHIVE_FILE_NAME }} -so "${{ env.PATH_IN_ARCHIVE }}" > ${{ env.FINAL_FILE_NAME }}
 
     - name: Log folder contents
-      run: ls
+      run: |
+        ls
+        stat ${{ env.FINAL_FILE_NAME }}
 
     - name: Upload to release
       env:
