@@ -32,24 +32,28 @@ jobs:
             echo "FINAL_FILE_NAME=mujoco.dll" >> $GITHUB_ENV
             echo "ARCHIVE_FILE_NAME=mujoco-$TAG-windows-x86_64.zip" >> $GITHUB_ENV
             echo "PATH_IN_ARCHIVE=bin\mujoco.dll" >> $GITHUB_ENV
+            echo "NAME_IN_ARCHIVE=mujoco.dll" >> $GITHUB_ENV
             ;;
 
           macos)
             echo "FINAL_FILE_NAME=mujoco.dylib" >> $GITHUB_ENV
             echo "ARCHIVE_FILE_NAME=mujoco-$TAG-macos-universal2.dmg" >> $GITHUB_ENV
             echo "PATH_IN_ARCHIVE=mujoco.framework/Versions/A/libmujoco.$TAG.dylib" >> $GITHUB_ENV
+            echo "NAME_IN_ARCHIVE=libmujoco.$TAG.dylib" >> $GITHUB_ENV
             ;;
 
           linux_arm)
             echo "FINAL_FILE_NAME=libmujoco_arm.so" >> $GITHUB_ENV
             echo "ARCHIVE_FILE_NAME=mujoco-$TAG-linux-aarch64.tar.gz" >> $GITHUB_ENV
             echo "PATH_IN_ARCHIVE=mujoco-$TAG/lib/libmujoco.so.$TAG" >> $GITHUB_ENV
+            echo "NAME_IN_ARCHIVE=libmujoco.$TAG.dylib" >> $GITHUB_ENV
             ;;
 
           linux_x86)
             echo "FINAL_FILE_NAME=libmujoco_x86.so" >> $GITHUB_ENV
             echo "ARCHIVE_FILE_NAME=mujoco-$TAG-linux-x86_64.tar.gz" >> $GITHUB_ENV
             echo "PATH_IN_ARCHIVE=mujoco-$TAG/lib/libmujoco.so.$TAG" >> $GITHUB_ENV
+            echo "NAME_IN_ARCHIVE=libmujoco.$TAG.dylib" >> $GITHUB_ENV
             ;;
         esac
 
@@ -59,15 +63,14 @@ jobs:
         url: https://github.com/google-deepmind/mujoco/releases/download/${{ env.TAG }}/${{ env.ARCHIVE_FILE_NAME }}
         target-path: .
 
-    - name: Setup 7zip
-      uses: AnimMouse/setup-p7zip-fork@v1
-
     - name: Extract library binary
-      run: |
-        /opt/7z e ${{ env.ARCHIVE_FILE_NAME }} -so ${{ env.PATH_IN_ARCHIVE }} > ${{ env.FINAL_FILE_NAME }}
+      uses: edgarrc/action-7z@v1
+      with:
+        args: 7z e ${{ env.ARCHIVE_FILE_NAME }} ${{ env.PATH_IN_ARCHIVE }}
 
     - name: Upload to release
       run: |
-          gh release upload ${{ env.TAG }} ${{ env.FINAL_FILE_NAME }}
+        mv ${{ env.NAME_IN_ARCHIVE }} ${{ env.FINAL_FILE_NAME }}
+        gh release upload ${{ env.TAG }} ${{ env.FINAL_FILE_NAME }}
       env:
         GITHUB_TOKEN: ${{ github.TOKEN }}
