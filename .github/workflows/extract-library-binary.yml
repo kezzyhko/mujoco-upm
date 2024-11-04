@@ -32,28 +32,24 @@ jobs:
             echo "FINAL_FILE_NAME=mujoco.dll" >> $GITHUB_ENV
             echo "ARCHIVE_FILE_NAME=mujoco-$TAG-windows-x86_64.zip" >> $GITHUB_ENV
             echo "PATH_IN_ARCHIVE=bin\mujoco.dll" >> $GITHUB_ENV
-            echo "NAME_IN_ARCHIVE=mujoco.dll" >> $GITHUB_ENV
             ;;
 
           macos)
             echo "FINAL_FILE_NAME=mujoco.dylib" >> $GITHUB_ENV
             echo "ARCHIVE_FILE_NAME=mujoco-$TAG-macos-universal2.dmg" >> $GITHUB_ENV
             echo "PATH_IN_ARCHIVE=mujoco.framework/Versions/A/libmujoco.$TAG.dylib" >> $GITHUB_ENV
-            echo "NAME_IN_ARCHIVE=libmujoco.$TAG.dylib" >> $GITHUB_ENV
             ;;
 
           linux_arm)
             echo "FINAL_FILE_NAME=libmujoco_arm.so" >> $GITHUB_ENV
             echo "ARCHIVE_FILE_NAME=mujoco-$TAG-linux-aarch64.tar.gz" >> $GITHUB_ENV
             echo "PATH_IN_ARCHIVE=mujoco-$TAG/lib/libmujoco.so.$TAG" >> $GITHUB_ENV
-            echo "NAME_IN_ARCHIVE=libmujoco.$TAG.dylib" >> $GITHUB_ENV
             ;;
 
           linux_x86)
             echo "FINAL_FILE_NAME=libmujoco_x86.so" >> $GITHUB_ENV
             echo "ARCHIVE_FILE_NAME=mujoco-$TAG-linux-x86_64.tar.gz" >> $GITHUB_ENV
             echo "PATH_IN_ARCHIVE=mujoco-$TAG/lib/libmujoco.so.$TAG" >> $GITHUB_ENV
-            echo "NAME_IN_ARCHIVE=libmujoco.$TAG.dylib" >> $GITHUB_ENV
             ;;
         esac
 
