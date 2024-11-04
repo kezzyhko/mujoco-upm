@@ -59,10 +59,12 @@ jobs:
         url: https://github.com/google-deepmind/mujoco/releases/download/${{ env.TAG }}/${{ env.ARCHIVE_FILE_NAME }}
         target-path: .
 
+    - name: Setup 7zip
+      uses: AnimMouse/setup-p7zip-fork@v1
+
     - name: Extract library binary
-      uses: edgarrc/action-7z@v1
-      with:
-        args: 7z e ${{ env.ARCHIVE_FILE_NAME }} -so ${{ env.PATH_IN_ARCHIVE }} > ${{ env.FINAL_FILE_NAME }}
+      run: |
+        /opt/7z e ${{ env.ARCHIVE_FILE_NAME }} -so ${{ env.PATH_IN_ARCHIVE }} > ${{ env.FINAL_FILE_NAME }}
 
     - name: Upload to release
       run: |
