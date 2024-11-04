@@ -84,7 +84,7 @@ jobs:
       run: |
         # workaround for gh bug
         # https://github.com/cli/cli/issues/9072#issuecomment-2106065080
-        git init
+        git init -b main
         git remote add origin "https://github.com/$REPO_FULL_NAME"
 
         gh release upload upm-${{ env.TAG }} ${{ env.FINAL_FILE_NAME }}
