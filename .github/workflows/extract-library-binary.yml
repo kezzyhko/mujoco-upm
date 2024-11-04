@@ -23,39 +23,40 @@ jobs:
     steps:
     - name: Set environment variables
       run: |
-        echo "RELEASE_TAG_NAME=${{ inputs.tag_name }}" >> $GITHUB_ENV
+        TAG=${{ inputs.tag_name }}
+        echo "TAG=$TAG" >> $GITHUB_ENV
 
         case ${{ inputs.platform }} in
 
           windows)
             echo "FINAL_FILE_NAME=mujoco.dll" >> $GITHUB_ENV
-            echo "ARCHIVE_FILE_NAME=mujoco-${{ env.RELEASE_TAG_NAME }}-windows-x86_64.zip" >> $GITHUB_ENV
+            echo "ARCHIVE_FILE_NAME=mujoco-$TAG-windows-x86_64.zip" >> $GITHUB_ENV
             echo "PATH_IN_ARCHIVE=bin\mujoco.dll" >> $GITHUB_ENV
             ;;
 
           macos)
             echo "FINAL_FILE_NAME=mujoco.dylib" >> $GITHUB_ENV
-            echo "ARCHIVE_FILE_NAME=mujoco-${{ env.RELEASE_TAG_NAME }}-macos-universal2.dmg" >> $GITHUB_ENV
-            echo "PATH_IN_ARCHIVE=mujoco.framework/Versions/A/libmujoco.${{ env.RELEASE_TAG_NAME }}.dylib" >> $GITHUB_ENV
+            echo "ARCHIVE_FILE_NAME=mujoco-$TAG-macos-universal2.dmg" >> $GITHUB_ENV
+            echo "PATH_IN_ARCHIVE=mujoco.framework/Versions/A/libmujoco.$TAG.dylib" >> $GITHUB_ENV
             ;;
 
           linux_arm)
             echo "FINAL_FILE_NAME=libmujoco_arm.so" >> $GITHUB_ENV
-            echo "ARCHIVE_FILE_NAME=mujoco-${{ env.RELEASE_TAG_NAME }}-linux-aarch64.tar.gz" >> $GITHUB_ENV
-            echo "PATH_IN_ARCHIVE=mujoco-${{ env.RELEASE_TAG_NAME }}/lib/libmujoco.so.${{ env.RELEASE_TAG_NAME }}" >> $GITHUB_ENV
+            echo "ARCHIVE_FILE_NAME=mujoco-$TAG-linux-aarch64.tar.gz" >> $GITHUB_ENV
+            echo "PATH_IN_ARCHIVE=mujoco-$TAG/lib/libmujoco.so.$TAG" >> $GITHUB_ENV
             ;;
 
           linux_x86)
             echo "FINAL_FILE_NAME=libmujoco_x86.so" >> $GITHUB_ENV
-            echo "ARCHIVE_FILE_NAME=mujoco-${{ env.RELEASE_TAG_NAME }}-linux-x86_64.tar.gz" >> $GITHUB_ENV
-            echo "PATH_IN_ARCHIVE=mujoco-${{ env.RELEASE_TAG_NAME }}/lib/libmujoco.so.${{ env.RELEASE_TAG_NAME }}" >> $GITHUB_ENV
+            echo "ARCHIVE_FILE_NAME=mujoco-$TAG-linux-x86_64.tar.gz" >> $GITHUB_ENV
+            echo "PATH_IN_ARCHIVE=mujoco-$TAG/lib/libmujoco.so.$TAG" >> $GITHUB_ENV
             ;;
         esac
 
     - name: Download archive
       uses: valitydev/action-download-file@v1
       with:
-        url: https://github.com/google-deepmind/mujoco/releases/download/${{ env.RELEASE_TAG_NAME }}/${{ env.ARCHIVE_FILE_NAME }}
+        url: https://github.com/google-deepmind/mujoco/releases/download/${{ env.TAG }}/${{ env.ARCHIVE_FILE_NAME }}
         target-path: .
 
     - name: Extract library binary
@@ -65,6 +66,6 @@ jobs:
 
     - name: Upload to release
       run: |
-          gh release upload ${{ env.RELEASE_TAG_NAME }} ${{ env.FINAL_FILE_NAME }}
+          gh release upload ${{ env.TAG }} ${{ env.FINAL_FILE_NAME }}
       env:
         GITHUB_TOKEN: ${{ github.TOKEN }}
