@@ -68,12 +68,10 @@ jobs:
         if [[ "${{ inputs.platform }}" == *.gz ]]; then
           7z e ${{ env.ARCHIVE_FILE_NAME }}
         fi
-        7z e ${{ env.ARCHIVE_FILE_NAME }} -so "${{ env.PATH_IN_ARCHIVE }}" > ${{ env.FINAL_FILE_NAME }}
+        7z e ${{ env.ARCHIVE_FILE_NAME }} "${{ env.PATH_IN_ARCHIVE }}"
 
-    - name: Log folder contents
-      run: |
-        ls
-        stat ${{ env.FINAL_FILE_NAME }}
+    - name: Log file info
+      run: stat "${{ env.PATH_IN_ARCHIVE }}"
 
     - name: Upload to release
       env:
@@ -85,4 +83,5 @@ jobs:
         git init -b main
         git remote add origin "https://github.com/$REPO_FULL_NAME"
 
+        mv "${{ env.PATH_IN_ARCHIVE }}" ${{ env.FINAL_FILE_NAME }}
         gh release upload upm-${{ env.TAG }} ${{ env.FINAL_FILE_NAME }}
