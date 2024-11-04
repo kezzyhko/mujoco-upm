@@ -61,9 +61,8 @@ jobs:
         REPO_FULL_NAME: ${{ github.repository }}
       run: |
         gh repo set-default $REPO_FULL_NAME
-        PLATFORMS="windows\nmacos\nlinux_arm\nlinux_x86"
-        echo "$PLATFORMS" | while read PLATFORM
-        do
+        PLATFORMS=(windows macos linux_arm linux_x86)
+        for PLATFORM in ${PLATFORMS[@]}; do
           gh workflow run extract-library-binary.yml --field tag_name=${{ env.ORIGINAL_TAG_NAME }} --field platform=$PLATFORM
         done
 
