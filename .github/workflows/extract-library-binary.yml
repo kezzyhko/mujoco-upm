@@ -24,34 +24,50 @@ jobs:
     - name: Set environment variables
       run: |
         TAG=${{ inputs.tag_name }}
-        echo "TAG=$TAG" >> $GITHUB_ENV
 
         case ${{ inputs.platform }} in
 
           windows)
-            echo "FINAL_FILE_NAME=mujoco.dll" >> $GITHUB_ENV
-            echo "ARCHIVE_FILE_NAME=mujoco-$TAG-windows-x86_64.zip" >> $GITHUB_ENV
-            echo "PATH_IN_ARCHIVE=bin\mujoco.dll" >> $GITHUB_ENV
+            ARCHIVE_FILE_NAME="mujoco-$TAG-windows-x86_64.zip"
+            PATH_IN_ARCHIVE="bin\mujoco.dll"
+            FILE_NAME_AFTER_EXTRACT="bin\mujoco.dll"
+            FINAL_FILE_NAME="mujoco.dll"
             ;;
 
           macos)
-            echo "FINAL_FILE_NAME=mujoco.dylib" >> $GITHUB_ENV
-            echo "ARCHIVE_FILE_NAME=mujoco-$TAG-macos-universal2.dmg" >> $GITHUB_ENV
-            echo "PATH_IN_ARCHIVE=mujoco.framework/Versions/A/libmujoco.$TAG.dylib" >> $GITHUB_ENV
+            ARCHIVE_FILE_NAME="mujoco-$TAG-macos-universal2.dmg"
+            PATH_IN_ARCHIVE="mujoco.framework/Versions/A/libmujoco.$TAG.dylib"
+            FILE_NAME_AFTER_EXTRACT="libmujoco.$TAG.dylib"
+            FINAL_FILE_NAME="mujoco.dylib"
             ;;
 
           linux_arm)
-            echo "FINAL_FILE_NAME=libmujoco_arm.so" >> $GITHUB_ENV
-            echo "ARCHIVE_FILE_NAME=mujoco-$TAG-linux-aarch64.tar.gz" >> $GITHUB_ENV
-            echo "PATH_IN_ARCHIVE=mujoco-$TAG/lib/libmujoco.so.$TAG" >> $GITHUB_ENV
+            ARCHIVE_FILE_NAME="mujoco-$TAG-linux-aarch64.tar.gz"
+            PATH_IN_ARCHIVE="mujoco-$TAG/lib/libmujoco.so.$TAG"
+            FILE_NAME_AFTER_EXTRACT="libmujoco.so.$TAG"
+            FINAL_FILE_NAME="libmujoco_arm.so"
             ;;
 
           linux_x86)
-            echo "FINAL_FILE_NAME=libmujoco_x86.so" >> $GITHUB_ENV
-            echo "ARCHIVE_FILE_NAME=mujoco-$TAG-linux-x86_64.tar.gz" >> $GITHUB_ENV
-            echo "PATH_IN_ARCHIVE=mujoco-$TAG/lib/libmujoco.so.$TAG" >> $GITHUB_ENV
+            ARCHIVE_FILE_NAME="mujoco-$TAG-linux-x86_64.tar.gz"
+            PATH_IN_ARCHIVE="mujoco-$TAG/lib/libmujoco.so.$TAG"
+            FILE_NAME_AFTER_EXTRACT="libmujoco.so.$TAG"
+            FINAL_FILE_NAME="libmujoco_x86.so"
             ;;
         esac
+
+        echo "TAG=\"$TAG\"" >> $GITHUB_ENV
+        echo "ARCHIVE_FILE_NAME=\"$ARCHIVE_FILE_NAME\"" >> $GITHUB_ENV
+        echo "PATH_IN_ARCHIVE=\"$PATH_IN_ARCHIVE\"" >> $GITHUB_ENV
+        echo "FILE_NAME_AFTER_EXTRACT=\"$FILE_NAME_AFTER_EXTRACT\"" >> $GITHUB_ENV
+        echo "FINAL_FILE_NAME=\"$FINAL_FILE_NAME\"" >> $GITHUB_ENV
+
+    - name: Install 7z tool
+      run: |
+        wget https://www.7-zip.org/a/7z2408-linux-x64.tar.xz
+        tar -xJf 7z2408-linux-x64.tar.xz
+        ls
+        stat ./7zz
 
     - name: Download archive
       uses: valitydev/action-download-file@v1
@@ -60,12 +76,26 @@ jobs:
         target-path: .
 
     - name: Extract library binary
-      uses: edgarrc/action-7z@v1
-      with:
-        args: 7z e ${{ env.ARCHIVE_FILE_NAME }} -so ${{ env.PATH_IN_ARCHIVE }} > ${{ env.FINAL_FILE_NAME }}
+      run: |
+        ARCHIVE_FILE_NAME=${{ env.ARCHIVE_FILE_NAME }}
+        if [[ "$ARCHIVE_FILE_NAME" == *.gz ]]; then
+          ./7zz e $ARCHIVE_FILE_NAME
+          ARCHIVE_FILE_NAME=${ARCHIVE_FILE_NAME%.*} # remove .gz
+        fi
+
+        ./7zz e "$ARCHIVE_FILE_NAME" ${{ env.PATH_IN_ARCHIVE }}
+        ls
+        mv ${{ env.FILE_NAME_AFTER_EXTRACT }} ${{ env.FINAL_FILE_NAME }}
+        stat ${{ env.FINAL_FILE_NAME }}
 
     - name: Upload to release
-      run: |
-          gh release upload ${{ env.TAG }} ${{ env.FINAL_FILE_NAME }}
       env:
         GITHUB_TOKEN: ${{ github.TOKEN }}
+        REPO_FULL_NAME: ${{ github.repository }}
+      run: |
+        # workaround for gh bug
+        # https://github.com/cli/cli/issues/9072#issuecomment-2106065080
+        git init -b main
+        git remote add origin "https://github.com/$REPO_FULL_NAME"
+
+        gh release upload upm-${{ env.TAG }} ${{ env.FINAL_FILE_NAME }}
