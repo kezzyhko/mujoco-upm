@@ -24,34 +24,52 @@ jobs:
     - name: Set environment variables
       run: |
         TAG=${{ inputs.tag_name }}
-        echo "TAG=$TAG" >> $GITHUB_ENV
 
         case ${{ inputs.platform }} in
 
           windows)
-            echo "FINAL_FILE_NAME=mujoco.dll" >> $GITHUB_ENV
-            echo "ARCHIVE_FILE_NAME=mujoco-$TAG-windows-x86_64.zip" >> $GITHUB_ENV
-            echo "PATH_IN_ARCHIVE=bin\mujoco.dll" >> $GITHUB_ENV
+            FINAL_FILE_NAME="mujoco.dll"
+            ARCHIVE_FILE_NAME="mujoco-$TAG-windows-x86_64.zip"
+            PATH_IN_ARCHIVE="bin\mujoco.dll"
+            INSTALL_COMMAND="sudo apt install unzip"
+            EXTRACT_COMMAND="unzip $ARCHIVE_FILE_NAME"
             ;;
 
           macos)
-            echo "FINAL_FILE_NAME=mujoco.dylib" >> $GITHUB_ENV
-            echo "ARCHIVE_FILE_NAME=mujoco-$TAG-macos-universal2.dmg" >> $GITHUB_ENV
-            echo "PATH_IN_ARCHIVE=mujoco.framework/Versions/A/libmujoco.$TAG.dylib" >> $GITHUB_ENV
+            FINAL_FILE_NAME="mujoco.dylib"
+            ARCHIVE_FILE_NAME="mujoco-$TAG-macos-universal2.dmg"
+            PATH_IN_ARCHIVE="mujoco.framework/Versions/A/libmujoco.$TAG.dylib"
+            INSTALL_COMMAND="sudo apt install dmg2img p7zip-full"
+            EXTRACT_COMMAND="dmg2img $ARCHIVE_FILE_NAME archive.img && 7z e archive.img $PATH_IN_ARCHIVE"
             ;;
 
           linux_arm)
-            echo "FINAL_FILE_NAME=libmujoco_arm.so" >> $GITHUB_ENV
-            echo "ARCHIVE_FILE_NAME=mujoco-$TAG-linux-aarch64.tar.gz" >> $GITHUB_ENV
-            echo "PATH_IN_ARCHIVE=mujoco-$TAG/lib/libmujoco.so.$TAG" >> $GITHUB_ENV
+            FINAL_FILE_NAME="libmujoco_arm.so"
+            ARCHIVE_FILE_NAME="mujoco-$TAG-linux-aarch64.tar.gz"
+            PATH_IN_ARCHIVE="mujoco-$TAG/lib/libmujoco.so.$TAG"
+            INSTALL_COMMAND=""
+            EXTRACT_COMMAND="tar -xzf $ARCHIVE_FILE_NAME"
             ;;
 
           linux_x86)
-            echo "FINAL_FILE_NAME=libmujoco_x86.so" >> $GITHUB_ENV
-            echo "ARCHIVE_FILE_NAME=mujoco-$TAG-linux-x86_64.tar.gz" >> $GITHUB_ENV
-            echo "PATH_IN_ARCHIVE=mujoco-$TAG/lib/libmujoco.so.$TAG" >> $GITHUB_ENV
+            FINAL_FILE_NAME="libmujoco_x86.so"
+            ARCHIVE_FILE_NAME="mujoco-$TAG-linux-x86_64.tar.gz"
+            PATH_IN_ARCHIVE="mujoco-$TAG/lib/libmujoco.so.$TAG"
+            INSTALL_COMMAND=""
+            EXTRACT_COMMAND="tar -xzf $ARCHIVE_FILE_NAME"
             ;;
         esac
+
+        echo "TAG=$TAG" >> $GITHUB_ENV
+        echo "FINAL_FILE_NAME=$FINAL_FILE_NAME" >> $GITHUB_ENV
+        echo "ARCHIVE_FILE_NAME=$ARCHIVE_FILE_NAME" >> $GITHUB_ENV
+        echo "PATH_IN_ARCHIVE=$PATH_IN_ARCHIVE" >> $GITHUB_ENV
+        echo "INSTALL_COMMAND=$INSTALL_COMMAND" >> $GITHUB_ENV
+        echo "EXTRACT_COMMAND=$EXTRACT_COMMAND" >> $GITHUB_ENV
+
+    - name: Install archive tool
+      if: env.INSTALL_COMMAND != ''
+      run: $INSTALL_COMMAND
 
     - name: Download archive
       uses: valitydev/action-download-file@v1
@@ -59,16 +77,8 @@ jobs:
         url: https://github.com/google-deepmind/mujoco/releases/download/${{ env.TAG }}/${{ env.ARCHIVE_FILE_NAME }}
         target-path: .
 
-    - name: Install archive tool
-      run: |
-        brew install sevenzip
-
     - name: Extract library binary
-      run: |
-        if [[ "${{ inputs.platform }}" == *.gz ]]; then
-          7zz e ${{ env.ARCHIVE_FILE_NAME }}
-        fi
-        7zz e ${{ env.ARCHIVE_FILE_NAME }} "${{ env.PATH_IN_ARCHIVE }}"
+      run: $EXTRACT_COMMAND
 
     - name: Log file info
       run: stat "${{ env.PATH_IN_ARCHIVE }}"
