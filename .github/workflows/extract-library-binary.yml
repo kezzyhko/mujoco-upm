@@ -28,48 +28,46 @@ jobs:
         case ${{ inputs.platform }} in
 
           windows)
-            FINAL_FILE_NAME="mujoco.dll"
             ARCHIVE_FILE_NAME="mujoco-$TAG-windows-x86_64.zip"
             PATH_IN_ARCHIVE="bin\mujoco.dll"
-            INSTALL_COMMAND="sudo apt install unzip"
-            EXTRACT_COMMAND="unzip $ARCHIVE_FILE_NAME"
+            FILE_NAME_AFTER_EXTRACT="bin\mujoco.dll"
+            FINAL_FILE_NAME="mujoco.dll"
             ;;
 
           macos)
-            FINAL_FILE_NAME="mujoco.dylib"
             ARCHIVE_FILE_NAME="mujoco-$TAG-macos-universal2.dmg"
             PATH_IN_ARCHIVE="mujoco.framework/Versions/A/libmujoco.$TAG.dylib"
-            INSTALL_COMMAND="sudo apt install dmg2img p7zip-full"
-            EXTRACT_COMMAND="dmg2img $ARCHIVE_FILE_NAME archive.img && 7z e archive.img $PATH_IN_ARCHIVE"
+            FILE_NAME_AFTER_EXTRACT="libmujoco.$TAG.dylib"
+            FINAL_FILE_NAME="mujoco.dylib"
             ;;
 
           linux_arm)
-            FINAL_FILE_NAME="libmujoco_arm.so"
             ARCHIVE_FILE_NAME="mujoco-$TAG-linux-aarch64.tar.gz"
             PATH_IN_ARCHIVE="mujoco-$TAG/lib/libmujoco.so.$TAG"
-            INSTALL_COMMAND=""
-            EXTRACT_COMMAND="tar -xzf $ARCHIVE_FILE_NAME"
+            FILE_NAME_AFTER_EXTRACT="libmujoco.so.$TAG"
+            FINAL_FILE_NAME="libmujoco_arm.so"
             ;;
 
           linux_x86)
-            FINAL_FILE_NAME="libmujoco_x86.so"
             ARCHIVE_FILE_NAME="mujoco-$TAG-linux-x86_64.tar.gz"
             PATH_IN_ARCHIVE="mujoco-$TAG/lib/libmujoco.so.$TAG"
-            INSTALL_COMMAND=""
-            EXTRACT_COMMAND="tar -xzf $ARCHIVE_FILE_NAME"
+            FILE_NAME_AFTER_EXTRACT="libmujoco.so.$TAG"
+            FINAL_FILE_NAME="libmujoco_x86.so"
             ;;
         esac
 
-        echo "TAG=$TAG" >> $GITHUB_ENV
-        echo "FINAL_FILE_NAME=$FINAL_FILE_NAME" >> $GITHUB_ENV
-        echo "ARCHIVE_FILE_NAME=$ARCHIVE_FILE_NAME" >> $GITHUB_ENV
-        echo "PATH_IN_ARCHIVE=$PATH_IN_ARCHIVE" >> $GITHUB_ENV
-        echo "INSTALL_COMMAND=$INSTALL_COMMAND" >> $GITHUB_ENV
-        echo "EXTRACT_COMMAND=$EXTRACT_COMMAND" >> $GITHUB_ENV
+        echo "TAG=\"$TAG\"" >> $GITHUB_ENV
+        echo "ARCHIVE_FILE_NAME=\"$ARCHIVE_FILE_NAME\"" >> $GITHUB_ENV
+        echo "PATH_IN_ARCHIVE=\"$PATH_IN_ARCHIVE\"" >> $GITHUB_ENV
+        echo "FILE_NAME_AFTER_EXTRACT=\"$FILE_NAME_AFTER_EXTRACT\"" >> $GITHUB_ENV
+        echo "FINAL_FILE_NAME=\"$FINAL_FILE_NAME\"" >> $GITHUB_ENV
 
-    - name: Install archive tool
-      if: env.INSTALL_COMMAND != ''
-      run: $INSTALL_COMMAND
+    - name: Install 7z tool
+      run: |
+        wget https://www.7-zip.org/a/7z2408-linux-x64.tar.xz
+        tar -xJf 7z2408-linux-x64.tar.xz
+        ls
+        stat ./7zz
 
     - name: Download archive
       uses: valitydev/action-download-file@v1
@@ -78,10 +76,17 @@ jobs:
         target-path: .
 
     - name: Extract library binary
-      run: $EXTRACT_COMMAND
+      run: |
+        ARCHIVE_FILE_NAME=${{ env.ARCHIVE_FILE_NAME }}
+        if [[ "$ARCHIVE_FILE_NAME" == *.gz ]]; then
+          ./7zz e $ARCHIVE_FILE_NAME
+          ARCHIVE_FILE_NAME=${ARCHIVE_FILE_NAME%.*} # remove .gz
+        fi
 
-    - name: Log file info
-      run: stat "${{ env.PATH_IN_ARCHIVE }}"
+        ./7zz e "$ARCHIVE_FILE_NAME" ${{ env.PATH_IN_ARCHIVE }}
+        ls
+        mv ${{ env.FILE_NAME_AFTER_EXTRACT }} ${{ env.FINAL_FILE_NAME }}
+        stat ${{ env.FINAL_FILE_NAME }}
 
     - name: Upload to release
       env:
@@ -93,5 +98,4 @@ jobs:
         git init -b main
         git remote add origin "https://github.com/$REPO_FULL_NAME"
 
-        mv "${{ env.PATH_IN_ARCHIVE }}" ${{ env.FINAL_FILE_NAME }}
         gh release upload upm-${{ env.TAG }} ${{ env.FINAL_FILE_NAME }}
