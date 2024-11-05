@@ -61,14 +61,14 @@ jobs:
 
     - name: Install archive tool
       run: |
-        sudo apt-get install -y p7zip-full
+        brew install sevenzip
 
     - name: Extract library binary
       run: |
         if [[ "${{ inputs.platform }}" == *.gz ]]; then
-          7z e ${{ env.ARCHIVE_FILE_NAME }}
+          7zz e ${{ env.ARCHIVE_FILE_NAME }}
         fi
-        7z e ${{ env.ARCHIVE_FILE_NAME }} "${{ env.PATH_IN_ARCHIVE }}"
+        7zz e ${{ env.ARCHIVE_FILE_NAME }} "${{ env.PATH_IN_ARCHIVE }}"
 
     - name: Log file info
       run: stat "${{ env.PATH_IN_ARCHIVE }}"
