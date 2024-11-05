@@ -169,7 +169,7 @@ struct mjData_ {
   int     nf;                // number of friction constraints
   int     nl;                // number of limit constraints
   int     nefc;              // number of constraints
-  int     nnzJ;              // number of non-zeros in constraint Jacobian
+  int     nJ;                // number of non-zeros in constraint Jacobian
   int     nisland;           // number of detected constraint islands
 
   // global properties
@@ -361,13 +361,13 @@ struct mjData_ {
   int*    efc_J_rownnz;      // number of non-zeros in constraint Jacobian row   (nefc x 1)
   int*    efc_J_rowadr;      // row start address in colind array                (nefc x 1)
   int*    efc_J_rowsuper;    // number of subsequent rows in supernode           (nefc x 1)
-  int*    efc_J_colind;      // column indices in constraint Jacobian            (nnzJ x 1)
+  int*    efc_J_colind;      // column indices in constraint Jacobian            (nJ x 1)
   int*    efc_JT_rownnz;     // number of non-zeros in constraint Jacobian row T (nv x 1)
   int*    efc_JT_rowadr;     // row start address in colind array              T (nv x 1)
   int*    efc_JT_rowsuper;   // number of subsequent rows in supernode         T (nv x 1)
-  int*    efc_JT_colind;     // column indices in constraint Jacobian          T (nnzJ x 1)
-  mjtNum* efc_J;             // constraint Jacobian                              (nnzJ x 1)
-  mjtNum* efc_JT;            // constraint Jacobian transposed                   (nnzJ x 1)
+  int*    efc_JT_colind;     // column indices in constraint Jacobian          T (nJ x 1)
+  mjtNum* efc_J;             // constraint Jacobian                              (nJ x 1)
+  mjtNum* efc_JT;            // constraint Jacobian transposed                   (nJ x 1)
   mjtNum* efc_pos;           // constraint position (equality, contact)          (nefc x 1)
   mjtNum* efc_margin;        // inclusion margin (contact)                       (nefc x 1)
   mjtNum* efc_frictionloss;  // frictionloss (friction)                          (nefc x 1)
@@ -1170,7 +1170,7 @@ struct mjModel_ {
   int*      flex_shell;           // shell fragment vertex ids (dim per frag) (nflexshelldata x 1)
   int*      flex_evpair;          // (element, vertex) collision pairs        (nflexevpair x 2)
   mjtNum*   flex_vert;            // vertex positions in local body frames    (nflexvert x 3)
-  mjtNum*   flex_xvert0;          // Cartesian vertex positions in qpos0      (nflexvert x 3)
+  mjtNum*   flex_vert0;           // vertex positions in qpos0 on [0, 1]^d    (nflexvert x 3)
   mjtNum*   flexedge_length0;     // edge lengths in qpos0                    (nflexedge x 1)
   mjtNum*   flexedge_invweight0;  // edge inv. weight in qpos0                (nflexedge x 1)
   mjtNum*   flex_radius;          // radius around primitive element          (nflex x 1)
@@ -3464,6 +3464,8 @@ void mju_sqrMatTD(mjtNum* res, const mjtNum* mat, const mjtNum* diag, int nr, in
 void mju_transformSpatial(mjtNum res[6], const mjtNum vec[6], int flg_force,
                           const mjtNum newpos[3], const mjtNum oldpos[3],
                           const mjtNum rotnew2old[9]);
+int mju_dense2sparse(mjtNum* res, const mjtNum* mat, int nr, int nc,
+                     int* rownnz, int* rowadr, int* colind, int nnz);
 void mju_sparse2dense(mjtNum* res, const mjtNum* mat, int nr, int nc,
                       const int* rownnz, const int* rowadr, const int* colind);
 void mju_rotVecQuat(mjtNum res[3], const mjtNum vec[3], const mjtNum quat[4]);
@@ -3565,22 +3567,22 @@ mjsFrame* mjs_attachFrame(mjsBody* parent, const mjsFrame* child,
 mjsBody* mjs_attachToSite(mjsSite* parent, const mjsBody* child,
                           const char* prefix, const char* suffix);
 int mjs_detachBody(mjSpec* s, mjsBody* b);
-mjsBody* mjs_addBody(mjsBody* body, mjsDefault* def);
-mjsSite* mjs_addSite(mjsBody* body, mjsDefault* def);
-mjsJoint* mjs_addJoint(mjsBody* body, mjsDefault* def);
+mjsBody* mjs_addBody(mjsBody* body, const mjsDefault* def);
+mjsSite* mjs_addSite(mjsBody* body, const mjsDefault* def);
+mjsJoint* mjs_addJoint(mjsBody* body, const mjsDefault* def);
 mjsJoint* mjs_addFreeJoint(mjsBody* body);
-mjsGeom* mjs_addGeom(mjsBody* body, mjsDefault* def);
-mjsCamera* mjs_addCamera(mjsBody* body, mjsDefault* def);
-mjsLight* mjs_addLight(mjsBody* body, mjsDefault* def);
+mjsGeom* mjs_addGeom(mjsBody* body, const mjsDefault* def);
+mjsCamera* mjs_addCamera(mjsBody* body, const mjsDefault* def);
+mjsLight* mjs_addLight(mjsBody* body, const mjsDefault* def);
 mjsFrame* mjs_addFrame(mjsBody* body, mjsFrame* parentframe);
 void mjs_delete(mjsElement* element);
-mjsActuator* mjs_addActuator(mjSpec* s, mjsDefault* def);
+mjsActuator* mjs_addActuator(mjSpec* s, const mjsDefault* def);
 mjsSensor* mjs_addSensor(mjSpec* s);
 mjsFlex* mjs_addFlex(mjSpec* s);
-mjsPair* mjs_addPair(mjSpec* s, mjsDefault* def);
+mjsPair* mjs_addPair(mjSpec* s, const mjsDefault* def);
 mjsExclude* mjs_addExclude(mjSpec* s);
-mjsEquality* mjs_addEquality(mjSpec* s, mjsDefault* def);
-mjsTendon* mjs_addTendon(mjSpec* s, mjsDefault* def);
+mjsEquality* mjs_addEquality(mjSpec* s, const mjsDefault* def);
+mjsTendon* mjs_addTendon(mjSpec* s, const mjsDefault* def);
 mjsWrap* mjs_wrapSite(mjsTendon* tendon, const char* name);
 mjsWrap* mjs_wrapGeom(mjsTendon* tendon, const char* name, const char* sidesite);
 mjsWrap* mjs_wrapJoint(mjsTendon* tendon, const char* name, double coef);
@@ -3591,11 +3593,11 @@ mjsTuple* mjs_addTuple(mjSpec* s);
 mjsKey* mjs_addKey(mjSpec* s);
 mjsPlugin* mjs_addPlugin(mjSpec* s);
 mjsDefault* mjs_addDefault(mjSpec* s, const char* classname, const mjsDefault* parent);
-mjsMesh* mjs_addMesh(mjSpec* s, mjsDefault* def);
+mjsMesh* mjs_addMesh(mjSpec* s, const mjsDefault* def);
 mjsHField* mjs_addHField(mjSpec* s);
 mjsSkin* mjs_addSkin(mjSpec* s);
 mjsTexture* mjs_addTexture(mjSpec* s);
-mjsMaterial* mjs_addMaterial(mjSpec* s, mjsDefault* def);
+mjsMaterial* mjs_addMaterial(mjSpec* s, const mjsDefault* def);
 mjSpec* mjs_getSpec(mjsElement* element);
 mjSpec* mjs_findSpec(mjSpec* spec, const char* name);
 mjsBody* mjs_findBody(mjSpec* s, const char* name);
@@ -3603,7 +3605,7 @@ mjsElement* mjs_findElement(mjSpec* s, mjtObj type, const char* name);
 mjsBody* mjs_findChild(mjsBody* body, const char* name);
 mjsFrame* mjs_findFrame(mjSpec* s, const char* name);
 mjsDefault* mjs_getDefault(mjsElement* element);
-mjsDefault* mjs_findDefault(mjSpec* s, const char* classname);
+const mjsDefault* mjs_findDefault(mjSpec* s, const char* classname);
 mjsDefault* mjs_getSpecDefault(mjSpec* s);
 int mjs_getId(mjsElement* element);
 mjsElement* mjs_firstChild(mjsBody* body, mjtObj type, int recurse);
@@ -3623,7 +3625,7 @@ void mjs_setDouble(mjDoubleVec* dest, const double* array, int size);
 void mjs_setPluginAttributes(mjsPlugin* plugin, void* attributes);
 const char* mjs_getString(const mjString* source);
 const double* mjs_getDouble(const mjDoubleVec* source, int* size);
-void mjs_setDefault(mjsElement* element, mjsDefault* def);
+void mjs_setDefault(mjsElement* element, const mjsDefault* def);
 void mjs_setFrame(mjsElement* dest, mjsFrame* frame);
 const char* mjs_resolveOrientation(double quat[4], mjtByte degree, const char* sequence,
                                    const mjsOrientation* orientation);

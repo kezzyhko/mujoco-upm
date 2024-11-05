@@ -1815,7 +1815,7 @@ static void _resetData(const mjModel* m, mjData* d, unsigned char debug_value) {
   d->nf = 0;
   d->nl = 0;
   d->nefc = 0;
-  d->nnzJ = 0;
+  d->nJ = 0;
   d->nisland = 0;
 
   // clear global properties
@@ -1856,9 +1856,6 @@ static void _resetData(const mjModel* m, mjData* d, unsigned char debug_value) {
   mju_zero(d->sensordata, m->nsensordata);
   mju_zero(d->mocap_pos, 3*m->nmocap);
   mju_zero(d->mocap_quat, 4*m->nmocap);
-
-  // zero out actuator_moment, mj_transmission touches it selectively
-  mju_zero(d->actuator_moment, m->nv*m->nu);
 
   // copy qpos0 from model
   if (m->qpos0) {
