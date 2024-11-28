@@ -6,6 +6,11 @@ Changelog
 Upcoming version (not yet released)
 -----------------------------------
 
+General
+^^^^^^^
+- Removed rope and loop from :ref:`composite<body-composite>`. The user is encouraged to instead use the :at:`cable`
+  plugin or :ref:`flexcomp<body-flexcomp>`, respectively.
+
 MJX
 ^^^
 - Added muscle actuators.
@@ -16,6 +21,8 @@ Python bindings
 - Added ``bind`` method and removed id attribute from :ref:`mjSpec` objects. Using ids is error prone in scenarios of repeated attachment and
   detachment. Python users are encouraged to use names for unique identification of model elements.
 - Removed ``nroll`` argument from :ref:`rollout<PyRollout>` because its value can always be inferred.
+- :ref:`rollout<PyRollout>` can now accept sequences of MjModel of length ``nroll``. ``nroll`` argument deprecated because
+  its value can always be inferred.
 
 Bug fixes
 ^^^^^^^^^
