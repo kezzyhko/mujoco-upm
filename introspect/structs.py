@@ -1149,14 +1149,14 @@ STRUCTS: Mapping[str, StructDecl] = dict([
                  doc='number of chars in all names',
              ),
              StructFieldDecl(
-                 name='nnames_map',
-                 type=ValueType(name='int'),
-                 doc='number of slots in the names hash map',
-             ),
-             StructFieldDecl(
                  name='npaths',
                  type=ValueType(name='int'),
                  doc='number of chars in all paths',
+             ),
+             StructFieldDecl(
+                 name='nnames_map',
+                 type=ValueType(name='int'),
+                 doc='number of slots in the names hash map',
              ),
              StructFieldDecl(
                  name='nM',
@@ -1179,6 +1179,11 @@ STRUCTS: Mapping[str, StructDecl] = dict([
                  doc='number of non-zeros in sparse dof-dof matrix',
              ),
              StructFieldDecl(
+                 name='nJmom',
+                 type=ValueType(name='int'),
+                 doc='number of non-zeros in sparse actuator_moment matrix',
+             ),
+             StructFieldDecl(
                  name='ntree',
                  type=ValueType(name='int'),
                  doc='number of kinematic trees under world body',
@@ -1196,12 +1201,12 @@ STRUCTS: Mapping[str, StructDecl] = dict([
              StructFieldDecl(
                  name='njmax',
                  type=ValueType(name='int'),
-                 doc='number of available rows in constraint Jacobian',
+                 doc='number of available rows in constraint Jacobian (legacy)',
              ),
              StructFieldDecl(
                  name='nconmax',
                  type=ValueType(name='int'),
-                 doc='number of potential contacts in contact list',
+                 doc='number of potential contacts in contact list (legacy)',
              ),
              StructFieldDecl(
                  name='nuserdata',
@@ -5166,7 +5171,7 @@ STRUCTS: Mapping[str, StructDecl] = dict([
                      inner_type=ValueType(name='int'),
                  ),
                  doc='column indices in sparse Jacobian',
-                 array_extent=('nu', 'nv'),
+                 array_extent=('nJmom',),
              ),
              StructFieldDecl(
                  name='actuator_moment',
@@ -5174,7 +5179,7 @@ STRUCTS: Mapping[str, StructDecl] = dict([
                      inner_type=ValueType(name='mjtNum'),
                  ),
                  doc='actuator moments',
-                 array_extent=('nu', 'nv'),
+                 array_extent=('nJmom',),
              ),
              StructFieldDecl(
                  name='crb',
@@ -8596,12 +8601,12 @@ STRUCTS: Mapping[str, StructDecl] = dict([
                      inner_type=ValueType(name='int'),
                      extents=(1000,),
                  ),
-                 doc='texture repetition for 2d mapping',
+                 doc='uniform cube mapping',
              ),
              StructFieldDecl(
                  name='mat_texrepeat',
                  type=ArrayType(
-                     inner_type=ValueType(name='int'),
+                     inner_type=ValueType(name='float'),
                      extents=(2000,),
                  ),
                  doc='texture repetition for 2d mapping',
@@ -10335,13 +10340,6 @@ STRUCTS: Mapping[str, StructDecl] = dict([
                      inner_type=ValueType(name='mjIntVec'),
                  ),
                  doc='user vertex indices',
-             ),
-             StructFieldDecl(
-                 name='userfacenormal',
-                 type=PointerType(
-                     inner_type=ValueType(name='mjIntVec'),
-                 ),
-                 doc='user normal indices',
              ),
              StructFieldDecl(
                  name='userfacetexcoord',

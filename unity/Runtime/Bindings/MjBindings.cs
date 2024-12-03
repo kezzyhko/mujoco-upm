@@ -109,7 +109,7 @@ public const int mjMAXLINEPNT = 1000;
 public const int mjMAXPLANEGRID = 200;
 public const bool THIRD_PARTY_MUJOCO_MJXMACRO_H_ = true;
 public const bool THIRD_PARTY_MUJOCO_MUJOCO_H_ = true;
-public const int mjVERSION_HEADER = 325;
+public const int mjVERSION_HEADER = 326;
 
 
 // ------------------------------------Enums------------------------------------
@@ -5238,12 +5238,13 @@ public unsafe struct mjModel_ {
   public int nuser_actuator;
   public int nuser_sensor;
   public int nnames;
-  public int nnames_map;
   public int npaths;
+  public int nnames_map;
   public int nM;
   public int nB;
   public int nC;
   public int nD;
+  public int nJmom;
   public int ntree;
   public int ngravcomp;
   public int nemax;
@@ -5681,7 +5682,7 @@ public unsafe struct mjrContext_ {
   public fixed uint auxColor_r[10];
   public fixed int mat_texid[10000];
   public fixed int mat_texuniform[1000];
-  public fixed int mat_texrepeat[2000];
+  public fixed float mat_texrepeat[2000];
   public int ntexture;
   public fixed int textureType[1000];
   public fixed uint texture[1000];
@@ -6940,6 +6941,9 @@ public static unsafe extern void mjv_updateScene(mjModel_* m, mjData_* d, mjvOpt
 public static unsafe extern int mjv_updateSceneFromState(mjvSceneState_* scnstate, mjvOption_* opt, mjvPerturb_* pert, mjvCamera_* cam, int catmask, mjvScene_* scn);
 
 [DllImport("mujoco", CallingConvention = CallingConvention.Cdecl)]
+public static unsafe extern void mjv_copyModel(mjModel_* dest, mjModel_* src);
+
+[DllImport("mujoco", CallingConvention = CallingConvention.Cdecl)]
 public static unsafe extern void mjv_defaultSceneState(mjvSceneState_* scnstate);
 
 [DllImport("mujoco", CallingConvention = CallingConvention.Cdecl)]
@@ -7271,6 +7275,9 @@ public static unsafe extern void mju_quatIntegrate(double* quat, double* vel, do
 
 [DllImport("mujoco", CallingConvention = CallingConvention.Cdecl)]
 public static unsafe extern void mju_quatZ2Vec(double* quat, double* vec);
+
+[DllImport("mujoco", CallingConvention = CallingConvention.Cdecl)]
+public static unsafe extern int mju_mat2Rot(double* quat, double* mat);
 
 [DllImport("mujoco", CallingConvention = CallingConvention.Cdecl)]
 public static unsafe extern void mju_euler2Quat(double* quat, double* euler, [MarshalAs(UnmanagedType.LPStr)]string seq);

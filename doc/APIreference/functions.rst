@@ -94,7 +94,8 @@ Free last XML model if loaded. Called internally at each load.
 
 .. mujoco-include:: mj_saveXMLString
 
-Save spec to XML string, return 1 on success, 0 otherwise. XML saving requires that the spec first be compiled.
+Save spec to XML string, return 0 on success, -1 on failure. If the length of the output buffer is too small, returns
+the required size. XML saving requires that the spec first be compiled.
 
 .. _mj_saveXML:
 
@@ -103,7 +104,7 @@ Save spec to XML string, return 1 on success, 0 otherwise. XML saving requires t
 
 .. mujoco-include:: mj_saveXML
 
-Save spec to XML file, return 1 on success, 0 otherwise. XML saving requires that the spec first be compiled.
+Save spec to XML file, return 0 on success, -1 otherwise. XML saving requires that the spec first be compiled.
 
 .. _Mainsimulation:
 
@@ -2163,6 +2164,15 @@ Update entire scene given model state.
 
 Update entire scene from a scene state, return the number of new mjWARN_VGEOMFULL warnings.
 
+.. _mjv_copyModel:
+
+`mjv_copyModel <#mjv_copyModel>`__
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+.. mujoco-include:: mjv_copyModel
+
+Copy mjModel, skip large arrays not required for abstract visualization.
+
 .. _mjv_defaultSceneState:
 
 `mjv_defaultSceneState <#mjv_defaultSceneState>`__
@@ -3545,6 +3555,16 @@ Integrate quaternion given 3D angular velocity.
 .. mujoco-include:: mju_quatZ2Vec
 
 Construct quaternion performing rotation from z-axis to given vector.
+
+.. _mju_mat2Rot:
+
+`mju_mat2Rot <#mju_mat2Rot>`__
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+.. mujoco-include:: mju_mat2Rot
+
+extract 3D rotation from an arbitrary 3x3 matrix by refining the input quaternion
+returns the number of iterations required to converge
 
 .. _mju_euler2Quat:
 

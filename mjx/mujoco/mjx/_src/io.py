@@ -224,6 +224,11 @@ def make_data(
         efc_address=efc_address,
     )
 
+    if m.opt.cone == types.ConeType.ELLIPTIC and np.any(contact.dim == 1):
+      raise NotImplementedError(
+          'condim=1 with ConeType.ELLIPTIC not implemented.'
+      )
+
     zero_fields = {
         'solver_niter': (int,),
         'time': (float,),
@@ -276,7 +281,7 @@ def make_data(
         'actuator_length': (m.nu, float),
         'moment_rownnz': (m.nu, jp.int32),
         'moment_rowadr': (m.nu, jp.int32),
-        'moment_colind': (m.nu, m.nv, jp.int32),
+        'moment_colind': (m.nJmom, jp.int32),
         'actuator_moment': (m.nu, m.nv, float),
         'crb': (m.nbody, 10, float),
         'qM': (m.nM, float) if support.is_sparse(m) else (m.nv, m.nv, float),
@@ -431,22 +436,23 @@ def get_data_into(
         continue
 
       # MuJoCo actuator_moment is sparse, MJX uses a dense representation.
-      if field.name == 'actuator_moment' and m.nu:
-        moment_rownnz = np.zeros(m.nu, dtype=int)
-        moment_rowadr = np.zeros(m.nu, dtype=int)
-        moment_colind = np.zeros(m.nu * m.nv, dtype=int)
-        actuator_moment = np.zeros(m.nu * m.nv)
-        mujoco.mju_dense2sparse(
-            actuator_moment,
-            d.actuator_moment,
-            moment_rownnz,
-            moment_rowadr,
-            moment_colind,
-        )
+      if field.name == 'actuator_moment':
+        moment_rownnz = np.zeros(m.nu, dtype=np.int32)
+        moment_rowadr = np.zeros(m.nu, dtype=np.int32)
+        moment_colind = np.zeros(m.nJmom, dtype=np.int32)
+        actuator_moment = np.zeros(m.nJmom)
+        if m.nu:
+          mujoco.mju_dense2sparse(
+              actuator_moment,
+              d.actuator_moment,
+              moment_rownnz,
+              moment_rowadr,
+              moment_colind,
+          )
         result_i.moment_rownnz[:] = moment_rownnz
         result_i.moment_rowadr[:] = moment_rowadr
-        result_i.moment_colind[:] = moment_colind.reshape((m.nu, m.nv))
-        result_i.actuator_moment[:] = actuator_moment.reshape((m.nu, m.nv))
+        result_i.moment_colind[:] = moment_colind
+        result_i.actuator_moment[:] = actuator_moment
         continue
 
       value = getattr(d_i, field.name)
@@ -558,10 +564,10 @@ def put_data(
   moment = np.zeros((m.nu, m.nv))
   mujoco.mju_sparse2dense(
       moment,
-      d.actuator_moment.reshape(-1),
+      d.actuator_moment,
       d.moment_rownnz,
       d.moment_rowadr,
-      d.moment_colind.reshape(-1),
+      d.moment_colind,
   )
   fields['actuator_moment'] = moment
 

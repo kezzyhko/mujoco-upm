@@ -16,7 +16,7 @@
 #define MUJOCO_MUJOCO_H_
 
 // header version; should match the library version as returned by mj_version()
-#define mjVERSION_HEADER 325
+#define mjVERSION_HEADER 326
 
 // needed to define size_t, fabs and log10
 #include <stdlib.h>
@@ -117,7 +117,8 @@ MJAPI int mj_saveLastXML(const char* filename, const mjModel* m, char* error, in
 // Free last XML model if loaded. Called internally at each load.
 MJAPI void mj_freeLastXML(void);
 
-// Save spec to XML string, return 1 on success, 0 otherwise.
+// Save spec to XML string, return 0 on success, -1 on failure.
+// If length of the output buffer is too small, returns the required size.
 MJAPI int mj_saveXMLString(const mjSpec* s, char* xml, int xml_sz, char* error, int error_sz);
 
 // Save spec to XML file, return 1 on success, 0 otherwise.
@@ -692,6 +693,9 @@ MJAPI int mjv_updateSceneFromState(const mjvSceneState* scnstate, const mjvOptio
                                    const mjvPerturb* pert, mjvCamera* cam, int catmask,
                                    mjvScene* scn);
 
+// Copy mjModel, skip large arrays not required for abstract visualization.
+MJAPI void mjv_copyModel(mjModel* dest, const mjModel* src);
+
 // Set default scene state.
 MJAPI void mjv_defaultSceneState(mjvSceneState* scnstate);
 
@@ -1116,6 +1120,10 @@ MJAPI void mju_quatIntegrate(mjtNum quat[4], const mjtNum vel[3], mjtNum scale);
 
 // Construct quaternion performing rotation from z-axis to given vector.
 MJAPI void mju_quatZ2Vec(mjtNum quat[4], const mjtNum vec[3]);
+
+// extract 3D rotation from an arbitrary 3x3 matrix by refining the input quaternion
+// returns the number of iterations required to converge
+MJAPI int mju_mat2Rot(mjtNum quat[4], const mjtNum mat[9]);
 
 // Convert sequence of Euler angles (radians) to quaternion.
 // seq[0,1,2] must be in 'xyzXYZ', lower/upper-case mean intrinsic/extrinsic rotations.

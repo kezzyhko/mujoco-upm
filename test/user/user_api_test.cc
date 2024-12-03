@@ -293,6 +293,56 @@ TEST_F(PluginTest, AttachPlugin) {
   mj_deleteSpec(spec_2);
 }
 
+TEST_F(PluginTest, AttachExplicitPlugin) {
+  static constexpr char xml_parent[] = R"(
+    <mujoco model="MuJoCo Model">
+      <worldbody>
+        <body name="body"/>
+      </worldbody>
+    </mujoco>)";
+
+  static constexpr char xml_child[] = R"(
+    <mujoco>
+      <extension>
+        <plugin plugin="mujoco.sensor.touch_grid"/>
+      </extension>
+      <worldbody>
+        <body name="body">
+          <geom type="sphere" size=".1" />
+          <site name="touch2" size="0.001"/>
+        </body>
+      </worldbody>
+      <sensor>
+        <plugin name="touch2" plugin="mujoco.sensor.touch_grid" objtype="site" objname="touch2">
+          <config key="size" value="8 12"/>
+          <config key="fov" value="10 13"/>
+          <config key="gamma" value="0"/>
+          <config key="nchannel" value="1"/>
+        </plugin>
+      </sensor>
+    </mujoco>)";
+
+  std::array<char, 1000> err;
+  mjSpec* parent = mj_parseXMLString(xml_parent, 0, err.data(), err.size());
+  ASSERT_THAT(parent, NotNull()) << err.data();
+  mjSpec* child = mj_parseXMLString(xml_child, 0, err.data(), err.size());
+  ASSERT_THAT(child, NotNull()) << err.data();
+
+  mjsBody* body_parent = mjs_findBody(parent, "body");
+  EXPECT_THAT(body_parent, NotNull());
+  mjsFrame* attachment_frame = mjs_addFrame(body_parent, 0);
+  EXPECT_THAT(attachment_frame, NotNull());
+
+  mjs_attachBody(attachment_frame, mjs_findBody(child, "body"), "child-", "");
+  mjModel* model = mj_compile(parent, nullptr);
+  EXPECT_THAT(model, NotNull());
+  EXPECT_THAT(model->nplugin, 1);
+
+  mj_deleteSpec(parent);
+  mj_deleteSpec(child);
+  mj_deleteModel(model);
+}
+
 TEST_F(PluginTest, ReplicatePlugin) {
   static constexpr char xml[] = R"(
     <mujoco>
@@ -314,6 +364,40 @@ TEST_F(PluginTest, ReplicatePlugin) {
           <body />
         </replicate>
       </worldbody>
+    </mujoco>)";
+
+  std::array<char, 1000> err;
+  mjSpec* spec = mj_parseXMLString(xml, 0, err.data(), err.size());
+  ASSERT_THAT(spec, NotNull()) << err.data();
+  mjModel* model = mj_compile(spec, nullptr);
+  EXPECT_THAT(model, NotNull());
+  EXPECT_THAT(model->nplugin, 1);
+  mj_deleteSpec(spec);
+  mj_deleteModel(model);
+}
+
+TEST_F(PluginTest, ReplicateExplicitPlugin) {
+  static constexpr char xml[] = R"(
+    <mujoco>
+      <extension>
+        <plugin plugin="mujoco.sensor.touch_grid"/>
+      </extension>
+      <worldbody>
+        <body name="tactile_sensor_2">
+          <replicate count="2" offset="0 0.1 0">
+            <geom type="sphere" size=".0008" />
+          </replicate>
+          <site name="touch2" size="0.001"/>
+        </body>
+      </worldbody>
+      <sensor>
+        <plugin name="touch2" plugin="mujoco.sensor.touch_grid" objtype="site" objname="touch2">
+          <config key="size" value="8 12"/>
+          <config key="fov" value="10 13"/>
+          <config key="gamma" value="0"/>
+          <config key="nchannel" value="1"/>
+        </plugin>
+      </sensor>
     </mujoco>)";
 
   std::array<char, 1000> err;
@@ -647,6 +731,7 @@ static constexpr char xml_child[] = R"(
             <joint type="hinge" name="hinge"/>
             <geom class="cylinder" material="material"/>
             <light mode="targetbody" target="targetbody"/>
+            <site name="site" material="material"/>
             <body name="targetbody"/>
             <body/>
           </body>
@@ -673,6 +758,7 @@ static constexpr char xml_child[] = R"(
     <actuator>
       <position name="hinge" joint="hinge" timeconst=".01"/>
       <position name="fixed" tendon="fixed" timeconst=".01"/>
+      <position name="site" site="site" timeconst=".01"/>
     </actuator>
 
     <contact>
@@ -680,8 +766,8 @@ static constexpr char xml_child[] = R"(
     </contact>
 
     <keyframe>
-      <key name="two" time="2" qpos="2 22" act="2 2" ctrl="2 2"/>
-      <key name="three" time="3" qpos="3 33" act="3 3" ctrl="3 3"/>
+      <key name="two" time="2" qpos="2 22" act="1 2 3" ctrl="1 2 3"/>
+      <key name="three" time="3" qpos="3 33" act="4 5 6" ctrl="4 5 6"/>
     </keyframe>
   </mujoco>)";
 
@@ -712,6 +798,7 @@ TEST_F(MujocoTest, AttachSame) {
         <joint type="hinge" name="hinge"/>
         <geom class="cylinder" material="material"/>
         <light mode="targetbody" target="targetbody"/>
+        <site name="site" material="material"/>
         <body name="targetbody"/>
         <body/>
       </body>
@@ -724,6 +811,7 @@ TEST_F(MujocoTest, AttachSame) {
           <joint type="hinge" name="attached-hinge-1"/>
           <geom class="cylinder" material="material"/>
           <light mode="targetbody" target="attached-targetbody-1"/>
+          <site name="attached-site-1" material="material"/>
           <body name="attached-targetbody-1"/>
           <body/>
         </body>
@@ -748,8 +836,10 @@ TEST_F(MujocoTest, AttachSame) {
     <actuator>
       <position name="hinge" joint="hinge" timeconst=".01"/>
       <position name="fixed" tendon="fixed" timeconst=".01"/>
+      <position name="site" site="site" timeconst=".01"/>
       <position name="attached-hinge-1" joint="attached-hinge-1" timeconst=".01"/>
       <position name="attached-fixed-1" tendon="attached-fixed-1" timeconst=".01"/>
+      <position name="attached-site-1" site="attached-site-1" timeconst=".01"/>
     </actuator>
 
     <contact>
@@ -758,10 +848,10 @@ TEST_F(MujocoTest, AttachSame) {
     </contact>
 
     <keyframe>
-      <key name="two" time="2" qpos="2 22 0" act="2 2 0 0" ctrl="2 2 0 0"/>
-      <key name="three" time="3" qpos="3 33 0" act="3 3 0 0" ctrl="3 3 0 0"/>
-      <key name="attached-two-1" time="2" qpos="0 22 2" act="0 0 2 2" ctrl="0 0 2 2"/>
-      <key name="attached-three-1" time="3" qpos="0 33 3" act="0 0 3 3" ctrl="0 0 3 3"/>
+      <key name="two" time="2" qpos="2 22 0" act="1 2 3 0 0 0" ctrl="1 2 3 0 0 0"/>
+      <key name="three" time="3" qpos="3 33 0" act="4 5 6 0 0 0" ctrl="4 5 6 0 0 0"/>
+      <key name="attached-two-1" time="2" qpos="0 22 2" act="0 0 0 1 2 3" ctrl="0 0 0 1 2 3"/>
+      <key name="attached-three-1" time="3" qpos="0 33 3" act="0 0 0 4 5 6" ctrl="0 0 0 4 5 6"/>
     </keyframe>
   </mujoco>)";
 
@@ -862,6 +952,7 @@ TEST_F(MujocoTest, AttachDifferent) {
             <joint type="hinge" name="attached-hinge-1"/>
             <geom class="attached-cylinder-1" material="attached-material-1"/>
             <light mode="targetbody" target="attached-targetbody-1"/>
+            <site name="attached-site-1" material="attached-material-1"/>
             <body name="attached-targetbody-1"/>
             <body/>
           </body>
@@ -882,6 +973,7 @@ TEST_F(MujocoTest, AttachDifferent) {
     <actuator>
       <position name="attached-hinge-1" joint="attached-hinge-1" timeconst=".01"/>
       <position name="attached-fixed-1" tendon="attached-fixed-1" timeconst=".01"/>
+      <position name="attached-site-1" site="attached-site-1" timeconst=".01"/>
     </actuator>
 
     <contact>
@@ -890,8 +982,8 @@ TEST_F(MujocoTest, AttachDifferent) {
 
     <keyframe>
       <key name="one" time="1" qpos="1 1 1 1 0 0 0 0"/>
-      <key name="attached-two-1" time="2" qpos="0 0 0 1 0 0 0 2" act="2 2" ctrl="2 2"/>
-      <key name="attached-three-1" time="3" qpos="0 0 0 1 0 0 0 3" act="3 3" ctrl="3 3"/>
+      <key name="attached-two-1" time="2" qpos="0 0 0 1 0 0 0 2" act="1 2 3" ctrl="1 2 3"/>
+      <key name="attached-three-1" time="3" qpos="0 0 0 1 0 0 0 3" act="4 5 6" ctrl="4 5 6"/>
     </keyframe>
   </mujoco>)";
 
@@ -995,6 +1087,7 @@ TEST_F(MujocoTest, AttachFrame) {
               <joint type="hinge" name="attached-hinge-1"/>
               <geom class="attached-cylinder-1" material="attached-material-1"/>
               <light mode="targetbody" target="attached-targetbody-1"/>
+              <site name="attached-site-1" material="attached-material-1"/>
               <body name="attached-targetbody-1"/>
               <body/>
             </body>
@@ -1016,6 +1109,7 @@ TEST_F(MujocoTest, AttachFrame) {
     <actuator>
       <position name="attached-hinge-1" joint="attached-hinge-1" timeconst=".01"/>
       <position name="attached-fixed-1" tendon="attached-fixed-1" timeconst=".01"/>
+      <position name="attached-site-1" site="attached-site-1" timeconst=".01"/>
     </actuator>
 
     <contact>
@@ -1024,8 +1118,8 @@ TEST_F(MujocoTest, AttachFrame) {
 
     <keyframe>
       <key name="one" time="1" qpos="1 1 1 1 0 0 0 0"/>
-      <key name="attached-two-1" time="2" qpos="0 0 0 1 0 0 0 2" act="2 2" ctrl="2 2"/>
-      <key name="attached-three-1" time="3" qpos="0 0 0 1 0 0 0 3" act="3 3" ctrl="3 3"/>
+      <key name="attached-two-1" time="2" qpos="0 0 0 1 0 0 0 2" act="1 2 3" ctrl="1 2 3"/>
+      <key name="attached-three-1" time="3" qpos="0 0 0 1 0 0 0 3" act="4 5 6" ctrl="4 5 6"/>
     </keyframe>
   </mujoco>)";
 
@@ -1904,16 +1998,22 @@ TEST_F(MujocoTest, ResizeParentKeyframe) {
 
 TEST_F(MujocoTest, DifferentUnitsAllowed) {
   mjSpec* child = mj_makeSpec();
-  child->compiler.degree = 1;
+  child->compiler.degree = 0;
   mjsBody* body = mjs_addBody(mjs_findBody(child, "world"), 0);
   body->alt.type = mjORIENTATION_EULER;
-  body->alt.euler[0] = 90;
+  body->alt.euler[0] = -mjPI / 2;
+  mjsGeom* geom = mjs_addGeom(body, 0);
+  geom->size[0] = 1;
+  mjsJoint* joint = mjs_addJoint(body, 0);
+  joint->type = mjJNT_HINGE;
+  joint->range[0] = -mjPI / 4;
+  joint->range[1] = mjPI / 4;
 
   mjSpec* parent = mj_makeSpec();
-  parent->compiler.degree = 0;
+  parent->compiler.degree = 1;
   mjsFrame* frame = mjs_addFrame(mjs_findBody(parent, "world"), 0);
   frame->alt.type = mjORIENTATION_EULER;
-  frame->alt.euler[0] = -mjPI / 2;
+  frame->alt.euler[0] = 90;
 
   EXPECT_THAT(mjs_attachBody(frame, body, "child-", ""), NotNull());
   mjModel* model = mj_compile(parent, 0);
@@ -1922,6 +2022,8 @@ TEST_F(MujocoTest, DifferentUnitsAllowed) {
   EXPECT_NEAR(model->body_quat[5], 0, 1e-12);
   EXPECT_NEAR(model->body_quat[6], 0, 1e-12);
   EXPECT_NEAR(model->body_quat[7], 0, 1e-12);
+  EXPECT_NEAR(model->jnt_range[0], -mjPI / 4, 1e-7);
+  EXPECT_NEAR(model->jnt_range[1], mjPI / 4, 1e-7);
 
   mjSpec* copy = mj_copySpec(parent);
   EXPECT_THAT(copy, NotNull());
@@ -1936,6 +2038,8 @@ TEST_F(MujocoTest, DifferentUnitsAllowed) {
   EXPECT_NEAR(copy_model->body_quat[1], 0, 1e-12);
   EXPECT_NEAR(copy_model->body_quat[2], 0, 1e-12);
   EXPECT_NEAR(copy_model->body_quat[3], 0, 1e-12);
+  EXPECT_NEAR(copy_model->jnt_range[0], -mjPI / 4, 1e-7);
+  EXPECT_NEAR(copy_model->jnt_range[1], mjPI / 4, 1e-7);
 
   mj_deleteModel(copy_model);
   mj_deleteSpec(copy);

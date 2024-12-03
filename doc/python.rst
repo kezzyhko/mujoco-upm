@@ -503,6 +503,42 @@ The ``MjSpec`` object wraps the :ref:`mjSpec` struct and can be constructed in t
 
 Note the ``from_string()`` and ``from_file()`` methods can only be called at construction time.
 
+Attachments
+-----------
+
+It is possible to combine multiple specs by using attachments. The following options are possible:
+
+-   Attach a body from the child spec to a frame in the parent spec: ``body.attach_body(body, prefix, suffix)``, returns
+    the newly createdbody in the parent spec.
+-   Attach a frame from the child spec to a body in the parent spec: ``body.attach_frame(frame, prefix, suffix)``,
+    returns the newly created frame in the parent spec.
+-   Attach a body from the child spec to a site in the parent spec: ``site.attach(body, prefix, suffix)``, returns the
+    newly created body in the parent spec.
+-   Attach the worldbody from the child spec to a frame in the parent spec and transform it to a frame:
+    ``body.attach(spec, prefix, suffix)``, returns the newly created frame that the child worldbody was transformed
+    into.
+
+.. code-block:: python
+
+   import mujoco
+
+   # Create the parent spec.
+   parent = mujoco.MjSpec()
+   body = parent.worldbody.add_body()
+   frame = parent.worldbody.add_frame()
+   site = parent.worldbody.add_site()
+
+   # Create the child spec.
+   child = mujoco.MjSpec()
+   child_body = child.worldbody.add_body()
+   child_frame = child.worldbody.add_frame()
+
+   # Attach the child to the parent in different ways.
+   body_in_frame = frame.attach_body(child_body, 'child-', '')
+   frame_in_body = body.attach_frame(child_frame, 'child-', '')
+   body_in_site = site.attach(child_body, 'child-', '')
+   worldframe_in_frame = frame.attach(child, 'child-', '')
+
 Convenience methods
 -------------------
 
@@ -549,16 +585,17 @@ Model Editing
 includes a reimplementation of the ``PyMJCF`` example in the ``dm_control``
 `tutorial notebook <https://github.com/google-deepmind/dm_control/blob/main/dm_control/mjcf/tutorial.ipynb>`__.
 
-``PyMJCF`` provides a notion of "binding", giving access to :ref:`mjModel` and :ref:`mjData` values via the constructing
-elements. In the native API, this is done with object ids. For example, say we have multiple geoms containing the string
-"torso" in their name. We want to get their Cartesian positions in the XY plane from ``mjData``. This can be done as
-follows:
+``PyMJCF`` provides a notion of "binding", giving access to :ref:`mjModel` and :ref:`mjData` values via a helper class.
+In the native API, the helper class is not needed, so it is possible to directly bind an ``mjs`` object to
+:ref:`mjModel` and :ref:`mjData`. This requires the objects to have a non-empty name. For example, say we have multiple
+geoms containing the string "torso" in their name. We want to get their Cartesian positions in the XY plane from
+``mjData``. This can be done as follows:
 
 .. code-block:: python
 
-   torsos = [geom.id for geom in spec.geoms if 'torso' in geom.name]
-   pos_x = data.geom_xpos[torsos, 0]
-   pos_y = data.geom_xpos[torsos, 1]
+   torsos = [data.bind(geom) for geom in spec.geoms if 'torso' in geom.name]
+   pos_x = [torso.xpos[0] for torso in torsos]
+   pos_y = [torso.xpos[1] for torso in torsos]
 
 Notes
 -----
@@ -663,6 +700,7 @@ states and sensor values. The basic usage form is
 
    state, sensordata = rollout.rollout(model, data, initial_state, control)
 
+``model`` is either a single instance of MjModel or a sequence of compatible MjModel of length ``nroll``.
 ``initial_state`` is an ``nroll x nstate`` array, with ``nroll`` initial states of size ``nstate``, where
 ``nstate = mj_stateSize(model, mjtState.mjSTATE_FULLPHYSICS)`` is the size of the
 :ref:`full physics state<geFullPhysics>`. ``control`` is a ``nroll x nstep x ncontrol`` array of controls. Controls are

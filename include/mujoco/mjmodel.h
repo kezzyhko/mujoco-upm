@@ -655,19 +655,20 @@ struct mjModel_ {
   int nuser_actuator;             // number of mjtNums in actuator_user
   int nuser_sensor;               // number of mjtNums in sensor_user
   int nnames;                     // number of chars in all names
-  int nnames_map;                 // number of slots in the names hash map
   int npaths;                     // number of chars in all paths
 
-  // sizes set after mjModel construction (only affect mjData)
+  // sizes set after mjModel construction
+  int nnames_map;                 // number of slots in the names hash map
   int nM;                         // number of non-zeros in sparse inertia matrix
   int nB;                         // number of non-zeros in sparse body-dof matrix
   int nC;                         // number of non-zeros in sparse reduced dof-dof matrix
   int nD;                         // number of non-zeros in sparse dof-dof matrix
+  int nJmom;                      // number of non-zeros in sparse actuator_moment matrix
   int ntree;                      // number of kinematic trees under world body
   int ngravcomp;                  // number of bodies with nonzero gravcomp
   int nemax;                      // number of potential equality-constraint rows
-  int njmax;                      // number of available rows in constraint Jacobian
-  int nconmax;                    // number of potential contacts in contact list
+  int njmax;                      // number of available rows in constraint Jacobian (legacy)
+  int nconmax;                    // number of potential contacts in contact list (legacy)
   int nuserdata;                  // number of mjtNums reserved for the user
   int nsensordata;                // number of mjtNums in sensor data vector
   int npluginstate;               // number of mjtNums in plugin state vector

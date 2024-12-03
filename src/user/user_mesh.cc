@@ -268,10 +268,16 @@ void mjCMesh::CopyFromSpec() {
 
 
 
+void mjCMesh::CopyPlugin() {
+  model->CopyExplicitPlugin(this);
+}
+
+
+
 mjCMesh::~mjCMesh() {
   if (center_) mju_free(center_);
   if (graph_) mju_free(graph_);
-  if (spec.plugin.active && spec.plugin.name->empty()) {
+  if (spec.plugin.active && spec.plugin.name->empty() && model) {
     model->DeleteElement(spec.plugin.element);
   }
 }
@@ -2938,6 +2944,16 @@ void mjCFlex::Compile(const mjVFS* vfs) {
 
   // create bounding volume hierarchy
   CreateBVH();
+
+  // compute bounding box coordinates
+  vert0_.assign(3*nvert, 0);
+  const mjtNum* bvh = tree.Bvh().data();
+  for (int j=0; j < nvert; j++) {
+    for (int k=0; k < 3; k++) {
+      double size = 2*(bvh[k+3] - radius);
+      vert0_[3*j+k] = (vertxpos[3*j+k] - bvh[k]) / size + 0.5;
+    }
+  }
 }
 
 

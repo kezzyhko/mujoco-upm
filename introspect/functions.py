@@ -349,7 +349,7 @@ FUNCTIONS: Mapping[str, FunctionDecl] = dict([
                  type=ValueType(name='int'),
              ),
          ),
-         doc='Save spec to XML string, return 1 on success, 0 otherwise.',
+         doc='Save spec to XML string, return 0 on success, -1 on failure. If length of the output buffer is too small, returns the required size.',  # pylint: disable=line-too-long
      )),
     ('mj_saveXML',
      FunctionDecl(
@@ -4550,6 +4550,26 @@ FUNCTIONS: Mapping[str, FunctionDecl] = dict([
          ),
          doc='Update entire scene from a scene state, return the number of new mjWARN_VGEOMFULL warnings.',  # pylint: disable=line-too-long
      )),
+    ('mjv_copyModel',
+     FunctionDecl(
+         name='mjv_copyModel',
+         return_type=ValueType(name='void'),
+         parameters=(
+             FunctionParameterDecl(
+                 name='dest',
+                 type=PointerType(
+                     inner_type=ValueType(name='mjModel'),
+                 ),
+             ),
+             FunctionParameterDecl(
+                 name='src',
+                 type=PointerType(
+                     inner_type=ValueType(name='mjModel', is_const=True),
+                 ),
+             ),
+         ),
+         doc='Copy mjModel, skip large arrays not required for abstract visualization.',  # pylint: disable=line-too-long
+     )),
     ('mjv_defaultSceneState',
      FunctionDecl(
          name='mjv_defaultSceneState',
@@ -7364,6 +7384,28 @@ FUNCTIONS: Mapping[str, FunctionDecl] = dict([
              ),
          ),
          doc='Construct quaternion performing rotation from z-axis to given vector.',  # pylint: disable=line-too-long
+     )),
+    ('mju_mat2Rot',
+     FunctionDecl(
+         name='mju_mat2Rot',
+         return_type=ValueType(name='int'),
+         parameters=(
+             FunctionParameterDecl(
+                 name='quat',
+                 type=ArrayType(
+                     inner_type=ValueType(name='mjtNum'),
+                     extents=(4,),
+                 ),
+             ),
+             FunctionParameterDecl(
+                 name='mat',
+                 type=ArrayType(
+                     inner_type=ValueType(name='mjtNum', is_const=True),
+                     extents=(9,),
+                 ),
+             ),
+         ),
+         doc='extract 3D rotation from an arbitrary 3x3 matrix by refining the input quaternion returns the number of iterations required to converge',  # pylint: disable=line-too-long
      )),
     ('mju_euler2Quat',
      FunctionDecl(
