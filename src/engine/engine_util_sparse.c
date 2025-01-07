@@ -206,17 +206,6 @@ static void mju_addToSclScl(mjtNum* res, const mjtNum* vec, mjtNum scl1, mjtNum 
 
 
 
-// return 1 if vec1==vec2, 0 otherwise
-static int mju_compare(const int* vec1, const int* vec2, int n) {
-#ifdef mjUSEAVX
-  return mju_compare_avx(vec1, vec2, n);
-#else
-  return !memcmp(vec1, vec2, n*sizeof(int));
-#endif  // mjUSEAVX
-}
-
-
-
 // count the number of non-zeros in the sum of two sparse vectors
 int mju_combineSparseCount(int a_nnz, int b_nnz, const int* a_ind, const int* b_ind) {
   int a = 0, b = 0, c_nnz = 0;
@@ -625,10 +614,10 @@ void mju_superSparse(int nr, int* rowsuper,
 
 
 // precount res_rownnz and precompute res_rowadr for mju_sqrMatTDSparse
-void mju_sqrMatTDSparseInit(int* res_rownnz, int* res_rowadr, int nr,
-                            const int* rownnz, const int* rowadr, const int* colind,
-                            const int* rownnzT, const int* rowadrT, const int* colindT,
-                            const int* rowsuperT, mjData* d, int flg_upper) {
+void mju_sqrMatTDSparseCount(int* res_rownnz, int* res_rowadr, int nr,
+                             const int* rownnz, const int* rowadr, const int* colind,
+                             const int* rownnzT, const int* rowadrT, const int* colindT,
+                             const int* rowsuperT, mjData* d, int flg_upper) {
   mj_markStack(d);
   int* chain = mjSTACKALLOC(d, 2*nr, int);
   int nchain = 0;
@@ -865,11 +854,11 @@ void mju_sqrMatTDSparse(mjtNum* res, const mjtNum* mat, const mjtNum* matT,
   mj_freeStack(d);
 }
 
-// compute row non-zeros of reverse-Cholesky factor L, return total non-zeros
-// based on ldl_symbolic from 'Algorithm 8xx: a concise sparse Cholesky factorization package'
-// note: reads pattern from upper triangle
-int mju_cholFactorNNZ(int* L_rownnz, const int* rownnz, const int* rowadr, const int* colind,
-                      int n, mjData* d) {
+// precount row non-zeros of reverse-Cholesky factor L, return total non-zeros
+//  based on ldl_symbolic from 'Algorithm 8xx: a concise sparse Cholesky factorization package'
+//  reads pattern from upper triangle
+int mju_cholFactorCount(int* L_rownnz, const int* rownnz, const int* rowadr, const int* colind,
+                        int n, mjData* d) {
   mj_markStack(d);
   int* parent = mjSTACKALLOC(d, n, int);
   int* flag = mjSTACKALLOC(d, n, int);
@@ -880,24 +869,28 @@ int mju_cholFactorNNZ(int* L_rownnz, const int* rownnz, const int* rowadr, const
     flag[r] = r;
     L_rownnz[r] = 1;  // start with 1 for diagonal
 
-    // loop over non-zero columns
+    // loop over non-zero columns of upper triangle
     int start = rowadr[r];
     int end = start + rownnz[r];
     for (int c = start; c < end; c++) {
       int i = colind[c];
-      if (i > r) {
-        // traverse from i to ancestor, stop when row is flagged
-        while (flag[i] != r) {
-          // if not yet set, set parent to current row
-          if (parent[i] == -1) {
-            parent[i] = r;
-          }
 
-          // increment non-zeros, flag row i, advance to parent
-          L_rownnz[i]++;
-          flag[i] = r;
-          i = parent[i];
+      // skip lower triangle
+      if (i <= r) {
+        continue;
+      }
+
+      // traverse from i to ancestor, stop when row is flagged
+      while (flag[i] != r) {
+        // if not yet set, set parent to current row
+        if (parent[i] == -1) {
+          parent[i] = r;
         }
+
+        // increment non-zeros, flag row i, advance to parent
+        L_rownnz[i]++;
+        flag[i] = r;
+        i = parent[i];
       }
     }
   }
