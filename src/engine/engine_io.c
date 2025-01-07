@@ -943,8 +943,11 @@ static void makeDofDofSparse(const mjModel* m, mjData* d,
     // process below diagonal unless reduced and dof is simple
     if (!reduced || !m->dof_simplenum[i]) {
       while ((j = m->dof_parentid[j]) >= 0) {
+        // both reduced and non-reduced have lower triangle
         rownnz[i]++;
-        rownnz[j]++;
+
+        // only non-reduced has upper triangle
+        if (!reduced) rownnz[j]++;
       }
     }
   }
@@ -969,8 +972,11 @@ static void makeDofDofSparse(const mjModel* m, mjData* d,
         remaining[i]--;
         colind[rowadr[i] + remaining[i]] = j;
 
-        remaining[j]--;
-        colind[rowadr[j] + remaining[j]] = i;
+        // only non-reduced has upper triangle
+        if (!reduced) {
+          remaining[j]--;
+          colind[rowadr[j] + remaining[j]] = i;
+        }
       }
     }
   }
@@ -988,16 +994,18 @@ static void makeDofDofSparse(const mjModel* m, mjData* d,
   }
 
   // find diagonal indices
-  for (int i = 0; i < nv; i++) {
-    int adr = rowadr[i];
-    int j = 0;
-    while (colind[adr + j] < i && j < rownnz[i]) {
-      j++;
+  if (diag) {
+    for (int i = 0; i < nv; i++) {
+      int adr = rowadr[i];
+      int j = 0;
+      while (colind[adr + j] < i && j < rownnz[i]) {
+        j++;
+      }
+      if (colind[adr + j] != i) {
+        mjERROR("diagonal index not found");
+      }
+      diag[i] = j;
     }
-    if (colind[adr + j] != i) {
-      mjERROR("diagonal index not found");
-    }
-    diag[i] = j;
   }
 
   mj_freeStack(d);
@@ -1152,8 +1160,11 @@ static void copyM2Sparse(const mjModel* m, mjData* d, int* dst, const int* src,
         remaining[i]--;
         dst[rowadr[i] + remaining[i]] = src[adr];
 
-        remaining[j]--;
-        dst[rowadr[j] + remaining[j]] = src[adr];
+        // only non-reduced has upper triangle
+        if (!reduced) {
+          remaining[j]--;
+          dst[rowadr[j] + remaining[j]] = src[adr];
+        }
 
         adr++;
       }
@@ -1172,7 +1183,7 @@ static void copyM2Sparse(const mjModel* m, mjData* d, int* dst, const int* src,
 
 
 
-// integer valued dst[M] = src[D lower], handle different sparsity representations
+// integer valued dst[M] = src[D lower]
 static void copyD2MSparse(const mjModel* m, const mjData* d, int* dst, const int* src) {
   int nv = m->nv;
 
@@ -1197,7 +1208,7 @@ static void copyD2MSparse(const mjModel* m, const mjData* d, int* dst, const int
 
 
 // construct index mappings between M <-> D and M -> C
-static void makeDmap(const mjModel* m, mjData* d) {
+static void makeDofDofmap(const mjModel* m, mjData* d) {
   int nM = m->nM, nC = m->nC, nD = m->nD;
   mj_markStack(d);
 
@@ -1954,8 +1965,8 @@ static void _resetData(const mjModel* m, mjData* d, unsigned char debug_value) {
     checkDBSparse(m, d);
 
     // make C
-    makeDofDofSparse(m, d, d->C_rownnz, d->C_rowadr, d->C_diag, d->C_colind, /*reduced=*/1);
-    makeDmap(m, d);
+    makeDofDofSparse(m, d, d->C_rownnz, d->C_rowadr, NULL, d->C_colind, /*reduced=*/1);
+    makeDofDofmap(m, d);
   }
 
   // restore pluginstate and plugindata
