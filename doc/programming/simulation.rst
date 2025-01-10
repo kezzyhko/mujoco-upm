@@ -267,7 +267,7 @@ control laws obtained from trajectory optimizers would normally be indexed by ``
 The reason for the "official" caveat above is because user callbacks may store additional state variables that change
 over time and affect the callback outputs; indeed the field ``mjData.userdata`` exists mostly for that purpose. Other
 state-like quantities that are part of mjData and are treated as inputs by forward dynamics are ``mjData.mocap_pos`` and
-mjData.mocap_quat. These quantities are unusual in that they are meant to change at each time step (normally driven by a
+``mjData.mocap_quat``. These quantities are unusual in that they are meant to change at each time step (normally driven by a
 motion capture device), however this change is implemented by the user, while the simulator treats them as constants. In
 that sense they are no different from all the constants in mjModel, or the function callback pointers set by the user:
 such constants affect the computation, but are not part of the state vector of a dynamical system.
@@ -286,7 +286,7 @@ Next we turn to the controls and applied forces. The control vector in MuJoCo is
      u = (mjData.ctrl, mjData.qfrc_applied, mjData.xfrc_applied)
 
 These quantities specify control signals (``mjData.ctrl``) for the actuators defined in the model, or directly apply
-forces and torques specified in joint space (``mjData.qfrc_applied``) or in Cartesian space (mjData.xfrc_applied).
+forces and torques specified in joint space (``mjData.qfrc_applied``) or in Cartesian space (``mjData.xfrc_applied``).
 
 Finally, calling mj_forward which corresponds to the abstract dynamics function ``f(t,x,u)`` computes the
 time-derivative of the state vector. The corresponding fields of mjData are
@@ -556,6 +556,13 @@ or termination of the iterative solver.
 Model changes
 ~~~~~~~~~~~~~
 
+.. admonition:: Model editing framework
+   :class: tip
+
+   The discussion below regarding mjModel changes at runtime was written before the 3.2.0 introduction of the
+   :doc:`Model Editing<modeledit>` framework. It is still valid, but the new framework is the safe and recommended way
+   to modify models.
+
 The MuJoCo model contained in mjModel is supposed to represent constant physical properties of the system, and in
 theory should not change after compilation. Of course in practice things are not that simple. It is often desirable to
 change the physics options in ``mjModel.opt``, so as to experiment with different aspects of the physics or to create
@@ -590,8 +597,8 @@ asking a "decompiler" to make corresponding changes to the C code -- it is just 
 
 .. _siLayout:
 
-Data layout and buffer allocation
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+Data layout
+~~~~~~~~~~~
 
 All matrices in MuJoCo are in **row-major** format. For example, the linear memory array (a0, a1, ... a5) represents the
 2-by-3 matrix
@@ -712,8 +719,8 @@ and :ref:`mj_stackAllocByte` is provided for allocation of arbitrary number of b
 
 .. _siError:
 
-Errors, warnings, memory allocation
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+Errors and warnings
+~~~~~~~~~~~~~~~~~~~
 
 When a terminal error occurs, MuJoCo calls the function :ref:`mju_error` internally. Here is what mju_error does:
 
