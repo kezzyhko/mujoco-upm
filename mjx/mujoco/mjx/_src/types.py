@@ -47,6 +47,7 @@ class DisableBit(enum.IntFlag):
     REFSAFE:      integrator safety: make ref[0]>=2*timestep
     SENSOR:       sensors
   """
+
   CONSTRAINT = mujoco.mjtDisableBit.mjDSBL_CONSTRAINT
   EQUALITY = mujoco.mjtDisableBit.mjDSBL_EQUALITY
   FRICTIONLOSS = mujoco.mjtDisableBit.mjDSBL_FRICTIONLOSS
@@ -73,6 +74,7 @@ class JointType(enum.IntEnum):
     SLIDE: sliding distance along body-fixed axis       (1,)
     HINGE: rotation angle (rad) around body-fixed axis  (1,)
   """
+
   FREE = mujoco.mjtJoint.mjJNT_FREE
   BALL = mujoco.mjtJoint.mjJNT_BALL
   SLIDE = mujoco.mjtJoint.mjJNT_SLIDE
@@ -93,6 +95,7 @@ class IntegratorType(enum.IntEnum):
     RK4: 4th-order Runge Kutta
     IMPLICITFAST: implicit in velocity, no rne derivative
   """
+
   EULER = mujoco.mjtIntegrator.mjINT_EULER
   RK4 = mujoco.mjtIntegrator.mjINT_RK4
   IMPLICITFAST = mujoco.mjtIntegrator.mjINT_IMPLICITFAST
@@ -113,6 +116,7 @@ class GeomType(enum.IntEnum):
     MESH: mesh
     SDF: signed distance field
   """
+
   PLANE = mujoco.mjtGeom.mjGEOM_PLANE
   HFIELD = mujoco.mjtGeom.mjGEOM_HFIELD
   SPHERE = mujoco.mjtGeom.mjGEOM_SPHERE
@@ -134,6 +138,7 @@ class ConvexMesh(PyTreeNode):
     edge: edge indexes for all edges in the convex mesh
     edge_face_normal: indexes for face normals adjacent to edges in `edge`
   """
+
   vert: jax.Array
   face: jax.Array
   face_normal: jax.Array
@@ -148,6 +153,7 @@ class ConeType(enum.IntEnum):
     PYRAMIDAL: pyramidal
     ELLIPTIC: elliptic
   """
+
   PYRAMIDAL = mujoco.mjtCone.mjCONE_PYRAMIDAL
   ELLIPTIC = mujoco.mjtCone.mjCONE_ELLIPTIC
 
@@ -160,6 +166,7 @@ class JacobianType(enum.IntEnum):
     SPARSE: sparse
     AUTO: sparse if nv>60 and device is TPU, dense otherwise
   """
+
   DENSE = mujoco.mjtJacobian.mjJAC_DENSE
   SPARSE = mujoco.mjtJacobian.mjJAC_SPARSE
   AUTO = mujoco.mjtJacobian.mjJAC_AUTO
@@ -172,6 +179,7 @@ class SolverType(enum.IntEnum):
     CG: Conjugate gradient (primal)
     NEWTON: Newton (primal)
   """
+
   # unsupported: PGS
   CG = mujoco.mjtSolver.mjSOL_CG
   NEWTON = mujoco.mjtSolver.mjSOL_NEWTON
@@ -186,6 +194,7 @@ class EqType(enum.IntEnum):
     JOINT: couple the values of two scalar joints with cubic
     TENDON: couple the lengths of two tendons with cubic
   """
+
   CONNECT = mujoco.mjtEq.mjEQ_CONNECT
   WELD = mujoco.mjtEq.mjEQ_WELD
   JOINT = mujoco.mjtEq.mjEQ_JOINT
@@ -203,6 +212,7 @@ class WrapType(enum.IntEnum):
     SPHERE: wrap around sphere
     CYLINDER: wrap around (infinite) cylinder
   """
+
   JOINT = mujoco.mjtWrap.mjWRAP_JOINT
   PULLEY = mujoco.mjtWrap.mjWRAP_PULLEY
   SITE = mujoco.mjtWrap.mjWRAP_SITE
@@ -219,6 +229,7 @@ class TrnType(enum.IntEnum):
     TENDON: force on tendon
     SITE: force on site
   """
+
   JOINT = mujoco.mjtTrn.mjTRN_JOINT
   JOINTINPARENT = mujoco.mjtTrn.mjTRN_JOINTINPARENT
   SITE = mujoco.mjtTrn.mjTRN_SITE
@@ -236,6 +247,7 @@ class DynType(enum.IntEnum):
     FILTEREXACT: linear filter: da/dt = (u-a) / tau, with exact integration
     MUSCLE: piece-wise linear filter with two time constants
   """
+
   NONE = mujoco.mjtDyn.mjDYN_NONE
   INTEGRATOR = mujoco.mjtDyn.mjDYN_INTEGRATOR
   FILTER = mujoco.mjtDyn.mjDYN_FILTER
@@ -252,6 +264,7 @@ class GainType(enum.IntEnum):
     AFFINE: const + kp*length + kv*velocity
     MUSCLE: muscle FLV curve computed by muscle_gain
   """
+
   FIXED = mujoco.mjtGain.mjGAIN_FIXED
   AFFINE = mujoco.mjtGain.mjGAIN_AFFINE
   MUSCLE = mujoco.mjtGain.mjGAIN_MUSCLE
@@ -266,6 +279,7 @@ class BiasType(enum.IntEnum):
     AFFINE: const + kp*length + kv*velocity
     MUSCLE: muscle passive force computed by muscle_bias
   """
+
   NONE = mujoco.mjtBias.mjBIAS_NONE
   AFFINE = mujoco.mjtBias.mjBIAS_AFFINE
   MUSCLE = mujoco.mjtBias.mjBIAS_MUSCLE
@@ -282,6 +296,7 @@ class ConstraintType(enum.IntEnum):
     CONTACT_FRICTIONLESS: frictionless contact
     CONTACT_PYRAMIDAL: frictional contact, pyramidal friction cone
   """
+
   EQUALITY = mujoco.mjtConstraint.mjCNSTR_EQUALITY
   FRICTION_DOF = mujoco.mjtConstraint.mjCNSTR_FRICTION_DOF
   FRICTION_TENDON = mujoco.mjtConstraint.mjCNSTR_FRICTION_TENDON
@@ -302,6 +317,7 @@ class CamLightType(enum.IntEnum):
     TARGETBODY: pos fixed in body, rot tracks target body
     TARGETBODYCOM: pos fixed in body, rot tracks target subtree com
   """
+
   FIXED = mujoco.mjtCamLight.mjCAMLIGHT_FIXED
   TRACK = mujoco.mjtCamLight.mjCAMLIGHT_TRACK
   TRACKCOM = mujoco.mjtCamLight.mjCAMLIGHT_TRACKCOM
@@ -346,6 +362,7 @@ class SensorType(enum.IntEnum):
     FRAMELINACC: 3D linear acceleration
     FRAMEANGACC: 3D angular acceleration
   """
+
   MAGNETOMETER = mujoco.mjtSensor.mjSENS_MAGNETOMETER
   CAMPROJECTION = mujoco.mjtSensor.mjSENS_CAMPROJECTION
   RANGEFINDER = mujoco.mjtSensor.mjSENS_RANGEFINDER
@@ -391,6 +408,7 @@ class ObjType(PyTreeNode):
     SITE: site
     CAMERA: camera
   """
+
   UNKNOWN = mujoco.mjtObj.mjOBJ_UNKNOWN
   BODY = mujoco.mjtObj.mjOBJ_BODY
   XBODY = mujoco.mjtObj.mjOBJ_XBODY
@@ -437,7 +455,7 @@ class Option(PyTreeNode):
     disableactuator:   bit flags for disabling actuators by group id (not used)
     sdf_initpoints:    number of starting points for gradient descent (not used)
     sdf_iterations:    max number of iterations for gradient descent (not used)
-  """
+  """  # fmt: skip
   timestep: jax.Array
   apirate: jax.Array = _restricted_to('mujoco')
   impratio: jax.Array
@@ -480,6 +498,7 @@ class Statistic(PyTreeNode):
     extent: spatial extent (not used)
     center: center of model (not used)
   """
+
   meaninertia: jax.Array
   meanmass: jax.Array
   meansize: jax.Array
@@ -536,6 +555,8 @@ class Model(PyTreeNode):
     nM: number of non-zeros in sparse inertia matrix
     nD: number of non-zeros in sparse dof-dof matrix
     nB: number of non-zeros in sparse body-dof matrix
+    nC: number of non-zeros in sparse reduced dof-dof matrix
+    nD: number of non-zeros in sparse dof-dof matrix
     nJmom: number of non-zeros in sparse actuator_moment matrix
     ntree: number of kinematic trees under world body
     ngravcomp: number of bodies with nonzero gravcomp
@@ -645,11 +666,13 @@ class Model(PyTreeNode):
     light_bodyid: id of light's body                          (nlight,)
     light_targetbodyid: id of targeted body; -1: none         (nlight,)
     light_directional: directional light                      (nlight,)
+    light_castshadow: does light cast shadows                 (nlight,)
     light_pos: position rel. to body frame                    (nlight, 3)
     light_dir: direction rel. to body frame                   (nlight, 3)
     light_poscom0: global position rel. to sub-com in qpos0   (nlight, 3)
     light_pos0: global position rel. to body in qpos0         (nlight, 3)
     light_dir0: global direction in qpos0                     (nlight, 3)
+    light_cutoff: OpenGL cutoff                               (nlight,)
     flex_contype: flex contact type                           (nflex,)
     flex_conaffinity: flex contact affinity                   (nflex,)
     flex_condim: contact dimensionality (1, 3, 4, 6)          (nflex,)
@@ -811,6 +834,7 @@ class Model(PyTreeNode):
     name_keyadr: keyframe name pointers                       (nkey,)
     names: names of all objects, 0-terminated                 (nnames,)
   """
+
   nq: int
   nv: int
   nu: int
@@ -854,9 +878,10 @@ class Model(PyTreeNode):
   nkey: int
   nmocap: int
   nM: int  # pylint:disable=invalid-name
-  nD: int  # pylint:disable=invalid-name
   nB: int  # pylint:disable=invalid-name
-  nJmom: int
+  nC: int  # pylint:disable=invalid-name
+  nD: int  # pylint:disable=invalid-name
+  nJmom: int  # pylint:disable=invalid-name
   ntree: int = _restricted_to('mujoco')
   ngravcomp: int
   nuserdata: int
@@ -970,12 +995,14 @@ class Model(PyTreeNode):
   light_mode: np.ndarray
   light_bodyid: np.ndarray = _restricted_to('mujoco')
   light_targetbodyid: np.ndarray = _restricted_to('mujoco')
-  light_directional: np.ndarray
+  light_directional: jax.Array
+  light_castshadow: jax.Array
   light_pos: jax.Array
   light_dir: jax.Array
   light_poscom0: np.ndarray = _restricted_to('mujoco')
   light_pos0: np.ndarray
   light_dir0: np.ndarray
+  light_cutoff: jax.Array
   flex_contype: np.ndarray = _restricted_to('mujoco')
   flex_conaffinity: np.ndarray = _restricted_to('mujoco')
   flex_condim: np.ndarray = _restricted_to('mujoco')
@@ -1158,7 +1185,7 @@ class Contact(PyTreeNode):
     geom2: id of geom 2; deprecated, use geom[1]
     geom: geom ids                                                    (2,)
     efc_address: address in efc; -1: not included
-  """
+  """  # fmt: skip
   dist: jax.Array
   pos: jax.Array
   frame: jax.Array
@@ -1247,7 +1274,6 @@ class Data(PyTreeNode):
                                                      if dense:  (nv, nv)
     qLDiagInv: 1/diag(D)                             if sparse: (nv,)
                                                      if dense:  (0,)
-    qLDiagSqrtInv: 1/sqrt(diag(D))                              (nv,)
     bvh_aabb_dyn: global bounding box (center, size)            (nbvhdynamic, 6)
     bvh_active: volume has been added to collisions             (nbvh,)
     flexedge_velocity: flex edge velocities                     (nflexedge,)
@@ -1265,12 +1291,19 @@ class Data(PyTreeNode):
     subtree_angmom: angular momentum about subtree com          (nbody, 3)
     qH: L'*D*L factorization of modified M                      (nM,)
     qHDiagInv: 1/diag(D) of modified M                          (nv,)
-    D_rownnz: non-zeros in each row                             (nv,)
-    D_rowadr: address of each row in D_colind                   (nv,)
-    D_colind: column indices of non-zeros                       (nD,)
-    B_rownnz: non-zeros in each row                             (nbody,)
-    B_rowadr: address of each row in B_colind                   (nbody,)
-    B_colind: column indices of non-zeros                       (nB,)
+    B_rownnz: body-dof: non-zeros in each row                   (nbody,)
+    B_rowadr: body-dof: address of each row in B_colind         (nbody,)
+    B_colind: body-dof: column indices of non-zeros             (nB,)
+    C_rownnz: reduced dof-dof: non-zeros in each row            (nv,)
+    C_rowadr: reduced dof-dof: address of each row in C_colind  (nv,)
+    C_colind: reduced dof-dof: column indices of non-zeros      (nC,)
+    mapM2C: index mapping from M to C                           (nC,)
+    D_rownnz: dof-dof: non-zeros in each row                    (nv,)
+    D_rowadr: dof-dof: address of each row in D_colind          (nv,)
+    D_diag: dof-dof: index of diagonal element                  (nv,)
+    D_colind: dof-dof: column indices of non-zeros              (nD,)
+    mapM2D: index mapping from M to D                           (nD,)
+    mapD2M: index mapping from D to M                           (nM,)
     qDeriv: d (passive + actuator - bias) / d qvel              (nD,)
     qLU: sparse LU of (qM - dt*qDeriv)                          (nD,)
     actuator_force: actuator force in actuation space           (nu,)
@@ -1295,7 +1328,7 @@ class Data(PyTreeNode):
     _qM_sparse: qM in sparse representation                     (nM,)
     _qLD_sparse: qLD in sparse representation                   (nM,)
     _qLDiagInv_sparse: qLDiagInv in sparse representation       (nv,)
-  """
+  """  # fmt: skip
   # constant sizes:
   ne: int
   nf: int
@@ -1369,7 +1402,6 @@ class Data(PyTreeNode):
   qM: jax.Array  # pylint:disable=invalid-name
   qLD: jax.Array  # pylint:disable=invalid-name
   qLDiagInv: jax.Array  # pylint:disable=invalid-name
-  qLDiagSqrtInv: jax.Array  # pylint:disable=invalid-name
   bvh_aabb_dyn: jax.Array = _restricted_to('mujoco')
   bvh_active: jax.Array = _restricted_to('mujoco')
   # position, velocity dependent:
@@ -1388,12 +1420,19 @@ class Data(PyTreeNode):
   subtree_angmom: jax.Array
   qH: jax.Array = _restricted_to('mujoco')  # pylint:disable=invalid-name
   qHDiagInv: jax.Array = _restricted_to('mujoco')  # pylint:disable=invalid-name
-  D_rownnz: jax.Array = _restricted_to('mujoco')  # pylint:disable=invalid-name
-  D_rowadr: jax.Array = _restricted_to('mujoco')  # pylint:disable=invalid-name
-  D_colind: jax.Array = _restricted_to('mujoco')  # pylint:disable=invalid-name
   B_rownnz: jax.Array = _restricted_to('mujoco')  # pylint:disable=invalid-name
   B_rowadr: jax.Array = _restricted_to('mujoco')  # pylint:disable=invalid-name
   B_colind: jax.Array = _restricted_to('mujoco')  # pylint:disable=invalid-name
+  C_rownnz: jax.Array = _restricted_to('mujoco')  # pylint:disable=invalid-name
+  C_rowadr: jax.Array = _restricted_to('mujoco')  # pylint:disable=invalid-name
+  C_colind: jax.Array = _restricted_to('mujoco')  # pylint:disable=invalid-name
+  mapM2C: jax.Array = _restricted_to('mujoco')  # pylint:disable=invalid-name
+  D_rownnz: jax.Array = _restricted_to('mujoco')  # pylint:disable=invalid-name
+  D_rowadr: jax.Array = _restricted_to('mujoco')  # pylint:disable=invalid-name
+  D_diag: jax.Array = _restricted_to('mujoco')  # pylint:disable=invalid-name
+  D_colind: jax.Array = _restricted_to('mujoco')  # pylint:disable=invalid-name
+  mapM2D: jax.Array = _restricted_to('mujoco')  # pylint:disable=invalid-name
+  mapD2M: jax.Array = _restricted_to('mujoco')  # pylint:disable=invalid-name
   qDeriv: jax.Array = _restricted_to('mujoco')  # pylint:disable=invalid-name
   qLU: jax.Array = _restricted_to('mujoco')  # pylint:disable=invalid-name
   # position, velocity, control & acceleration dependent:

@@ -921,7 +921,8 @@ int mj_sizeModel(const mjModel* m) {
 
 // construct sparse representation of dof-dof matrix
 static void makeDofDofSparse(const mjModel* m, mjData* d,
-                             int* rownnz, int* rowadr, int* colind, int reduced) {
+                             int* rownnz, int* rowadr,  int* diag, int* colind,
+                             int reduced) {
   int nv = m->nv;
 
   // no dofs, nothing to do
@@ -930,7 +931,7 @@ static void makeDofDofSparse(const mjModel* m, mjData* d,
   }
 
   mj_markStack(d);
-  int* remaining = mj_stackAllocInt(d, nv);
+  int* remaining = mjSTACKALLOC(d, nv, int);
 
   // compute rownnz
   mju_zeroInt(rownnz, nv);
@@ -942,8 +943,11 @@ static void makeDofDofSparse(const mjModel* m, mjData* d,
     // process below diagonal unless reduced and dof is simple
     if (!reduced || !m->dof_simplenum[i]) {
       while ((j = m->dof_parentid[j]) >= 0) {
+        // both reduced and non-reduced have lower triangle
         rownnz[i]++;
-        rownnz[j]++;
+
+        // only non-reduced has upper triangle
+        if (!reduced) rownnz[j]++;
       }
     }
   }
@@ -968,8 +972,11 @@ static void makeDofDofSparse(const mjModel* m, mjData* d,
         remaining[i]--;
         colind[rowadr[i] + remaining[i]] = j;
 
-        remaining[j]--;
-        colind[rowadr[j] + remaining[j]] = i;
+        // only non-reduced has upper triangle
+        if (!reduced) {
+          remaining[j]--;
+          colind[rowadr[j] + remaining[j]] = i;
+        }
       }
     }
   }
@@ -984,6 +991,21 @@ static void makeDofDofSparse(const mjModel* m, mjData* d,
   // check total nnz; SHOULD NOT OCCUR
   if (rowadr[nv - 1] + rownnz[nv - 1] != (reduced ? m->nC : m->nD)) {
     mjERROR("sum of rownnz different from expected");
+  }
+
+  // find diagonal indices
+  if (diag) {
+    for (int i = 0; i < nv; i++) {
+      int adr = rowadr[i];
+      int j = 0;
+      while (colind[adr + j] < i && j < rownnz[i]) {
+        j++;
+      }
+      if (colind[adr + j] != i) {
+        mjERROR("diagonal index not found");
+      }
+      diag[i] = j;
+    }
   }
 
   mj_freeStack(d);
@@ -1030,7 +1052,7 @@ static void makeBSparse(const mjModel* m, mjData* d) {
 
   // allocate and clear incremental row counts
   mj_markStack(d);
-  int* cnt = mj_stackAllocInt(d, nbody);
+  int* cnt = mjSTACKALLOC(d, nbody, int);
   mju_zeroInt(cnt, nbody);
 
   // add subtree dofs to colind
@@ -1120,7 +1142,7 @@ static void copyM2Sparse(const mjModel* m, mjData* d, int* dst, const int* src,
   mj_markStack(d);
 
   // init remaining
-  int* remaining = mj_stackAllocInt(d, nv);
+  int* remaining = mjSTACKALLOC(d, nv, int);
   mju_copyInt(remaining, rownnz, nv);
 
   // copy data
@@ -1138,8 +1160,11 @@ static void copyM2Sparse(const mjModel* m, mjData* d, int* dst, const int* src,
         remaining[i]--;
         dst[rowadr[i] + remaining[i]] = src[adr];
 
-        remaining[j]--;
-        dst[rowadr[j] + remaining[j]] = src[adr];
+        // only non-reduced has upper triangle
+        if (!reduced) {
+          remaining[j]--;
+          dst[rowadr[j] + remaining[j]] = src[adr];
+        }
 
         adr++;
       }
@@ -1158,7 +1183,7 @@ static void copyM2Sparse(const mjModel* m, mjData* d, int* dst, const int* src,
 
 
 
-// integer valued dst[M] = src[D lower], handle different sparsity representations
+// integer valued dst[M] = src[D lower]
 static void copyD2MSparse(const mjModel* m, const mjData* d, int* dst, const int* src) {
   int nv = m->nv;
 
@@ -1183,12 +1208,12 @@ static void copyD2MSparse(const mjModel* m, const mjData* d, int* dst, const int
 
 
 // construct index mappings between M <-> D and M -> C
-static void makeDmap(const mjModel* m, mjData* d) {
+static void makeDofDofmap(const mjModel* m, mjData* d) {
   int nM = m->nM, nC = m->nC, nD = m->nD;
   mj_markStack(d);
 
   // make mapM2D
-  int* M = mj_stackAllocInt(d, nM);
+  int* M = mjSTACKALLOC(d, nM, int);
   for (int i=0; i < nM; i++) M[i] = i;
   for (int i=0; i < nD; i++) d->mapM2D[i] = -1;
   copyM2Sparse(m, d, d->mapM2D, M, /*reduced=*/0);
@@ -1201,7 +1226,7 @@ static void makeDmap(const mjModel* m, mjData* d) {
   }
 
   // make mapD2M
-  int* D = mj_stackAllocInt(d, nD);
+  int* D = mjSTACKALLOC(d, nD, int);
   for (int i=0; i < nD; i++) D[i] = i;
   for (int i=0; i < nM; i++) d->mapD2M[i] = -1;
   copyD2MSparse(m, d, d->mapD2M, D);
@@ -1577,7 +1602,8 @@ void* mj_arenaAllocByte(mjData* d, size_t bytes, size_t alignment) {
 
 // internal: allocate size bytes on the provided stack shard
 // declared inline so that modular arithmetic with specific alignments can be optimized out
-static inline void* stackallocinternal(mjData* d, mjStackInfo* stack_info, size_t size, size_t alignment) {
+static inline void* stackallocinternal(mjData* d, mjStackInfo* stack_info, size_t size,
+    size_t alignment, const char* caller, int line) {
   // return NULL if empty
   if (mjUNLIKELY(!size)) {
     return NULL;
@@ -1600,10 +1626,19 @@ static inline void* stackallocinternal(mjData* d, mjStackInfo* stack_info, size_
   size_t stack_available_bytes = stack_info->top - stack_info->limit;
   size_t stack_required_bytes = stack_info->top - new_top_ptr;
   if (mjUNLIKELY(stack_required_bytes > stack_available_bytes)) {
-    mju_error("mj_stackAlloc: insufficient memory: max = %zu, available = %zu, requested = %zu "
-              "(ne = %d, nf = %d, nefc = %d, ncon = %d)",
+    char info[1024];
+    if (caller) {
+      snprintf(info, sizeof(info), " at %s, line %d", caller, line);
+    } else {
+      info[0] = '\0';
+    }
+    mju_error("mj_stackAlloc: out of memory, stack overflow%s\n"
+              "  max = %zu, available = %zu, requested = %zu\n"
+              "  nefc = %d, ncon = %d",
+              info,
               stack_info->bottom - stack_info->limit, stack_available_bytes, stack_required_bytes,
-              d->ne, d->nf, d->nefc, d->ncon);
+              d->nefc, d->ncon);
+
   }
 
 #ifdef ADDRESS_SANITIZER
@@ -1638,20 +1673,20 @@ static inline void* stackallocinternal(mjData* d, mjStackInfo* stack_info, size_
 
 // internal: allocate size bytes in mjData
 // declared inline so that modular arithmetic with specific alignments can be optimized out
-static inline void* stackalloc(mjData* d, size_t size, size_t alignment) {
+static inline void* stackalloc(mjData* d, size_t size, size_t alignment,
+                               const char* caller, int line) {
+  // single threaded allocation
   if (!d->threadpool) {
     mjStackInfo stack_info = get_stack_info_from_data(d);
-
-    void* result = stackallocinternal(d, &stack_info, size, alignment);
-
+    void* result = stackallocinternal(d, &stack_info, size, alignment, caller, line);
     d->pstack = stack_info.bottom - stack_info.top;
-
     return result;
   }
 
+  // multi threaded allocation
   size_t thread_id = mju_threadPoolCurrentWorkerId((mjThreadPool*)d->threadpool);
   mjStackInfo* stack_info = mju_getStackInfoForThread(d, thread_id);
-  return stackallocinternal(d, stack_info, size, alignment);
+  return stackallocinternal(d, stack_info, size, alignment, caller, line);
 }
 
 
@@ -1663,7 +1698,7 @@ __attribute__((always_inline))
 static inline void markstackinternal(mjData* d, mjStackInfo* stack_info) {
   size_t top_old = stack_info->top;
   mjStackFrame* s =
-    (mjStackFrame*) stackallocinternal(d, stack_info, sizeof(mjStackFrame), _Alignof(mjStackFrame));
+    (mjStackFrame*) stackallocinternal(d, stack_info, sizeof(mjStackFrame), _Alignof(mjStackFrame), NULL, 0);
   s->pbase = stack_info->stack_base;
   s->pstack = top_old;
 #ifdef ADDRESS_SANITIZER
@@ -1765,7 +1800,15 @@ size_t mj_stackBytesAvailable(mjData* d) {
 
 // allocate bytes on the stack
 void* mj_stackAllocByte(mjData* d, size_t bytes, size_t alignment) {
-  return stackalloc(d, bytes, alignment);
+  return stackalloc(d, bytes, alignment, NULL, 0);
+}
+
+
+
+// allocate bytes on the stack, with caller information
+void* mj_stackAllocInfo(mjData* d, size_t bytes, size_t alignment,
+                        const char* caller, int line) {
+  return stackalloc(d, bytes, alignment, caller, line);
 }
 
 
@@ -1775,7 +1818,7 @@ mjtNum* mj_stackAllocNum(mjData* d, size_t size) {
   if (mjUNLIKELY(size >= SIZE_MAX / sizeof(mjtNum))) {
     mjERROR("requested size is too large (more than 2^64 bytes).");
   }
-  return (mjtNum*) stackalloc(d, size * sizeof(mjtNum), _Alignof(mjtNum));
+  return (mjtNum*) stackalloc(d, size * sizeof(mjtNum), _Alignof(mjtNum), NULL, 0);
 }
 
 
@@ -1785,7 +1828,7 @@ int* mj_stackAllocInt(mjData* d, size_t size) {
   if (mjUNLIKELY(size >= SIZE_MAX / sizeof(int))) {
     mjERROR("requested size is too large (more than 2^64 bytes).");
   }
-  return (int*) stackalloc(d, size * sizeof(int), _Alignof(int));
+  return (int*) stackalloc(d, size * sizeof(int), _Alignof(int), NULL, 0);
 }
 
 
@@ -1850,6 +1893,7 @@ static void _resetData(const mjModel* m, mjData* d, unsigned char debug_value) {
   d->nl = 0;
   d->nefc = 0;
   d->nJ = 0;
+  d->nA = 0;
   d->nisland = 0;
 
   // clear global properties
@@ -1915,15 +1959,15 @@ static void _resetData(const mjModel* m, mjData* d, unsigned char debug_value) {
   // construct sparse matrix representations
   if (m->body_dofadr) {
     // make D
-    makeDofDofSparse(m, d, d->D_rownnz, d->D_rowadr, d->D_colind, /*reduced=*/0);
+    makeDofDofSparse(m, d, d->D_rownnz, d->D_rowadr, d->D_diag, d->D_colind, /*reduced=*/0);
 
     // make B, check D and B
     makeBSparse(m, d);
     checkDBSparse(m, d);
 
     // make C
-    makeDofDofSparse(m, d, d->C_rownnz, d->C_rowadr, d->C_colind, /*reduced=*/1);
-    makeDmap(m, d);
+    makeDofDofSparse(m, d, d->C_rownnz, d->C_rowadr, NULL, d->C_colind, /*reduced=*/1);
+    makeDofDofmap(m, d);
   }
 
   // restore pluginstate and plugindata

@@ -379,7 +379,7 @@ FUNCTIONS: Mapping[str, FunctionDecl] = dict([
                  type=ValueType(name='int'),
              ),
          ),
-         doc='Save spec to XML file, return 1 on success, 0 otherwise.',
+         doc='Save spec to XML file, return 0 on success, -1 otherwise.',
      )),
     ('mj_step',
      FunctionDecl(
@@ -1864,6 +1864,12 @@ FUNCTIONS: Mapping[str, FunctionDecl] = dict([
              ),
              FunctionParameterDecl(
                  name='y',
+                 type=PointerType(
+                     inner_type=ValueType(name='mjtNum', is_const=True),
+                 ),
+             ),
+             FunctionParameterDecl(
+                 name='sqrtInvD',
                  type=PointerType(
                      inner_type=ValueType(name='mjtNum', is_const=True),
                  ),
@@ -9271,7 +9277,7 @@ FUNCTIONS: Mapping[str, FunctionDecl] = dict([
     ('mjs_delete',
      FunctionDecl(
          name='mjs_delete',
-         return_type=ValueType(name='void'),
+         return_type=ValueType(name='int'),
          parameters=(
              FunctionParameterDecl(
                  name='element',
@@ -9280,7 +9286,7 @@ FUNCTIONS: Mapping[str, FunctionDecl] = dict([
                  ),
              ),
          ),
-         doc='Delete object corresponding to the given element.',
+         doc='Delete object corresponding to the given element, return 0 on success.',  # pylint: disable=line-too-long
      )),
     ('mjs_addActuator',
      FunctionDecl(

@@ -311,10 +311,10 @@ const char* MJCF[nMJCF][mjXATTRNUM] = {
               {"config", "*", "2", "key", "value"},
             {">"},
         {">"},
-        {"flexcomp", "*", "24", "name", "type", "group", "dim",
+        {"flexcomp", "*", "25", "name", "type", "group", "dim",
             "count", "spacing", "radius", "rigid", "mass", "inertiabox",
             "scale", "file", "point", "element", "texcoord", "material", "rgba",
-            "flatskin", "pos", "quat", "axisangle", "xyaxes", "zaxis", "euler"},
+            "flatskin", "pos", "quat", "axisangle", "xyaxes", "zaxis", "euler", "origin"},
         {"<"},
             {"edge", "?", "5", "equality", "solref", "solimp", "stiffness", "damping"},
             {"elasticity", "?", "4", "young", "poisson", "damping", "thickness"},
@@ -837,15 +837,13 @@ void mjXReader::PrintSchema(std::stringstream& str, bool html, bool pad) {
 void mjXReader::Parse(XMLElement* root, const mjVFS* vfs) {
   // check schema
   if (!schema.GetError().empty()) {
-    throw mjXError(0, "XML Schema Construction Error: %s\n",
-                   schema.GetError().c_str());
+    throw mjXError(0, "XML Schema Construction Error: %s", schema.GetError().c_str());
   }
 
   // validate
   XMLElement* bad = 0;
   if ((bad = schema.Check(root, 0))) {
-    throw mjXError(bad, "Schema violation: %s\n",
-                   schema.GetError().c_str());
+    throw mjXError(bad, "Schema violation: %s", schema.GetError().c_str());
   }
 
   // get model name
@@ -2645,6 +2643,10 @@ void mjXReader::OneFlexcomp(XMLElement* elem, mjsBody* body, const mjVFS* vfs) {
   ReadAttrInt(elem, "dim", &dflex.dim);
   ReadAttr(elem, "radius", 1, &dflex.radius, text);
   ReadAttrInt(elem, "group", &dflex.group);
+  if (!ReadAttr(elem, "origin", 3, fcomp.origin, text) &&
+      fcomp.type == mjFCOMPTYPE_MESH && dflex.dim == 3) {
+    throw mjXError(elem, "origin must be specified for mesh flexcomps if dim=3");
+  }
 
   // pose
   ReadAttr(elem, "pos", 3, fcomp.pos, text);

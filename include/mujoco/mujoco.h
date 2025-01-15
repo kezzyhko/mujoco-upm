@@ -16,7 +16,7 @@
 #define MUJOCO_MUJOCO_H_
 
 // header version; should match the library version as returned by mj_version()
-#define mjVERSION_HEADER 326
+#define mjVERSION_HEADER 327
 
 // needed to define size_t, fabs and log10
 #include <stdlib.h>
@@ -121,7 +121,7 @@ MJAPI void mj_freeLastXML(void);
 // If length of the output buffer is too small, returns the required size.
 MJAPI int mj_saveXMLString(const mjSpec* s, char* xml, int xml_sz, char* error, int error_sz);
 
-// Save spec to XML file, return 1 on success, 0 otherwise.
+// Save spec to XML file, return 0 on success, -1 otherwise.
 MJAPI int mj_saveXML(const mjSpec* s, const char* filename, char* error, int error_sz);
 
 
@@ -365,7 +365,8 @@ MJAPI void mj_factorM(const mjModel* m, mjData* d);
 MJAPI void mj_solveM(const mjModel* m, mjData* d, mjtNum* x, const mjtNum* y, int n);
 
 // Half of linear solve:  x = sqrt(inv(D))*inv(L')*y
-MJAPI void mj_solveM2(const mjModel* m, mjData* d, mjtNum* x, const mjtNum* y, int n);
+MJAPI void mj_solveM2(const mjModel* m, mjData* d, mjtNum* x, const mjtNum* y,
+                      const mjtNum* sqrtInvD, int n);
 
 // Compute cvel, cdof_dot.
 MJAPI void mj_comVel(const mjModel* m, mjData* d);
@@ -1452,8 +1453,8 @@ MJAPI mjsLight* mjs_addLight(mjsBody* body, const mjsDefault* def);
 // Add frame to body.
 MJAPI mjsFrame* mjs_addFrame(mjsBody* body, mjsFrame* parentframe);
 
-// Delete object corresponding to the given element.
-MJAPI void mjs_delete(mjsElement* element);
+// Delete object corresponding to the given element, return 0 on success.
+MJAPI int mjs_delete(mjsElement* element);
 
 
 //---------------------------------- Non-tree elements ---------------------------------------------

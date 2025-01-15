@@ -1014,6 +1014,9 @@ TEST_F(MujocoTest, AttachDifferent) {
   mjModel* m_attached = mj_compile(parent, 0);
   EXPECT_THAT(m_attached, NotNull());
 
+  // check frame is present
+  EXPECT_THAT(mjs_findFrame(parent, "frame"), NotNull());
+
   // check full name stored in mjModel
   EXPECT_STREQ(mj_id2name(m_attached, mjOBJ_BODY, 2), "attached-body-1");
 
@@ -1219,8 +1222,20 @@ void TestDetachBody(bool compile) {
   mjsBody* body = mjs_findBody(child, "body");
   EXPECT_THAT(body, NotNull());
 
+  // get an error if trying to delete the body
+  EXPECT_EQ(mjs_delete(body->element), -1);
+  EXPECT_THAT(mjs_getError(child), HasSubstr("use detach instead"));
+
   // detach subtree
   EXPECT_THAT(mjs_detachBody(child, body), 0);
+
+  // try saving to XML before compiling again
+  std::array<char, 1024> e;
+  std::array<char, 1024> s;
+  EXPECT_EQ(mj_saveXMLString(child, s.data(), 1024, e.data(), 1024), -1);
+  EXPECT_THAT(e.data(), compile
+                  ? HasSubstr("Model has pending keyframes")
+                  : HasSubstr("Only compiled model can be written"));
 
   // compile new model
   mjModel* m_detached = mj_compile(child, 0);
@@ -1316,7 +1331,9 @@ TEST_F(MujocoTest, AttachWorld) {
   static constexpr char xml_parent[] = R"(
   <mujoco>
     <worldbody>
-      <frame name="frame"/>
+      <body name="body">
+        <frame name="frame" pos="1 2 3"/>
+      </body>
     </worldbody>
   </mujoco>)";
 
@@ -1327,20 +1344,28 @@ TEST_F(MujocoTest, AttachWorld) {
         <joint type="slide"/>
         <geom size=".1"/>
       </body>
+      <camera pos="0 0 0" quat="1 0 0 0"/>
     </worldbody>
   </mujoco>)";
 
   static constexpr char xml_result[] = R"(
   <mujoco>
     <worldbody>
-      <frame name="frame">
-        <frame name="attached-world-1">
+      <body name="body">
+        <frame name="frame" pos="1 2 3">
           <body name="attached-sphere-1">
             <joint type="slide"/>
             <geom size=".1"/>
           </body>
+          <frame name="attached-world-2">
+            <body name="attached-sphere-2">
+              <joint type="slide"/>
+              <geom size=".1"/>
+            </body>
+            <camera pos="0 0 0" quat="1 0 0 0"/>
+          </frame>
         </frame>
-      </frame>
+      </body>
     </worldbody>
   </mujoco>)";
 
@@ -1349,27 +1374,38 @@ TEST_F(MujocoTest, AttachWorld) {
   mjSpec* child = mj_parseXMLString(xml_child, 0, er.data(), er.size());
   EXPECT_THAT(child, NotNull()) << er.data();
 
+  // attach a body to the frame
   mjsFrame* frame = mjs_findFrame(parent, "frame");
   EXPECT_THAT(frame, NotNull());
+  mjsBody* body = mjs_findBody(child, "sphere");
+  EXPECT_THAT(body, NotNull());
+  mjsBody* attached = mjs_attachBody(frame, body, "attached-", "-1");
+  EXPECT_THAT(attached, NotNull());
+  mjModel* model1 = mj_compile(parent, 0);
+  EXPECT_THAT(model1, NotNull());
+
+  // attach the world to the same frame and convert it to a frame
   mjsBody* world = mjs_findBody(child, "world");
   EXPECT_THAT(world, NotNull());
-  mjsBody* child_world = mjs_attachBody(frame, world, "attached-", "-1");
+  mjsBody* child_world = mjs_attachBody(frame, world, "attached-", "-2");
   EXPECT_THAT(child_world, NotNull());
   mjsFrame* frame_world = mjs_bodyToFrame(&child_world);
   EXPECT_THAT(frame_world, NotNull());
   EXPECT_THAT(child_world, IsNull());
 
-  mjModel* model = mj_compile(parent, 0);
-  EXPECT_THAT(model, NotNull());
+  // compile and compare
+  mjModel* model2 = mj_compile(parent, 0);
+  EXPECT_THAT(model2, NotNull());
   mjModel* expected = LoadModelFromString(xml_result, er.data(), er.size());
   EXPECT_THAT(expected, NotNull()) << er.data();
-  EXPECT_LE(CompareModel(model, expected, field), tol)
+  EXPECT_LE(CompareModel(model2, expected, field), tol)
             << "Expected and attached models are different!\n"
             << "Different field: " << field << '\n';
 
   mj_deleteSpec(parent);
   mj_deleteSpec(child);
-  mj_deleteModel(model);
+  mj_deleteModel(model1);
+  mj_deleteModel(model2);
   mj_deleteModel(expected);
 }
 
@@ -1997,52 +2033,96 @@ TEST_F(MujocoTest, ResizeParentKeyframe) {
 }
 
 TEST_F(MujocoTest, DifferentUnitsAllowed) {
-  mjSpec* child = mj_makeSpec();
-  child->compiler.degree = 0;
-  mjsBody* body = mjs_addBody(mjs_findBody(child, "world"), 0);
-  body->alt.type = mjORIENTATION_EULER;
-  body->alt.euler[0] = -mjPI / 2;
-  mjsGeom* geom = mjs_addGeom(body, 0);
-  geom->size[0] = 1;
-  mjsJoint* joint = mjs_addJoint(body, 0);
-  joint->type = mjJNT_HINGE;
-  joint->range[0] = -mjPI / 4;
-  joint->range[1] = mjPI / 4;
+  static constexpr char gchild_xml[] = R"(
+  <mujoco model="gchild">
+    <compiler angle="radian"/>
 
-  mjSpec* parent = mj_makeSpec();
-  parent->compiler.degree = 1;
-  mjsFrame* frame = mjs_addFrame(mjs_findBody(parent, "world"), 0);
-  frame->alt.type = mjORIENTATION_EULER;
-  frame->alt.euler[0] = 90;
+    <worldbody>
+      <body name="gchild" euler="-1.5707963 0 0">
+        <geom type="box" size="1 1 1"/>
+        <joint name="gchild_joint" range="-3.1415926 3.1415926"/>
+      </body>
+    </worldbody>
+  </mujoco>
+  )";
 
-  EXPECT_THAT(mjs_attachBody(frame, body, "child-", ""), NotNull());
-  mjModel* model = mj_compile(parent, 0);
+  static constexpr char child_xml[] = R"(
+  <mujoco>
+    <compiler angle="radian"/>
+
+    <worldbody>
+      <body name="child" euler="-1.5707963 0 0">
+        <geom type="box" size="1 1 1"/>
+        <joint name="child_joint" range="-3.1415926 3.1415926"/>
+        <frame name="frame" euler="1.5707963 0 0"/>
+      </body>
+    </worldbody>
+  </mujoco>
+  )";
+
+  static constexpr char parent_xml[] = R"(
+  <mujoco>
+    <worldbody>
+      <body name="parent">
+        <geom type="box" size="1 1 1"/>
+        <joint name="parent_joint" range="-180 180"/>
+        <frame name="frame" euler="90 0 0"/>
+      </body>
+    </worldbody>
+  </mujoco>
+  )";
+
+  std::array<char, 1024> error;
+  mjSpec* gchild =
+      mj_parseXMLString(gchild_xml, 0, error.data(), error.size());
+  mjSpec* child = mj_parseXMLString(child_xml, 0, error.data(), error.size());
+  mjSpec* spec = mj_parseXMLString(parent_xml, 0, error.data(), error.size());
+  ASSERT_THAT(spec, NotNull()) << error.data();
+  mjs_attachBody(mjs_findFrame(child, "frame"),
+                 mjs_findBody(gchild, "gchild"),
+                 "gchild_", "");
+  mjs_attachBody(mjs_findFrame(spec, "frame"),
+                 mjs_findBody(child, "child"),
+                 "child_", "");
+
+  mjModel* model = mj_compile(spec, 0);
   EXPECT_THAT(model, NotNull());
+  EXPECT_THAT(model->njnt, 3);
+  EXPECT_NEAR(model->jnt_range[0], -mjPI, 1e-6);
+  EXPECT_NEAR(model->jnt_range[1], mjPI, 1e-6);
+  EXPECT_NEAR(model->jnt_range[2], -mjPI, 1e-6);
+  EXPECT_NEAR(model->jnt_range[3], mjPI, 1e-6);
+  EXPECT_NEAR(model->jnt_range[4], -mjPI, 1e-6);
+  EXPECT_NEAR(model->jnt_range[5], mjPI, 1e-6);
   EXPECT_NEAR(model->body_quat[4], 1, 1e-12);
   EXPECT_NEAR(model->body_quat[5], 0, 1e-12);
   EXPECT_NEAR(model->body_quat[6], 0, 1e-12);
   EXPECT_NEAR(model->body_quat[7], 0, 1e-12);
-  EXPECT_NEAR(model->jnt_range[0], -mjPI / 4, 1e-7);
-  EXPECT_NEAR(model->jnt_range[1], mjPI / 4, 1e-7);
 
-  mjSpec* copy = mj_copySpec(parent);
-  EXPECT_THAT(copy, NotNull());
-  mj_deleteModel(model);
+  mjSpec* copied_spec = mj_copySpec(spec);
+  ASSERT_THAT(copied_spec, NotNull());
+  mj_deleteSpec(gchild);
   mj_deleteSpec(child);
-  mj_deleteSpec(parent);
+  mj_deleteSpec(spec);
+  mj_deleteModel(model);
 
   // check that deleting `parent` or `child` does not invalidate the copy
-  mjModel* copy_model = mj_compile(copy, 0);
-  EXPECT_THAT(copy_model, NotNull());
-  EXPECT_NEAR(copy_model->body_quat[0], 1, 1e-12);
-  EXPECT_NEAR(copy_model->body_quat[1], 0, 1e-12);
-  EXPECT_NEAR(copy_model->body_quat[2], 0, 1e-12);
-  EXPECT_NEAR(copy_model->body_quat[3], 0, 1e-12);
-  EXPECT_NEAR(copy_model->jnt_range[0], -mjPI / 4, 1e-7);
-  EXPECT_NEAR(copy_model->jnt_range[1], mjPI / 4, 1e-7);
+  mjModel* copied_model = mj_compile(copied_spec, 0);
+  EXPECT_THAT(copied_model, NotNull());
+  EXPECT_THAT(copied_model->njnt, 3);
+  EXPECT_NEAR(copied_model->jnt_range[0], -mjPI, 1e-6);
+  EXPECT_NEAR(copied_model->jnt_range[1], mjPI, 1e-6);
+  EXPECT_NEAR(copied_model->jnt_range[2], -mjPI, 1e-6);
+  EXPECT_NEAR(copied_model->jnt_range[3], mjPI, 1e-6);
+  EXPECT_NEAR(copied_model->jnt_range[4], -mjPI, 1e-6);
+  EXPECT_NEAR(copied_model->jnt_range[5], mjPI, 1e-6);
+  EXPECT_NEAR(copied_model->body_quat[4], 1, 1e-12);
+  EXPECT_NEAR(copied_model->body_quat[5], 0, 1e-12);
+  EXPECT_NEAR(copied_model->body_quat[6], 0, 1e-12);
+  EXPECT_NEAR(copied_model->body_quat[7], 0, 1e-12);
 
-  mj_deleteModel(copy_model);
-  mj_deleteSpec(copy);
+  mj_deleteSpec(copied_spec);
+  mj_deleteModel(copied_model);
 }
 
 TEST_F(MujocoTest, CopyAttachedSpec) {

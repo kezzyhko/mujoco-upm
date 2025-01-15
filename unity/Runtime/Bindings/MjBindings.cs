@@ -109,7 +109,7 @@ public const int mjMAXLINEPNT = 1000;
 public const int mjMAXPLANEGRID = 200;
 public const bool THIRD_PARTY_MUJOCO_MJXMACRO_H_ = true;
 public const bool THIRD_PARTY_MUJOCO_MUJOCO_H_ = true;
-public const int mjVERSION_HEADER = 326;
+public const int mjVERSION_HEADER = 327;
 
 
 // ------------------------------------Enums------------------------------------
@@ -4852,6 +4852,7 @@ public unsafe struct mjData_ {
   public int nl;
   public int nefc;
   public int nJ;
+  public int nA;
   public int nisland;
   public double time;
   public fixed double energy[2];
@@ -4917,7 +4918,6 @@ public unsafe struct mjData_ {
   public double* qM;
   public double* qLD;
   public double* qLDiagInv;
-  public double* qLDiagSqrtInv;
   public double* bvh_aabb_dyn;
   public byte* bvh_active;
   public double* flexedge_velocity;
@@ -4944,6 +4944,7 @@ public unsafe struct mjData_ {
   public int* mapM2C;
   public int* D_rownnz;
   public int* D_rowadr;
+  public int* D_diag;
   public int* D_colind;
   public int* mapM2D;
   public int* mapD2M;
@@ -6677,7 +6678,7 @@ public static unsafe extern void mj_factorM(mjModel_* m, mjData_* d);
 public static unsafe extern void mj_solveM(mjModel_* m, mjData_* d, double* x, double* y, int n);
 
 [DllImport("mujoco", CallingConvention = CallingConvention.Cdecl)]
-public static unsafe extern void mj_solveM2(mjModel_* m, mjData_* d, double* x, double* y, int n);
+public static unsafe extern void mj_solveM2(mjModel_* m, mjData_* d, double* x, double* y, double* sqrtInvD, int n);
 
 [DllImport("mujoco", CallingConvention = CallingConvention.Cdecl)]
 public static unsafe extern void mj_comVel(mjModel_* m, mjData_* d);

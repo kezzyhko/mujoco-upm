@@ -170,6 +170,7 @@ struct mjData_ {
   int     nl;                // number of limit constraints
   int     nefc;              // number of constraints
   int     nJ;                // number of non-zeros in constraint Jacobian
+  int     nA;                // number of non-zeros in constraint inverse inertia matrix
   int     nisland;           // number of detected constraint islands
 
   // global properties
@@ -273,7 +274,6 @@ struct mjData_ {
   // computed by mj_fwdPosition/mj_factorM
   mjtNum* qLD;               // L'*D*L factorization of M (sparse)               (nM x 1)
   mjtNum* qLDiagInv;         // 1/diag(D)                                        (nv x 1)
-  mjtNum* qLDiagSqrtInv;     // 1/sqrt(diag(D))                                  (nv x 1)
 
   // computed by mj_collisionTree
   mjtNum*  bvh_aabb_dyn;     // global bounding box (center, size)               (nbvhdynamic x 6)
@@ -318,6 +318,7 @@ struct mjData_ {
   int*    mapM2C;            // index mapping from M to C                        (nC x 1)
   int*    D_rownnz;          // dof-dof: non-zeros in each row                   (nv x 1)
   int*    D_rowadr;          // dof-dof: address of each row in D_colind         (nv x 1)
+  int*    D_diag;            // dof-dof: index of diagonal element               (nv x 1)
   int*    D_colind;          // dof-dof: column indices of non-zeros             (nD x 1)
   int*    mapM2D;            // index mapping from M to D                        (nD x 1)
   int*    mapD2M;            // index mapping from D to M                        (nM x 1)
@@ -391,8 +392,8 @@ struct mjData_ {
   // computed by mj_projectConstraint (PGS solver)
   int*    efc_AR_rownnz;     // number of non-zeros in AR                        (nefc x 1)
   int*    efc_AR_rowadr;     // row start address in colind array                (nefc x 1)
-  int*    efc_AR_colind;     // column indices in sparse AR                      (nefc x nefc)
-  mjtNum* efc_AR;            // J*inv(M)*J' + R                                  (nefc x nefc)
+  int*    efc_AR_colind;     // column indices in sparse AR                      (nA x 1)
+  mjtNum* efc_AR;            // J*inv(M)*J' + R                                  (nA x 1)
 
   //-------------------- arena-allocated: POSITION, VELOCITY dependent
 
@@ -2498,7 +2499,7 @@ struct mjUI_ {                    // entire UI
 
   // UI sizes (framebuffer units)
   int width;                      // width
-  int height;                     // current heigth
+  int height;                     // current height
   int maxheight;                  // height when all sections open
   int scroll;                     // scroll from top of UI
 
@@ -3219,7 +3220,8 @@ void mj_transmission(const mjModel* m, mjData* d);
 void mj_crb(const mjModel* m, mjData* d);
 void mj_factorM(const mjModel* m, mjData* d);
 void mj_solveM(const mjModel* m, mjData* d, mjtNum* x, const mjtNum* y, int n);
-void mj_solveM2(const mjModel* m, mjData* d, mjtNum* x, const mjtNum* y, int n);
+void mj_solveM2(const mjModel* m, mjData* d, mjtNum* x, const mjtNum* y,
+                const mjtNum* sqrtInvD, int n);
 void mj_comVel(const mjModel* m, mjData* d);
 void mj_passive(const mjModel* m, mjData* d);
 void mj_subtreeVel(const mjModel* m, mjData* d);
@@ -3577,7 +3579,7 @@ mjsGeom* mjs_addGeom(mjsBody* body, const mjsDefault* def);
 mjsCamera* mjs_addCamera(mjsBody* body, const mjsDefault* def);
 mjsLight* mjs_addLight(mjsBody* body, const mjsDefault* def);
 mjsFrame* mjs_addFrame(mjsBody* body, mjsFrame* parentframe);
-void mjs_delete(mjsElement* element);
+int mjs_delete(mjsElement* element);
 mjsActuator* mjs_addActuator(mjSpec* s, const mjsDefault* def);
 mjsSensor* mjs_addSensor(mjSpec* s);
 mjsFlex* mjs_addFlex(mjSpec* s);

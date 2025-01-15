@@ -632,7 +632,6 @@
     X   ( mjtNum,    qM,                nM,          1           ) \
     X   ( mjtNum,    qLD,               nM,          1           ) \
     X   ( mjtNum,    qLDiagInv,         nv,          1           ) \
-    X   ( mjtNum,    qLDiagSqrtInv,     nv,          1           ) \
     XMJV( mjtNum,    bvh_aabb_dyn,      nbvhdynamic, 6           ) \
     XMJV( mjtByte,   bvh_active,        nbvh,        1           ) \
     X   ( mjtNum,    flexedge_velocity, nflexedge,   1           ) \
@@ -659,6 +658,7 @@
     X   ( int,       mapM2C,            nC,          1           ) \
     X   ( int,       D_rownnz,          nv,          1           ) \
     X   ( int,       D_rowadr,          nv,          1           ) \
+    X   ( int,       D_diag,            nv,          1           ) \
     X   ( int,       D_colind,          nD,          1           ) \
     X   ( int,       mapM2D,            nD,          1           ) \
     X   ( int,       mapD2M,            nM,          1           ) \
@@ -715,8 +715,8 @@
 #define MJDATA_ARENA_POINTERS_DUAL                           \
     X( int,      efc_AR_rownnz,     MJ_D(nefc), 1          ) \
     X( int,      efc_AR_rowadr,     MJ_D(nefc), 1          ) \
-    X( int,      efc_AR_colind,     MJ_D(nefc), MJ_D(nefc) ) \
-    X( mjtNum,   efc_AR,            MJ_D(nefc), MJ_D(nefc) )
+    X( int,      efc_AR_colind,     MJ_D(nA),   1          ) \
+    X( mjtNum,   efc_AR,            MJ_D(nA),   1          )
 
 // array fields of mjData that are used for constraint islands
 #define MJDATA_ARENA_POINTERS_ISLAND                 \
@@ -757,6 +757,7 @@
     X( int,       nl                 ) \
     X( int,       nefc               ) \
     X( int,       nJ                 ) \
+    X( int,       nA                 ) \
     X( int,       nisland            ) \
     X( mjtNum,    time               ) \
     X( uintptr_t, threadpool         )

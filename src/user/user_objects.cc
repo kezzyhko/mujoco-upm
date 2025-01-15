@@ -134,6 +134,18 @@ PNGImage PNGImage::Load(const mjCBase* obj, mjResource* resource,
   return image;
 }
 
+// associate all child list elements with a frame and copy them to parent list, clear child list
+template <typename T>
+void MapFrame(std::vector<T*>& parent, std::vector<T*>& child,
+              mjCFrame* frame, mjCBody* parent_body) {
+  std::for_each(child.begin(), child.end(), [frame, parent_body](T* element) {
+    element->SetFrame(frame);
+    element->SetParent(parent_body);
+  });
+  parent.insert(parent.end(), child.begin(), child.end());
+  child.clear();
+}
+
 }  // namespace
 
 
@@ -753,7 +765,7 @@ mjCBody::mjCBody(mjCModel* _model) {
 
   mjs_defaultBody(&spec);
   elemtype = mjOBJ_BODY;
-  parentid = -1;
+  parent = nullptr;
   weldid = -1;
   dofnum = 0;
   lastdof = -1;
@@ -786,7 +798,7 @@ mjCBody::mjCBody(mjCModel* _model) {
 
 mjCBody::mjCBody(const mjCBody& other, mjCModel* _model) {
   model = _model;
-  mjSpec* origin = model->FindSpec(mjs_getString(other.model->spec.modelname));
+  mjSpec* origin = model->FindSpec(other.compiler);
   compiler = origin ? &origin->compiler : &model->spec.compiler;
   *this = other;
   CopyPlugin();
@@ -838,6 +850,7 @@ mjCBody& mjCBody::operator+=(const mjCBody& other) {
 
   for (int i=0; i<other.bodies.size(); i++) {
     bodies.push_back(new mjCBody(*other.bodies[i], model));  // triggers recursive call
+    bodies.back()->parent = this;
     bodies.back()->frame =
         other.bodies[i]->frame ? frames[fmap[other.bodies[i]->frame]] : nullptr;
   }
@@ -860,10 +873,6 @@ mjCBody& mjCBody::operator+=(const mjCFrame& other) {
   other.model->suffix = other.suffix;
   other.model->StoreKeyframes(model);
 
-  if (other.prefix.empty() && other.suffix.empty()) {
-    throw mjCError(this, "either prefix or suffix must be non-empty");
-  }
-
   // attach defaults
   if (other.model != model) {
     mjCDef* subdef = new mjCDef(*other.model->Default());
@@ -872,7 +881,7 @@ mjCBody& mjCBody::operator+=(const mjCFrame& other) {
   }
 
   // copy input frame
-  mjSpec* origin = model->FindSpec(mjs_getString(other.model->spec.modelname));
+  mjSpec* origin = model->FindSpec(other.compiler);
   frames.push_back(new mjCFrame(other));
   frames.back()->body = this;
   frames.back()->model = model;
@@ -906,6 +915,7 @@ mjCBody& mjCBody::operator+=(const mjCFrame& other) {
       continue;
     }
     bodies.push_back(new mjCBody(*subtree->bodies[i], model));  // triggers recursive call
+    bodies.back()->parent = this;
     bodies.back()->frame =
         subtree->bodies[i]->frame ? frames[fmap[subtree->bodies[i]->frame]] : nullptr;
     bodies.back()->NameSpace_(other.model, /*propagate=*/ false);
@@ -937,7 +947,7 @@ void mjCBody::CopyList(std::vector<T*>& dst, const std::vector<T*>& src,
     if (pframe && !pframe->IsAncestor(src[i]->frame)) {
       continue;  // skip if the element is not inside pframe
     }
-    mjSpec* origin = model->FindSpec(mjs_getString(src[i]->model->spec.modelname));
+    mjSpec* origin = model->FindSpec(src[i]->compiler);
     dst.push_back(new T(*src[i]));
     dst.back()->body = this;
     dst.back()->model = model;
@@ -1086,6 +1096,7 @@ mjCBody* mjCBody::AddBody(mjCDef* _def) {
   obj->classname = _def ? _def->name : classname;
 
   bodies.push_back(obj);
+  obj->parent = this;
   return obj;
 }
 
@@ -1187,32 +1198,25 @@ mjCLight* mjCBody::AddLight(mjCDef* _def) {
 
 // create a frame in the parent body and move all contents of this body into it
 mjCFrame* mjCBody::ToFrame() {
-  if (parentid < 0) {
-    // TODO: store the parent pointer instead of using the id
-    throw mjCError(this, "parent body is not defined, please compile the model first");
-  }
-  mjCBody* parent = model->Bodies()[parentid];
   mjCFrame* newframe = parent->AddFrame(frame);
   mjuu_copyvec(newframe->spec.pos, spec.pos, 3);
   mjuu_copyvec(newframe->spec.quat, spec.quat, 4);
-  parent->bodies.insert(parent->bodies.end(), bodies.begin(), bodies.end());
-  parent->geoms.insert(parent->geoms.end(), geoms.begin(), geoms.end());
-  parent->joints.insert(parent->joints.end(), joints.begin(), joints.end());
-  parent->sites.insert(parent->sites.end(), sites.begin(), sites.end());
-  parent->cameras.insert(parent->cameras.end(), cameras.begin(), cameras.end());
-  parent->lights.insert(parent->lights.end(), lights.begin(), lights.end());
-  parent->frames.insert(parent->frames.end(), frames.begin(), frames.end());
-  bodies.clear();
-  geoms.clear();
-  joints.clear();
-  sites.clear();
-  cameras.clear();
-  lights.clear();
-  frames.clear();
+  MapFrame(parent->bodies, bodies, newframe, parent);
+  MapFrame(parent->geoms, geoms, newframe, parent);
+  MapFrame(parent->joints, joints, newframe, parent);
+  MapFrame(parent->sites, sites, newframe, parent);
+  MapFrame(parent->cameras, cameras, newframe, parent);
+  MapFrame(parent->lights, lights, newframe, parent);
+  MapFrame(parent->frames, frames, newframe, parent);
   parent->bodies.erase(
       std::remove_if(parent->bodies.begin(), parent->bodies.end(),
                      [this](mjCBody* body) { return body == this; }),
       parent->bodies.end());
+  if (model->IsCompiled()) {
+    mjCBody *world = model->bodies_[0];
+    model->ResetTreeLists();
+    model->MakeLists(world);
+  }
   return newframe;
 }
 
@@ -1568,7 +1572,6 @@ void mjCBody::Compile(void) {
 
   // set parentid and weldid of children
   for (int i=0; i<bodies.size(); i++) {
-    bodies[i]->parentid = id;
     bodies[i]->weldid = (!bodies[i]->joints.empty() ? bodies[i]->id : weldid);
   }
 
@@ -1716,13 +1719,12 @@ void mjCBody::Compile(void) {
   }
 
   // make sure mocap body is fixed child of world
-  if (mocap && (dofnum || parentid)) {
+  if (mocap && (dofnum || (parent && parent->name != "world"))) {
     throw mjCError(this, "mocap body '%s' is not a fixed child of world", name.c_str());
   }
 
   // compute body global pose (no joint transformations in qpos0)
   if (id>0) {
-    mjCBody* parent = model->Bodies()[parentid];
     mjuu_rotVecQuat(xpos0, pos, parent->xquat0);
     mjuu_addtovec(xpos0, parent->xpos0, 3);
     mjuu_mulquat(xquat0, parent->xquat0, quat);
@@ -1839,14 +1841,11 @@ mjCFrame& mjCFrame::operator+=(const mjCBody& other) {
   other.model->prefix = "";
   other.model->suffix = "";
 
-  if (other.prefix.empty() && other.suffix.empty()) {
-    throw mjCError(this, "either prefix or suffix must be non-empty");
-  }
-
   mjCBody* subtree = new mjCBody(other, model);
   other.ForgetKeyframes();
   other.model->prefix = subtree->prefix;
   other.model->suffix = subtree->suffix;
+  subtree->SetParent(body);
   subtree->SetFrame(this);
   subtree->NameSpace(other.model);
 
@@ -1888,12 +1887,6 @@ bool mjCFrame::IsAncestor(const mjCFrame* child) const {
   }
 
   return IsAncestor(child->frame);
-}
-
-
-
-void mjCFrame::SetParent(mjCBody* _body) {
-  body = _body;
 }
 
 

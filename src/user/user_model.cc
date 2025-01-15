@@ -146,6 +146,9 @@ mjCModel::mjCModel() {
   defaults_.push_back(new mjCDef);
   defaults_.back()->name = "main";
 
+  // point to model from spec
+  PointToLocal();
+
   // world body
   mjCBody* world = new mjCBody(this);
   mjuu_zerovec(world->pos, 3);
@@ -153,7 +156,7 @@ mjCModel::mjCModel() {
   world->mass = 0;
   mjuu_zerovec(world->inertia, 3);
   world->id = 0;
-  world->parentid = 0;
+  world->parent = nullptr;
   world->weldid = 0;
   world->name = "world";
   world->classname = "main";
@@ -163,14 +166,15 @@ mjCModel::mjCModel() {
   // create mjCBase lists from children lists
   CreateObjectLists();
 
-  // point to model from spec
-  PointToLocal();
+  // the source spec is the model itself, overwritten in the copy constructor
+  source_spec_ = &spec;
 }
 
 
 
 mjCModel::mjCModel(const mjCModel& other) {
   CreateObjectLists();
+  source_spec_ = (mjSpec*)&other.spec;
   *this = other;
 }
 
@@ -232,7 +236,7 @@ void mjCModel::CopyList(std::vector<T*>& dest,
     }
     // copy the element from the other model to this model
     source[i]->ForgetKeyframes();
-    mjSpec* origin = FindSpec(mjs_getString(source[i]->model->spec.modelname));
+    mjSpec* origin = FindSpec(source[i]->compiler);
     dest.push_back(candidate);
     dest.back()->model = this;
     dest.back()->compiler = origin ? &origin->compiler : &spec.compiler;
@@ -530,7 +534,6 @@ mjCModel& mjCModel::operator-=(const mjCBody& subtree) {
     ResetTreeLists();
   }
 
-  PointToLocal();
   return *this;
 }
 
@@ -1219,6 +1222,29 @@ mjSpec* mjCModel::FindSpec(std::string name) const {
     }
   }
   return nullptr;
+}
+
+
+
+// find spec by mjsCompiler pointer
+mjSpec* mjCModel::FindSpec(const mjsCompiler* compiler_) const {
+  if (&GetSourceSpec()->compiler == compiler_) {
+    return (mjSpec*)&spec;
+  }
+  for (auto s : specs_) {
+    mjSpec* source = static_cast<mjCModel*>(s->element)->FindSpec(compiler_);
+    if (source) {
+      return source;
+    }
+  }
+  return nullptr;
+}
+
+
+
+// get the spec from which this model was created
+mjSpec* mjCModel::GetSourceSpec() const {
+  return source_spec_;
 }
 
 
@@ -2067,10 +2093,10 @@ void mjCModel::CopyTree(mjModel* m) {
   for (int i=0; i<nbody; i++) {
     // get body and parent pointers
     mjCBody* pb = bodies_[i];
-    mjCBody* par = bodies_[pb->parentid];
+    mjCBody* par = pb->parent;
 
     // set body fields
-    m->body_parentid[i] = pb->parentid;
+    m->body_parentid[i] = pb->parent ? pb->parent->id : 0;
     m->body_weldid[i] = pb->weldid;
     m->body_mocapid[i] = pb->mocapid;
     m->body_jntnum[i] = (int)pb->joints.size();
@@ -2115,19 +2141,19 @@ void mjCModel::CopyTree(mjModel* m) {
     if (cntfree>1 || (cntfree==1 && pb->joints.size()>1)) {
       throw mjCError(pb, "free joint can only appear by itself");
     }
-    if (cntfree && pb->parentid) {
+    if (cntfree && par && par->name != "world") {
       throw mjCError(pb, "free joint can only be used on top level");
     }
 
     // rootid: self if world or child of world, otherwise parent's rootid
-    if (i==0 || pb->parentid==0) {
+    if (i==0 || (par && par->name == "world")) {
       m->body_rootid[i] = i;
     } else {
-      m->body_rootid[i] = m->body_rootid[pb->parentid];
+      m->body_rootid[i] = m->body_rootid[par->id];
     }
 
     // init lastdof from parent
-    pb->lastdof = par->lastdof;
+    pb->lastdof = par ? par->lastdof : -1;
 
     // set sameframe
     mjtSameFrame sameframe;
@@ -2447,7 +2473,9 @@ void mjCModel::CopyTree(mjModel* m) {
     bodies_[i]->subtreedofs += bodies_[i]->dofnum;
 
     // add to parent count
-    bodies_[bodies_[i]->parentid]->subtreedofs += bodies_[i]->subtreedofs;
+    if (bodies_[i]->parent) {
+      bodies_[i]->parent->subtreedofs += bodies_[i]->subtreedofs;
+    }
   }
 
   // make sure all dofs are in world "subtree", SHOULD NOT OCCUR
@@ -2462,10 +2490,10 @@ void mjCModel::CopyTree(mjModel* m) {
     nB += bodies_[i]->subtreedofs;
 
     // add dofs in ancestor bodies
-    int j = bodies_[i]->parentid;
+    int j = bodies_[i]->parent ? bodies_[i]->parent->id : 0;
     while (j > 0) {
       nB += bodies_[j]->dofnum;
-      j = bodies_[j]->parentid;
+      j = bodies_[j]->parent ? bodies_[j]->parent->id : 0;
     }
   }
   m->nB = nB;
@@ -2493,7 +2521,7 @@ void mjCModel::CopyTree(mjModel* m) {
       }
     }
   }
-  m->nC = nC = 2 * nOD + nv;
+  m->nC = nC = nOD + nv;
 }
 
 // copy plugin data
@@ -3413,7 +3441,7 @@ static void changeframe(double childpos[3], double childquat[4],
 void mjCModel::FuseReindex(mjCBody* body) {
   // set parentid and weldid of children
   for (int i=0; i<body->bodies.size(); i++) {
-    body->bodies[i]->parentid = body->id;
+    body->bodies[i]->parent = body;
     body->bodies[i]->weldid = (!body->bodies[i]->joints.empty() ?
                                body->bodies[i]->id : body->weldid);
   }
@@ -3450,7 +3478,7 @@ void mjCModel::FuseStatic(void) {
   for (int i=1; i<bodies_.size(); i++) {
     // get body and parent
     mjCBody* body = bodies_[i];
-    mjCBody* par = bodies_[body->parentid];
+    mjCBody* par = body->parent;
 
     // skip if body has joints or mocap
     if (!body->joints.empty() || body->mocap) {
@@ -3459,7 +3487,7 @@ void mjCModel::FuseStatic(void) {
 
     //------------- add mass and inertia (if parent not world)
 
-    if (body->parentid>0 && body->mass>=mjMINVAL) {
+    if (body->parent && body->parent->name != "world" && body->mass>=mjMINVAL) {
       // body_ipose = body_pose * body_ipose
       changeframe(body->ipos, body->iquat, body->pos, body->quat);
 

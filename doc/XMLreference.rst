@@ -264,6 +264,11 @@ how to use includes and how to modularize large files if desired.
    The name of the XML file to be included. The file location is relative to the directory of the main MJCF file. If the
    file is not in the same directory, it should be prefixed with a relative path.
 
+.. admonition:: Prefer attach to include
+   :class: note
+
+   While some use cases for :ref:`include<include>` remain valid, it is recommended to use the
+   :ref:`attach<body-attach>` element instead, where applicable.
 
 
 .. _mujoco:
@@ -3627,6 +3632,13 @@ saving the XML:
    These attributes are directly passed through to the automatically-generated :ref:`flex<deformable-flex>` object and
    have the same meaning.
 
+.. _body-flexcomp-origin:
+
+:at:`origin`: :at-val:`real(3), "0 0 0"`
+   The origin of the flexcomp. Used for generating a volumetric mesh from an OBJ surface mesh. Each surface triangle is
+   connected to the origin to create a tetrahedron, so the resulting volumetric mesh is guaranteed to be well-formed
+   only for convex shapes.
+
 .. _flexcomp-contact:
 
 :el-prefix:`flexcomp/` |-| **contact** (*)
@@ -4660,6 +4672,18 @@ instead of an actuator: `tendon.xml <_static/tendon.xml>`__.
 A second form of wrapping is where the tendon is constrained to pass *through* a geom rather than
 wrap around it. This is enabled automatically when a sidesite is specified and its position is inside the volume of
 the obstacle geom.
+
+.. youtube:: I2q7D0Vda-A
+   :width: 300px
+   :align: right
+
+**Visualization:** Tendon paths are visualized as in the image above, respecting the :ref:`width<tendon-spatial-width>`,
+:ref:`material<tendon-spatial-material>` and :ref:`rgba<tendon-spatial-rgba>` attributes below. A special kind of
+visualization is used for unactuated 2-point tendons with :ref:`range<tendon-spatial-range>` or
+:ref:`springlength<tendon-spatial-springlength>` of the form :at-val:`[0 X]`, with positive X. Such tendons act like a
+cable, applying force only when stretched. Therefore when not stretched, they are drawn as a catenary of
+length X, as in the clip on the right of `this example model
+<https://github.com/google-deepmind/mujoco/blob/main/test/engine/testdata/catenary.xml>`__.
 
 .. _tendon-spatial-name:
 
@@ -6392,7 +6416,7 @@ contributed by all actuators to a single scalar joint (hinge or slider). If the 
 :ref:`actuatorgravcomp<body-joint-actuatorgravcomp>` attribute is "true", this sensor will also measure contributions by
 gravity compensation forces (which are added directly to the joint and would *not* register in the
 :ref:`actuatorfrc<sensor-actuatorfrc>`) sensor. This type of sensor is important when multiple actuators act on a single
-joint or when a single actuator act on multiple joints. See :ref:`CForceRange` for details.
+joint or when a single actuator acts on multiple joints. See :ref:`CForceRange` for details.
 
 
 .. _sensor-jointactuatorfrc-name:

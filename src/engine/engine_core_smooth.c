@@ -184,7 +184,7 @@ void mj_comPos(const mjModel* m, mjData* d) {
   int nbody = m->nbody, njnt = m->njnt;
   mjtNum offset[3], axis[3];
   mj_markStack(d);
-  mjtNum* mass_subtree = mj_stackAllocNum(d, m->nbody);
+  mjtNum* mass_subtree = mjSTACKALLOC(d, m->nbody, mjtNum);
 
   // clear subtree
   mju_zero(mass_subtree, m->nbody);
@@ -393,7 +393,7 @@ void mj_camlight(const mjModel* m, mjData* d) {
 // update dynamic BVH; leaf aabbs must be updated before call
 void mj_updateDynamicBVH(const mjModel* m, mjData* d, int bvhadr, int bvhnum) {
   mj_markStack(d);
-  int* modified = mj_stackAllocInt(d, bvhnum);
+  int* modified = mjSTACKALLOC(d, bvhnum, int);
   mju_zeroInt(modified, bvhnum);
 
   // mark leafs as modified
@@ -526,10 +526,10 @@ void mj_flex(const mjModel* m, mjData* d) {
 
   // allocate space
   mj_markStack(d);
-  mjtNum* jac1 = mj_stackAllocNum(d, 3*nv);
-  mjtNum* jac2 = mj_stackAllocNum(d, 3*nv);
-  mjtNum* jacdif = mj_stackAllocNum(d, 3*nv);
-  int* chain = issparse ? mj_stackAllocInt(d, nv) : NULL;
+  mjtNum* jac1 = mjSTACKALLOC(d, 3*nv, mjtNum);
+  mjtNum* jac2 = mjSTACKALLOC(d, 3*nv, mjtNum);
+  mjtNum* jacdif = mjSTACKALLOC(d, 3*nv, mjtNum);
+  int* chain = issparse ? mjSTACKALLOC(d, nv, int) : NULL;
 
   // clear Jacobian: sparse or dense
   if (issparse) {
@@ -631,14 +631,14 @@ void mj_tendon(const mjModel* m, mjData* d) {
 
   // allocate space
   mj_markStack(d);
-  jac1 = mj_stackAllocNum(d, 3*nv);
-  jac2 = mj_stackAllocNum(d, 3*nv);
-  jacdif = mj_stackAllocNum(d, 3*nv);
-  tmp = mj_stackAllocNum(d, nv);
+  jac1 = mjSTACKALLOC(d, 3*nv, mjtNum);
+  jac2 = mjSTACKALLOC(d, 3*nv, mjtNum);
+  jacdif = mjSTACKALLOC(d, 3*nv, mjtNum);
+  tmp = mjSTACKALLOC(d, nv, mjtNum);
   if (issparse) {
-    chain = mj_stackAllocInt(d, nv);
-    buf_ind = mj_stackAllocInt(d, nv);
-    sparse_buf = mj_stackAllocNum(d, nv);
+    chain = mjSTACKALLOC(d, nv, int);
+    buf_ind = mjSTACKALLOC(d, nv, int);
+    sparse_buf = mjSTACKALLOC(d, nv, mjtNum);
   }
 
   // clear results
@@ -774,7 +774,7 @@ void mj_tendon(const mjModel* m, mjData* d) {
         L[i] += (mju_dist3(wpnt, wpnt+3) + wlen + mju_dist3(wpnt+6, wpnt+9))/divisor;
       }
 
-      // accumulate moments if consequtive points are in different bodies
+      // accumulate moments if consecutive points are in different bodies
       for (int k=0; k < (wlen < 0 ? 1 : 3); k++) {
         if (wbody[k] != wbody[k+1]) {
           // get 3D position difference, normalize
@@ -863,9 +863,9 @@ void mj_transmission(const mjModel* m, mjData* d) {
 
   // allocate Jacbians
   mj_markStack(d);
-  mjtNum* jac  = mj_stackAllocNum(d, 3*nv);
-  mjtNum* jacA = mj_stackAllocNum(d, 3*nv);
-  mjtNum* jacS = mj_stackAllocNum(d, 3*nv);
+  mjtNum* jac  = mjSTACKALLOC(d, 3*nv, mjtNum);
+  mjtNum* jacA = mjSTACKALLOC(d, 3*nv, mjtNum);
+  mjtNum* jacS = mjSTACKALLOC(d, 3*nv, mjtNum);
 
   // define stack variables required for body transmission, don't allocate
   int issparse = mj_isSparse(m);
@@ -1088,7 +1088,7 @@ void mj_transmission(const mjModel* m, mjData* d) {
       // reference site defined
       else {
         int refid = m->actuator_trnid[2*i+1];
-        if (!jacref) jacref = mj_stackAllocNum(d, 3*nv);
+        if (!jacref) jacref = mjSTACKALLOC(d, 3*nv, mjtNum);
 
         // initialize last dof address for each body
         int b0 = m->body_weldid[m->site_bodyid[id]];
@@ -1190,7 +1190,7 @@ void mj_transmission(const mjModel* m, mjData* d) {
           mju_mulMatVec3(wrench, d->site_xmat+9*refid, gear+3);
 
           // moment_tmp: global Jacobian projected on wrench, add to moment
-          if (!moment_tmp) moment_tmp = mj_stackAllocNum(d, nv);
+          if (!moment_tmp) moment_tmp = mjSTACKALLOC(d, nv, mjtNum);
           mju_mulMatTVec(moment_tmp, jacS, wrench, 3, nv);
           mju_addTo(moment+adr, moment_tmp, nv);
         }
@@ -1220,12 +1220,12 @@ void mj_transmission(const mjModel* m, mjData* d) {
       {
         // allocate stack variables for the first mjTRN_BODY
         if (!efc_force) {
-          efc_force = mj_stackAllocNum(d, d->nefc);
-          moment_exclude = mj_stackAllocNum(d, nv);
-          jacdifp = mj_stackAllocNum(d, 3*nv);
-          jac1p = mj_stackAllocNum(d, 3*nv);
-          jac2p = mj_stackAllocNum(d, 3*nv);
-          chain = issparse ? mj_stackAllocInt(d, nv) : NULL;
+          efc_force = mjSTACKALLOC(d, d->nefc, mjtNum);
+          moment_exclude = mjSTACKALLOC(d, nv, mjtNum);
+          jacdifp = mjSTACKALLOC(d, 3*nv, mjtNum);
+          jac1p = mjSTACKALLOC(d, 3*nv, mjtNum);
+          jac2p = mjSTACKALLOC(d, 3*nv, mjtNum);
+          chain = issparse ? mjSTACKALLOC(d, nv, int) : NULL;
         }
 
         // clear efc_force and moment_exclude
@@ -1387,8 +1387,7 @@ void mj_crb(const mjModel* m, mjData* d) {
 
 
 // sparse L'*D*L factorizaton of inertia-like matrix M, assumed spd
-void mj_factorI(const mjModel* m, mjData* d, const mjtNum* M, mjtNum* qLD, mjtNum* qLDiagInv,
-                mjtNum* qLDiagSqrtInv) {
+void mj_factorI(const mjModel* m, mjData* d, const mjtNum* M, mjtNum* qLD, mjtNum* qLDiagInv) {
   int cnt;
   int Madr_kk, Madr_ki;
   mjtNum tmp;
@@ -1441,13 +1440,9 @@ void mj_factorI(const mjModel* m, mjData* d, const mjtNum* M, mjtNum* qLD, mjtNu
     }
   }
 
-  // compute 1/diag(D), 1/sqrt(diag(D))
+  // compute 1/diag(D)
   for (int i=0; i < nv; i++) {
-    mjtNum qLDi = qLD[dof_Madr[i]];
-    qLDiagInv[i] = 1.0/qLDi;
-    if (qLDiagSqrtInv) {
-      qLDiagSqrtInv[i] = 1.0/mju_sqrt(qLDi);
-    }
+    qLDiagInv[i] = 1.0 / qLD[dof_Madr[i]];
   }
 }
 
@@ -1456,8 +1451,42 @@ void mj_factorI(const mjModel* m, mjData* d, const mjtNum* M, mjtNum* qLD, mjtNu
 // sparse L'*D*L factorizaton of the inertia matrix M, assumed spd
 void mj_factorM(const mjModel* m, mjData* d) {
   TM_START;
-  mj_factorI(m, d, d->qM, d->qLD, d->qLDiagInv, d->qLDiagSqrtInv);
+  mj_factorI(m, d, d->qM, d->qLD, d->qLDiagInv);
   TM_ADD(mjTIMER_POS_INERTIA);
+}
+
+
+
+// sparse L'*D*L factorizaton of inertia-like matrix M, assumed spd
+//  like mj_factorI, but using CSR representation
+void mj_factorIs(mjtNum* mat, mjtNum* diaginv, int nv,
+                 const int* rownnz, const int* rowadr, const int* diagnum, const int* colind) {
+  // backward loop over rows
+  for (int k=nv-1; k >= 0; k--) {
+    // get row k's address, diagonal index, inverse diagonal value
+    int rowadr_k = rowadr[k];
+    int diag_k = rowadr_k + rownnz[k] - 1;
+    mjtNum invD = 1 / mat[diag_k];
+    if (diaginv) diaginv[k] = invD;
+
+    // skip if simple
+    if (diagnum[k]) {
+      continue;
+    }
+
+    // update triangle above row k, inclusive
+    for (int adr=diag_k - 1; adr >= rowadr_k; adr--) {
+      // tmp = L(k, i) / L(k, k)
+      mjtNum tmp = mat[adr] * invD;
+
+      // update row i < k:  L(i, 0..i) -= L(i, 0..i) * L(k, i) / L(k, k)
+      int i = colind[adr];
+      mju_addToScl(mat + rowadr[i], mat + rowadr_k, -tmp, rownnz[i]);
+
+      // update ith element of row k:  L(k, i) /= L(k, k)
+      mat[adr] = tmp;
+    }
+  }
 }
 
 
@@ -1575,6 +1604,96 @@ void mj_solveLD(const mjModel* m, mjtNum* restrict x, int n,
 }
 
 
+
+// in-place sparse backsubstitution:  x = inv(L'*D*L)*x
+//  like mj_solveLD, but using the CSR representation of L
+void mj_solveLDs(mjtNum* restrict x, const mjtNum* qLDs, const mjtNum* qLDiagInv, int nv, int n,
+                 const int* rownnz, const int* rowadr, const int* diagnum, const int* colind) {
+  // single vector
+  if (n == 1) {
+    // x <- L^-T x
+    for (int i=nv-1; i > 0; i--) {
+      // skip diagonal rows, zero elements in input vector
+      mjtNum x_i = x[i];
+      if (x_i == 0 || diagnum[i]) {
+        continue;
+      }
+
+      int start = rowadr[i];
+      int end = start + rownnz[i] - 1;
+      for (int adr=start; adr < end; adr++) {
+        x[colind[adr]] -= qLDs[adr] * x_i;
+      }
+    }
+
+    // x <- D^-1 x
+    for (int i=0; i < nv; i++) {
+      x[i] *= qLDiagInv[i];
+    }
+
+    // x <- L^-1 x
+    for (int i=1; i < nv; i++) {
+      // skip diagonal rows
+      if (diagnum[i]) {
+        i += diagnum[i] - 1;  // iterating forward: skip ahead, adjust i
+        continue;
+      }
+
+      int adr = rowadr[i];
+      x[i] -= mju_dotSparse(qLDs+adr, x, rownnz[i] - 1, colind+adr, /*flg_unc1=*/0);
+    }
+  }
+
+  // multiple vectors
+  else {
+    // x <- L^-T x
+    for (int i=nv-1; i > 0; i--) {
+      // skip diagonal rows
+      if (diagnum[i]) {
+        continue;
+      }
+
+      int start = rowadr[i];
+      int end = start + rownnz[i] - 1;
+      for (int adr=start; adr < end; adr++) {
+        int j = colind[adr];
+        mjtNum val = qLDs[adr];
+        for (int offset=0; offset < n*nv; offset+=nv) {
+          mjtNum x_i;
+          if ((x_i = x[i+offset])) {
+            x[j+offset] -= val * x_i;
+          }
+        }
+      }
+    }
+
+    // x <- D^-1 x
+    for (int i=0; i < nv; i++) {
+      mjtNum invD_i = qLDiagInv[i];
+      for (int offset=0; offset < n*nv; offset+=nv) {
+        x[i+offset] *= invD_i;
+      }
+    }
+
+    // x <- L^-1 x
+    for (int i=1; i < nv; i++) {
+      // skip diagonal rows
+      if (diagnum[i]) {
+        i += diagnum[i] - 1;  // iterating forward: skip ahead, adjust i
+        continue;
+      }
+
+      int adr = rowadr[i];
+      int d = rownnz[i] - 1;
+      for (int offset=0; offset < n*nv; offset+=nv) {
+        x[i+offset] -= mju_dotSparse(qLDs+adr, x+offset, d, colind+adr, /*flg_unc1=*/0);
+      }
+    }
+  }
+}
+
+
+
 // sparse backsubstitution:  x = inv(L'*D*L)*y
 //  use factorization in d
 void mj_solveM(const mjModel* m, mjData* d, mjtNum* x, const mjtNum* y, int n) {
@@ -1653,10 +1772,10 @@ void mj_solveM_island(const mjModel* m, const mjData* d, mjtNum* restrict x, int
 
 
 // half of sparse backsubstitution:  x = sqrt(inv(D))*inv(L')*y
-void mj_solveM2(const mjModel* m, mjData* d, mjtNum* x, const mjtNum* y, int n) {
+void mj_solveM2(const mjModel* m, mjData* d, mjtNum* x, const mjtNum* y,
+                const mjtNum* sqrtInvD, int n) {
   // local copies of key variables
   mjtNum* qLD = d->qLD;
-  mjtNum* qLDiagSqrtInv = d->qLDiagSqrtInv;
   int* dof_Madr = m->dof_Madr;
   int* dof_parentid = m->dof_parentid;
   int nv = m->nv;
@@ -1688,7 +1807,7 @@ void mj_solveM2(const mjModel* m, mjData* d, mjtNum* x, const mjtNum* y, int n) 
 
     // x <- sqrt(inv(D)) * x
     for (int i=0; i < nv; i++) {
-      x[i+offset] *= qLDiagSqrtInv[i];  // x(i) /= sqrt(L(i,i))
+      x[i+offset] *= sqrtInvD[i];  // x(i) /= sqrt(L(i,i))
     }
   }
 }
@@ -1749,7 +1868,7 @@ void mj_comVel(const mjModel* m, mjData* d) {
 
       default:
         // in principle we should use the new velocity to compute cdofdot,
-        // but it makes no difference becase crossMotion(cdof, cdof) = 0,
+        // but it makes no difference because crossMotion(cdof, cdof) = 0,
         // and using the old velocity may be more accurate numerically
         mju_crossMotion(cdofdot+6*j, cvel, d->cdof+6*(bda+j));
 
@@ -1772,7 +1891,7 @@ void mj_subtreeVel(const mjModel* m, mjData* d) {
   int nbody = m->nbody;
   mjtNum dx[3], dv[3], dp[3], dL[3];
   mj_markStack(d);
-  mjtNum* body_vel = mj_stackAllocNum(d, 6*m->nbody);
+  mjtNum* body_vel = mjSTACKALLOC(d, 6*m->nbody, mjtNum);
 
   // bodywise quantities
   for (int i=0; i < nbody; i++) {
@@ -1839,8 +1958,8 @@ void mj_rne(const mjModel* m, mjData* d, int flg_acc, mjtNum* result) {
   int nbody = m->nbody, nv = m->nv;
   mjtNum tmp[6], tmp1[6];
   mj_markStack(d);
-  mjtNum* loc_cacc = mj_stackAllocNum(d, m->nbody*6);
-  mjtNum* loc_cfrc_body = mj_stackAllocNum(d, m->nbody*6);
+  mjtNum* loc_cacc = mjSTACKALLOC(d, m->nbody*6, mjtNum);
+  mjtNum* loc_cfrc_body = mjSTACKALLOC(d, m->nbody*6, mjtNum);
 
   // set world acceleration to -gravity
   mju_zero(loc_cacc, 6);

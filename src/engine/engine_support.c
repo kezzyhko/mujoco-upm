@@ -42,8 +42,8 @@
 
 //-------------------------- Constants -------------------------------------------------------------
 
- #define mjVERSION 326
-#define mjVERSIONSTRING "3.2.6"
+ #define mjVERSION 327
+#define mjVERSIONSTRING "3.2.7"
 
 // names of disable flags
 const char* mjDISABLESTRING[mjNDISABLE] = {
@@ -278,7 +278,7 @@ int mj_mergeChain(const mjModel* m, int* chain, int b1, int b2) {
     return 0;
   }
 
-  // intialize last dof address for each body
+  // initialize last dof address for each body
   da1 = m->body_dofadr[b1] + m->body_dofnum[b1] - 1;
   da2 = m->body_dofadr[b2] + m->body_dofnum[b2] - 1;
 
@@ -361,7 +361,7 @@ int mj_bodyChain(const mjModel* m, int body, int* chain) {
       return 0;
     }
 
-    // intialize last dof
+    // initialize last dof
     int da = m->body_dofadr[body] + m->body_dofnum[body] - 1;
     int NV = 0;
 
@@ -459,7 +459,7 @@ void mj_jacBodyCom(const mjModel* m, const mjData* d, mjtNum* jacp, mjtNum* jacr
 void mj_jacSubtreeCom(const mjModel* m, mjData* d, mjtNum* jacp, int body) {
   int nv = m->nv;
   mj_markStack(d);
-  mjtNum* jacp_b = mj_stackAllocNum(d, 3*nv);
+  mjtNum* jacp_b = mjSTACKALLOC(d, 3*nv, mjtNum);
 
   // clear output
   mju_zero(jacp, 3*nv);
@@ -505,8 +505,8 @@ void mj_jacPointAxis(const mjModel* m, mjData* d, mjtNum* jacPoint, mjtNum* jacA
 
   // get full Jacobian of point
   mj_markStack(d);
-  mjtNum* jacp = (jacPoint ? jacPoint : mj_stackAllocNum(d, 3*nv));
-  mjtNum* jacr = mj_stackAllocNum(d, 3*nv);
+  mjtNum* jacp = (jacPoint ? jacPoint : mjSTACKALLOC(d, 3*nv, mjtNum));
+  mjtNum* jacr = mjSTACKALLOC(d, 3*nv, mjtNum);
   mj_jac(m, d, jacp, jacr, point, body);
 
   // jacAxis_col = cross(jacr_col, axis)
@@ -741,15 +741,15 @@ int mj_jacSum(const mjModel* m, mjData* d, int* chain,
   mjtNum* jacr = flg_rot ? jac + 3*nv : NULL;
 
   mj_markStack(d);
-  mjtNum* jtmp = mj_stackAllocNum(d, flg_rot ? 6*nv : 3*nv);
+  mjtNum* jtmp = mjSTACKALLOC(d, flg_rot ? 6*nv : 3*nv, mjtNum);
   mjtNum* jp = jtmp;
   mjtNum* jr = flg_rot ? jtmp + 3*nv : NULL;
 
   // sparse
   if (mj_isSparse(m)) {
-    mjtNum* buf = mj_stackAllocNum(d, flg_rot ? 6*nv : 3*nv);
-    int* buf_ind = mj_stackAllocInt(d, nv);
-    int* bodychain = mj_stackAllocInt(d, nv);
+    mjtNum* buf = mjSTACKALLOC(d, flg_rot ? 6*nv : 3*nv, mjtNum);
+    int* buf_ind = mjSTACKALLOC(d, nv, int);
+    int* bodychain = mjSTACKALLOC(d, nv, int);
 
     // set first
     NV = mj_bodyChain(m, body[0], chain);
@@ -878,10 +878,10 @@ void mj_angmomMat(const mjModel* m, mjData* d, mjtNum* mat, int body) {
   mj_markStack(d);
 
   // stack allocations
-  mjtNum* jacp = mj_stackAllocNum(d, 3*nv);
-  mjtNum* jacr = mj_stackAllocNum(d, 3*nv);
-  mjtNum* term1 = mj_stackAllocNum(d, 3*nv);
-  mjtNum* term2 = mj_stackAllocNum(d, 3*nv);
+  mjtNum* jacp = mjSTACKALLOC(d, 3*nv, mjtNum);
+  mjtNum* jacr = mjSTACKALLOC(d, 3*nv, mjtNum);
+  mjtNum* term1 = mjSTACKALLOC(d, 3*nv, mjtNum);
+  mjtNum* term2 = mjSTACKALLOC(d, 3*nv, mjtNum);
 
   // clear output
   mju_zero(mat, 3*nv);
@@ -1085,51 +1085,27 @@ void mj_mulM_island(const mjModel* m, const mjData* d, mjtNum* res, const mjtNum
 
 // multiply vector by M^(1/2)
 void mj_mulM2(const mjModel* m, const mjData* d, mjtNum* res, const mjtNum* vec) {
-  int adr, nv = m->nv;
+  int  nv = m->nv;
   const mjtNum* qLD = d->qLD;
-  const mjtNum* qLDiagSqrtInv = d->qLDiagSqrtInv;
   const int* dofMadr = m->dof_Madr;
 
   mju_zero(res, nv);
 
+  // res = L * vec
   for (int i=0; i < nv; i++) {
-#ifdef mjUSEAVX
-    // simple: diagonal division, AVX
-    if (m->dof_simplenum[i] >= 4) {
-      // init
-      __m256d result, val1, val2;
-
-      // parallel computation
-      val1 = _mm256_loadu_pd(vec+i);
-      val2 = _mm256_set_pd(qLDiagSqrtInv[dofMadr[i+3]],
-                           qLDiagSqrtInv[dofMadr[i+2]],
-                           qLDiagSqrtInv[dofMadr[i+1]],
-                           qLDiagSqrtInv[dofMadr[i+0]]);
-      result = _mm256_div_pd(val1, val2);
-
-      // store result
-      _mm256_storeu_pd(res+i, result);
-
-      // skip rest of block
-      i += 3;
-      continue;
-    }
-#endif
-
-    // simple: diagonal division
+    // simple: diagonal
     if (m->dof_simplenum[i]) {
-      res[i] = vec[i]/qLDiagSqrtInv[i];
+      res[i] = vec[i];
     }
 
     // regular: full multiplication
     else {
       // diagonal
-      adr = dofMadr[i];
-      res[i] += vec[i]/qLDiagSqrtInv[i];
+      res[i] += vec[i];
 
       // off-diagonal
       int j = m->dof_parentid[i];
-      adr++;
+      int adr = dofMadr[i] + 1;
       while (j >= 0) {
         res[i] += qLD[adr]*vec[j];
 
@@ -1138,6 +1114,11 @@ void mj_mulM2(const mjModel* m, const mjData* d, mjtNum* res, const mjtNum* vec)
         adr++;
       }
     }
+  }
+
+  // res *= sqrt(D)
+  for (int i=0; i < nv; i++) {
+    res[i] *= mju_sqrt(qLD[dofMadr[i]]);
   }
 }
 
@@ -1153,7 +1134,7 @@ void mj_addM(const mjModel* m, mjData* d, mjtNum* dst,
     mj_markStack(d);
 
     // create reduced sparse inertia matrix C
-    mjtNum* C = mj_stackAllocNum(d, nC);
+    mjtNum* C = mjSTACKALLOC(d, nC, mjtNum);
     for (int i=0; i < nC; i++) {
       C[i] = d->qM[d->mapM2C[i]];
     }
@@ -1178,8 +1159,8 @@ void mj_addMSparse(const mjModel* m, mjData* d, mjtNum* dst,
   int nv = m->nv;
 
   mj_markStack(d);
-  int* buf_ind = mj_stackAllocInt(d, nv);
-  mjtNum* sparse_buf = mj_stackAllocNum(d, nv);
+  int* buf_ind = mjSTACKALLOC(d, nv, int);
+  mjtNum* sparse_buf = mjSTACKALLOC(d, nv, mjtNum);
 
   // add to destination
   for (int i=0; i < nv; i++) {
@@ -1230,9 +1211,9 @@ void mj_applyFT(const mjModel* m, mjData* d,
 
   // allocate local variables
   mj_markStack(d);
-  mjtNum* jacp = force ? mj_stackAllocNum(d, 3*nv) : NULL;
-  mjtNum* jacr = torque ? mj_stackAllocNum(d, 3*nv) : NULL;
-  mjtNum* qforce = mj_stackAllocNum(d, nv);
+  mjtNum* jacp = force ? mjSTACKALLOC(d, 3*nv, mjtNum) : NULL;
+  mjtNum* jacr = torque ? mjSTACKALLOC(d, 3*nv, mjtNum) : NULL;
+  mjtNum* qforce = mjSTACKALLOC(d, nv, mjtNum);
 
   // make sure body is in range
   if (body < 0 || body >= m->nbody) {
@@ -1242,7 +1223,7 @@ void mj_applyFT(const mjModel* m, mjData* d,
   // sparse case
   if (mj_isSparse(m)) {
     // construct chain and sparse Jacobians
-    int* chain = mj_stackAllocInt(d, nv);
+    int* chain = mjSTACKALLOC(d, nv, int);
     int NV = mj_bodyChain(m, body, chain);
     mj_jacSparse(m, d, jacp, jacr, point, body, NV, chain);
 

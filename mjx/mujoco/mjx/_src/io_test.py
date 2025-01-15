@@ -92,12 +92,11 @@ _MULTIPLE_CONSTRAINTS = """
 class ModelIOTest(parameterized.TestCase):
   """IO tests for mjx.Model."""
 
-  @parameterized.parameters(
-      _MULTIPLE_CONVEX_OBJECTS, _MULTIPLE_CONSTRAINTS
-  )
+  @parameterized.parameters(_MULTIPLE_CONVEX_OBJECTS, _MULTIPLE_CONSTRAINTS)
   def test_put_model(self, xml):
     m = mujoco.MjModel.from_xml_string(xml)
     mx = mjx.put_model(m)
+
     def assert_not_weak_type(x):
       if isinstance(x, jax.Array):
         assert not x.weak_type
@@ -311,6 +310,15 @@ class DataIOTest(parameterized.TestCase):
     np.testing.assert_allclose(dx.cvel, d.cvel)
     np.testing.assert_allclose(dx.cdof_dot, d.cdof_dot)
 
+    # check that there are no weak types
+    self.assertFalse(
+        any(
+            jax.tree_util.tree_flatten(
+                jax.tree_util.tree_map(lambda x: x.weak_type, dx)
+            )[0]
+        )
+    )
+
     # check that qM is transformed properly
     qm = np.zeros((m.nv, m.nv), dtype=np.float64)
     mujoco.mj_fullM(m, qm, d.qM)
@@ -512,6 +520,38 @@ class DataIOTest(parameterized.TestCase):
     m.opt.cone = ConeType.ELLIPTIC
     with self.assertRaises(NotImplementedError):
       mjx.make_data(m)
+
+  @parameterized.product(
+      sensor=['accelerometer', 'force', 'torque'], equality=['connect', 'weld']
+  )
+  def test_sensor_constraint_compatibility(self, sensor, equality):
+    """Test unsupported sensor and equality constraint combinations."""
+    equality_constraint = f'{equality} body1="body1" body2="body2"'
+    if equality == 'connect':
+      equality_constraint += ' anchor="0 0 0"'
+    m = mujoco.MjModel.from_xml_string(f"""
+        <mujoco>
+          <worldbody>
+            <body name="body1">
+              <freejoint/>
+              <geom size="0.1"/>
+              <site name="site1"/>
+            </body>
+            <body name="body2">
+              <freejoint/>
+              <geom size="0.1"/>
+            </body>
+          </worldbody>
+          <equality>
+            <{equality_constraint}/>
+          </equality>
+          <sensor>
+            <{sensor} site="site1"/>
+          </sensor>
+        </mujoco>
+      """)
+    with self.assertRaises(NotImplementedError):
+      mjx.put_model(m)
 
 
 if __name__ == '__main__':

@@ -2,6 +2,34 @@
 Changelog
 =========
 
+Version 3.2.7 (Jan 14, 2025)
+----------------------------
+
+Python bindings
+^^^^^^^^^^^^^^^
+1. :ref:`rollout<PyRollout>` now features native multi-threading. If a sequence of ``MjData`` instances
+   of length ``nthread`` is passed in, ``rollout`` will automatically create a thread pool and parallelize
+   the computation. The thread pool can be reused across calls, but then the function cannot be called simultaneously
+   from multiple threads. To run multiple threaded rollouts simultaneously, use the new class ``Rollout`` which
+   encapsulates the thread pool. Contribution by :github:user:`aftersomemath`.
+2. Fix global namespace pollution when using ``mjpython`` (:github:issue:`2265`).
+
+General
+^^^^^^^
+
+.. admonition:: Breaking API changes (minor)
+   :class: attention
+
+   3. The field ``mjData.qLDiagSqrtInv`` has been removed. This field is only required for the dual solvers. It is now
+      computed as-needed rather than unconditionally. Relatedly, added the corresponding argument to :ref:`mj_solveM2`.
+
+4. Reduced the memory footprint of the PGS solver's :ref:`A matrix<soDual>`. This was the last remaining dense-memory
+   allocation in MuJoCo, allowing for a significant reduction of the :ref:`dynamic memory allocation heuristic<CSize>`.
+
+Bug fixes
+^^^^^^^^^
+5. Fixed a bug in the box-sphere collider, depth was incorrect for deep penetrations (:github:issue:`2206`).
+6. Fixed a bug in :ref:`mj_mulM2` and added a test.
 
 Version 3.2.6 (Dec 2, 2024)
 ---------------------------
@@ -18,17 +46,17 @@ MJX
 Python bindings
 ^^^^^^^^^^^^^^^
 3. Provide prebuilt wheels for Python 3.13.
-4. Added ``bind`` method and removed id attribute from :ref:`mjSpec` objects. Using ids is error prone in scenarios of repeated attachment and
-   detachment. Python users are encouraged to use names for unique identification of model elements.
-5. Removed ``nroll`` argument from :ref:`rollout<PyRollout>` because its value can always be inferred.
-6. :ref:`rollout<PyRollout>` can now accept sequences of MjModel of length ``nroll``. ``nroll`` argument deprecated because
-   its value can always be inferred.
+4. Added ``bind`` method and removed id attribute from :ref:`mjSpec` objects. Using ids is error prone in scenarios of
+   repeated attachment and detachment. Python users are encouraged to use names for unique identification of model
+   elements.
+5. :ref:`rollout<PyRollout>` can now accept sequences of MjModel of length ``nroll``. Also removed the ``nroll``
+   argument because its value can always be inferred.
 
 Bug fixes
 ^^^^^^^^^
-7. Fixed :github:issue:`2212`, type error in ``mjx.get_data``.
-8. Fixed bug introduced in 3.2.0 in handling of :ref:`texrepeat<asset-material-texrepeat>` attribute, was mistakenly cast
-   from ``float`` to ``int``, (fixed :github:issue:`2223`).
+6. Fixed :github:issue:`2212`, type error in ``mjx.get_data``.
+7. Fixed bug introduced in 3.2.0 in handling of :ref:`texrepeat<asset-material-texrepeat>` attribute, was mistakenly
+   cast from ``float`` to ``int``, (fixed :github:issue:`2223`).
 
 Version 3.2.5 (Nov 4, 2024)
 ---------------------------

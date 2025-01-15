@@ -254,10 +254,17 @@ int mjs_activatePlugin(mjSpec* s, const char* name) {
 
 
 
-// delete object, it will call the appropriate destructor since ~mjCBase is virtual
-void mjs_delete(mjsElement* element) {
+// delete object, return 0 if success
+int mjs_delete(mjsElement* element) {
   mjCBase* object = static_cast<mjCBase*>(element);
-  object->model->DeleteElement(element);
+  try {
+    // it will call the appropriate destructor since ~mjCBase is virtual
+    object->model->DeleteElement(element);
+    return 0;
+  } catch (mjCError& e) {
+    object->model->SetError(e);
+    return -1;
+  }
 }
 
 
@@ -614,7 +621,7 @@ mjsBody* mjs_findBody(mjSpec* s, const char* name) {
 // find element in spec by name
 mjsElement* mjs_findElement(mjSpec* s, mjtObj type, const char* name) {
   mjCModel* model = static_cast<mjCModel*>(s->element);
-  if (model->IsCompiled()) {
+  if (model->IsCompiled() && type != mjOBJ_FRAME) {
     return model->FindObject(type, std::string(name));  // fast lookup
   }
   switch (type) {

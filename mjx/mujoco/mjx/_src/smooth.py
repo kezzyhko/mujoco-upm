@@ -24,6 +24,7 @@ from mujoco.mjx._src import support
 from mujoco.mjx._src.types import CamLightType
 from mujoco.mjx._src.types import Data
 from mujoco.mjx._src.types import DisableBit
+from mujoco.mjx._src.types import EqType
 from mujoco.mjx._src.types import JointType
 from mujoco.mjx._src.types import Model
 from mujoco.mjx._src.types import TrnType
@@ -333,7 +334,7 @@ def factor_m(m: Model, d: Data) -> Data:
     pivots = []
     out = []
 
-    for (b, e, madr_d, madr_ij) in updates:
+    for b, e, madr_d, madr_ij in updates:
       width = e - b
       rows.append(np.arange(madr_ij, madr_ij + width))
       madr_ijs.append(np.full((width,), madr_ij))
@@ -510,7 +511,6 @@ def subtree_vel(m: Model, d: Data) -> Data:
       angmom_child, mom_parent_child = carry
       return angmom + mom + angmom_child + mom_parent_child, mom_parent
 
-
   subtree_angmom, _ = scan.body_tree(
       m,
       _subtree_angmom,
@@ -534,6 +534,7 @@ def subtree_vel(m: Model, d: Data) -> Data:
 
 def rne(m: Model, d: Data) -> Data:
   """Computes inverse dynamics using the recursive Newton-Euler algorithm."""
+
   # forward scan over tree: accumulate link center of mass acceleration
   def cacc_fn(cacc, cdof_dot, qvel):
     if cacc is None:
@@ -635,6 +636,10 @@ def rne_postconstraint(m: Model, d: Data) -> Data:
     )
 
   # TODO(taylorhowell): connect and weld constraints
+  if np.any(m.eq_type == EqType.CONNECT):
+    raise NotImplementedError('Connect constraints are not implemented.')
+  if np.any(m.eq_type == EqType.WELD):
+    raise NotImplementedError('Weld constraints are not implemented.')
 
   # forward pass over bodies: compute cacc, cfrc_int
   def _forward(carry, cfrc_ext, cinert, cvel, body_dofadr, body_dofnum):
@@ -729,7 +734,9 @@ def tendon(m: Model, d: Data) -> Data:
   for adr, num in zip(m.tendon_adr, m.tendon_num):
     for id_pulley in wrap_id_pulley:
       if adr <= id_pulley < adr + num:
-        divisor[id_pulley : adr + num] = m.wrap_prm[id_pulley]
+        divisor[id_pulley : adr + num] = np.maximum(
+            mujoco.mjMINVAL, m.wrap_prm[id_pulley]
+        )
 
   # process spatial tendon sites
   (wrap_id_site,) = np.nonzero(m.wrap_type == WrapType.SITE)
@@ -983,7 +990,7 @@ def _site_dof_mask(m: Model) -> np.ndarray:
   mask = np.ones((m.nu, m.nv))
   for i in np.nonzero(m.actuator_trnid[:, 1] != -1)[0]:
     id_, refid = m.actuator_trnid[i]
-    # intialize last dof address for each body
+    # initialize last dof address for each body
     b0 = m.body_weldid[m.site_bodyid[id_]]
     b1 = m.body_weldid[m.site_bodyid[refid]]
     dofadr0 = m.body_dofadr[b0] + m.body_dofnum[b0] - 1
