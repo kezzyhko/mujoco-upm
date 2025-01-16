@@ -318,7 +318,7 @@ class BindModel(object):
         case mujoco.MjsMesh():
           self.prefix = 'mesh_'
           ids.append(name2id(model, mujoco.mjtObj.mjOBJ_MESH, spec.name))
-        case mujoco.MjsHfield():
+        case mujoco.MjsHField():
           self.prefix = 'hfield_'
           ids.append(name2id(model, mujoco.mjtObj.mjOBJ_HFIELD, spec.name))
         case mujoco.MjsPair():
@@ -437,6 +437,10 @@ class BindData(object):
   def set(self, name: str, value: jax.Array) -> Data:
     """Set the value of an array in an MJX Data."""
     array = getattr(self.data, self.__getname(name))
+    try:
+      iter(value)
+    except TypeError:
+      value = [value]
     if len(value) == 1:
       array = array.at[self.id].set(value[0])
     else:
