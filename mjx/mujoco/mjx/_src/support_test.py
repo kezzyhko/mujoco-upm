@@ -180,6 +180,12 @@ class SupportTest(parameterized.TestCase):
           <motor name="actuator2" joint="joint2"/>
           <motor name="actuator3" joint="joint3"/>
         </actuator>
+
+        <sensor>
+          <framepos name="sensor1" objtype="body" objname="body1"/>
+          <framepos name="sensor2" objtype="body" objname="body2"/>
+          <framepos name="sensor3" objtype="body" objname="body3"/>
+        </sensor>
     </mujoco>
     """
 
@@ -224,6 +230,15 @@ class SupportTest(parameterized.TestCase):
           dx.bind(mx, s.actuators[i]).ctrl, d.ctrl[i]
       )
 
+    np.testing.assert_array_equal(
+        dx.bind(mx, s.sensors).sensordata, d.sensordata
+    )
+    for i in range(m.nsensor):
+      np.testing.assert_array_equal(
+          dx.bind(mx, s.sensors[i]).sensordata,
+          d.sensordata[m.sensor_adr[i] : m.sensor_adr[i] + m.sensor_dim[i]],
+      )
+
     # test setting
     np.testing.assert_array_equal(d.ctrl, [0, 0, 0])
     np.testing.assert_array_equal(dx.bind(mx, s.actuators).ctrl, d.ctrl)
@@ -247,6 +262,12 @@ class SupportTest(parameterized.TestCase):
       print(dx.bind(mx, s.actuators).actuator_ctrl)
     with self.assertRaises(AttributeError):
       print(dx.bind(mx, s.actuators).set('actuator_ctrl', [1, 2, 3]))
+    with self.assertRaises(KeyError, msg='invalid name: invalid_actuator_name'):
+      s.actuators[0].name = 'invalid_actuator_name'
+      print(dx.bind(mx, s.actuators).set('ctrl', [1, 2, 3]))
+    with self.assertRaises(KeyError, msg='invalid name: invalid_geom_name'):
+      s.geoms[0].name = 'invalid_geom_name'
+      print(mx.bind(s.geoms).pos)
 
   _CONTACTS = """
     <mujoco>

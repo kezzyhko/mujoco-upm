@@ -1153,7 +1153,7 @@ int mj_broadphase(const mjModel* m, mjData* d, int* bfpair, int maxpair) {
 
   // init with pairs involving always-colliding bodies
   for (int b1=0; b1 < nbody; b1++) {
-    // cannot colide
+    // cannot collide
     if (!canCollide(m, b1)) {
       continue;
     }
@@ -1163,7 +1163,7 @@ int mj_broadphase(const mjModel* m, mjData* d, int* bfpair, int maxpair) {
         (m->body_weldid[b1] == 0 && hasPlane(m, b1))) {
       // add b1:body pairs that are not welded together
       for (int b2=0; b2 < nbody; b2++) {
-        // cannot colide
+        // cannot collide
         if (!canCollide(m, b2)) {
           continue;
         }
@@ -1461,8 +1461,10 @@ void mj_collideGeoms(const mjModel* m, mjData* d, int g1, int g2) {
   type1 = m->geom_type[g1];
   type2 = m->geom_type[g2];
 
+  mjfCollision collisionFunc = mjCOLLISIONFUNC[type1][type2];
+
   // return if no collision function
-  if (!mjCOLLISIONFUNC[type1][type2]) {
+  if (!collisionFunc) {
     return;
   }
 
@@ -1503,7 +1505,7 @@ void mj_collideGeoms(const mjModel* m, mjData* d, int g1, int g2) {
   }
 
   // call collision detector to generate contacts
-  num = mjCOLLISIONFUNC[type1][type2](m, d, con, g1, g2, margin);
+  num = collisionFunc(m, d, con, g1, g2, margin);
 
   // check contacts
   if (!num) {
@@ -1517,7 +1519,7 @@ void mj_collideGeoms(const mjModel* m, mjData* d, int g1, int g2) {
   }
 
   // remove bad and repeated contacts in box-box
-  if (type1 == mjGEOM_BOX && type2 == mjGEOM_BOX) {
+  if (collisionFunc == mjc_BoxBox) {
     // use dim field to mark: -1: bad, 0: good
     for (int i=0; i < num; i++) {
       con[i].dim = 0;
