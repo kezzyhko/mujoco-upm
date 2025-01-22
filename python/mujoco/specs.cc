@@ -81,9 +81,11 @@ struct MjSpec {
 
   // copy constructor and assignment
   MjSpec(const MjSpec& other) : ptr(mj_copySpec(other.ptr)) {
+    override_assets = other.override_assets;
     assets = other.assets;
   }
   MjSpec& operator=(const MjSpec& other) {
+    override_assets = other.override_assets;
     ptr = mj_copySpec(other.ptr);
     assets = other.assets;
     return *this;
@@ -91,11 +93,13 @@ struct MjSpec {
 
   // move constructor and move assignment
   MjSpec(MjSpec&& other) : ptr(other.ptr) {
+    override_assets = other.override_assets;
     other.ptr = nullptr;
     assets = other.assets;
     other.assets.clear();
   }
   MjSpec& operator=(MjSpec&& other) {
+    override_assets = other.override_assets;
     ptr = other.ptr;
     other.ptr = nullptr;
     assets = other.assets;
@@ -108,6 +112,7 @@ struct MjSpec {
   }
   raw::MjSpec* ptr;
   py::dict assets;
+  bool override_assets = true;
 };
 
 template <typename LoadFunc>
@@ -467,6 +472,14 @@ PYBIND11_MODULE(_specs, m) {
           self.assets[item.first] = item.second;
         };
   }, py::return_value_policy::reference_internal);
+  mjSpec.def_property(
+      "override_assets",
+      [](MjSpec& self) -> bool {
+        return self.override_assets;
+      },
+      [](MjSpec& self, bool override_assets) {
+        self.override_assets = override_assets;
+      });
   mjSpec.def("to_xml", [](MjSpec& self) -> std::string {
     int size = mj_saveXMLString(self.ptr, nullptr, 0, nullptr, 0);
     std::unique_ptr<char[]> buf(new char[size + 1]);
@@ -495,6 +508,77 @@ PYBIND11_MODULE(_specs, m) {
   mjSpec.def("detach_body", [](MjSpec& self, raw::MjsBody& body) {
     mjs_detachBody(self.ptr, &body);
   });
+  mjSpec.def(
+      "attach",
+      [](MjSpec& self, MjSpec& child, std::optional<std::string>& prefix,
+         std::optional<std::string>& suffix, std::optional<py::object>& site,
+         std::optional<py::object>& frame) -> raw::MjsFrame* {
+        if (!frame.has_value() && !site.has_value()) {
+          throw pybind11::value_error(
+              "One of frame or site must be specified.");
+        }
+        if (frame.has_value() && site.has_value()) {
+          throw pybind11::value_error(
+              "Only one of frame or site can be specified.");
+        }
+        auto world = mjs_findBody(child.ptr, "world");
+        if (!world) {
+          throw pybind11::value_error("Child does not have a world body.");
+        }
+        const char* p = prefix.has_value() ? prefix.value().c_str() : "";
+        const char* s = suffix.has_value() ? suffix.value().c_str() : "";
+        raw::MjsBody* attached_world = nullptr;
+        if (frame.has_value()) {
+          raw::MjsFrame* frame_ptr = nullptr;
+          try {
+            frame_ptr = frame->cast<raw::MjsFrame*>();
+          } catch (const py::cast_error& e) {
+            frame_ptr =
+                mjs_findFrame(self.ptr, frame->cast<std::string>().c_str());
+          }
+          if (!frame_ptr) {
+            throw pybind11::value_error("Frame not found.");
+          }
+          if (mjs_getSpec(frame_ptr->element) != self.ptr) {
+            throw pybind11::value_error(
+                "Frame spec does not match parent spec.");
+          }
+          attached_world = mjs_attachBody(frame_ptr, world, p, s);
+        }
+        if (site.has_value()) {
+          raw::MjsSite* site_ptr = nullptr;
+          try {
+            site_ptr = site->cast<raw::MjsSite*>();
+          } catch (const py::cast_error& e) {
+            site_ptr = mjs_asSite(mjs_findElement(
+                self.ptr, mjOBJ_SITE, site->cast<std::string>().c_str()));
+          }
+          if (!site_ptr) {
+            throw pybind11::value_error("Site not found.");
+          }
+          if (mjs_getSpec(site_ptr->element) != self.ptr) {
+            throw pybind11::value_error(
+                "Site spec does not match parent spec.");
+          }
+          attached_world = mjs_attachToSite(site_ptr, world, p, s);
+        }
+        if (!attached_world) {
+          throw pybind11::value_error(mjs_getError(self.ptr));
+        }
+        for (const auto& asset : child.assets) {
+          if (self.assets.contains(asset.first) && !self.override_assets) {
+            throw pybind11::value_error("Asset " +
+                                        asset.first.cast<std::string>() +
+                                        " already exists in parent spec.");
+          }
+          self.assets[asset.first] = asset.second;
+        }
+        return mjs_bodyToFrame(&attached_world);
+      },
+      py::arg("child"), py::arg("prefix") = py::none(),
+      py::arg("suffix") = py::none(), py::arg("site") = py::none(),
+      py::arg("frame") = py::none(),
+      py::return_value_policy::reference_internal);
 
   // ============================= MJSBODY =====================================
   mjsBody.def(
@@ -777,27 +861,6 @@ PYBIND11_MODULE(_specs, m) {
       py::arg("body"), py::arg("prefix") = py::none(),
       py::arg("suffix") = py::none(),
       py::return_value_policy::reference_internal);
-  mjsFrame.def(
-      "attach",
-      [](raw::MjsFrame& self, MjSpec& spec, std::optional<std::string>& prefix,
-         std::optional<std::string>& suffix) -> raw::MjsFrame* {
-        auto world = mjs_findBody(spec.ptr, "world");
-        if (!world) {
-          throw pybind11::value_error(
-              mjs_getError(mjs_getSpec(self.element)));
-        }
-        const char* p = prefix.has_value() ? prefix.value().c_str() : "";
-        const char* s = suffix.has_value() ? suffix.value().c_str() : "";
-        auto attached_world = mjs_attachBody(&self, world, p, s);
-        if (!attached_world) {
-          throw pybind11::value_error(
-              mjs_getError(mjs_getSpec(self.element)));
-        }
-        return mjs_bodyToFrame(&attached_world);
-      },
-      py::arg("spec"), py::arg("prefix") = py::none(),
-      py::arg("suffix") = py::none(),
-      py::return_value_policy::reference_internal);
 
   // ============================= MJSGEOM =====================================
   mjsGeom.def("delete", [](raw::MjsGeom& self) { mjs_delete(self.element); });
@@ -874,28 +937,6 @@ PYBIND11_MODULE(_specs, m) {
               mjs_getError(mjs_getSpec(self.element)));
         }
         return new_body;
-      },
-      py::arg("body"), py::arg("prefix") = py::none(),
-      py::arg("suffix") = py::none(),
-      py::return_value_policy::reference_internal);
-  mjsSite.def(
-      "attach",
-      [](raw::MjsSite& self, MjSpec& spec,
-         std::optional<std::string>& prefix,
-         std::optional<std::string>& suffix) -> raw::MjsFrame* {
-        auto world = mjs_findBody(spec.ptr, "world");
-        if (!world) {
-          throw pybind11::value_error(
-              mjs_getError(mjs_getSpec(self.element)));
-        }
-        const char* p = prefix.has_value() ? prefix.value().c_str() : "";
-        const char* s = suffix.has_value() ? suffix.value().c_str() : "";
-        auto attached_world = mjs_attachToSite(&self, world, p, s);
-        if (!attached_world) {
-          throw pybind11::value_error(
-              mjs_getError(mjs_getSpec(self.element)));
-        }
-        return mjs_bodyToFrame(&attached_world);
       },
       py::arg("body"), py::arg("prefix") = py::none(),
       py::arg("suffix") = py::none(),
