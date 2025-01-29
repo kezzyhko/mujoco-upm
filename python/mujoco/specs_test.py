@@ -749,6 +749,22 @@ class SpecsTest(absltest.TestCase):
     self.assertEqual(model.nmeshvert, 8)
     self.assertEqual(spec.assets['cube.obj'], cube)
 
+    xml = """
+    <mujoco model="test">
+      <asset>
+        <mesh name="cube" file="cube.obj"/>
+      </asset>
+      <worldbody>
+        <geom mesh="cube"/>
+      </worldbody>
+    </mujoco>
+    """
+    assets = {'cube.obj': cube}
+    spec = mujoco.MjSpec.from_string(xml, assets=assets)
+    model = spec.compile()
+    self.assertEqual(model.nmeshvert, 8)
+    self.assertEqual(spec.assets['cube.obj'], cube)
+
   def test_include(self):
     included_xml = """
       <mujoco>
@@ -765,7 +781,7 @@ class SpecsTest(absltest.TestCase):
         <include file="included.xml"/>
       </mujoco>
     """),
-        {'included.xml': included_xml.encode('utf-8')},
+        include={'included.xml': included_xml.encode('utf-8')},
     )
     self.assertEqual(
         spec.worldbody.first_body().first_geom().type, mujoco.mjtGeom.mjGEOM_BOX

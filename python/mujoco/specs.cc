@@ -71,23 +71,25 @@ using MjDoubleRefVec = Eigen::Ref<const Eigen::VectorXd>;
 
 struct MjSpec {
   MjSpec() : ptr(mj_makeSpec()) {}
-  MjSpec(raw::MjSpec* ptr,
-         const std::unordered_map<std::string, py::bytes>& assets_ = {})
-      : ptr(ptr) {
-    for (const auto& asset : assets_) {
-      assets[asset.first.c_str()] = asset.second;
+  MjSpec(raw::MjSpec* ptr, const py::dict& assets_ = {}) : ptr(ptr) {
+    for (const auto [key, value] : assets_) {
+      assets[key] = value;
     }
   }
 
   // copy constructor and assignment
   MjSpec(const MjSpec& other) : ptr(mj_copySpec(other.ptr)) {
     override_assets = other.override_assets;
-    assets = other.assets;
+    for (const auto [key, value] : other.assets) {
+      assets[key] = value;
+    }
   }
   MjSpec& operator=(const MjSpec& other) {
     override_assets = other.override_assets;
     ptr = mj_copySpec(other.ptr);
-    assets = other.assets;
+    for (const auto [key, value] : other.assets) {
+      assets[key] = value;
+    }
     return *this;
   }
 
@@ -95,14 +97,18 @@ struct MjSpec {
   MjSpec(MjSpec&& other) : ptr(other.ptr) {
     override_assets = other.override_assets;
     other.ptr = nullptr;
-    assets = other.assets;
+    for (const auto [key, value] : other.assets) {
+      assets[key] = value;
+    }
     other.assets.clear();
   }
   MjSpec& operator=(MjSpec&& other) {
     override_assets = other.override_assets;
     ptr = other.ptr;
     other.ptr = nullptr;
-    assets = other.assets;
+    for (const auto [key, value] : other.assets) {
+      assets[key] = value;
+    }
     other.assets.clear();
     return *this;
   }
@@ -269,15 +275,15 @@ PYBIND11_MODULE(_specs, m) {
   mjSpec.def_static(
       "from_file",
       [](std::string& filename,
-         std::optional<std::unordered_map<std::string, py::bytes>>& assets)
-          -> MjSpec {
-        const auto converted_assets = _impl::ConvertAssetsDict(assets);
+         std::optional<std::unordered_map<std::string, py::bytes>>& include,
+         std::optional<py::dict>& assets) -> MjSpec {
+        const auto files = _impl::ConvertAssetsDict(include);
         raw::MjSpec* spec;
         {
           py::gil_scoped_release no_gil;
           char error[1024];
           spec = LoadSpecFileImpl(
-              filename, converted_assets,
+              filename, files,
               [&error](const char* filename, const mjVFS* vfs) {
                 return InterceptMjErrors(mj_parseXML)(
                     filename, vfs, error, sizeof(error));
@@ -291,38 +297,44 @@ PYBIND11_MODULE(_specs, m) {
         }
         return MjSpec(spec);
       },
-      py::arg("filename"), py::arg("assets") = py::none(), R"mydelimiter(
+      py::arg("filename"), py::arg("include") = py::none(),
+      py::arg("assets") = py::none(), R"mydelimiter(
     Creates a spec from an XML file.
 
     Parameters
     ----------
     filename : str
         Path to the XML file.
+    include : dict, optional
+        A dictionary of xml files included by the model. The keys are file names
+        and the values are file contents.
     assets : dict, optional
         A dictionary of assets to be used by the spec. The keys are asset names
         and the values are asset contents.
-  )mydelimiter", py::return_value_policy::move);
+  )mydelimiter",
+      py::return_value_policy::move);
   mjSpec.def_static(
       "from_string",
       [](std::string& xml,
-         std::optional<std::unordered_map<std::string, py::bytes>>& assets)
-          -> MjSpec {
-        auto converted_assets = _impl::ConvertAssetsDict(assets);
+         std::optional<std::unordered_map<std::string, py::bytes>>& include,
+         std::optional<py::dict>& assets) -> MjSpec {
+        auto files = _impl::ConvertAssetsDict(include);
         raw::MjSpec* spec;
         {
           py::gil_scoped_release no_gil;
           std::string model_filename = "model_.xml";
-          if (assets.has_value()) {
-            while (assets->find(model_filename) != assets->end()) {
+          if (include.has_value()) {
+            while (include->find(model_filename) !=
+                   include->end()) {
               model_filename =
                   model_filename.substr(0, model_filename.size() - 4) + "_.xml";
             }
           }
-          converted_assets.emplace_back(
+          files.emplace_back(
               model_filename.c_str(), xml.c_str(), xml.length());
           char error[1024];
           spec = LoadSpecFileImpl(
-              model_filename, converted_assets,
+              model_filename, files,
               [&error](const char* filename, const mjVFS* vfs) {
                 return InterceptMjErrors(mj_parseXML)(
                     filename, vfs, error, sizeof(error));
@@ -336,17 +348,22 @@ PYBIND11_MODULE(_specs, m) {
         }
         return MjSpec(spec);
       },
-      py::arg("xml"), py::arg("assets") = py::none(), R"mydelimiter(
+      py::arg("xml"), py::arg("include") = py::none(),
+      py::arg("assets") = py::none(), R"mydelimiter(
     Creates a spec from an XML string.
 
     Parameters
     ----------
     xml : str
         XML string.
+    include : dict, optional
+        A dictionary of xml files included by the model. The keys are file names
+        and the values are file contents.
     assets : dict, optional
         A dictionary of assets to be used by the spec. The keys are asset names
         and the values are asset contents.
-  )mydelimiter", py::return_value_policy::move);
+  )mydelimiter",
+      py::return_value_policy::move);
   mjSpec.def("recompile", [mjmodel_mjdata_from_spec_ptr](
                               const MjSpec& self, py::object m, py::object d) {
     return mjmodel_mjdata_from_spec_ptr(reinterpret_cast<uintptr_t>(self.ptr),
