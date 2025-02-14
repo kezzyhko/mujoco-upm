@@ -528,22 +528,7 @@ class SpecsTest(absltest.TestCase):
       spec.to_xml()
 
   def test_modelname_default_class(self):
-    spec = mujoco.MjSpec()
-    spec.modelname = 'test'
-
-    main = spec.default()
-    main.geom.size[0] = 2
-
-    def1 = spec.add_default('def1', main)
-    def1.geom.size[0] = 3
-
-    spec.worldbody.add_geom(def1)
-    spec.worldbody.add_geom(main)
-
-    spec.compile()
-    self.assertEqual(
-        spec.to_xml(),
-        textwrap.dedent("""\
+    XML = textwrap.dedent("""\
         <mujoco model="test">
           <compiler angle="radian"/>
 
@@ -559,8 +544,8 @@ class SpecsTest(absltest.TestCase):
             <geom/>
           </worldbody>
         </mujoco>
-    """),
-    )
+    """)
+
     spec = mujoco.MjSpec()
     spec.modelname = 'test'
 
@@ -574,26 +559,38 @@ class SpecsTest(absltest.TestCase):
     spec.worldbody.add_geom(main)
 
     spec.compile()
-    self.assertEqual(
-        spec.to_xml(),
-        textwrap.dedent("""\
-        <mujoco model="test">
-          <compiler angle="radian"/>
+    self.assertEqual(spec.to_xml(), XML)
+    spec = mujoco.MjSpec()
+    spec.modelname = 'test'
 
-          <default>
-            <geom size="2 0 0"/>
-            <default class="def1">
-              <geom size="3 0 0"/>
-            </default>
-          </default>
+    main = spec.default()
+    main.geom.size[0] = 2
+    def1 = spec.add_default('def1', main)
+    def1.geom.size[0] = 3
 
-          <worldbody>
-            <geom class="def1"/>
-            <geom/>
-          </worldbody>
-        </mujoco>
-    """),
-    )
+    geom1 = spec.worldbody.add_geom(def1)
+    geom2 = spec.worldbody.add_geom()
+    self.assertEqual(geom1.classname.name, 'def1')
+    self.assertEqual(geom2.classname.name, 'main')
+
+    spec.compile()
+    self.assertEqual(spec.to_xml(), XML)
+
+    spec = mujoco.MjSpec()
+    spec.modelname = 'test'
+
+    main = spec.default()
+    main.geom.size[0] = 2
+    def1 = spec.add_default('def1', main)
+    def1.geom.size[0] = 3
+
+    geom1 = spec.worldbody.add_geom(size=[3, 0, 0])
+    geom2 = spec.worldbody.add_geom(size=[2, 0, 0])
+    geom1.classname = def1
+    geom2.classname = main  # actually redundant, since main is always applied
+
+    spec.compile()
+    self.assertEqual(spec.to_xml(), XML)
 
   def test_element_list(self):
     spec = mujoco.MjSpec()
@@ -1102,6 +1099,41 @@ class SpecsTest(absltest.TestCase):
     child4 = mujoco.MjSpec()
     with self.assertRaisesRegex(ValueError, 'Frame not found.'):
       parent.attach(child4, frame='invalid_frame', prefix='child3-')
+
+  def test_bind(self):
+    spec = mujoco.MjSpec.from_string("""
+    <mujoco>
+      <worldbody>
+        <body name="main">
+          <geom name="main" size="0.15 0.15 0.15" mass="1" type="box"/>
+          <freejoint/>
+          <body name="box">
+            <joint name="box" type="hinge" range="-1 +1"/>
+            <geom name="box" size="0.15 0.15 0.15" mass="1" type="box"/>
+          </body>
+          <body name="sphere">
+            <joint name="sphere" type="hinge" range="-1 +1"/>
+            <geom name="sphere" size="0.15 0.15 0.15" mass="1" type="box"/>
+          </body>
+        </body>
+      </worldbody>
+    </mujoco>
+    """)
+    joint_box = spec.joint('box')
+    joint_sphere = spec.joint('sphere')
+    joints = [joint_box, joint_sphere]
+    mj_model = spec.compile()
+    mj_data = mujoco.MjData(mj_model)
+    np.testing.assert_array_equal(mj_data.bind(joint_box).qpos, 0)
+    np.testing.assert_array_equal(mj_model.bind(joint_box).qposadr, 7)
+    np.testing.assert_array_equal(mj_data.bind(joints).qpos, [0, 0])
+    np.testing.assert_array_equal(mj_model.bind(joints).qposadr, [7, 8])
+    np.testing.assert_array_equal(mj_data.bind([]).qpos, [])
+    np.testing.assert_array_equal(mj_model.bind([]).qposadr, [])
+    with self.assertRaisesRegex(
+        AttributeError, "object has no attribute 'invalid'"
+    ):
+      print(mj_model.bind(joints).invalid)
 
 if __name__ == '__main__':
   absltest.main()
