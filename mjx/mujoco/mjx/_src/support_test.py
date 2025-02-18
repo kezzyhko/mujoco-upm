@@ -276,14 +276,28 @@ class SupportTest(parameterized.TestCase):
     np.testing.assert_array_equal(
         dx7.bind(mx, s.bodies[1]).xfrc_applied, [1, 2, 3, 4, 5, 6]
     )
+    for body in s.bodies[:1] + s.bodies[2:]:
+      np.testing.assert_array_equal(
+          dx7.bind(mx, body).xfrc_applied, [0, 0, 0, 0, 0, 0]
+      )
 
     # test invalid name
-    with self.assertRaises(AttributeError):
+    with self.assertRaises(
+        AttributeError, msg='ctrl is not available for this type'
+    ):
       print(dx.bind(mx, s.geoms).ctrl)
-    with self.assertRaises(AttributeError):
+    with self.assertRaises(
+        AttributeError, msg='ctrl is not available for this type'
+    ):
       print(dx.bind(mx, s.actuators).actuator_ctrl)
-    with self.assertRaises(AttributeError):
+    with self.assertRaises(
+        AttributeError, msg='ctrl is not available for this type'
+    ):
       print(dx.bind(mx, s.actuators).set('actuator_ctrl', [1, 2, 3]))
+    with self.assertRaises(
+        AttributeError, msg='qpos and qvel are not available for this type'
+    ):
+      print(dx.bind(mx, s.geoms).qpos)
     with self.assertRaises(KeyError, msg='invalid name: invalid_actuator_name'):
       s.actuators[0].name = 'invalid_actuator_name'
       print(dx.bind(mx, s.actuators).set('ctrl', [1, 2, 3]))
