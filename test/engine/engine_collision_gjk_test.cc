@@ -30,7 +30,7 @@
 #include <gtest/gtest.h>
 
 // uncomment to run tests with libccd
-// #define TEST_WITH_LIBCCD
+//#define TEST_WITH_LIBCCD
 
 namespace mujoco {
 namespace {
@@ -235,10 +235,10 @@ TEST_F(MjGjkTest, SphereSphereNoDist) {
 TEST_F(MjGjkTest, SphereSphereIntersect) {
   static constexpr char xml[] = R"(
   <mujoco>
-  <worldbody>
-    <geom name="geom1" type="sphere" pos="-1 0 0" size="3"/>
-    <geom name="geom2" type="sphere" pos="3 0 0" size="3"/>
-  </worldbody>
+    <worldbody>
+      <geom name="geom1" type="sphere" pos="-1 0 0" size="3"/>
+      <geom name="geom2" type="sphere" pos="3 0 0" size="3"/>
+    </worldbody>
   </mujoco>)";
 
   std::array<char, 1000> error;
@@ -276,10 +276,10 @@ TEST_F(MjGjkTest, SphereSphereIntersect) {
 TEST_F(MjGjkTest, BoxBoxDepth) {
   static constexpr char xml[] = R"(
   <mujoco>
-  <worldbody>
-    <geom name="geom1" type="box" pos="-1 0 0" size="2.5 2.5 2.5"/>
-    <geom name="geom2" type="box" pos="1.5 0 0" size="1 1 1"/>
-  </worldbody>
+    <worldbody>
+      <geom name="geom1" type="box" pos="-1 0 0" size="2.5 2.5 2.5"/>
+      <geom name="geom2" type="box" pos="1.5 0 0" size="1 1 1"/>
+    </worldbody>
   </mujoco>)";
 
   std::array<char, 1000> error;
@@ -310,10 +310,10 @@ TEST_F(MjGjkTest, BoxBoxDepth) {
 TEST_F(MjGjkTest, BoxBoxDepth2) {
   static constexpr char xml[] = R"(
   <mujoco>
-  <worldbody>
-    <geom name="geom1" type="box" pos="0 0 0" size="5 5 .1"/>
-    <geom name="geom2" type="box" pos="0 0 0" size="1 1 1"/>
-  </worldbody>
+    <worldbody>
+      <geom name="geom1" type="box" pos="0 0 0" size="5 5 .1"/>
+      <geom name="geom2" type="box" pos="0 0 0" size="1 1 1"/>
+    </worldbody>
   </mujoco>)";
 
   std::array<char, 1000> error;
@@ -360,10 +360,10 @@ TEST_F(MjGjkTest, BoxBoxDepth2) {
 TEST_F(MjGjkTest, BoxBoxDepth3) {
   static constexpr char xml[] = R"(
   <mujoco>
-  <worldbody>
-    <geom name="geom1" type="box" pos="0 0 0" size="0.25 0.25 0.05"/>
-    <geom name="geom2" type="box" pos="0 0 0" size="0.25 0.25 0.05"/>
-  </worldbody>
+    <worldbody>
+      <geom name="geom1" type="box" pos="0 0 0" size="0.25 0.25 0.05"/>
+      <geom name="geom2" type="box" pos="0 0 0" size="0.25 0.25 0.05"/>
+    </worldbody>
   </mujoco>)";
 
   std::array<char, 1000> error;
@@ -426,10 +426,10 @@ TEST_F(MjGjkTest, BoxBoxDepth3) {
 TEST_F(MjGjkTest, BoxBoxTouching) {
   static constexpr char xml[] = R"(
   <mujoco>
-  <worldbody>
-    <geom name="geom1" type="box" pos="0 0 1.859913200000001376466229885409" size="1 1 1"/>
-    <geom name="geom2" type="box" pos="0 2 1.859913200000001376466229885409" size="1 1 1"/>
-  </worldbody>
+    <worldbody>
+      <geom name="geom1" type="box" pos="0 0 1.859913200000001376466229885409" size="1 1 1"/>
+      <geom name="geom2" type="box" pos="0 2 1.859913200000001376466229885409" size="1 1 1"/>
+    </worldbody>
   </mujoco>)";
 
   std::array<char, 1000> error;
@@ -454,10 +454,10 @@ TEST_F(MjGjkTest, BoxBoxTouching) {
 TEST_F(MjGjkTest, BoxBoxMultiCCD) {
   static constexpr char xml[] = R"(
   <mujoco>
-  <worldbody>
-    <geom name="geom1" type="box" pos="0 0 1.9" size="1 1 1"/>
-    <geom name="geom2" type="box" pos="0 0 0" size="10 10 1"/>
-  </worldbody>
+    <worldbody>
+      <geom name="geom1" type="box" pos="0 0 1.9" size="1 1 1"/>
+      <geom name="geom2" type="box" pos="0 0 0" size="10 10 1"/>
+    </worldbody>
   </mujoco>)";
 
   std::array<char, 1000> error;
@@ -492,10 +492,10 @@ TEST_F(MjGjkTest, BoxBoxMultiCCD) {
 TEST_F(MjGjkTest, BoxBoxMultiCCD2) {
   static constexpr char xml[] = R"(
   <mujoco>
-  <worldbody>
-    <geom name="geom1" type="box" pos="9.5 9.5 1.9" size="1 1 1"/>
-    <geom name="geom2" type="box" pos="0 0 0" size="10 10 1"/>
-  </worldbody>
+    <worldbody>
+      <geom name="geom1" type="box" pos="9.5 9.5 1.9" size="1 1 1"/>
+      <geom name="geom2" type="box" pos="0 0 0" size="10 10 1"/>
+    </worldbody>
   </mujoco>)";
 
   std::array<char, 1000> error;
@@ -530,10 +530,10 @@ TEST_F(MjGjkTest, BoxBoxMultiCCD2) {
 TEST_F(MjGjkTest, BoxBoxMultiCCD3) {
   static constexpr char xml[] = R"(
   <mujoco>
-  <worldbody>
-    <geom type="box" name="geom1" size="5 5 .1" pos="0 0 0"/>
-    <geom type="box" name="geom2" size="1 1 1"/>
-  </worldbody>
+    <worldbody>
+      <geom type="box" name="geom1" size="5 5 .1" pos="0 0 0"/>
+      <geom type="box" name="geom2" size="1 1 1"/>
+    </worldbody>
 </mujoco>)";
 
   std::array<char, 1000> error;
@@ -575,10 +575,10 @@ TEST_F(MjGjkTest, BoxBoxMultiCCD3) {
 TEST_F(MjGjkTest, BoxBoxMultiCCD4) {
   static constexpr char xml[] = R"(
   <mujoco>
-  <worldbody>
-   <geom name="geom1" size="0.25 0.25 0.05" type="box"/>
-   <geom name="geom2" size="0.25 0.25 0.05" type="box"/>
-  </worldbody>
+    <worldbody>
+     <geom name="geom1" size="0.25 0.25 0.05" type="box"/>
+     <geom name="geom2" size="0.25 0.25 0.05" type="box"/>
+    </worldbody>
 </mujoco>)";
 
   std::array<char, 1000> error;
@@ -641,10 +641,10 @@ TEST_F(MjGjkTest, BoxBoxMultiCCD4) {
 TEST_F(MjGjkTest, BoxBoxMultiCCD5) {
   static constexpr char xml[] = R"(
   <mujoco>
-  <worldbody>
-   <geom name="geom1" size="0.25 0.25 0.05" type="box"/>
-   <geom name="geom2" size="0.25 0.25 0.05" type="box"/>
-  </worldbody>
+    <worldbody>
+     <geom name="geom1" size="0.25 0.25 0.05" type="box"/>
+     <geom name="geom2" size="0.25 0.25 0.05" type="box"/>
+    </worldbody>
 </mujoco>)";
 
   std::array<char, 1000> error;
@@ -708,10 +708,10 @@ TEST_F(MjGjkTest, BoxBoxMultiCCD5) {
 TEST_F(MjGjkTest, BoxBoxMultiCCD6) {
   static constexpr char xml[] = R"(
   <mujoco>
-  <worldbody>
-    <geom name="geom1" type="box" size=".5 .5 .1" pos="0 0 -.1"/>
-    <geom name="geom2" type="box" size=".1 .1 .1" pos="0 0 0"/>
-  </worldbody>
+    <worldbody>
+      <geom name="geom1" type="box" size=".5 .5 .1" pos="0 0 -.1"/>
+      <geom name="geom2" type="box" size=".1 .1 .1" pos="0 0 0"/>
+    </worldbody>
 </mujoco>)";
 
   std::array<char, 1000> error;
@@ -757,10 +757,10 @@ TEST_F(MjGjkTest, BoxBoxMultiCCD6) {
 TEST_F(MjGjkTest, BoxBoxMultiCCD7) {
   static constexpr char xml[] = R"(
   <mujoco>
-  <worldbody>
-    <geom name="geom1" type="box" size=".25 .25 .05" pos="0 0 0"/>
-    <geom name="geom2" type="box" size=".25 .25 .05" pos="0 0 0"/>
-  </worldbody>
+    <worldbody>
+      <geom name="geom1" type="box" size=".25 .25 .05" pos="0 0 0"/>
+      <geom name="geom2" type="box" size=".25 .25 .05" pos="0 0 0"/>
+    </worldbody>
 </mujoco>)";
 
   std::array<char, 1000> error;
@@ -819,10 +819,10 @@ TEST_F(MjGjkTest, BoxBoxMultiCCD7) {
 TEST_F(MjGjkTest, BoxBoxMultiCCD8) {
   static constexpr char xml[] = R"(
   <mujoco>
-  <worldbody>
-    <geom name="geom1" type="box" size=".25 .25 .05" pos="0 0 0"/>
-    <geom name="geom2" type="box" size=".25 .25 .05" pos="0 0 0"/>
-  </worldbody>
+    <worldbody>
+      <geom name="geom1" type="box" size=".25 .25 .05" pos="0 0 0"/>
+      <geom name="geom2" type="box" size=".25 .25 .05" pos="0 0 0"/>
+    </worldbody>
 </mujoco>)";
 
   std::array<char, 1000> error;
@@ -880,11 +880,11 @@ TEST_F(MjGjkTest, BoxBoxMultiCCD8) {
 TEST_F(MjGjkTest, BoxBoxMultiCCD9) {
   static constexpr char xml[] = R"(
   <mujoco>
-  <worldbody>
-    <geom name="geom1" type="box" size=".025 .025 .025" pos="0 0 0"/>
-    <geom name="geom2" type="box" size=".025 .025 .025" pos="0 0 0"/>
-  </worldbody>
-</mujoco>)";
+    <worldbody>
+      <geom name="geom1" type="box" size=".025 .025 .025" pos="0 0 0"/>
+      <geom name="geom2" type="box" size=".025 .025 .025" pos="0 0 0"/>
+    </worldbody>
+  </mujoco>)";
 
   std::array<char, 1000> error;
   mjModel* model = LoadModelFromString(xml, error.data(), error.size());
@@ -942,31 +942,31 @@ TEST_F(MjGjkTest, BoxBoxMultiCCD9) {
 TEST_F(MjGjkTest, SmallBoxMesh) {
   static constexpr char xml[] = R"(
   <mujoco>
-  <asset>
-    <mesh name="box" scale=".5 .5 .1"
-      vertex="-1 -1 -1
-               1 -1 -1
-               1  1 -1
-               1  1  1
-               1 -1  1
-              -1  1 -1
-              -1  1  1
-              -1 -1  1"/>
-    <mesh name="smallbox" scale=".1 .1 .1"
-      vertex="-1 -1 -1
-               1 -1 -1
-               1  1 -1
-               1  1  1
-               1 -1  1
-              -1  1 -1
-              -1  1  1
-              -1 -1  1"/>
-  </asset>
+    <asset>
+      <mesh name="box" scale=".5 .5 .1"
+        vertex="-1 -1 -1
+                 1 -1 -1
+                 1  1 -1
+                 1  1  1
+                 1 -1  1
+                -1  1 -1
+                -1  1  1
+                -1 -1  1"/>
+      <mesh name="smallbox" scale=".1 .1 .1"
+        vertex="-1 -1 -1
+                 1 -1 -1
+                 1  1 -1
+                 1  1  1
+                 1 -1  1
+                -1  1 -1
+                -1  1  1
+                -1 -1  1"/>
+    </asset>
 
-  <worldbody>
-    <geom name="geom1" pos="0 0 -.1" mesh="box" type="mesh"/>
-    <geom name="geom2" pos="0 0 .1" mesh="smallbox" type="mesh"/>
-  </worldbody>
+    <worldbody>
+      <geom name="geom2" pos="0 0 .1" size=".1 .1 .1"  type="mesh" mesh="smallbox"/>
+      <geom name="geom1" pos="0 0 -.099999999" size=".5 .5 .1"  type="mesh" mesh="box"/>
+    </worldbody>
   </mujoco>)";
 
   std::array<char, 1000> error;
@@ -998,6 +998,405 @@ TEST_F(MjGjkTest, SmallBoxMesh) {
   mj_deleteData(data);
   mj_deleteModel(model);
 }
+TEST_F(MjGjkTest, BoxMesh) {
+  static constexpr char xml[] = R"(
+  <mujoco>
+    <asset>
+      <mesh name="pentaprism"
+            vertex="1 0 0 0.309 0.951 0 -0.809 0.588 0 -0.809 -0.588 0 0.309 -0.951 0
+                    1 0 1 0.309 0.951 1 -0.809 0.588 1 -0.809 -0.588 1 0.309 -0.951 1"
+            scale=".2 .2 .1"/>
+    </asset>
+    <worldbody>
+      <geom name="geom1" type="box" pos="0 0 -.01" size="3 3 .01"/>
+      <geom name="geom2" pos="0 0 0.157" euler="0 -90 0" type="mesh" mesh="pentaprism"/>
+    </worldbody>
+  </mujoco>)";
+
+  std::array<char, 1000> error;
+  mjModel* model = LoadModelFromString(xml, error.data(), error.size());
+  ASSERT_THAT(model, NotNull()) << "Failed to load model: " << error.data();
+
+  mjData* data = mj_makeData(model);
+  mj_forward(model, data);
+
+  int geom1 = mj_name2id(model, mjOBJ_GEOM, "geom1");
+  int geom2 = mj_name2id(model, mjOBJ_GEOM, "geom2");
+  std::vector<mjtNum> dir, pos;
+  mjtNum dist;
+  int ncons = Penetration(dist, dir, pos, model, data, geom2, geom1, 0, 1000);
+
+  EXPECT_EQ(ncons, 4);
+  mj_deleteData(data);
+  mj_deleteModel(model);
+}
+
+TEST_F(MjGjkTest, BoxMesh2) {
+  static constexpr char xml[] = R"(
+  <mujoco>
+    <asset>
+      <mesh name="pentaprism"
+            vertex="1 0 0 0.309 0.951 0 -0.809 0.588 0 -0.809 -0.588 0 0.309 -0.951 0
+                    1 0 1 0.309 0.951 1 -0.809 0.588 1 -0.809 -0.588 1 0.309 -0.951 1"
+            scale=".2 .2 .1"/>
+    </asset>
+    <worldbody>
+      <geom name="geom1" type="box" pos="0 0 -.01" size="3 3 .01"/>
+      <geom name="geom2" pos="0 0 -0.001" type="mesh" mesh="pentaprism"/>
+    </worldbody>
+  </mujoco>)";
+
+  std::array<char, 1000> error;
+  mjModel* model = LoadModelFromString(xml, error.data(), error.size());
+  ASSERT_THAT(model, NotNull()) << "Failed to load model: " << error.data();
+
+  mjData* data = mj_makeData(model);
+  mj_forward(model, data);
+
+  int geom1 = mj_name2id(model, mjOBJ_GEOM, "geom1");
+  int geom2 = mj_name2id(model, mjOBJ_GEOM, "geom2");
+  std::vector<mjtNum> dir, pos;
+  mjtNum dist;
+  int ncons = Penetration(dist, dir, pos, model, data, geom2, geom1, 0, 1000);
+
+  EXPECT_EQ(ncons, 5);
+  mj_deleteData(data);
+  mj_deleteModel(model);
+}
+
+TEST_F(MjGjkTest, BoxMeshPrune) {
+  static constexpr char xml[] = R"(
+  <mujoco>
+    <asset>
+      <mesh name="pentaprism"
+            vertex="1 0 0 0.309 0.951 0 -0.809 0.588 0 -0.809 -0.588 0 0.309 -0.951 0
+                    1 0 1 0.309 0.951 1 -0.809 0.588 1 -0.809 -0.588 1 0.309 -0.951 1"
+            scale=".2 .2 .1"/>
+    </asset>
+    <worldbody>
+      <geom name="geom1" type="box" pos="0 0 -.01" size="3 3 .01"/>
+      <geom name="geom2" pos="0 0 -0.001" type="mesh" mesh="pentaprism"/>
+    </worldbody>
+  </mujoco>)";
+
+  std::array<char, 1000> error;
+  mjModel* model = LoadModelFromString(xml, error.data(), error.size());
+  ASSERT_THAT(model, NotNull()) << "Failed to load model: " << error.data();
+
+  mjData* data = mj_makeData(model);
+  mj_forward(model, data);
+
+  int geom1 = mj_name2id(model, mjOBJ_GEOM, "geom1");
+  int geom2 = mj_name2id(model, mjOBJ_GEOM, "geom2");
+  std::vector<mjtNum> dir, pos;
+  mjtNum dist;
+  int ncons = Penetration(dist, dir, pos, model, data, geom2, geom1, 0, 4);
+
+  EXPECT_EQ(ncons, 4);
+  mj_deleteData(data);
+  mj_deleteModel(model);
+}
+
+TEST_F(MjGjkTest, MeshMesh) {
+  static constexpr char xml[] = R"(
+  <mujoco>
+    <asset>
+      <mesh name="box" vertex="-1 -1 -1 1 -1 -1 1 1 -1 1 1 1 1 -1 1 -1 1 -1 -1 1 1 -1 -1 1"
+            scale="1 1 .01"/>
+      <mesh name="pentaprism"
+            vertex="1 0 0 0.309 0.951 0 -0.809 0.588 0 -0.809 -0.588 0 0.309 -0.951 0
+                    1 0 1 0.309 0.951 1 -0.809 0.588 1 -0.809 -0.588 1 0.309 -0.951 1"
+            scale=".2 .2 .1"/>
+    </asset>
+    <worldbody>
+      <geom name="geom1" type="mesh" pos="0 0 -0.01" mesh="box"/>
+      <geom name="geom2" pos="0 0 -0.001" type="mesh" mesh="pentaprism"/>
+    </worldbody>
+  </mujoco>)";
+
+  std::array<char, 1000> error;
+  mjModel* model = LoadModelFromString(xml, error.data(), error.size());
+  ASSERT_THAT(model, NotNull()) << "Failed to load model: " << error.data();
+
+  mjData* data = mj_makeData(model);
+  mj_forward(model, data);
+
+  int geom1 = mj_name2id(model, mjOBJ_GEOM, "geom1");
+  int geom2 = mj_name2id(model, mjOBJ_GEOM, "geom2");
+  std::vector<mjtNum> dir, pos;
+  mjtNum dist;
+  int ncons = Penetration(dist, dir, pos, model, data, geom1, geom2, 0, 1000);
+
+  EXPECT_EQ(ncons, 5);
+  mj_deleteData(data);
+  mj_deleteModel(model);
+}
+
+TEST_F(MjGjkTest, MeshMeshPrune) {
+  static constexpr char xml[] = R"(
+  <mujoco>
+    <asset>
+      <mesh name="box" vertex="-1 -1 -1 1 -1 -1 1 1 -1 1 1 1 1 -1 1 -1 1 -1 -1 1 1 -1 -1 1"
+            scale="1 1 .01"/>
+      <mesh name="pentaprism"
+            vertex="1 0 0 0.309 0.951 0 -0.809 0.588 0 -0.809 -0.588 0 0.309 -0.951 0
+                    1 0 1 0.309 0.951 1 -0.809 0.588 1 -0.809 -0.588 1 0.309 -0.951 1"
+            scale=".2 .2 .1"/>
+    </asset>
+    <worldbody>
+      <geom name="geom1" type="mesh" pos="0 0 -0.01" mesh="box"/>
+      <geom name="geom2" pos="0 0 -0.001" type="mesh" mesh="pentaprism"/>
+    </worldbody>
+  </mujoco>)";
+
+  std::array<char, 1000> error;
+  mjModel* model = LoadModelFromString(xml, error.data(), error.size());
+  ASSERT_THAT(model, NotNull()) << "Failed to load model: " << error.data();
+
+  mjData* data = mj_makeData(model);
+  mj_forward(model, data);
+
+  int geom1 = mj_name2id(model, mjOBJ_GEOM, "geom1");
+  int geom2 = mj_name2id(model, mjOBJ_GEOM, "geom2");
+  std::vector<mjtNum> dir, pos;
+  mjtNum dist;
+  int ncons = Penetration(dist, dir, pos, model, data, geom1, geom2, 0, 4);
+
+  EXPECT_EQ(ncons, 4);
+  mj_deleteData(data);
+  mj_deleteModel(model);
+}
+
+TEST_F(MjGjkTest, BoxEdge) {
+  static constexpr char xml[] = R"(
+  <mujoco>
+    <option>
+      <flag nativeccd="enable" multiccd="enable"/>
+    </option>
+
+    <worldbody>
+      <geom type="box" name="box1" size="5 5 .1" pos="0 0 0"/>
+      <body pos="0 0 2">
+        <freejoint/>
+        <geom type="box" name="box2" size="1 1 1"/>
+      </body>
+      <body pos="0 0 4.4" euler="0 90 40">
+        <freejoint/>
+        <geom type="box" name="box3" size="1 1 1"/>
+      </body>
+    </worldbody>
+  </mujoco>)";
+
+  std::array<char, 1000> error;
+  mjModel* model = LoadModelFromString(xml, error.data(), error.size());
+  ASSERT_THAT(model, NotNull()) << "Failed to load model: " << error.data();
+
+  mjData* data = mj_makeData(model);
+  mj_forward(model, data);
+
+  int geom1 = mj_name2id(model, mjOBJ_GEOM, "box2");
+  int geom2 = mj_name2id(model, mjOBJ_GEOM, "box3");
+  std::vector<mjtNum> dir, pos;
+  mjtNum dist;
+  int ncons = Penetration(dist, dir, pos, model, data, geom1, geom2, 0, 4);
+
+  EXPECT_EQ(ncons, 2);
+  mj_deleteData(data);
+  mj_deleteModel(model);
+}
+
+TEST_F(MjGjkTest, BoxEdge2) {
+  static constexpr char xml[] = R"(
+  <mujoco>
+    <option>
+      <flag nativeccd="enable" multiccd="enable"/>
+    </option>
+
+    <worldbody>
+      <geom type="box" name="box1" size="5 5 .1" pos="0 0 0"/>
+      <body pos="0 0 2">
+        <freejoint/>
+        <geom type="box" name="box2" size="1 1 1"/>
+      </body>
+
+      <body pos="0 0 4.4" euler="0 90 40">
+        <freejoint/>
+        <geom type="box" name="box3" size="1 1 1"/>
+      </body>
+    </worldbody>
+  </mujoco>)";
+
+  std::array<char, 1000> error;
+  mjModel* model = LoadModelFromString(xml, error.data(), error.size());
+  ASSERT_THAT(model, NotNull()) << "Failed to load model: " << error.data();
+
+  mjData* data = mj_makeData(model);
+  mj_forward(model, data);
+
+  mjtNum* xmat = data->geom_xmat + 9;
+  mjtNum* xpos = data->geom_xpos + 3;
+
+  xmat[0] = 0.9999979704374094557906005320546682924032;
+  xmat[1] = -0.0017789363449516469497385662279498319549;
+  xmat[2] = -0.0009457835609818190025430140188689165370;
+  xmat[3] = 0.0017817418144636251123996695255868871755;
+  xmat[4] = 0.9999939910254954655854930933855939656496;
+  xmat[5] = 0.0029737701675293876438233020564894104609;
+  xmat[6] = 0.0009404877299599626429629783963548561587;
+  xmat[7] = -0.0029754492741947335607277658198199787876;
+  xmat[8] = 0.9999951310803708581786963804916013032198;
+
+  xpos[0] = 0.0005578602979296120537716641152314878127;
+  xpos[1] = 0.0098645950089783600300830102014515432529;
+  xpos[2] = 1.1037596929447945903746131079969927668571;
+
+  xmat = data->geom_xmat + 18;
+  xpos = data->geom_xpos + 6;
+
+  xmat[0] = 0.0006737475542006746490053537002040684456;
+  xmat[1] = -0.0095603689585630827196816028390458086506;
+  xmat[2] = 0.9999540716500983084102927023195661604404;
+  xmat[3] = -0.1095658134726250898527410981841967441142;
+  xmat[4] = 0.9939334085756179604231874691322445869446;
+  xmat[5] = 0.0095766296438734854756802405972848646343;
+  xmat[6] = -0.9939793149670246297233688892447389662266;
+  xmat[7] = -0.1095672335264066821203243762283818796277;
+  xmat[8] = -0.0003778293989772788311065632171903416747;
+
+  xpos[0] = -0.0218119359455731035013492657981259981170;
+  xpos[1] = 0.9828851949225971829093850828940048813820;
+  xpos[2] = 3.0930077345364814789263618877157568931580;
+
+  int geom1 = mj_name2id(model, mjOBJ_GEOM, "box2");
+  int geom2 = mj_name2id(model, mjOBJ_GEOM, "box3");
+  std::vector<mjtNum> dir, pos;
+  mjtNum dist;
+  int ncons = Penetration(dist, dir, pos, model, data, geom1, geom2, 0, 4);
+
+  EXPECT_EQ(ncons, 2);
+  mj_deleteData(data);
+  mj_deleteModel(model);
+}
+
+TEST_F(MjGjkTest, BoxEdgeEdge) {
+  static constexpr char xml[] = R"(
+  <mujoco>
+    <option>
+      <flag nativeccd="enable" multiccd="enable"/>
+    </option>
+
+    <worldbody>
+      <geom type="box" name="box1" size="5 5 .1" pos="0 0 -.1"/>
+      <body pos="-2 0 2.99" euler="0 10 0">
+        <freejoint/>
+        <geom type="box" name="box2" size=".15 1 3"/>
+      </body>
+      <body pos="2 0 2.99" euler="0 -10 0">
+        <freejoint/>
+        <geom type="box" name="box3" size=".15 1 3"/>
+      </body>
+    </worldbody>
+  </mujoco>)";
+
+  std::array<char, 1000> error;
+  mjModel* model = LoadModelFromString(xml, error.data(), error.size());
+  ASSERT_THAT(model, NotNull()) << "Failed to load model: " << error.data();
+
+  mjData* data = mj_makeData(model);
+  mj_forward(model, data);
+
+  mjtNum* xmat = data->geom_xmat + 9;
+  mjtNum* xpos = data->geom_xpos + 3;
+
+  xmat[0] = 0.9182779243587342321575306414160877466202;
+  xmat[1] = -0.0000000000000000000364268564068890756444;
+  xmat[2] = 0.3959364262547898638544552341045346111059;
+  xmat[3] = -0.0000000000000000000591321577502441383525;
+  xmat[4] = 1.0000000000000000000000000000000000000000;
+  xmat[5] = 0.0000000000000000002291443915550544102718;
+  xmat[6] = -0.3959364262547898638544552341045346111059;
+  xmat[7] = -0.0000000000000000002338308114719865891040;
+  xmat[8] = 0.9182779243587342321575306414160877466202;
+
+  xpos[0] = -1.3241298058948087756903078116010874509811;
+  xpos[1] = 0.0000000000000000007148993364299687318184;
+  xpos[2] = 2.8141526153588731773425024584867060184479;
+
+  xmat = data->geom_xmat + 18;
+  xpos = data->geom_xpos + 6;
+
+  xmat[0] = 0.9182779243587342321575306414160877466202;
+  xmat[1] = 0.0000000000000000000728398144756416399722;
+  xmat[2] = -0.3959364262547898638544552341045346111059;
+  xmat[3] = -0.0000000000000000001674060251593158490713;
+  xmat[4] = 1.0000000000000000000000000000000000000000;
+  xmat[5] = -0.0000000000000000002042889652712837518138;
+  xmat[6] = 0.3959364262547898638544552341045346111059;
+  xmat[7] = 0.0000000000000000002538761903338069406631;
+  xmat[8] = 0.9182779243587342321575306414160877466202;
+
+  xpos[0] = 1.3241298058948089977349127366323955357075;
+  xpos[1] = -0.0000000000000000008679606505055748997840;
+  xpos[2] = 2.8141526153588731773425024584867060184479;
+
+  int geom1 = mj_name2id(model, mjOBJ_GEOM, "box2");
+  int geom2 = mj_name2id(model, mjOBJ_GEOM, "box3");
+  std::vector<mjtNum> dir, pos;
+  mjtNum dist;
+  int ncons = Penetration(dist, dir, pos, model, data, geom1, geom2, 0, 4);
+
+  EXPECT_EQ(ncons, 2);
+  mj_deleteData(data);
+  mj_deleteModel(model);
+}
+
+TEST_F(MjGjkTest, MeshEdge) {
+  static constexpr char xml[] = R"(
+  <mujoco>
+    <option>
+      <flag nativeccd="enable" multiccd="enable"/>
+    </option>
+    <asset>
+      <mesh name="smallbox"
+        vertex="-1 -1 -1  1 -1 -1   1  1 -1
+                 1  1  1  1 -1  1  -1  1 -1
+                -1  1  1 -1 -1  1"/>
+      <mesh name="floor"
+        vertex="-1 -1 -1  1 -1 -1  1  1 -1
+                 1  1  1  1 -1  1 -1  1 -1
+                -1  1  1 -1 -1  1"
+        scale="5 5 1"/>
+    </asset>
+    <worldbody>
+      <geom type="mesh" name="box1" mesh="floor" pos="0 0 0"/>
+      <body pos="0 0 2">
+        <freejoint/>
+        <geom type="mesh" mesh="smallbox" name="box2" size="1 1 1"/>
+      </body>
+      <body pos="0 0 4.4" euler="0 90 40">
+        <freejoint/>
+        <geom type="mesh" mesh="smallbox" name="box3" size="1 1 1"/>
+      </body>
+    </worldbody>
+  </mujoco>)";
+
+  std::array<char, 1000> error;
+  mjModel* model = LoadModelFromString(xml, error.data(), error.size());
+  ASSERT_THAT(model, NotNull()) << "Failed to load model: " << error.data();
+
+  mjData* data = mj_makeData(model);
+  mj_forward(model, data);
+
+  int geom1 = mj_name2id(model, mjOBJ_GEOM, "box2");
+  int geom2 = mj_name2id(model, mjOBJ_GEOM, "box3");
+  std::vector<mjtNum> dir, pos;
+  mjtNum dist;
+  int ncons = Penetration(dist, dir, pos, model, data, geom1, geom2, 0, 4);
+
+  EXPECT_EQ(ncons, 2);
+  mj_deleteData(data);
+  mj_deleteModel(model);
+}
 
 TEST_F(MjGjkTest, EllipsoidEllipsoidPenetrating) {
   std::array<char, 1000> error;
@@ -1023,10 +1422,10 @@ TEST_F(MjGjkTest, EllipsoidEllipsoidPenetrating) {
 TEST_F(MjGjkTest, EllipsoidEllipsoid) {
   static constexpr char xml[] = R"(
   <mujoco>
-  <worldbody>
-    <geom name="geom1" type="ellipsoid" pos="1.5 0 -.5" size=".15 .30 .20"/>
-    <geom name="geom2" type="ellipsoid" pos="1.5 .5 .5" size=".10 .10 .15"/>
-  </worldbody>
+    <worldbody>
+      <geom name="geom1" type="ellipsoid" pos="1.5 0 -.5" size=".15 .30 .20"/>
+      <geom name="geom2" type="ellipsoid" pos="1.5 .5 .5" size=".10 .10 .15"/>
+    </worldbody>
   </mujoco>)";
 
   std::array<char, 1000> error;
@@ -1048,10 +1447,10 @@ TEST_F(MjGjkTest, EllipsoidEllipsoid) {
 TEST_F(MjGjkTest, BoxBox) {
   static constexpr char xml[] = R"(
   <mujoco>
-  <worldbody>
-    <geom name="geom1" type="box" pos="-1.5 .5 0" size="1 1 1"/>
-    <geom name="geom2" type="box" pos="1.5 0 0" size="1 1 1"/>
-  </worldbody>
+    <worldbody>
+      <geom name="geom1" type="box" pos="-1.5 .5 0" size="1 1 1"/>
+      <geom name="geom2" type="box" pos="1.5 0 0" size="1 1 1"/>
+    </worldbody>
   </mujoco>)";
 
   std::array<char, 1000> error;
@@ -1071,18 +1470,18 @@ TEST_F(MjGjkTest, BoxBox) {
 }
 
 TEST_F(MjGjkTest, LongBox) {
-  static constexpr char xml[] = R"(
-<mujoco>
-  <asset>
-    <mesh name="long_box"
-          vertex="-1 -1 -1 1 -1 -1 1 1 -1 1 1 1 1 -1 1 -1 1 -1 -1 1 1 -1 -1 1"
-          scale=".6 .03 .03"/>
-  </asset>
-  <worldbody>
-    <geom name="geom1" type="box" size="1 1 .3" pos="0 0 -.3"/>
-    <geom name="geom2" type="mesh" mesh="long_box" pos="0 0 .02" euler="0 0 40"/>
-  </worldbody>
-</mujoco>)";
+static constexpr char xml[] = R"(
+  <mujoco>
+    <asset>
+      <mesh name="long_box"
+            vertex="-1 -1 -1 1 -1 -1 1 1 -1 1 1 1 1 -1 1 -1 1 -1 -1 1 1 -1 -1 1"
+            scale=".6 .03 .03"/>
+    </asset>
+    <worldbody>
+      <geom name="geom1" type="box" size="1 1 .3" pos="0 0 -.3"/>
+      <geom name="geom2" type="mesh" mesh="long_box" pos="0 0 .02" euler="0 0 40"/>
+    </worldbody>
+  </mujoco>)";
 
   std::array<char, 1000> error;
   mjModel* model = LoadModelFromString(xml, error.data(), error.size());
@@ -1108,6 +1507,10 @@ TEST_F(MjGjkTest, LongBox) {
   EXPECT_NEAR(pos[1], 0, kTolerance);
   EXPECT_NEAR(pos[2], -0.005, kTolerance);
 
+  // multicontact
+  ncons = Penetration(dist, dir, pos, model, data, geom1, geom2, 0, 1000);
+  EXPECT_EQ(ncons, 4);
+
   mj_deleteData(data);
   mj_deleteModel(model);
 }
@@ -1115,10 +1518,10 @@ TEST_F(MjGjkTest, LongBox) {
 TEST_F(MjGjkTest, EllipsoidEllipsoidIntersect) {
   static constexpr char xml[] = R"(
   <mujoco>
-  <worldbody>
-    <geom name="geom1" type="ellipsoid" pos="1.5 0 -.5" size=".15 .30 .20"/>
-    <geom name="geom2" type="ellipsoid" pos="1.5 .5 .5" size=".10 .10 .15"/>
-  </worldbody>
+    <worldbody>
+      <geom name="geom1" type="ellipsoid" pos="1.5 0 -.5" size=".15 .30 .20"/>
+      <geom name="geom2" type="ellipsoid" pos="1.5 .5 .5" size=".10 .10 .15"/>
+    </worldbody>
   </mujoco>)";
 
   std::array<char, 1000> error;
@@ -1143,10 +1546,10 @@ TEST_F(MjGjkTest, EllipsoidEllipsoidIntersect) {
 TEST_F(MjGjkTest, CapsuleCapsule) {
   static constexpr char xml[] = R"(
   <mujoco>
-  <worldbody>
-    <geom name="geom1" type="capsule" pos="-.3 .2 -.4" size=".15 .30"/>
-    <geom name="geom2" type="capsule" pos=".3 .2 .4" size=".10 .10"/>
-  </worldbody>
+    <worldbody>
+      <geom name="geom1" type="capsule" pos="-.3 .2 -.4" size=".15 .30"/>
+      <geom name="geom2" type="capsule" pos=".3 .2 .4" size=".10 .10"/>
+    </worldbody>
   </mujoco>)";
 
   std::array<char, 1000> error;
