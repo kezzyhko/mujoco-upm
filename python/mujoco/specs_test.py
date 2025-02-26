@@ -549,7 +549,7 @@ class SpecsTest(absltest.TestCase):
     spec = mujoco.MjSpec()
     spec.modelname = 'test'
 
-    main = spec.default()
+    main = spec.default
     main.geom.size[0] = 2
 
     def1 = spec.add_default('def1', main)
@@ -563,7 +563,7 @@ class SpecsTest(absltest.TestCase):
     spec = mujoco.MjSpec()
     spec.modelname = 'test'
 
-    main = spec.default()
+    main = spec.default
     main.geom.size[0] = 2
     def1 = spec.add_default('def1', main)
     def1.geom.size[0] = 3
@@ -579,7 +579,7 @@ class SpecsTest(absltest.TestCase):
     spec = mujoco.MjSpec()
     spec.modelname = 'test'
 
-    main = spec.default()
+    main = spec.default
     main.geom.size[0] = 2
     def1 = spec.add_default('def1', main)
     def1.geom.size[0] = 3
@@ -991,7 +991,7 @@ class SpecsTest(absltest.TestCase):
     child2.assets = {'cube2.obj': 'cube2_content'}
     body2 = child2.worldbody.add_body(name='body')
     self.assertIsNotNone(parent.attach(child2, site=site, prefix='child2-'))
-    self.assertIsNone(child2.worldbody)
+    self.assertIsNotNone(child2.worldbody)
     self.assertEqual(child2.parent, parent)
     body2.pos = [-1, -1, -1]
     model2 = parent.compile()
@@ -1009,7 +1009,7 @@ class SpecsTest(absltest.TestCase):
     child3.assets = {'cube3.obj': 'cube3_content'}
     body3 = child3.worldbody.add_body(name='body')
     self.assertIsNotNone(parent.attach(child3, site='site', prefix='child3-'))
-    self.assertIsNone(child3.worldbody)
+    self.assertIsNotNone(child3.worldbody)
     self.assertEqual(child3.parent, parent)
     body3.pos = [-2, -2, -2]
     model3 = parent.compile()
@@ -1062,7 +1062,7 @@ class SpecsTest(absltest.TestCase):
     child2.assets = {'cube2.obj': 'cube2_content'}
     body2 = child2.worldbody.add_body(name='body')
     self.assertIsNotNone(parent.attach(child2, frame=frame, prefix='child-'))
-    self.assertIsNone(child2.worldbody)
+    self.assertIsNotNone(child2.worldbody)
     self.assertEqual(child2.parent, parent)
     body2.pos = [-1, -1, -1]
     model2 = parent.compile()
@@ -1080,7 +1080,7 @@ class SpecsTest(absltest.TestCase):
     child3.assets = {'cube2.obj': 'new_cube2_content'}
     body3 = child3.worldbody.add_body(name='body')
     self.assertIsNotNone(parent.attach(child3, frame='frame', prefix='child3-'))
-    self.assertIsNone(child3.worldbody)
+    self.assertIsNotNone(child3.worldbody)
     self.assertEqual(child3.parent, parent)
     body3.pos = [-2, -2, -2]
     model3 = parent.compile()
