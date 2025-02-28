@@ -25,6 +25,15 @@
 extern "C" {
 #endif
 
+// tolerance for normal alignment of two faces (cosine of 1.6e-3)
+#define mjFACE_TOL 0.99999872
+
+// tolerance for edge-face alignment (sine of 1.6e-3)
+#define mjEDGE_TOL 0.00159999931
+
+// max number of supported vertices in a polygon face of a mesh
+#define mjMAX_POLYVERT 150
+
 // Status of an EPA run
 typedef enum {
   mjEPA_NOCONTACT           = -1,
@@ -37,7 +46,17 @@ typedef enum {
   mjEPA_P3_INVALID_V5,
   mjEPA_P3_MISSING_ORIGIN,
   mjEPA_P3_ORIGIN_ON_FACE,
+  mjEPA_P4_MISSING_ORIGIN,
 } mjEPAStatus;
+
+// vertex in a polytope
+typedef struct {
+  mjtNum vert[3];   // v1 - v2; vertex in Minkowski sum making up polytope
+  mjtNum vert1[3];  // vertex of polytope in obj1
+  mjtNum vert2[3];  // vertex of polytope in obj2
+  int index1;       // vertex index in mesh 1
+  int index2;       // vertex index in mesh 2
+} Vertex;
 
 // configuration for convex collision detection
 typedef struct {
@@ -65,10 +84,8 @@ typedef struct {
   int gjk_iterations;           // number of iterations that GJK ran
   int epa_iterations;           // number of iterations that EPA ran (zero if EPA did not run)
   mjEPAStatus epa_status;       // status of the EPA run
-  mjtNum simplex1[12];          // the simplex that GJK returned for obj1
-  mjtNum simplex2[12];          // the simplex that GJK returned for obj2
-  mjtNum simplex[12];           // the simplex that GJK returned for the Minkowski difference
-  int nsimplex;                 // size of simplex 1 & 2
+  Vertex simplex[4];
+  int nsimplex;
 } mjCCDStatus;
 
 // run general convex collision detection, returns positive for distance, negative for penetration

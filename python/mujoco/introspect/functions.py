@@ -1045,6 +1045,24 @@ FUNCTIONS: Mapping[str, FunctionDecl] = dict([
          ),
          doc='Activate plugin. Returns 0 on success.',
      )),
+    ('mjs_setDeepCopy',
+     FunctionDecl(
+         name='mjs_setDeepCopy',
+         return_type=ValueType(name='int'),
+         parameters=(
+             FunctionParameterDecl(
+                 name='s',
+                 type=PointerType(
+                     inner_type=ValueType(name='mjSpec'),
+                 ),
+             ),
+             FunctionParameterDecl(
+                 name='deepcopy',
+                 type=ValueType(name='int'),
+             ),
+         ),
+         doc='Turn deep copy on or off attach. Returns 0 on success.',
+     )),
     ('mj_printFormattedModel',
      FunctionDecl(
          name='mj_printFormattedModel',
@@ -1105,7 +1123,7 @@ FUNCTIONS: Mapping[str, FunctionDecl] = dict([
              FunctionParameterDecl(
                  name='d',
                  type=PointerType(
-                     inner_type=ValueType(name='mjData'),
+                     inner_type=ValueType(name='mjData', is_const=True),
                  ),
              ),
              FunctionParameterDecl(
@@ -1137,7 +1155,7 @@ FUNCTIONS: Mapping[str, FunctionDecl] = dict([
              FunctionParameterDecl(
                  name='d',
                  type=PointerType(
-                     inner_type=ValueType(name='mjData'),
+                     inner_type=ValueType(name='mjData', is_const=True),
                  ),
              ),
              FunctionParameterDecl(
@@ -7411,7 +7429,7 @@ FUNCTIONS: Mapping[str, FunctionDecl] = dict([
                  ),
              ),
          ),
-         doc='extract 3D rotation from an arbitrary 3x3 matrix by refining the input quaternion returns the number of iterations required to converge',  # pylint: disable=line-too-long
+         doc='Extract 3D rotation from an arbitrary 3x3 matrix by refining the input quaternion. Returns the number of iterations required to converge',  # pylint: disable=line-too-long
      )),
     ('mju_euler2Quat',
      FunctionDecl(
@@ -9084,6 +9102,40 @@ FUNCTIONS: Mapping[str, FunctionDecl] = dict([
          ),
          doc='Attach child body to a parent site, return the attached body if success or NULL otherwise.',  # pylint: disable=line-too-long
      )),
+    ('mjs_attachFrameToSite',
+     FunctionDecl(
+         name='mjs_attachFrameToSite',
+         return_type=PointerType(
+             inner_type=ValueType(name='mjsFrame'),
+         ),
+         parameters=(
+             FunctionParameterDecl(
+                 name='parent',
+                 type=PointerType(
+                     inner_type=ValueType(name='mjsSite'),
+                 ),
+             ),
+             FunctionParameterDecl(
+                 name='child',
+                 type=PointerType(
+                     inner_type=ValueType(name='mjsFrame', is_const=True),
+                 ),
+             ),
+             FunctionParameterDecl(
+                 name='prefix',
+                 type=PointerType(
+                     inner_type=ValueType(name='char', is_const=True),
+                 ),
+             ),
+             FunctionParameterDecl(
+                 name='suffix',
+                 type=PointerType(
+                     inner_type=ValueType(name='char', is_const=True),
+                 ),
+             ),
+         ),
+         doc='Attach child frame to a parent site, return the attached frame if success or NULL otherwise.',  # pylint: disable=line-too-long
+     )),
     ('mjs_detachBody',
      FunctionDecl(
          name='mjs_detachBody',
@@ -9827,6 +9879,22 @@ FUNCTIONS: Mapping[str, FunctionDecl] = dict([
              ),
          ),
          doc='Find child body by name.',
+     )),
+    ('mjs_getParent',
+     FunctionDecl(
+         name='mjs_getParent',
+         return_type=PointerType(
+             inner_type=ValueType(name='mjsBody'),
+         ),
+         parameters=(
+             FunctionParameterDecl(
+                 name='element',
+                 type=PointerType(
+                     inner_type=ValueType(name='mjsElement'),
+                 ),
+             ),
+         ),
+         doc='Get parent body.',
      )),
     ('mjs_findFrame',
      FunctionDecl(

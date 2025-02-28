@@ -272,7 +272,7 @@ struct mjData_ {
   mjtNum* qM;                // total inertia (sparse)                           (nM x 1)
 
   // computed by mj_fwdPosition/mj_factorM
-  mjtNum* qLD;               // L'*D*L factorization of M (sparse)               (nM x 1)
+  mjtNum* qLD;               // L'*D*L factorization of M (sparse)               (nC x 1)
   mjtNum* qLDiagInv;         // 1/diag(D)                                        (nv x 1)
 
   // computed by mj_collisionTree
@@ -305,7 +305,7 @@ struct mjData_ {
   mjtNum* subtree_angmom;    // angular momentum about subtree com               (nbody x 3)
 
   // computed by mj_Euler or mj_implicit
-  mjtNum* qH;                // L'*D*L factorization of modified M               (nM x 1)
+  mjtNum* qH;                // L'*D*L factorization of modified M               (nC x 1)
   mjtNum* qHDiagInv;         // 1/diag(D) of modified M                          (nv x 1)
 
   // computed by mj_resetData
@@ -429,8 +429,9 @@ typedef enum mjtDisableBit_ {     // disable default feature bitflags
   mjDSBL_MIDPHASE     = 1<<13,    // mid-phase collision filtering
   mjDSBL_EULERDAMP    = 1<<14,    // implicit integration of joint damping in Euler integrator
   mjDSBL_AUTORESET    = 1<<15,    // automatic reset when numerical issues are detected
+  mjDSBL_NATIVECCD    = 1<<16,    // native convex collision detection
 
-  mjNDISABLE          = 16        // number of disable flags
+  mjNDISABLE          = 17        // number of disable flags
 } mjtDisableBit;
 typedef enum mjtEnableBit_ {      // enable optional feature bitflags
   mjENBL_OVERRIDE     = 1<<0,     // override contact parameters
@@ -440,9 +441,8 @@ typedef enum mjtEnableBit_ {      // enable optional feature bitflags
                                   // experimental features:
   mjENBL_MULTICCD     = 1<<4,     // multi-point convex collision detection
   mjENBL_ISLAND       = 1<<5,     // constraint island discovery
-  mjENBL_NATIVECCD    = 1<<6,     // native convex collision detection
 
-  mjNENABLE           = 7         // number of enable flags
+  mjNENABLE           = 6         // number of enable flags
 } mjtEnableBit;
 typedef enum mjtJoint_ {          // type of degree of freedom
   mjJNT_FREE          = 0,        // global position and orientation (quat)       (7)
@@ -674,6 +674,8 @@ typedef enum mjtSensor_ {         // type of sensor
   mjSENS_GEOMFROMTO,              // segment between two geoms
 
   // global sensors
+  mjSENS_E_POTENTIAL,             // potential energy
+  mjSENS_E_KINETIC,               // kinetic energy
   mjSENS_CLOCK,                   // simulation time
 
   // plugin-controlled sensors
@@ -899,6 +901,7 @@ struct mjModel_ {
   int ncam;                       // number of cameras
   int nlight;                     // number of lights
   int nflex;                      // number of flexes
+  int nflexnode;                   // number of dofs in all flexes
   int nflexvert;                  // number of vertices in all flexes
   int nflexedge;                  // number of edges in all flexes
   int nflexelem;                  // number of elements in all flexes
@@ -913,6 +916,9 @@ struct mjModel_ {
   int nmeshtexcoord;              // number of texcoords in all meshes
   int nmeshface;                  // number of triangular faces in all meshes
   int nmeshgraph;                 // number of ints in mesh auxiliary data
+  int nmeshpoly;                  // number of polygons in all meshes
+  int nmeshpolyvert;              // number of vertices in all polygons
+  int nmeshpolymap;               // number of polygons in vertex map
   int nskin;                      // number of skins
   int nskinvert;                  // number of vertices in all skins
   int nskintexvert;               // number of vertiex with texcoords in all skins
@@ -1151,6 +1157,9 @@ struct mjModel_ {
   int*      flex_dim;             // 1: lines, 2: triangles, 3: tetrahedra    (nflex x 1)
   int*      flex_matid;           // material id for rendering                (nflex x 1)
   int*      flex_group;           // group for visibility                     (nflex x 1)
+  int*      flex_interp;          // interpolation (0: vertex, 1: nodes)      (nflex x 1)
+  int*      flex_nodeadr;         // first node address                       (nflex x 1)
+  int*      flex_nodenum;         // number of nodes                          (nflex x 1)
   int*      flex_vertadr;         // first vertex address                     (nflex x 1)
   int*      flex_vertnum;         // number of vertices                       (nflex x 1)
   int*      flex_edgeadr;         // first edge address                       (nflex x 1)
@@ -1164,6 +1173,7 @@ struct mjModel_ {
   int*      flex_evpairadr;       // first evpair address                     (nflex x 1)
   int*      flex_evpairnum;       // number of evpairs                        (nflex x 1)
   int*      flex_texcoordadr;     // address in flex_texcoord; -1: none       (nflex x 1)
+  int*      flex_nodebodyid;      // node body ids                            (nflexnode x 1)
   int*      flex_vertbodyid;      // vertex body ids                          (nflexvert x 1)
   int*      flex_edge;            // edge vertex ids (2 per edge)             (nflexedge x 2)
   int*      flex_elem;            // element vertex ids (dim+1 per elem)      (nflexelemdata x 1)
@@ -1173,6 +1183,8 @@ struct mjModel_ {
   int*      flex_evpair;          // (element, vertex) collision pairs        (nflexevpair x 2)
   mjtNum*   flex_vert;            // vertex positions in local body frames    (nflexvert x 3)
   mjtNum*   flex_vert0;           // vertex positions in qpos0 on [0, 1]^d    (nflexvert x 3)
+  mjtNum*   flex_node;            // node positions in local body frames      (nflexnode x 3)
+  mjtNum*   flex_node0;           // Cartesian node positions in qpos0        (nflexnode x 3)
   mjtNum*   flexedge_length0;     // edge lengths in qpos0                    (nflexedge x 1)
   mjtNum*   flexedge_invweight0;  // edge inv. weight in qpos0                (nflexedge x 1)
   mjtNum*   flex_radius;          // radius around primitive element          (nflex x 1)
@@ -1213,6 +1225,15 @@ struct mjModel_ {
   mjtNum*   mesh_pos;             // translation applied to asset vertices    (nmesh x 3)
   mjtNum*   mesh_quat;            // rotation applied to asset vertices       (nmesh x 4)
   int*      mesh_pathadr;         // address of asset path for mesh; -1: none (nmesh x 1)
+  int*      mesh_polynum;         // number of polygons per mesh              (nmesh x 1)
+  int*      mesh_polyadr;         // first polygon address per mesh           (nmesh x 1)
+  mjtNum*   mesh_polynormal;      // all polygon normals                      (nmeshpoly x 3)
+  int*      mesh_polyvertadr;     // polygon vertex start address             (nmeshpoly x 1)
+  int*      mesh_polyvertnum;     // number of vertices per polygon           (nmeshpoly x 1)
+  int*      mesh_polyvert;        // all polygon vertices                     (nmeshpolyvert x 1)
+  int*      mesh_polymapadr;      // first polygon address per vertex         (nmeshvert x 1)
+  int*      mesh_polymapnum;      // number of polygons per vertex            (nmeshvert x 1)
+  int*      mesh_polymap;         // vertex to polygon map                    (nmeshpolymap x 1)
 
   // skins
   int*      skin_matid;           // skin material id; -1: none               (nskin x 1)
@@ -1643,10 +1664,11 @@ typedef enum mjtGeomInertia_ {     // type of inertia inference
   mjINERTIA_VOLUME = 0,            // mass distributed in the volume
   mjINERTIA_SHELL,                 // mass distributed on the surface
 } mjtGeomInertia;
-typedef enum mjtMeshInertia_ {     // type of mesh inertia
-  mjINERTIA_CONVEX = 0,            // convex mesh inertia
-  mjINERTIA_EXACT,                 // exact mesh inertia
-  mjINERTIA_LEGACY,                // legacy mesh inertia
+typedef enum mjtMeshInertia_ {      // type of mesh inertia
+  mjMESH_INERTIA_CONVEX = 0,        // convex mesh inertia
+  mjMESH_INERTIA_EXACT,             // exact mesh inertia
+  mjMESH_INERTIA_LEGACY,            // legacy mesh inertia
+  mjMESH_INERTIA_SHELL              // shell mesh inertia
 } mjtMeshInertia;
 typedef enum mjtBuiltin_ {         // type of built-in procedural texture
   mjBUILTIN_NONE = 0,              // no built-in texture
@@ -1981,7 +2003,9 @@ typedef struct mjsFlex_ {          // flex specification
   double thickness;                // thickness (2D only)
 
   // mesh properties
+  mjStringVec* nodebody;           // node body names
   mjStringVec* vertbody;           // vertex body names
+  mjDoubleVec* node;               // node positions
   mjDoubleVec* vert;               // vertex positions
   mjIntVec* elem;                  // element vertex ids
   mjFloatVec* texcoord;            // vertex texture coordinates
@@ -1997,7 +2021,7 @@ typedef struct mjsMesh_ {          // mesh specification
   double refpos[3];                // reference position
   double refquat[4];               // reference orientation
   double scale[3];                 // rescale mesh
-  mjtMeshInertia inertia;          // inertia type (convex, legacy, exact)
+  mjtMeshInertia inertia;          // inertia type (convex, legacy, exact, shell)
   mjtByte smoothnormal;            // do not exclude large-angle faces from normals
   int maxhullvert;                 // maximum vertex count for the convex hull
   mjFloatVec* uservert;            // user vertex data
@@ -2966,6 +2990,10 @@ struct mjvSceneState_ {
     int* flex_dim;
     int* flex_matid;
     int* flex_group;
+    int* flex_interp;
+    int* flex_nodeadr;
+    int* flex_nodenum;
+    int* flex_nodebodyid;
     int* flex_vertadr;
     int* flex_vertnum;
     int* flex_elem;
@@ -2979,8 +3007,11 @@ struct mjvSceneState_ {
     int* flex_texcoordadr;
     int* flex_bvhadr;
     int* flex_bvhnum;
+    mjtByte* flex_centered;
+    mjtNum* flex_node;
     mjtNum* flex_radius;
     float* flex_rgba;
+    float* flex_texcoord;
 
     int* hfield_pathadr;
 
@@ -3181,11 +3212,12 @@ mjSpec* mj_makeSpec(void);
 mjSpec* mj_copySpec(const mjSpec* s);
 void mj_deleteSpec(mjSpec* s);
 int mjs_activatePlugin(mjSpec* s, const char* name);
+int mjs_setDeepCopy(mjSpec* s, int deepcopy);
 void mj_printFormattedModel(const mjModel* m, const char* filename, const char* float_format);
 void mj_printModel(const mjModel* m, const char* filename);
-void mj_printFormattedData(const mjModel* m, mjData* d, const char* filename,
+void mj_printFormattedData(const mjModel* m, const mjData* d, const char* filename,
                            const char* float_format);
-void mj_printData(const mjModel* m, mjData* d, const char* filename);
+void mj_printData(const mjModel* m, const mjData* d, const char* filename);
 void mju_printMat(const mjtNum* mat, int nr, int nc);
 void mju_printMatSparse(const mjtNum* mat, int nr,
                         const int* rownnz, const int* rowadr, const int* colind);
@@ -3570,6 +3602,8 @@ mjsFrame* mjs_attachFrame(mjsBody* parent, const mjsFrame* child,
                           const char* prefix, const char* suffix);
 mjsBody* mjs_attachToSite(mjsSite* parent, const mjsBody* child,
                           const char* prefix, const char* suffix);
+mjsFrame* mjs_attachFrameToSite(mjsSite* parent, const mjsFrame* child,
+                                const char* prefix, const char* suffix);
 int mjs_detachBody(mjSpec* s, mjsBody* b);
 mjsBody* mjs_addBody(mjsBody* body, const mjsDefault* def);
 mjsSite* mjs_addSite(mjsBody* body, const mjsDefault* def);
@@ -3607,6 +3641,7 @@ mjSpec* mjs_findSpec(mjSpec* spec, const char* name);
 mjsBody* mjs_findBody(mjSpec* s, const char* name);
 mjsElement* mjs_findElement(mjSpec* s, mjtObj type, const char* name);
 mjsBody* mjs_findChild(mjsBody* body, const char* name);
+mjsBody* mjs_getParent(mjsElement* element);
 mjsFrame* mjs_findFrame(mjSpec* s, const char* name);
 mjsDefault* mjs_getDefault(mjsElement* element);
 const mjsDefault* mjs_findDefault(mjSpec* s, const char* classname);

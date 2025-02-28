@@ -287,31 +287,24 @@ const char* MJCF[nMJCF][mjXATTRNUM] = {
         {"<"},
           {"config", "*", "2", "key", "value"},
         {">"},
-        {"composite", "*", "12", "prefix", "type", "count", "spacing", "offset",
-            "flatinertia", "solrefsmooth", "solimpsmooth", "vertex",
-            "initial", "curve", "size"},
+        {"composite", "*", "8", "prefix", "type", "count", "offset",
+            "vertex", "initial", "curve", "size"},
         {"<"},
             {"joint", "*", "17", "kind", "group", "stiffness", "damping", "armature",
                 "solreffix", "solimpfix", "type", "axis",
                 "limited", "range", "margin", "solreflimit", "solimplimit",
                 "frictionloss", "solreffriction", "solimpfriction"},
-            {"tendon", "*", "17", "kind", "group", "stiffness", "damping",
-                "solreffix", "solimpfix",
-                "limited", "range", "margin", "solreflimit", "solimplimit",
-                "frictionloss", "solreffriction", "solimpfriction",
-                "material", "rgba", "width"},
             {"skin", "?", "6", "texcoord", "material", "group", "rgba", "inflate", "subgrid"},
             {"geom", "?", "17", "type", "contype", "conaffinity", "condim",
                 "group", "priority", "size", "material", "rgba", "friction", "mass",
                 "density", "solmix", "solref", "solimp", "margin", "gap"},
             {"site", "?", "4", "group", "size", "material", "rgba"},
-            {"pin", "*", "1", "coord"},
             {"plugin", "*", "2", "plugin", "instance"},
             {"<"},
               {"config", "*", "2", "key", "value"},
             {">"},
         {">"},
-        {"flexcomp", "*", "25", "name", "type", "group", "dim",
+        {"flexcomp", "*", "26", "name", "type", "group", "dim", "dof",
             "count", "spacing", "radius", "rigid", "mass", "inertiabox",
             "scale", "file", "point", "element", "texcoord", "material", "rgba",
             "flatskin", "pos", "quat", "axisangle", "xyaxes", "zaxis", "euler", "origin"},
@@ -331,8 +324,8 @@ const char* MJCF[nMJCF][mjXATTRNUM] = {
 
     {"deformable", "*", "0"},
     {"<"},
-        {"flex", "*", "11", "name", "group", "dim", "radius", "material",
-            "rgba", "flatskin", "body", "vertex", "element", "texcoord"},
+        {"flex", "*", "12", "name", "group", "dim", "radius", "material",
+            "rgba", "flatskin", "body", "vertex", "element", "texcoord", "node"},
         {"<"},
             {"contact", "?", "13", "contype", "conaffinity", "condim", "priority",
                 "friction", "solmix", "solref", "solimp", "margin", "gap",
@@ -485,6 +478,8 @@ const char* MJCF[nMJCF][mjXATTRNUM] = {
         {"distance", "*", "8", "name", "geom1", "geom2", "body1", "body2", "cutoff", "noise", "user"},
         {"normal", "*", "8", "name", "geom1", "geom2", "body1", "body2", "cutoff", "noise", "user"},
         {"fromto", "*", "8", "name", "geom1", "geom2", "body1", "body2", "cutoff", "noise", "user"},
+        {"e_potential", "*", "4", "name", "cutoff", "noise", "user"},
+        {"e_kinetic", "*", "4", "name", "cutoff", "noise", "user"},
         {"clock", "*", "4", "name", "cutoff", "noise", "user"},
         {"user", "*", "9", "name", "objtype", "objname", "datatype", "needstage",
             "dim", "cutoff", "noise", "user"},
@@ -747,11 +742,8 @@ const mjMap comp_map[mjNCOMPTYPES] = {
 
 
 // composite joint kind
-const mjMap jkind_map[4] = {
-  {"main",        mjCOMPKIND_JOINT},
-  {"twist",       mjCOMPKIND_TWIST},
-  {"stretch",     mjCOMPKIND_STRETCH},
-  {"particle",    mjCOMPKIND_PARTICLE}
+const mjMap jkind_map[1] = {
+  {"main",        mjCOMPKIND_JOINT}
 };
 
 
@@ -764,13 +756,6 @@ const mjMap shape_map[mjNCOMPSHAPES] = {
 };
 
 
-// composite tendon kind
-const mjMap tkind_map[2] = {
-  {"main",        mjCOMPKIND_TENDON},
-  {"shear",       mjCOMPKIND_SHEAR}
-};
-
-
 // mesh type
 const mjMap meshtype_map[2] = {
   {"false", mjINERTIA_VOLUME},
@@ -779,10 +764,11 @@ const mjMap meshtype_map[2] = {
 
 
 // mesh inertia type
-const mjMap meshinertia_map[3] = {
-  {"convex", mjINERTIA_CONVEX},
-  {"legacy", mjINERTIA_LEGACY},
-  {"exact", mjINERTIA_EXACT}
+const mjMap meshinertia_map[4] = {
+  {"convex", mjMESH_INERTIA_CONVEX},
+  {"legacy", mjMESH_INERTIA_LEGACY},
+  {"exact", mjMESH_INERTIA_EXACT},
+  {"shell", mjMESH_INERTIA_SHELL}
 };
 
 
@@ -798,6 +784,14 @@ const mjMap fcomp_map[mjNFCOMPTYPES] = {
   {"mesh",        mjFCOMPTYPE_MESH},
   {"gmsh",        mjFCOMPTYPE_GMSH},
   {"direct",      mjFCOMPTYPE_DIRECT}
+};
+
+
+// flexcomp dof type
+const mjMap fdof_map[mjNFCOMPDOFS] = {
+  {"full",        mjFCOMPDOF_FULL},
+  {"radial",      mjFCOMPDOF_RADIAL},
+  {"trilinear",   mjFCOMPDOF_TRILINEAR}
 };
 
 
@@ -945,10 +939,16 @@ void mjXReader::Parse(XMLElement* root, const mjVFS* vfs) {
     Keyframe(section);
   }
 
+  // set deepcopy flag to true to copy child specs during attach calls
+  mjs_setDeepCopy(spec, true);
+
   for (XMLElement* section = FirstChildElement(root, "worldbody"); section;
        section = NextSiblingElement(section, "worldbody")) {
     Body(section, mjs_findBody(spec, "world"), nullptr, vfs);
   }
+
+  // set deepcopy flag to false to disable copying during attach in all future calls
+  mjs_setDeepCopy(spec, false);
 }
 
 
@@ -1118,6 +1118,7 @@ void mjXReader::Option(XMLElement* section, mjOption* opt) {
     READDSBL("midphase",     mjDSBL_MIDPHASE)
     READDSBL("eulerdamp",    mjDSBL_EULERDAMP)
     READDSBL("autoreset",    mjDSBL_AUTORESET)
+    READDSBL("nativeccd",    mjDSBL_NATIVECCD)
 #undef READDSBL
 
 #define READENBL(NAME, MASK) \
@@ -1131,7 +1132,6 @@ void mjXReader::Option(XMLElement* section, mjOption* opt) {
     READENBL("invdiscrete", mjENBL_INVDISCRETE)
     READENBL("multiccd",    mjENBL_MULTICCD)
     READENBL("island",      mjENBL_ISLAND)
-    READENBL("nativeccd",   mjENBL_NATIVECCD)
 #undef READENBL
   }
 }
@@ -1316,7 +1316,7 @@ void mjXReader::Statistic(XMLElement* section) {
 
 // flex element parser
 void mjXReader::OneFlex(XMLElement* elem, mjsFlex* flex) {
-  string text, name, material;
+  string text, name, material, nodebody;
   int n;
 
   // read attributes
@@ -1338,6 +1338,9 @@ void mjXReader::OneFlex(XMLElement* elem, mjsFlex* flex) {
   // read data vectors
   if (ReadAttrTxt(elem, "body", text, true)) {
     mjs_setStringVec(flex->vertbody, text.c_str());
+  }
+  if (ReadAttrTxt(elem, "node", nodebody)) {
+    mjs_setStringVec(flex->nodebody, nodebody.c_str());
   }
   auto vert = ReadAttrVec<double>(elem, "vertex");
   if (vert.has_value()) {
@@ -1413,7 +1416,7 @@ void mjXReader::OneMesh(XMLElement* elem, mjsMesh* mesh, const mjVFS* vfs) {
   ReadAttr(elem, "refpos", 3, mesh->refpos, text);
   ReadAttr(elem, "refquat", 4, mesh->refquat, text);
   ReadAttr(elem, "scale", 3, mesh->scale, text);
-  if (MapValue(elem, "inertia", &n, meshinertia_map, 3)) {
+  if (MapValue(elem, "inertia", &n, meshinertia_map, 4)) {
     mesh->inertia = (mjtMeshInertia)n;
   }
 
@@ -2392,9 +2395,7 @@ void mjXReader::OneComposite(XMLElement* elem, mjsBody* body, const mjsDefault* 
     comp.type = (mjtCompType)n;
   }
   ReadAttr(elem, "count", 3, comp.count, text, false, false);
-  ReadAttr(elem, "spacing", 1, &comp.spacing, text, false);
   ReadAttr(elem, "offset", 3, comp.offset, text);
-  ReadAttr(elem, "flatinertia", 1, &comp.flatinertia, text);
 
   // plugin
   XMLElement* eplugin = FirstChildElement(elem, "plugin");
@@ -2416,11 +2417,17 @@ void mjXReader::OneComposite(XMLElement* elem, mjsBody* body, const mjsDefault* 
   std::istringstream iss(curves);
   int i = 0;
   while (iss) {
+    if (curves.empty()) {
+      break;
+    }
     iss >> text;
     if (i>2) {
       throw mjXError(elem, "The curve array must have a maximum of 3 components");
     }
     comp.curve[i++] = (mjtCompShape)FindKey(shape_map, mjNCOMPSHAPES, text);
+    if (comp.curve[i-1] == -1) {
+      throw mjXError(elem, "The curve array contains an invalid shape");
+    }
     if (iss.eof()){
       break;
     }
@@ -2445,10 +2452,6 @@ void mjXReader::OneComposite(XMLElement* elem, mjsBody* body, const mjsDefault* 
 
   // set type-specific defaults
   comp.SetDefault();
-
-  // parse smooth solver parameters after type-specific defaults are set
-  ReadAttr(elem, "solrefsmooth", mjNREF, comp.solrefsmooth, text, false, false);
-  ReadAttr(elem, "solimpsmooth", mjNIMP, comp.solimpsmooth, text, false, false);
 
   // geom
   XMLElement* egeom = FirstChildElement(elem, "geom");
@@ -2495,7 +2498,7 @@ void mjXReader::OneComposite(XMLElement* elem, mjsBody* body, const mjsDefault* 
   while (ejnt) {
     // kind
     int kind;
-    MapValue(ejnt, "kind", &kind, jkind_map, 4, true);
+    MapValue(ejnt, "kind", &kind, jkind_map, 1, true);
 
     // create a new element if this kind already exists
     if (comp.add[kind]) {
@@ -2541,60 +2544,6 @@ void mjXReader::OneComposite(XMLElement* elem, mjsBody* body, const mjsDefault* 
     ejnt = NextSiblingElement(ejnt, "joint");
   }
 
-  // tendon
-  XMLElement* eten = FirstChildElement(elem, "tendon");
-  while (eten) {
-    // kind
-    int kind;
-    MapValue(eten, "kind", &kind, tkind_map, 2, true);
-    comp.add[kind] = true;
-
-    // get default structs
-    mjsTendon& dtendon = *comp.def[kind].spec.tendon;
-    mjsEquality& dequality = *comp.def[kind].spec.equality;
-
-    // solreffix, solimpfix
-    ReadAttr(eten, "solreffix", mjNREF, dequality.solref, text, false, false);
-    ReadAttr(eten, "solimpfix", mjNIMP, dequality.solimp, text, false, false);
-
-    // tendon attributes
-    string material;
-    MapValue(elem, "limited", &dtendon.limited, TFAuto_map, 3);
-    ReadAttrInt(eten, "group", &dtendon.group);
-    ReadAttr(eten, "solreflimit", mjNREF, dtendon.solref_limit, text, false, false);
-    ReadAttr(eten, "solimplimit", mjNIMP, dtendon.solimp_limit, text, false, false);
-    ReadAttr(eten,
-             "solreffriction", mjNREF, dtendon.solref_friction, text, false, false);
-    ReadAttr(eten,
-             "solimpfriction", mjNIMP, dtendon.solimp_friction, text, false, false);
-    ReadAttr(eten, "range", 2, dtendon.range, text);
-    ReadAttr(eten, "margin", 1, &dtendon.margin, text);
-    ReadAttr(eten, "stiffness", 1, &dtendon.stiffness, text);
-    ReadAttr(eten, "damping", 1, &dtendon.damping, text);
-    ReadAttr(eten, "frictionloss", 1, &dtendon.frictionloss, text);
-    ReadAttrTxt(eten, "material", material);
-    mjs_setString(dtendon.material, material.c_str());
-    ReadAttr(eten, "rgba", 4, dtendon.rgba, text);
-    ReadAttr(eten, "width", 1, &dtendon.width, text);
-
-    // advance
-    eten = NextSiblingElement(eten, "tendon");
-  }
-
-  // pin
-  XMLElement* epin = FirstChildElement(elem, "pin");
-  while (epin) {
-    // read
-    int coord[2] = {0, 0};
-    ReadAttr(epin, "coord", 2, coord, text, true, false);
-
-    // insert 2 coordinates (2nd may be unused)
-    comp.pin.push_back(coord[0]);
-    comp.pin.push_back(coord[1]);
-
-    // advance
-    epin = NextSiblingElement(epin, "pin");
-  }
 
   // make composite
   char error[200];
@@ -2668,6 +2617,11 @@ void mjXReader::OneFlexcomp(XMLElement* elem, mjsBody* body, const mjVFS* vfs) {
   auto texcoord = ReadAttrVec<float>(elem, "texcoord");
   if (texcoord.has_value()) {
     fcomp.texcoord = std::move(texcoord.value());
+  }
+
+  // dof type
+  if (MapValue(elem, "dof", &n, fdof_map, mjNFCOMPDOFS)) {
+    fcomp.doftype = (mjtDof)n;
   }
 
   // edge
@@ -4166,7 +4120,13 @@ void mjXReader::Sensor(XMLElement* section) {
     }
 
     // global sensors
-    else if (type=="clock") {
+    else if (type=="e_potential") {
+      sensor->type = mjSENS_E_POTENTIAL;
+      sensor->objtype = mjOBJ_UNKNOWN;
+    } else if (type=="e_kinetic") {
+      sensor->type = mjSENS_E_KINETIC;
+      sensor->objtype = mjOBJ_UNKNOWN;
+    } else if (type=="clock") {
       sensor->type = mjSENS_CLOCK;
       sensor->objtype = mjOBJ_UNKNOWN;
     }

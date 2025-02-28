@@ -86,6 +86,7 @@ class mjCModel_ : public mjsElement {
   int nbvh;            // number of total boundary volume hierarchies
   int nbvhstatic;      // number of static boundary volume hierarchies
   int nbvhdynamic;     // number of dynamic boundary volume hierarchies
+  int nflexnode;       // number of nodes in all flexes
   int nflexvert;       // number of vertices in all flexes
   int nflexedge;       // number of edges in all flexes
   int nflexelem;       // number of elements in all flexes
@@ -98,7 +99,10 @@ class mjCModel_ : public mjsElement {
   int nmeshnormal;     // number of normals in all meshes
   int nmeshtexcoord;   // number of texture coordinates in all meshes
   int nmeshface;       // number of triangular faces in all meshes
-  int nmeshgraph;      // number of shorts in mesh auxiliary data
+  int nmeshpoly;       // number of polygon faces in all meshes
+  int nmeshgraph;      // number of ints in mesh auxiliary data
+  int nmeshpolyvert;   // number of vertices in all polygon faces
+  int nmeshpolymap;    // number of polygons in vertex map
   int nskinvert;       // number of vertices in all skins
   int nskintexvert;    // number of vertices with texcoord in all skins
   int nskinface;       // number of faces in all skins
@@ -221,6 +225,9 @@ class mjCModel : public mjCModel_, private mjSpec {
   // delete object from the corresponding list
   void DeleteElement(mjsElement* el);
 
+  // detach subtree from model
+  void Detach(mjCBody* subtree);
+
   // API for access to model elements (outside tree)
   int NumObjects(mjtObj type);              // number of objects in specified list
   mjCBase* GetObject(mjtObj type, int id);  // pointer to specified object
@@ -307,6 +314,9 @@ class mjCModel : public mjCModel_, private mjSpec {
   // get the spec from which this model was created
   mjSpec* GetSourceSpec() const;
 
+  // set deepcopy flag
+  void SetDeepCopy(bool deepcopy) { deepcopy_ = deepcopy; }
+
  private:
   // settings for each defaults class
   std::vector<mjCDef*> defaults_;
@@ -351,7 +361,7 @@ class mjCModel : public mjCModel_, private mjSpec {
   std::vector<mjCTuple*>    tuples_;      // list of tuple fields
   std::vector<mjCKey*>      keys_;        // list of keyframe fields
   std::vector<mjCPlugin*>   plugins_;     // list of plugin instances
-  std::vector<mjSpec*>      specs_;       // list of specs
+  std::vector<mjSpec*>      specs_;       // list of attached specs
 
   // pointers to objects created inside kinematic tree
   std::vector<mjCBody*>   bodies_;   // list of bodies
@@ -407,8 +417,16 @@ class mjCModel : public mjCModel_, private mjSpec {
   // compute qpos0
   void ComputeReference();
 
+  // return true if all bodies have valid mass and inertia
+  bool CheckBodiesMassInertia(std::vector<mjCBody*> bodies);
+
+  // return true if body has valid mass and inertia
+  bool CheckBodyMassInertia(mjCBody* body);
+
+
   mjListKeyMap ids;   // map from object names to ids
   mjCError errInfo;   // last error info
   std::vector<mjKeyInfo> key_pending_;  // attached keyframes
+  bool deepcopy_;     // copy objects when attaching
 };
 #endif  // MUJOCO_SRC_USER_USER_MODEL_H_

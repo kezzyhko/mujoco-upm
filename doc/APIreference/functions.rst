@@ -423,7 +423,8 @@ Get name of object with the specified mjtObj type and id, returns NULL if name n
 
 .. mujoco-include:: mj_fullM
 
-Convert sparse inertia matrix M into full (i.e. dense) matrix.
+Convert sparse inertia matrix ``M`` into full (i.e. dense) matrix.
+|br| ``dst`` must be of size ``nv x nv``, ``M`` must be of the same size as ``mjData.qM``.
 
 .. _mj_mulM:
 
@@ -498,16 +499,11 @@ Returns the smallest signed distance between two geoms and optionally the segmen
 Returned distances are bounded from above by ``distmax``. |br| If no collision of distance smaller than ``distmax`` is
 found, the function will return ``distmax`` and ``fromto``, if given, will be set to (0, 0, 0, 0, 0, 0).
 
-.. admonition:: Positive ``distmax`` values
-   :class: note
+   .. admonition:: different (correct) behavior under `nativeccd`
+      :class: note
 
-   .. TODO: b/339596989 - Improve mjc_Convex.
-
-   For some colliders, a large, positive ``distmax`` will result in an accurate measurement. However, for collision
-   pairs which use the general ``mjc_Convex`` collider, the result will be approximate and likely innacurate.
-   This is considered a bug to be fixed in a future release.
-   In order to determine whether a geom pair uses ``mjc_Convex``, inspect the table at the top of
-   `engine_collision_driver.c <https://github.com/google-deepmind/mujoco/blob/main/src/engine/engine_collision_driver.c>`__.
+      As explained in :ref:`Collision Detection<coDistance>`, distances are inaccurate when using the
+      :ref:`legacy CCD pipeline<coCCD>`, and its use is discouraged.
 
 .. _mj_contactForce:
 
@@ -1509,6 +1505,15 @@ Free memory allocation in mjSpec.
 .. mujoco-include:: mjs_activatePlugin
 
 Activate plugin. Returns 0 on success.
+
+.. _mjs_setDeepCopy:
+
+`mjs_setDeepCopy <#mjs_setDeepCopy>`__
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+.. mujoco-include:: mjs_setDeepCopy
+
+Turn deep copy on or off attach. Returns 0 on success.
 
 .. _Errorandmemory:
 
@@ -3563,8 +3568,8 @@ Construct quaternion performing rotation from z-axis to given vector.
 
 .. mujoco-include:: mju_mat2Rot
 
-extract 3D rotation from an arbitrary 3x3 matrix by refining the input quaternion
-returns the number of iterations required to converge
+Extract 3D rotation from an arbitrary 3x3 matrix by refining the input quaternion.
+Returns the number of iterations required to converge
 
 .. _mju_euler2Quat:
 
@@ -3825,6 +3830,15 @@ Attach child frame to a parent body, return the attached frame if success or NUL
 .. mujoco-include:: mjs_attachToSite
 
 Attach child body to a parent site, return the attached body if success or NULL otherwise.
+
+.. _mjs_attachFrameToSite:
+
+`mjs_attachFrameToSite <#mjs_attachFrameToSite>`__
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+.. mujoco-include:: mjs_attachFrameToSite
+
+Attach child frame to a parent site, return the attached frame if success or NULL otherwise.
 
 .. _mjs_detachBody:
 
@@ -4174,6 +4188,15 @@ Find element in spec by name.
 .. mujoco-include:: mjs_findChild
 
 Find child body by name.
+
+.. _mjs_getParent:
+
+`mjs_getParent <#mjs_getParent>`__
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+.. mujoco-include:: mjs_getParent
+
+Get parent body.
 
 .. _mjs_findFrame:
 

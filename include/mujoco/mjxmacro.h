@@ -81,6 +81,7 @@
     XMJV( ncam )               \
     XMJV( nlight )             \
     XMJV( nflex )              \
+    X   ( nflexnode )          \
     XMJV( nflexvert )          \
     X   ( nflexedge )          \
     X   ( nflexelem )          \
@@ -95,6 +96,9 @@
     X   ( nmeshtexcoord )      \
     X   ( nmeshface )          \
     X   ( nmeshgraph )         \
+    X   ( nmeshpoly )          \
+    X   ( nmeshpolyvert )      \
+    X   ( nmeshpolymap )       \
     XMJV( nskin )              \
     XMJV( nskinvert )          \
     X   ( nskintexvert )       \
@@ -326,6 +330,9 @@
     XMJV( int,     flex_dim,              nflex,         1                    ) \
     XMJV( int,     flex_matid,            nflex,         1                    ) \
     XMJV( int,     flex_group,            nflex,         1                    ) \
+    XMJV( int,     flex_interp,           nflex,         1                    ) \
+    XMJV( int,     flex_nodeadr,          nflex,         1                    ) \
+    XMJV( int,     flex_nodenum,          nflex,         1                    ) \
     XMJV( int,     flex_vertadr,          nflex,         1                    ) \
     XMJV( int,     flex_vertnum,          nflex,         1                    ) \
     X   ( int,     flex_edgeadr,          nflex,         1                    ) \
@@ -339,6 +346,7 @@
     X   ( int,     flex_evpairadr,        nflex,         1                    ) \
     X   ( int,     flex_evpairnum,        nflex,         1                    ) \
     XMJV( int,     flex_texcoordadr,      nflex,         1                    ) \
+    XMJV( int,     flex_nodebodyid,       nflexnode,     1                    ) \
     X   ( int,     flex_vertbodyid,       nflexvert,     1                    ) \
     X   ( int,     flex_edge,             nflexedge,     2                    ) \
     XMJV( int,     flex_elem,             nflexelemdata, 1                    ) \
@@ -348,6 +356,8 @@
     X   ( int,     flex_evpair,           nflexevpair,   2                    ) \
     X   ( mjtNum,  flex_vert,             nflexvert,     3                    ) \
     X   ( mjtNum,  flex_vert0,            nflexvert,     3                    ) \
+    XMJV( mjtNum,  flex_node,             nflexnode,     3                    ) \
+    X   ( mjtNum,  flex_node0,            nflexnode,     3                    ) \
     X   ( mjtNum,  flexedge_length0,      nflexedge,     1                    ) \
     X   ( mjtNum,  flexedge_invweight0,   nflexedge,     1                    ) \
     XMJV( mjtNum,  flex_radius,           nflex,         1                    ) \
@@ -358,12 +368,12 @@
     X   ( mjtByte, flex_edgeequality,     nflex,         1                    ) \
     X   ( mjtByte, flex_rigid,            nflex,         1                    ) \
     X   ( mjtByte, flexedge_rigid,        nflexedge,     1                    ) \
-    X   ( mjtByte, flex_centered,         nflex,         1                    ) \
+    XMJV( mjtByte, flex_centered,         nflex,         1                    ) \
     XMJV( mjtByte, flex_flatskin,         nflex,         1                    ) \
     XMJV( int,     flex_bvhadr,           nflex,         1                    ) \
     XMJV( int,     flex_bvhnum,           nflex,         1                    ) \
     XMJV( float,   flex_rgba,             nflex,         4                    ) \
-    X   ( float,   flex_texcoord,         nflextexcoord, 2                    ) \
+    XMJV( float,   flex_texcoord,         nflextexcoord, 2                    ) \
     X   ( int,     mesh_vertadr,          nmesh,         1                    ) \
     X   ( int,     mesh_vertnum,          nmesh,         1                    ) \
     X   ( int,     mesh_normaladr,        nmesh,         1                    ) \
@@ -386,6 +396,15 @@
     XNV ( int,     mesh_facetexcoord,     nmeshface,     3                    ) \
     XNV ( int,     mesh_graph,            nmeshgraph,    1                    ) \
     XMJV( int,     mesh_pathadr,          nmesh,         1                    ) \
+    X   ( int,     mesh_polynum,          nmesh,         1                    ) \
+    X   ( int,     mesh_polyadr,          nmesh,         1                    ) \
+    X   ( mjtNum,  mesh_polynormal,       nmeshpoly,     3                    ) \
+    X   ( int,     mesh_polyvertadr,      nmeshpoly,     1                    ) \
+    X   ( int,     mesh_polyvertnum,      nmeshpoly,     1                    ) \
+    X   ( int,     mesh_polyvert,         nmeshpolyvert, 1                    ) \
+    X   ( int,     mesh_polymapadr,       nmeshvert,     1                    ) \
+    X   ( int,     mesh_polymapnum,       nmeshvert,     1                    ) \
+    X   ( int,     mesh_polymap,          nmeshpolymap,  1                    ) \
     XMJV( int,     skin_matid,            nskin,         1                    ) \
     XMJV( int,     skin_group,            nskin,         1                    ) \
     XMJV( float,   skin_rgba,             nskin,         4                    ) \
@@ -630,7 +649,7 @@
     X   ( mjtNum,    actuator_moment,   nJmom,       1           ) \
     X   ( mjtNum,    crb,               nbody,       10          ) \
     X   ( mjtNum,    qM,                nM,          1           ) \
-    X   ( mjtNum,    qLD,               nM,          1           ) \
+    X   ( mjtNum,    qLD,               nC,          1           ) \
     X   ( mjtNum,    qLDiagInv,         nv,          1           ) \
     XMJV( mjtNum,    bvh_aabb_dyn,      nbvhdynamic, 6           ) \
     XMJV( mjtByte,   bvh_active,        nbvh,        1           ) \
@@ -647,7 +666,7 @@
     X   ( mjtNum,    qfrc_passive,      nv,          1           ) \
     X   ( mjtNum,    subtree_linvel,    nbody,       3           ) \
     X   ( mjtNum,    subtree_angmom,    nbody,       3           ) \
-    X   ( mjtNum,    qH,                nM,          1           ) \
+    X   ( mjtNum,    qH,                nC,          1           ) \
     X   ( mjtNum,    qHDiagInv,         nv,          1           ) \
     X   ( int,       B_rownnz,          nbody,       1           ) \
     X   ( int,       B_rowadr,          nbody,       1           ) \

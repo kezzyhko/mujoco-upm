@@ -16,7 +16,7 @@
 #define MUJOCO_MUJOCO_H_
 
 // header version; should match the library version as returned by mj_version()
-#define mjVERSION_HEADER 327
+#define mjVERSION_HEADER 330
 
 // needed to define size_t, fabs and log10
 #include <stdlib.h>
@@ -242,6 +242,9 @@ MJAPI void mj_deleteSpec(mjSpec* s);
 // Activate plugin. Returns 0 on success.
 MJAPI int mjs_activatePlugin(mjSpec* s, const char* name);
 
+// Turn deep copy on or off attach. Returns 0 on success.
+MJAPI int mjs_setDeepCopy(mjSpec* s, int deepcopy);
+
 
 //---------------------------------- Printing ------------------------------------------------------
 
@@ -254,11 +257,11 @@ MJAPI void mj_printModel(const mjModel* m, const char* filename);
 
 // Print mjData to text file, specifying format.
 // float_format must be a valid printf-style format string for a single float value
-MJAPI void mj_printFormattedData(const mjModel* m, mjData* d, const char* filename,
+MJAPI void mj_printFormattedData(const mjModel* m, const mjData* d, const char* filename,
                                  const char* float_format);
 
 // Print data to text file.
-MJAPI void mj_printData(const mjModel* m, mjData* d, const char* filename);
+MJAPI void mj_printData(const mjModel* m, const mjData* d, const char* filename);
 
 // Print matrix to screen.
 MJAPI void mju_printMat(const mjtNum* mat, int nr, int nc);
@@ -1122,8 +1125,8 @@ MJAPI void mju_quatIntegrate(mjtNum quat[4], const mjtNum vel[3], mjtNum scale);
 // Construct quaternion performing rotation from z-axis to given vector.
 MJAPI void mju_quatZ2Vec(mjtNum quat[4], const mjtNum vec[3]);
 
-// extract 3D rotation from an arbitrary 3x3 matrix by refining the input quaternion
-// returns the number of iterations required to converge
+// Extract 3D rotation from an arbitrary 3x3 matrix by refining the input quaternion.
+// Returns the number of iterations required to converge
 MJAPI int mju_mat2Rot(mjtNum quat[4], const mjtNum mat[9]);
 
 // Convert sequence of Euler angles (radians) to quaternion.
@@ -1423,6 +1426,10 @@ MJAPI mjsFrame* mjs_attachFrame(mjsBody* parent, const mjsFrame* child,
 MJAPI mjsBody* mjs_attachToSite(mjsSite* parent, const mjsBody* child,
                                 const char* prefix, const char* suffix);
 
+// Attach child frame to a parent site, return the attached frame if success or NULL otherwise.
+MJAPI mjsFrame* mjs_attachFrameToSite(mjsSite* parent, const mjsFrame* child,
+                                      const char* prefix, const char* suffix);
+
 // Detach body from mjSpec, remove all references and delete the body, return 0 on success.
 MJAPI int mjs_detachBody(mjSpec* s, mjsBody* b);
 
@@ -1545,6 +1552,9 @@ MJAPI mjsElement* mjs_findElement(mjSpec* s, mjtObj type, const char* name);
 
 // Find child body by name.
 MJAPI mjsBody* mjs_findChild(mjsBody* body, const char* name);
+
+// Get parent body.
+MJAPI mjsBody* mjs_getParent(mjsElement* element);
 
 // Find frame by name.
 MJAPI mjsFrame* mjs_findFrame(mjSpec* s, const char* name);

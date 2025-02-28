@@ -39,7 +39,7 @@ def _strip_weak_type(tree):
 
 
 def _make_option(
-    o: mujoco.MjOption, _full_compat: bool = False
+    o: mujoco.MjOption, _full_compat: bool = False  # pylint: disable=invalid-name
 ) -> types.Option:
   """Returns mjx.Option given mujoco.MjOption."""
   if not _full_compat:
@@ -123,30 +123,6 @@ def put_model(
       if t == mujoco.mjtGeom.mjGEOM_MESH:
         mesh_geomid.add(g)
 
-  # check for spatial tendon internal geom wrapping
-  if m.ntendon:
-    # find sphere or cylinder geoms (if any exist)
-    (wrap_id_geom,) = np.nonzero(
-        (m.wrap_type == mujoco.mjtWrap.mjWRAP_SPHERE)
-        | (m.wrap_type == mujoco.mjtWrap.mjWRAP_CYLINDER)
-    )
-    wrap_objid_geom = m.wrap_objid[wrap_id_geom]
-    geom_pos = m.geom_pos[wrap_objid_geom]
-    geom_size = m.geom_size[wrap_objid_geom, 0]
-
-    # find sidesites (if any exist)
-    side_id = np.round(m.wrap_prm[wrap_id_geom]).astype(int)
-    side = m.site_pos[side_id]
-
-    # check for sidesite inside geom
-    if np.any(
-        (np.linalg.norm(side - geom_pos, axis=1) < geom_size) & (side_id >= 0)
-    ):
-      raise NotImplementedError(
-          'Internal wrapping with sphere and cylinder geoms is not'
-          ' implemented for spatial tendons.'
-      )
-
   # check for unsupported sensor and equality constraint combinations
   sensor_rne_postconstraint = (
       np.any(m.sensor_type == types.SensorType.ACCELEROMETER)
@@ -183,12 +159,45 @@ def put_model(
       if f.metadata.get('restricted_to') != 'mjx'
   }
   fields = {f: getattr(m, f) for f in mj_field_names}
+
+  # zero out fields restricted to MuJoCo
+  if not _full_compat:
+    for f in types.Model.fields():
+      if f.metadata.get('restricted_to') == 'mujoco' and isinstance(
+          fields[f.name], np.ndarray
+      ):
+        fields[f.name] = np.zeros((0,), dtype=fields[f.name].dtype)
+
   fields['dof_hasfrictionloss'] = fields['dof_frictionloss'] > 0
   fields['tendon_hasfrictionloss'] = fields['tendon_frictionloss'] > 0
   fields['geom_rbound_hfield'] = fields['geom_rbound']
   fields['cam_mat0'] = fields['cam_mat0'].reshape((-1, 3, 3))
   fields['opt'] = _make_option(m.opt, _full_compat=_full_compat)
   fields['stat'] = _make_statistic(m.stat)
+
+  # spatial tendon wrap inside
+  fields['wrap_inside_maxiter'] = 5
+  fields['wrap_inside_tolerance'] = 1.0e-4
+  fields['wrap_inside_z_init'] = 1.0 - 1.0e-5
+  fields['is_wrap_inside'] = np.zeros(0, dtype=bool)
+  if m.nsite:
+    # find sphere or cylinder geoms (if any exist)
+    (wrap_id_geom,) = np.nonzero(
+        (m.wrap_type == mujoco.mjtWrap.mjWRAP_SPHERE)
+        | (m.wrap_type == mujoco.mjtWrap.mjWRAP_CYLINDER)
+    )
+    wrap_objid_geom = m.wrap_objid[wrap_id_geom]
+    geom_pos = m.geom_pos[wrap_objid_geom]
+    geom_size = m.geom_size[wrap_objid_geom, 0]
+
+    # find sidesites (if any exist)
+    side_id = np.round(m.wrap_prm[wrap_id_geom]).astype(int)
+    side = m.site_pos[side_id]
+
+    # wrap inside flag
+    fields['is_wrap_inside'] = np.array(
+        (np.linalg.norm(side - geom_pos, axis=1) < geom_size) & (side_id >= 0)
+    )
 
   # Pre-compile meshes for MJX collisions.
   fields['mesh_convex'] = [None] * m.nmesh
@@ -359,7 +368,7 @@ def make_data(
         'efc_aref': (nefc, float),
         'efc_force': (nefc, float),
         '_qM_sparse': (m.nM, float),
-        '_qLD_sparse': (m.nM, float),
+        '_qLD_sparse': (m.nC, float),
         '_qLDiagInv_sparse': (m.nv, float),
     }
 
@@ -497,7 +506,8 @@ def get_data_into(
       elif field.name == 'qM' and not support.is_sparse(m):
         value = value[dof_i, dof_j]
       elif field.name == 'qLD' and not support.is_sparse(m):
-        value = value[dof_i, dof_j]
+        # TODO(erikfrey): provide correct qLDs
+        value = np.zeros(m.nC)
       elif field.name == 'qLDiagInv' and not support.is_sparse(m):
         value = np.ones(m.nv)
 
@@ -505,7 +515,13 @@ def get_data_into(
         if restricted_to in ('mujoco', 'mjx'):
           continue  # don't copy fields that are mujoco-only or MJX-only
         else:
-          getattr(result_i, field.name)[:] = value
+          result_field = getattr(result_i, field.name)
+          if result_field.shape != value.shape:
+            raise ValueError(
+                f'Input field {field.name} has shape {value.shape}, but output'
+                f' has shape {result_field.shape}'
+            )
+          result_field[:] = value
       else:
         setattr(result_i, field.name, value)
 
@@ -522,7 +538,7 @@ def _make_contact(
   # if we have fewer Contacts for a condim range, pad the range with zeros
 
   # build a map for where to find a dim-matching contact, or -1 if none
-  contact_map = np.zeros_like(dim) - 1
+  contact_map = -np.ones_like(dim)
   for i, di in enumerate(fields['dim']):
     space = [j for j, dj in enumerate(dim) if di == dj and contact_map[j] == -1]
     if not space:
@@ -649,18 +665,6 @@ def put_data(
 
     fields[fname] = value
 
-  # convert qM and qLD if jacobian is dense
-  if not support.is_sparse(m):
-    fields['qM'] = np.zeros((m.nv, m.nv))
-    mujoco.mj_fullM(m, fields['qM'], d.qM)
-    # TODO(erikfrey): derive L*L' from L'*D*L instead of recomputing
-    try:
-      fields['qLD'], _ = scipy.linalg.cho_factor(fields['qM'])
-    except scipy.linalg.LinAlgError:
-      # this happens when qM is empty or unstable simulation
-      fields['qLD'] = np.zeros((m.nv, m.nv))
-    fields['qLDiagInv'] = np.zeros(0)
-
   if _full_compat:
     # full compatibility mode, we store sparse qM regardless of jacobian setting
     fields['_qM_sparse'] = fields['qM']
@@ -672,8 +676,22 @@ def put_data(
     fields['_qLDiagInv_sparse'] = jp.zeros(0, dtype=float)
     # otherwise clear out unused arrays
     for f in types.Data.fields():
-      if f.metadata.get('restricted_to') == 'mujoco':
+      if f.metadata.get('restricted_to') == 'mujoco' and isinstance(
+          fields[f.name], np.ndarray
+      ):
         fields[f.name] = np.zeros(0, dtype=fields[f.name].dtype)
+
+  # convert qM and qLD if jacobian is dense
+  if not support.is_sparse(m):
+    fields['qM'] = np.zeros((m.nv, m.nv))
+    mujoco.mj_fullM(m, fields['qM'], d.qM)
+    # TODO(erikfrey): derive L*L' from L'*D*L instead of recomputing
+    try:
+      fields['qLD'], _ = scipy.linalg.cho_factor(fields['qM'])
+    except scipy.linalg.LinAlgError:
+      # this happens when qM is empty or unstable simulation
+      fields['qLD'] = np.zeros((m.nv, m.nv))
+    fields['qLDiagInv'] = np.zeros(0)
 
   fields['contact'] = contact
   fields.update(ne=ne, nf=nf, nl=nl, nefc=nefc, ncon=ncon, efc_type=efc_type)

@@ -41,6 +41,7 @@ public const double mjMINIMP = 0.0001;
 public const double mjMAXIMP = 0.9999;
 public const int mjMAXCONPAIR = 50;
 public const int mjMAXTREEDEPTH = 50;
+public const int mjMAXFLEXNODES = 27;
 public const int mjNEQDATA = 11;
 public const int mjNDYN = 10;
 public const int mjNGAIN = 10;
@@ -109,7 +110,7 @@ public const int mjMAXLINEPNT = 1000;
 public const int mjMAXPLANEGRID = 200;
 public const bool THIRD_PARTY_MUJOCO_MJXMACRO_H_ = true;
 public const bool THIRD_PARTY_MUJOCO_MUJOCO_H_ = true;
-public const int mjVERSION_HEADER = 327;
+public const int mjVERSION_HEADER = 330;
 
 
 // ------------------------------------Enums------------------------------------
@@ -159,7 +160,8 @@ public enum mjtDisableBit : int{
   mjDSBL_MIDPHASE = 8192,
   mjDSBL_EULERDAMP = 16384,
   mjDSBL_AUTORESET = 32768,
-  mjNDISABLE = 16,
+  mjDSBL_NATIVECCD = 65536,
+  mjNDISABLE = 17,
 }
 public enum mjtEnableBit : int{
   mjENBL_OVERRIDE = 1,
@@ -168,8 +170,7 @@ public enum mjtEnableBit : int{
   mjENBL_INVDISCRETE = 8,
   mjENBL_MULTICCD = 16,
   mjENBL_ISLAND = 32,
-  mjENBL_NATIVECCD = 64,
-  mjNENABLE = 7,
+  mjNENABLE = 6,
 }
 public enum mjtJoint : int{
   mjJNT_FREE = 0,
@@ -377,9 +378,11 @@ public enum mjtSensor : int{
   mjSENS_GEOMDIST = 37,
   mjSENS_GEOMNORMAL = 38,
   mjSENS_GEOMFROMTO = 39,
-  mjSENS_CLOCK = 40,
-  mjSENS_PLUGIN = 41,
-  mjSENS_USER = 42,
+  mjSENS_E_POTENTIAL = 40,
+  mjSENS_E_KINETIC = 41,
+  mjSENS_CLOCK = 42,
+  mjSENS_PLUGIN = 43,
+  mjSENS_USER = 44,
 }
 public enum mjtStage : int{
   mjSTAGE_NONE = 0,
@@ -455,9 +458,10 @@ public enum mjtGeomInertia : int{
   mjINERTIA_SHELL = 1,
 }
 public enum mjtMeshInertia : int{
-  mjINERTIA_CONVEX = 0,
-  mjINERTIA_EXACT = 1,
-  mjINERTIA_LEGACY = 2,
+  mjMESH_INERTIA_CONVEX = 0,
+  mjMESH_INERTIA_EXACT = 1,
+  mjMESH_INERTIA_LEGACY = 2,
+  mjMESH_INERTIA_SHELL = 3,
 }
 public enum mjtBuiltin : int{
   mjBUILTIN_NONE = 0,
@@ -5189,6 +5193,7 @@ public unsafe struct mjModel_ {
   public int ncam;
   public int nlight;
   public int nflex;
+  public int nflexnode;
   public int nflexvert;
   public int nflexedge;
   public int nflexelem;
@@ -5203,6 +5208,9 @@ public unsafe struct mjModel_ {
   public int nmeshtexcoord;
   public int nmeshface;
   public int nmeshgraph;
+  public int nmeshpoly;
+  public int nmeshpolyvert;
+  public int nmeshpolymap;
   public int nskin;
   public int nskinvert;
   public int nskintexvert;
@@ -5409,6 +5417,9 @@ public unsafe struct mjModel_ {
   public int* flex_dim;
   public int* flex_matid;
   public int* flex_group;
+  public int* flex_interp;
+  public int* flex_nodeadr;
+  public int* flex_nodenum;
   public int* flex_vertadr;
   public int* flex_vertnum;
   public int* flex_edgeadr;
@@ -5422,6 +5433,7 @@ public unsafe struct mjModel_ {
   public int* flex_evpairadr;
   public int* flex_evpairnum;
   public int* flex_texcoordadr;
+  public int* flex_nodebodyid;
   public int* flex_vertbodyid;
   public int* flex_edge;
   public int* flex_elem;
@@ -5431,6 +5443,8 @@ public unsafe struct mjModel_ {
   public int* flex_evpair;
   public double* flex_vert;
   public double* flex_vert0;
+  public double* flex_node;
+  public double* flex_node0;
   public double* flexedge_length0;
   public double* flexedge_invweight0;
   public double* flex_radius;
@@ -5469,6 +5483,15 @@ public unsafe struct mjModel_ {
   public double* mesh_pos;
   public double* mesh_quat;
   public int* mesh_pathadr;
+  public int* mesh_polynum;
+  public int* mesh_polyadr;
+  public double* mesh_polynormal;
+  public int* mesh_polyvertadr;
+  public int* mesh_polyvertnum;
+  public int* mesh_polyvert;
+  public int* mesh_polymapadr;
+  public int* mesh_polymapnum;
+  public int* mesh_polymap;
   public int* skin_matid;
   public int* skin_group;
   public float* skin_rgba;
@@ -6294,6 +6317,10 @@ public unsafe struct model {
   public int* flex_dim;
   public int* flex_matid;
   public int* flex_group;
+  public int* flex_interp;
+  public int* flex_nodeadr;
+  public int* flex_nodenum;
+  public int* flex_nodebodyid;
   public int* flex_vertadr;
   public int* flex_vertnum;
   public int* flex_elem;
@@ -6307,8 +6334,11 @@ public unsafe struct model {
   public int* flex_texcoordadr;
   public int* flex_bvhadr;
   public int* flex_bvhnum;
+  public byte* flex_centered;
+  public double* flex_node;
   public double* flex_radius;
   public float* flex_rgba;
+  public float* flex_texcoord;
   public int* hfield_pathadr;
   public int* mesh_bvhadr;
   public int* mesh_bvhnum;

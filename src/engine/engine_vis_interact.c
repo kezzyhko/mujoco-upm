@@ -556,7 +556,8 @@ void mjv_initPerturb(const mjModel* m, mjData* d, const mjvScene* scn, mjvPertur
 
   // compute average spatial inertia at selection point
   for (int i=0; i < nv; i++) {
-    sqrtInvD[i] = 1 / mju_sqrt(d->qLD[m->dof_Madr[i]]);
+    int diag = d->C_rowadr[i] + d->C_rownnz[i] - 1;
+    sqrtInvD[i] = 1 / mju_sqrt(d->qLD[diag]);
   }
   mj_jac(m, d, jac, NULL, selpos, sel);
   mj_solveM2(m, d, jacM2, jac, sqrtInvD, 3);
@@ -828,9 +829,24 @@ int mjv_select(const mjModel* m, const mjData* d, const mjvOption* vopt,
       // update if closer intersection found
       if (newdist >= 0 && (newdist < flexdist || flexdist < 0)) {
         flexdist = newdist;
-        flexbodyid = m->flex_vertbodyid[m->flex_vertadr[i] + vertid];
+        if (m->flex_interp[i]) {
+          mjtNum* vert0 = m->flex_vert0 + 3*(m->flex_vertadr[i] + vertid);
+          int l = vert0[0] > 0.5 ? 1 : 0;
+          int j = vert0[1] > 0.5 ? 1 : 0;
+          int k = vert0[2] > 0.5 ? 1 : 0;
+          int nodeid = 4*l+2*j+k;
+          flexbodyid = m->flex_nodebodyid[m->flex_nodeadr[i] + nodeid];
+          if (m->flex_centered[i]) {
+            mju_copy3(flexpnt, d->xpos + 3*flexbodyid);
+          } else {
+            mju_mulMatVec3(flexpnt, d->xmat + 9*flexbodyid, m->flex_node + 3*nodeid);
+            mju_addTo3(flexpnt, d->xpos + 3*flexbodyid);
+          }
+        } else {
+          flexbodyid = m->flex_vertbodyid[m->flex_vertadr[i] + vertid];
+          mju_copy3(flexpnt, d->flexvert_xpos + 3*(m->flex_vertadr[i] + vertid));
+        }
         *flexid = i;
-        mju_copy3(flexpnt, d->flexvert_xpos + 3*(m->flex_vertadr[i] + vertid));
       }
     }
   }

@@ -62,10 +62,11 @@ typedef enum mjtGeomInertia_ {     // type of inertia inference
 } mjtGeomInertia;
 
 
-typedef enum mjtMeshInertia_ {     // type of mesh inertia
-  mjINERTIA_CONVEX = 0,            // convex mesh inertia
-  mjINERTIA_EXACT,                 // exact mesh inertia
-  mjINERTIA_LEGACY,                // legacy mesh inertia
+typedef enum mjtMeshInertia_ {      // type of mesh inertia
+  mjMESH_INERTIA_CONVEX = 0,        // convex mesh inertia
+  mjMESH_INERTIA_EXACT,             // exact mesh inertia
+  mjMESH_INERTIA_LEGACY,            // legacy mesh inertia
+  mjMESH_INERTIA_SHELL              // shell mesh inertia
 } mjtMeshInertia;
 
 
@@ -439,7 +440,9 @@ typedef struct mjsFlex_ {          // flex specification
   double thickness;                // thickness (2D only)
 
   // mesh properties
+  mjStringVec* nodebody;           // node body names
   mjStringVec* vertbody;           // vertex body names
+  mjDoubleVec* node;               // node positions
   mjDoubleVec* vert;               // vertex positions
   mjIntVec* elem;                  // element vertex ids
   mjFloatVec* texcoord;            // vertex texture coordinates
@@ -457,7 +460,7 @@ typedef struct mjsMesh_ {          // mesh specification
   double refpos[3];                // reference position
   double refquat[4];               // reference orientation
   double scale[3];                 // rescale mesh
-  mjtMeshInertia inertia;          // inertia type (convex, legacy, exact)
+  mjtMeshInertia inertia;          // inertia type (convex, legacy, exact, shell)
   mjtByte smoothnormal;            // do not exclude large-angle faces from normals
   int maxhullvert;                 // maximum vertex count for the convex hull
   mjFloatVec* uservert;            // user vertex data

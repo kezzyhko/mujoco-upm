@@ -12,10 +12,12 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#include <algorithm>
 #include <iostream>
 #include <memory>
 #include <optional>
 #include <sstream>
+#include <vector>
 
 #include <mujoco/mujoco.h>
 #include "errors.h"
@@ -46,36 +48,38 @@ Construct a rollout object containing a thread pool for parallel rollouts.
 )";
 
 const auto rollout_doc = R"(
-Roll out open-loop trajectories from initial states, get resulting states and sensor values.
+Roll out batch of trajectories from initial states, get resulting states and sensor values.
 
   input arguments (required):
-    model              list of MjModel instances of length nroll
-    data               list of associated MjData instances of length nthread
+    model              list of homogenous MjModel instances of length nbatch
+    data               list of compatible MjData instances of length nthread
     nstep              integer, number of steps to be taken for each trajectory
     control_spec       specification of controls, ncontrol = mj_stateSize(m, control_spec)
-    state0             (nroll x nstate) nroll initial state vectors,
-                                        nstate = mj_stateSize(m, mjSTATE_FULLPHYSICS)
+    state0             (nbatch x nstate) nbatch initial state arrays, where
+                           nstate = mj_stateSize(m, mjSTATE_FULLPHYSICS)
   input arguments (optional):
-    warmstart0         (nroll x nv)                   nroll qacc_warmstart vectors
-    control            (nroll x nstep x ncontrol)     nroll trajectories of nstep controls
+    warmstart0         (nbatch x nv)                  nbatch qacc_warmstart arrays
+    control            (nbatch x nstep x ncontrol)    nbatch trajectories of nstep controls
   output arguments (optional):
-    state              (nroll x nstep x nstate)       nroll nstep states
-    sensordata         (nroll x nstep x nsendordata)  nroll trajectories of nstep sensordata vectors
-    chunk_size         integer, determines threadpool chunk size. If unspecified
-                                chunk_size = max(1, nroll / (nthread * 10))
+    state              (nbatch x nstep x nstate)      nbatch nstep states
+    sensordata         (nbatch x nstep x nsendordata) nbatch trajectories of nstep sensordata arrays
+    chunk_size         integer, determines threadpool chunk size. If unspecified, the default is
+                           chunk_size = max(1, nbatch / (nthread * 10))
 )";
 
 // C-style rollout function, assumes all arguments are valid
 // all input fields of d are initialised, contents at call time do not matter
 // after returning, d will contain the last step of the last rollout
-void _unsafe_rollout(std::vector<const mjModel*>& m, mjData* d, int start_roll, int end_roll, int nstep, unsigned int control_spec,
-                     const mjtNum* state0, const mjtNum* warmstart0, const mjtNum* control,
-                     mjtNum* state, mjtNum* sensordata) {
+void _unsafe_rollout(std::vector<const mjModel*>& m, mjData* d, int start_roll,
+                     int end_roll, int nstep, unsigned int control_spec,
+                     const mjtNum* state0, const mjtNum* warmstart0,
+                     const mjtNum* control, mjtNum* state, mjtNum* sensordata) {
   // sizes
-  int nstate = mj_stateSize(m[0], mjSTATE_FULLPHYSICS);
-  int ncontrol = mj_stateSize(m[0], control_spec);
-  int nv = m[0]->nv, nbody = m[0]->nbody, neq = m[0]->neq;
-  int nsensordata = m[0]->nsensordata;
+  size_t nstate = static_cast<size_t>(mj_stateSize(m[0], mjSTATE_FULLPHYSICS));
+  size_t ncontrol = static_cast<size_t>(mj_stateSize(m[0], control_spec));
+  size_t nv = static_cast<size_t>(m[0]->nv);
+  int nbody = m[0]->nbody, neq = m[0]->neq;
+  size_t nsensordata = static_cast<size_t>(m[0]->nsensordata);
 
   // clear user inputs if unspecified
   if (!(control_spec & mjSTATE_CTRL)) {
@@ -89,7 +93,7 @@ void _unsafe_rollout(std::vector<const mjModel*>& m, mjData* d, int start_roll, 
   }
 
   // loop over rollouts
-  for (int r = start_roll; r < end_roll; r++) {
+  for (size_t r = start_roll; r < end_roll; r++) {
     // clear user inputs if unspecified
     if (!(control_spec & mjSTATE_MOCAP_POS)) {
       for (int i = 0; i < nbody; i++) {
@@ -125,7 +129,7 @@ void _unsafe_rollout(std::vector<const mjModel*>& m, mjData* d, int start_roll, 
     }
 
     // roll out trajectory
-    for (int t = 0; t < nstep; t++) {
+    for (size_t t = 0; t < nstep; t++) {
       // check for warnings
       bool nwarning = false;
       for (int i = 0; i < mjNWARNING; i++) {
@@ -138,7 +142,7 @@ void _unsafe_rollout(std::vector<const mjModel*>& m, mjData* d, int start_roll, 
       // if any warnings, fill remaining outputs with current outputs, break
       if (nwarning) {
         for (; t < nstep; t++) {
-          int step = r*nstep + t;
+          size_t step = r*static_cast<size_t>(nstep) + t;
           if (state) {
             mj_getState(m[r], d, state + step*nstate, mjSTATE_FULLPHYSICS);
           }
@@ -149,7 +153,7 @@ void _unsafe_rollout(std::vector<const mjModel*>& m, mjData* d, int start_roll, 
         break;
       }
 
-      int step = r*nstep + t;
+      size_t step = r*static_cast<size_t>(nstep) + t;
 
       // controls
       if (control) {
@@ -174,12 +178,12 @@ void _unsafe_rollout(std::vector<const mjModel*>& m, mjData* d, int start_roll, 
 
 // C-style threaded version of _unsafe_rollout
 void _unsafe_rollout_threaded(std::vector<const mjModel*>& m, std::vector<mjData*>& d,
-                              int nroll, int nstep, unsigned int control_spec,
+                              int nbatch, int nstep, unsigned int control_spec,
                               const mjtNum* state0, const mjtNum* warmstart0,
                               const mjtNum* control, mjtNum* state, mjtNum* sensordata,
                               ThreadPool* pool, int chunk_size) {
-  int nfulljobs = nroll / chunk_size;
-  int chunk_remainder = nroll % chunk_size;
+  int nfulljobs = nbatch / chunk_size;
+  int chunk_remainder = nbatch % chunk_size;
   int njobs = (chunk_remainder > 0) ? nfulljobs + 1 : nfulljobs;
 
   // Reset the pool counter
@@ -213,7 +217,7 @@ void _unsafe_rollout_threaded(std::vector<const mjModel*>& m, std::vector<mjData
 
 // check size of optional argument to rollout(), return raw pointer
 mjtNum* get_array_ptr(std::optional<const py::array_t<mjtNum>> arg,
-                      const char* name, int nroll, int nstep, int dim) {
+                      const char* name, int nbatch, int nstep, int dim) {
   // if empty return nullptr
   if (!arg.has_value()) {
     return nullptr;
@@ -223,7 +227,8 @@ mjtNum* get_array_ptr(std::optional<const py::array_t<mjtNum>> arg,
   py::buffer_info info = arg->request();
 
   // check size
-  int expected_size = nroll * nstep * dim;
+  size_t expected_size =
+    static_cast<size_t>(nbatch) * static_cast<size_t>(nstep) * static_cast<size_t>(dim);
   if (info.size != expected_size) {
     std::ostringstream msg;
     msg << name << ".size should be " << expected_size << ", got " << info.size;
@@ -247,23 +252,27 @@ class Rollout {
                std::optional<const PyCArray> sensordata,
                std::optional<int> chunk_size) {
     // get raw pointers
-    int nroll = state0.shape(0);
-    std::vector<const raw::MjModel*> model_ptrs(nroll);
-    for (int r = 0; r < nroll; r++) {
+    int nbatch = state0.shape(0);
+    std::vector<const raw::MjModel*> model_ptrs(nbatch);
+    for (int r = 0; r < nbatch; r++) {
       model_ptrs[r] = m[r].cast<const MjModelWrapper*>()->get();
     }
 
     // check length d and nthread are consistent
-    if (this->nthread_ == 0 && py::len(d) > 1) {
+    if (py::len(d) == 0) {
+      std::ostringstream msg;
+      msg << "The list of data instances is empty";
+      throw py::value_error(msg.str());
+    } else if (this->nthread_ == 0 && py::len(d) > 1) {
       std::ostringstream msg;
       msg << "More than one data instance passed but "
           << "rollout is configured to run on main thread";
-      py::value_error(msg.str());
-    } else if (this->nthread_ != py::len(d)) {
+      throw py::value_error(msg.str());
+    } else if (this->nthread_ > 0 && this->nthread_ != py::len(d)) {
       std::ostringstream msg;
       msg << "Length of data: " << py::len(d)
           << " not equal to nthread: " << this->nthread_;
-      py::value_error(msg.str());
+      throw py::value_error(msg.str());
     }
 
     std::vector<raw::MjData*> data_ptrs(py::len(d));
@@ -280,13 +289,13 @@ class Rollout {
     int nstate = mj_stateSize(model_ptrs[0], mjSTATE_FULLPHYSICS);
     int ncontrol = mj_stateSize(model_ptrs[0], control_spec);
 
-    mjtNum* state0_ptr = get_array_ptr(state0, "state0", nroll, 1, nstate);
+    mjtNum* state0_ptr = get_array_ptr(state0, "state0", nbatch, 1, nstate);
     mjtNum* warmstart0_ptr =
-        get_array_ptr(warmstart0, "warmstart0", nroll, 1, model_ptrs[0]->nv);
+        get_array_ptr(warmstart0, "warmstart0", nbatch, 1, model_ptrs[0]->nv);
     mjtNum* control_ptr =
-        get_array_ptr(control, "control", nroll, nstep, ncontrol);
-    mjtNum* state_ptr = get_array_ptr(state, "state", nroll, nstep, nstate);
-    mjtNum* sensordata_ptr = get_array_ptr(sensordata, "sensordata", nroll,
+        get_array_ptr(control, "control", nbatch, nstep, ncontrol);
+    mjtNum* state_ptr = get_array_ptr(state, "state", nbatch, nstep, nstate);
+    mjtNum* sensordata_ptr = get_array_ptr(sensordata, "sensordata", nbatch,
                                            nstep, model_ptrs[0]->nsensordata);
 
     // perform rollouts
@@ -295,21 +304,21 @@ class Rollout {
       py::gil_scoped_release no_gil;
 
       // call unsafe rollout function, multi or single threaded
-      if (this->nthread_ > 0 && nroll > 1) {
+      if (this->nthread_ > 0 && nbatch > 1) {
         int chunk_size_final = 1;
         if (!chunk_size.has_value()) {
-          chunk_size_final = std::max(1, nroll / (10 * this->nthread_));
+          chunk_size_final = std::max(1, nbatch / (10 * this->nthread_));
         } else {
           chunk_size_final = *chunk_size;
         }
         InterceptMjErrors(_unsafe_rollout_threaded)(
-            model_ptrs, data_ptrs, nroll, nstep, control_spec, state0_ptr,
+            model_ptrs, data_ptrs, nbatch, nstep, control_spec, state0_ptr,
             warmstart0_ptr, control_ptr, state_ptr, sensordata_ptr,
             this->pool_.get(), chunk_size_final);
       } else {
         InterceptMjErrors(_unsafe_rollout)(
-            model_ptrs, data_ptrs[0], 0, nroll, nstep, control_spec, state0_ptr,
-            warmstart0_ptr, control_ptr, state_ptr, sensordata_ptr);
+            model_ptrs, data_ptrs[0], 0, nbatch, nstep, control_spec,
+            state0_ptr, warmstart0_ptr, control_ptr, state_ptr, sensordata_ptr);
       }
     }
   }

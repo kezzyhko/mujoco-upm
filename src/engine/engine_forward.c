@@ -770,7 +770,7 @@ static void mj_advance(const mjModel* m, mjData* d,
 // Euler integrator, semi-implicit in velocity, possibly skipping factorisation
 void mj_EulerSkip(const mjModel* m, mjData* d, int skipfactor) {
   TM_START;
-  int nv = m->nv, nM = m->nM;
+  int nv = m->nv, nC = m->nC;
   mj_markStack(d);
   mjtNum* qfrc = mjSTACKALLOC(d, nv, mjtNum);
   mjtNum* qacc = mjSTACKALLOC(d, nv, mjtNum);
@@ -794,22 +794,23 @@ void mj_EulerSkip(const mjModel* m, mjData* d, int skipfactor) {
   // damping: integrate implicitly
   else {
     if (!skipfactor) {
-      mjtNum* MhB = mjSTACKALLOC(d, nM, mjtNum);
-
-      // MhB = M + h*diag(B)
-      mju_copy(MhB, d->qM, nM);
+      // qH = M + h*diag(B)
+      for (int i=0; i < nC; i++) {
+        d->qH[i] = d->qM[d->mapM2C[i]];
+      }
       for (int i=0; i < nv; i++) {
-        MhB[m->dof_Madr[i]] += m->opt.timestep * m->dof_damping[i];
+        d->qH[d->C_rowadr[i] + d->C_rownnz[i] - 1] += m->opt.timestep * m->dof_damping[i];
       }
 
-      // factor
-      mj_factorI(m, d, MhB, d->qH, d->qHDiagInv);
+      // factorize in-place
+      mj_factorI(d->qH, d->qHDiagInv, nv, d->C_rownnz, d->C_rowadr, m->dof_simplenum, d->C_colind);
     }
 
     // solve
     mju_add(qfrc, d->qfrc_smooth, d->qfrc_constraint, nv);
     mju_copy(qacc, qfrc, m->nv);
-    mj_solveLD(m, qacc, 1, d->qH, d->qHDiagInv);
+    mj_solveLD(qacc, d->qH, d->qHDiagInv, nv, 1,
+               d->C_rownnz, d->C_rowadr, m->dof_simplenum, d->C_colind);
   }
 
   // advance state and time
@@ -938,7 +939,7 @@ void mj_RungeKutta(const mjModel* m, mjData* d, int N) {
 // fully implicit in velocity, possibly skipping factorization
 void mj_implicitSkip(const mjModel* m, mjData* d, int skipfactor) {
   TM_START;
-  int nv = m->nv, nM = m->nM, nD = m->nD;
+  int nv = m->nv, nM = m->nM, nD = m->nD, nC = m->nC;
 
   mj_markStack(d);
   mjtNum* qfrc = mjSTACKALLOC(d, nv, mjtNum);
@@ -985,13 +986,20 @@ void mj_implicitSkip(const mjModel* m, mjData* d, int skipfactor) {
       // set MhB = M - dt*qDeriv
       mju_addScl(MhB, d->qM, MhB, -m->opt.timestep, nM);
 
-      // factorize
-      mj_factorI(m, d, MhB, d->qH, d->qHDiagInv);
+      // copy into qH
+      for (int i=0; i < nC; i++) {
+        d->qH[i] = MhB[d->mapM2C[i]];
+      }
+
+      // factorize in-place
+      mj_factorI(d->qH, d->qHDiagInv, nv, d->C_rownnz, d->C_rowadr, m->dof_simplenum, d->C_colind);
     }
 
     // solve for qacc: (qM - dt*qDeriv) * qacc = qfrc
     mju_copy(qacc, qfrc, nv);
-    mj_solveLD(m, qacc, 1, d->qH, d->qHDiagInv);
+    mj_solveLD(qacc, d->qH, d->qHDiagInv, nv, 1,
+               d->C_rownnz, d->C_rowadr, m->dof_simplenum, d->C_colind);
+
   } else {
     mjERROR("integrator must be implicit or implicitfast");
   }
@@ -1013,6 +1021,38 @@ void mj_implicit(const mjModel* m, mjData* d) {
 
 
 
+// return 1 if potential energy was computed by sensor, 0 otherwise
+static int energyPosSensor(const mjModel* m) {
+  if (mjDISABLED(mjDSBL_SENSOR)) {
+    return 0;
+  }
+
+  for (int i=0; i < m->nsensor; i++) {
+    if (m->sensor_type[i] == mjSENS_E_POTENTIAL) {
+      return 1;
+    }
+  }
+  return 0;
+}
+
+
+
+// return 1 if kinetic energy was computed by sensor, 0 otherwise
+static int energyVelSensor(const mjModel* m) {
+  if (mjDISABLED(mjDSBL_SENSOR)) {
+    return 0;
+  }
+
+  for (int i=0; i < m->nsensor; i++) {
+    if (m->sensor_type[i] == mjSENS_E_KINETIC) {
+      return 1;
+    }
+  }
+  return 0;
+}
+
+
+
 //-------------------------- top-level API ---------------------------------------------------------
 
 // forward dynamics with skip; skipstage is mjtStage
@@ -1022,21 +1062,33 @@ void mj_forwardSkip(const mjModel* m, mjData* d, int skipstage, int skipsensor) 
   // position-dependent
   if (skipstage < mjSTAGE_POS) {
     mj_fwdPosition(m, d);
+
+    int energyPos = 0;
     if (!skipsensor) {
       mj_sensorPos(m, d);
+      energyPos = energyPosSensor(m);
     }
-    if (mjENABLED(mjENBL_ENERGY)) {
-      mj_energyPos(m, d);
+
+    if (!energyPos) {
+      if (mjENABLED(mjENBL_ENERGY)) {
+        mj_energyPos(m, d);
+      } else {
+        d->energy[0] = d->energy[1] = 0;
+      }
     }
   }
 
   // velocity-dependent
   if (skipstage < mjSTAGE_VEL) {
     mj_fwdVelocity(m, d);
+
+    int energyVel = 0;
     if (!skipsensor) {
       mj_sensorVel(m, d);
+      energyVel = energyVelSensor(m);
     }
-    if (mjENABLED(mjENBL_ENERGY)) {
+
+    if (mjENABLED(mjENBL_ENERGY) && !energyVel) {
       mj_energyVel(m, d);
     }
   }
@@ -1111,10 +1163,18 @@ void mj_step1(const mjModel* m, mjData* d) {
   mj_checkVel(m, d);
   mj_fwdPosition(m, d);
   mj_sensorPos(m, d);
-  mj_energyPos(m, d);
+  if (!energyPosSensor(m)) {
+    if (mjENABLED(mjENBL_ENERGY)) {
+      mj_energyPos(m, d);
+    } else {
+      d->energy[0] = d->energy[1] = 0;
+    }
+  }
   mj_fwdVelocity(m, d);
   mj_sensorVel(m, d);
-  mj_energyVel(m, d);
+  if (mjENABLED(mjENBL_ENERGY) && !energyVelSensor(m)) {
+    mj_energyVel(m, d);
+  }
   if (mjcb_control) {
     mjcb_control(m, d);
   }

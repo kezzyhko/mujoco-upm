@@ -161,15 +161,15 @@ class SupportTest(parameterized.TestCase):
     xml = """
     <mujoco model="test_bind_model">
         <worldbody>
-          <body pos="1 2 3" name="body1">
-            <joint axis="1 0 0" type="slide" name="joint1"/>
-            <geom size="1 2 3" type="box" name="geom1"/>
+          <body pos="10 20 30" name="body1">
+            <joint axis="1 0 0" type="ball" name="joint1"/>
+            <geom size="1 2 3" type="box" name="geom1" pos="0 1 0"/>
           </body>
-          <body pos="4 5 6" name="body2">
+          <body pos="40 50 60" name="body2">
             <joint axis="0 1 0" type="slide" name="joint2"/>
             <geom size="4 5 6" type="box" name="geom2"/>
           </body>
-          <body pos="7 8 9" name="body3">
+          <body pos="70 80 90" name="body3">
             <joint axis="0 0 1" type="slide" name="joint3"/>
             <geom size="7 8 9" type="box" name="geom3"/>
           </body>
@@ -180,6 +180,12 @@ class SupportTest(parameterized.TestCase):
           <motor name="actuator2" joint="joint2"/>
           <motor name="actuator3" joint="joint3"/>
         </actuator>
+
+        <sensor>
+          <framepos name="sensor1" objtype="body" objname="body1"/>
+          <framepos name="sensor2" objtype="body" objname="body2"/>
+          <framepos name="sensor3" objtype="body" objname="body3"/>
+        </sensor>
     </mujoco>
     """
 
@@ -194,6 +200,10 @@ class SupportTest(parameterized.TestCase):
     # test getting
     np.testing.assert_array_equal(mx.bind(s.bodies).pos, m.body_pos)
     np.testing.assert_array_equal(dx.bind(mx, s.bodies).xpos, d.xpos)
+    np.testing.assert_array_equal(m.bind(s.bodies[0]).mass, m.body_mass[0])
+    np.testing.assert_array_equal(m.bind(s.bodies[0:1]).mass, [m.body_mass[0]])
+    np.testing.assert_array_equal(mx.bind(s.bodies[0]).mass, m.body_mass[0])
+    np.testing.assert_array_equal(mx.bind(s.bodies[0:1]).mass, [m.body_mass[0]])
     for i in range(m.nbody):
       np.testing.assert_array_equal(m.bind(s.bodies[i]).pos, m.body_pos[i, :])
       np.testing.assert_array_equal(mx.bind(s.bodies[i]).pos, m.body_pos[i, :])
@@ -201,6 +211,9 @@ class SupportTest(parameterized.TestCase):
       np.testing.assert_array_equal(
           dx.bind(mx, s.bodies[i]).xpos, d.xpos[i, :]
           )
+      np.testing.assert_array_equal(
+          dx.bind(mx, s.bodies[i]).xfrc_applied, d.xfrc_applied[i, :]
+      )
 
     np.testing.assert_array_equal(mx.bind(s.geoms).size, m.geom_size)
     np.testing.assert_array_equal(dx.bind(mx, s.geoms).xpos, d.geom_xpos)
@@ -213,15 +226,42 @@ class SupportTest(parameterized.TestCase):
       )
 
     np.testing.assert_array_equal(mx.bind(s.joints).axis, m.jnt_axis)
+    np.testing.assert_array_equal(mx.bind(s.joints).qposadr, m.jnt_qposadr)
+    np.testing.assert_array_equal(mx.bind(s.joints).dofadr, m.jnt_dofadr)
+    np.testing.assert_array_equal(dx.bind(mx, s.joints[1]).id, 1)
+    np.testing.assert_array_equal(dx.bind(mx, s.joints[1:2]).id, [1])
+    qposnum = [4, 1, 1]  # one ball joint (4) and two slide joints (1)
+    dofnum = [3, 1, 1]  # one ball joint (3) and two slide joints (1)
     for i in range(m.njnt):
       np.testing.assert_array_equal(m.bind(s.joints[i]).axis, m.jnt_axis[i, :])
       np.testing.assert_array_equal(mx.bind(s.joints[i]).axis, m.jnt_axis[i, :])
+      np.testing.assert_array_almost_equal(
+          dx.bind(mx, s.joints[i]).qpos,
+          d.qpos[m.jnt_qposadr[i]:m.jnt_qposadr[i] + qposnum[i]], decimal=6
+      )
+      np.testing.assert_array_almost_equal(
+          dx.bind(mx, s.joints[i]).qvel,
+          d.qvel[m.jnt_dofadr[i]:m.jnt_dofadr[i] + dofnum[i]], decimal=6
+      )
+      np.testing.assert_array_almost_equal(
+          dx.bind(mx, s.joints[i]).qacc,
+          d.qacc[m.jnt_dofadr[i]:m.jnt_dofadr[i] + dofnum[i]], decimal=6
+      )
 
     np.testing.assert_array_equal(dx.bind(mx, s.actuators).ctrl, d.ctrl)
     for i in range(m.nu):
       np.testing.assert_array_equal(d.bind(s.actuators[i]).ctrl, d.ctrl[i])
       np.testing.assert_array_equal(
           dx.bind(mx, s.actuators[i]).ctrl, d.ctrl[i]
+      )
+
+    np.testing.assert_array_equal(
+        dx.bind(mx, s.sensors).sensordata, d.sensordata
+    )
+    for i in range(m.nsensor):
+      np.testing.assert_array_equal(
+          dx.bind(mx, s.sensors[i]).sensordata,
+          d.sensordata[m.sensor_adr[i] : m.sensor_adr[i] + m.sensor_dim[i]],
       )
 
     # test setting
@@ -236,14 +276,75 @@ class SupportTest(parameterized.TestCase):
     dx4 = dx.bind(mx, s.actuators[1]).set('ctrl', [6])
     np.testing.assert_array_equal(dx4.bind(mx, s.actuators).ctrl, [0, 6, 0])
     np.testing.assert_array_equal(dx.bind(mx, s.actuators).ctrl, [0, 0, 0])
+    dx5 = dx.bind(mx, s.actuators[1]).set('ctrl', 7)
+    np.testing.assert_array_equal(dx5.bind(mx, s.actuators).ctrl, [0, 7, 0])
+    np.testing.assert_array_equal(dx.bind(mx, s.actuators).ctrl, [0, 0, 0])
+
+    qpos_1step = [1.00000e00, -3.67875e-06, 0, 0, 0, -3.924e-05]
+    qpos_desired = [1, 0, 0, 0, 0, 8]
+    np.testing.assert_array_almost_equal(d.qpos, qpos_1step)
+    np.testing.assert_array_almost_equal(dx.bind(mx, s.joints).qpos, d.qpos)
+    dx6 = dx.bind(mx, s.joints[::2]).set('qpos', [1, 0, 0, 0, 8])
+    np.testing.assert_array_equal(dx6.bind(mx, s.joints).qpos, qpos_desired)
+    np.testing.assert_array_almost_equal(dx.bind(mx, s.joints).qpos, d.qpos)
+    dx7 = dx.bind(mx, s.joints[::2]).set('qvel', [2.0, -1.2, 0.5, 0.3])
+    np.testing.assert_array_almost_equal(
+        dx7.bind(mx, s.joints).qvel, [2.0, -1.2, 0.5, 0.0, 0.3], decimal=6
+    )
+    dx8 = dx.bind(mx, s.joints[::2]).set('qacc', [3.0, -2.1, 0.6, 0.4])
+    np.testing.assert_array_almost_equal(
+        dx8.bind(mx, s.joints).qacc, [3.0, -2.1, 0.6, 0.0, 0.4], decimal=6
+    )
+
+    dx9 = dx.bind(mx, s.bodies[1]).set('xfrc_applied', [1, 2, 3, 4, 5, 6])
+    np.testing.assert_array_equal(
+        dx9.bind(mx, s.bodies[1]).xfrc_applied, [1, 2, 3, 4, 5, 6]
+    )
+    for body in s.bodies[:1] + s.bodies[2:]:
+      np.testing.assert_array_equal(
+          dx7.bind(mx, body).xfrc_applied, [0, 0, 0, 0, 0, 0]
+      )
 
     # test invalid name
-    with self.assertRaises(AttributeError):
+    with self.assertRaises(
+        AttributeError, msg='ctrl is not available for this type'
+    ):
       print(dx.bind(mx, s.geoms).ctrl)
-    with self.assertRaises(AttributeError):
+    with self.assertRaises(
+        KeyError, msg='actuator_actuator_ctrl'
+    ):
       print(dx.bind(mx, s.actuators).actuator_ctrl)
-    with self.assertRaises(AttributeError):
+    with self.assertRaises(
+        AttributeError, msg='actuator_actuator_ctrl'
+    ):
       print(dx.bind(mx, s.actuators).set('actuator_ctrl', [1, 2, 3]))
+    with self.assertRaises(
+        AttributeError, msg='qpos, qvel, qacc are not available for this type'
+    ):
+      print(dx.bind(mx, s.geoms).qpos)
+    with self.assertRaises(KeyError, msg='invalid name: invalid_actuator_name'):
+      s.actuators[0].name = 'invalid_actuator_name'
+      print(dx.bind(mx, s.actuators).set('ctrl', [1, 2, 3]))
+    with self.assertRaises(KeyError, msg='invalid name: invalid_geom_name'):
+      s.geoms[0].name = 'invalid_geom_name'
+      print(mx.bind(s.geoms).pos)
+
+    # test batched data
+    batch_size = 16
+    ds = [d for _ in range(batch_size)]
+    vdx = jax.vmap(lambda xpos: dx.replace(xpos=xpos))(
+        jp.array([d.xpos for d in ds], device=jax.devices('cpu')[0]))
+    for i in range(m.nbody):
+      np.testing.assert_array_equal(
+          vdx.bind(mx, s.bodies[i]).xpos, [d.xpos[i, :]] * batch_size
+      )
+
+    # test emtpy name
+    s.worldbody.add_body()
+    m = s.compile()
+    mx = mjx.put_model(m)
+    with self.assertRaises(KeyError, msg='cannot bind spec with empty name'):
+      mx.bind(s.bodies)
 
   _CONTACTS = """
     <mujoco>
@@ -308,6 +409,127 @@ class SupportTest(parameterized.TestCase):
       force = force.at[:3].set(dx.contact.frame[j] @ force[:3])
       force = force.at[3:].set(dx.contact.frame[j] @ force[3:])
       np.testing.assert_allclose(result, force, rtol=1e-5, atol=2)
+
+  def test_wrap_inside(self):
+    maxiter = 5
+    tolerance = 1.0e-4
+    z_init = 1.0 - 1.0e-5
+
+    # len0 <= radius
+    np.testing.assert_equal(
+        support.wrap_inside(
+            jp.array([1.0, 0, 0, 0]),
+            jp.array([1.0]),
+            maxiter,
+            tolerance,
+            z_init,
+        )[0],
+        jp.array([-1]),
+    )
+
+    # len1 <= radius
+    np.testing.assert_equal(
+        support.wrap_inside(
+            jp.array([0, 0, 1.0, 0]),
+            jp.array([1.0]),
+            maxiter,
+            tolerance,
+            z_init,
+        )[0],
+        jp.array([-1]),
+    )
+
+    # radius < mjMINVAL
+    np.testing.assert_equal(
+        support.wrap_inside(
+            jp.array([1, 0, 0, 1]), jp.array([0.1 * mujoco.mjMINVAL]), maxiter,
+            tolerance,
+            z_init,
+        )[0],
+        jp.array([-1]),
+    )
+
+    # len0 < mjMINVAL and radius < mjMINVAL
+    np.testing.assert_equal(
+        support.wrap_inside(
+            jp.array([0.1 * mujoco.mjMINVAL, 0, 0, 0]),
+            jp.array([0.1 * mujoco.mjMINVAL]),
+            maxiter,
+            tolerance,
+            z_init,
+        )[0],
+        jp.array([-1]),
+    )
+
+    # len1 < mjMINVAL and radius < mjMINVAL
+    np.testing.assert_equal(
+        support.wrap_inside(
+            jp.array([0, 0, 0.1 * mujoco.mjMINVAL, 0]),
+            jp.array([0.1 * mujoco.mjMINVAL]),
+            maxiter,
+            tolerance,
+            z_init,
+        )[0],
+        jp.array([-1]),
+    )
+
+    # wrap: p0 = [1, 0], p1 = [0, 1]
+    status, pnt = support.wrap_inside(
+        jp.array([1, 0, 0, 1]), jp.array([0.5]), maxiter, tolerance, z_init
+    )
+    np.testing.assert_allclose(
+        pnt,
+        jp.array([0.353553, 0.353553, 0.353553, 0.353553]),
+        atol=1e-3,
+        rtol=1e-3,
+    )
+    np.testing.assert_equal(status, jp.array([0]))
+
+    # no wrap, point on circle: p0 = [1, 0], p1 = [0, 0.5]
+    status, pnt = support.wrap_inside(
+        jp.array([1, 0, 0, 0.5]), jp.array([0.5]), maxiter, tolerance, z_init
+    )
+    np.testing.assert_allclose(
+        pnt,
+        jp.zeros(4),
+        atol=1e-3,
+        rtol=1e-3,
+    )
+    np.testing.assert_equal(status, jp.array([-1]))
+
+    # no wrap, segment-circle intersection: p0 = [0.75, 0], p1 = [0, 0.51]
+    status, pnt = support.wrap_inside(
+        jp.array([0.75, 0, 0, 0.51]),
+        jp.array([0.5]),
+        maxiter,
+        tolerance,
+        z_init,
+    )
+    np.testing.assert_allclose(
+        pnt,
+        jp.zeros(4),
+        atol=1e-3,
+        rtol=1e-3,
+    )
+    np.testing.assert_equal(status, jp.array([-1]))
+
+    # wrap: p0 = [-0.5, 1], p1 = [0.5, 1]
+    status, pnt = support.wrap_inside(
+        jp.array([-0.5, 1, 0.5, 1]),
+        jp.array([0.5]),
+        maxiter,
+        tolerance,
+        z_init,
+    )
+    np.testing.assert_allclose(
+        pnt,
+        jp.array([0, 0.5, 0, 0.5]),
+        atol=1e-3,
+        rtol=1e-3,
+    )
+    np.testing.assert_equal(status, jp.array([0]))
+
+    # TODO(taylorhowell): improve wrap_inside testing with additional test cases
 
   def test_muscle_gain_length(self):
     lmin = 0.5

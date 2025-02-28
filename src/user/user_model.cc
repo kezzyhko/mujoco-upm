@@ -131,7 +131,7 @@ mjCModel::mjCModel() {
 
   //------------------------ auto-computed statistics
 #ifndef MEMORY_SANITIZER
-  // initializing as best practice, but want MSAN to catch unintialized use
+  // initializing as best practice, but want MSAN to catch uninitialized use
   meaninertia_auto = 0;
   meanmass_auto = 0;
   meansize_auto = 0;
@@ -139,6 +139,7 @@ mjCModel::mjCModel() {
   center_auto[0] = center_auto[1] = center_auto[2] = 0;
 #endif
 
+  deepcopy_ = false;
   nplugin = 0;
   Clear();
 
@@ -181,6 +182,7 @@ mjCModel::mjCModel(const mjCModel& other) {
 
 
 mjCModel& mjCModel::operator=(const mjCModel& other) {
+  deepcopy_ = true;
   if (this != &other) {
     this->spec = other.spec;
     *static_cast<mjCModel_*>(this) = static_cast<const mjCModel_&>(other);
@@ -210,6 +212,7 @@ mjCModel& mjCModel::operator=(const mjCModel& other) {
       ids[i] = other.ids[i];
     }
   }
+  deepcopy_ = other.deepcopy_;
   return *this;
 }
 
@@ -222,20 +225,29 @@ void mjCModel::CopyList(std::vector<T*>& dest,
   // loop over the elements from the other model
   int nsource = (int)source.size();
   for (int i = 0; i < nsource; i++) {
-    T* candidate = new T(*source[i]);
+    T* candidate = deepcopy_ ? new T(*source[i]) : source[i];
     try {
       // try to find the referenced object in this model
-      candidate->NameSpace(source[i]->model);
+      mjCModel* source_model = source[i]->model;
+      candidate->model = this;
+      candidate->NameSpace(source_model);
       candidate->CopyFromSpec();
       candidate->ResolveReferences(this);
     } catch (mjCError err) {
       // if not present, skip the element
       // TODO: do not skip elements that contain user errors
-      delete candidate;
+      if (deepcopy_) {
+        candidate->model = nullptr;
+        delete candidate;
+      }
       continue;
     }
     // copy the element from the other model to this model
-    source[i]->ForgetKeyframes();
+    if (deepcopy_) {
+      source[i]->ForgetKeyframes();
+    } else {
+      candidate->AddRef();
+    }
     mjSpec* origin = FindSpec(source[i]->compiler);
     dest.push_back(candidate);
     dest.back()->model = this;
@@ -324,9 +336,12 @@ void mjCModel::CopyExplicitPlugin(T* obj) {
     return;
   }
   mjCPlugin* origin = static_cast<mjCPlugin*>(obj->spec.plugin.element);
-  mjCPlugin* candidate = new mjCPlugin(*origin);
+  mjCPlugin* candidate = deepcopy_ ? new mjCPlugin(*origin) : origin;
   candidate->id = plugins_.size();
   candidate->model = this;
+  if (!deepcopy_) {
+    candidate->AddRef();
+  }
   plugins_.push_back(candidate);
   obj->spec.plugin.element = candidate;
 }
@@ -566,7 +581,7 @@ void deletefromlist(std::vector<T*>* list, mjsElement* element) {
   for (int j = 0; j < list->size(); ++j) {
     list->at(j)->id = -1;
     if (list->at(j) == element) {
-      delete list->at(j);
+      list->at(j)->Release();
       list->erase(list->begin() + j);
       j--;
     }
@@ -577,8 +592,9 @@ void deletefromlist(std::vector<T*>* list, mjsElement* element) {
 
 // discard all invalid elements from all lists
 void mjCModel::DeleteElement(mjsElement* el) {
-  mjCBody *world = bodies_[0];
+  mjCBody *world = nullptr;
   if (compiled) {
+    world = bodies_[0];
     ResetTreeLists();
   }
 
@@ -588,8 +604,14 @@ void mjCModel::DeleteElement(mjsElement* el) {
       break;
 
     case mjOBJ_GEOM:
-      deletefromlist(&(static_cast<mjCGeom*>(el)->body->geoms), el);
+    {
+      mjCGeom* geom = static_cast<mjCGeom*>(el);
+      if (geom->plugin.active && geom->plugin.name->empty() && geom->GetRef() == 1) {
+        DeleteElement(geom->plugin.element);
+      }
+      deletefromlist(&(geom->body->geoms), el);
       break;
+    }
 
     case mjOBJ_SITE:
       deletefromlist(&(static_cast<mjCSite*>(el)->body->sites), el);
@@ -607,6 +629,36 @@ void mjCModel::DeleteElement(mjsElement* el) {
       deletefromlist(&(static_cast<mjCCamera*>(el)->body->cameras), el);
       break;
 
+    case mjOBJ_MESH:
+    {
+      mjCMesh* mesh = static_cast<mjCMesh*>(el);
+      if (mesh->plugin.active && mesh->plugin.name->empty() && mesh->GetRef() == 1) {
+        DeleteElement(mesh->plugin.element);
+      }
+      deletefromlist(object_lists_[mjOBJ_MESH], el);
+      break;
+    }
+
+    case mjOBJ_ACTUATOR:
+    {
+      mjCActuator* actuator = static_cast<mjCActuator*>(el);
+      if (actuator->plugin.active && actuator->plugin.name->empty() && actuator->GetRef() == 1) {
+        DeleteElement(actuator->plugin.element);
+      }
+      deletefromlist(object_lists_[mjOBJ_ACTUATOR], el);
+      break;
+    }
+
+    case mjOBJ_SENSOR:
+    {
+      mjCSensor* sensor = static_cast<mjCSensor*>(el);
+      if (sensor->plugin.active && sensor->plugin.name->empty() && sensor->GetRef() == 1) {
+        DeleteElement(sensor->plugin.element);
+      }
+      deletefromlist(object_lists_[mjOBJ_SENSOR], el);
+      break;
+    }
+
     default:
       deletefromlist(object_lists_[el->elemtype], el);
       break;
@@ -617,6 +669,29 @@ void mjCModel::DeleteElement(mjsElement* el) {
     MakeLists(world);
     ProcessLists(/*checkrepeat=*/false);
   }
+}
+
+
+
+// recursively delete all plugins in the subtree
+void deletesubtreeplugin(mjCBody* subtree, mjCModel* model) {
+  mjsPlugin* plugin = &(subtree->spec.plugin);
+  if (plugin->active && plugin->name->empty()) {
+    model->DeleteElement(plugin->element);
+  }
+  for (auto* body : subtree->Bodies()) {
+    deletesubtreeplugin(body, model);
+  }
+}
+
+
+
+// deletes all plugins in the subtree and then the subtree itself
+void mjCModel::Detach(mjCBody* subtree) {
+  if (subtree->GetRef() == 1)  {
+    deletesubtreeplugin(subtree, this);
+  }
+  subtree->Release();
 }
 
 
@@ -688,28 +763,28 @@ mjCModel::~mjCModel() {
   compiled = false;
 
   // delete kinematic tree and all objects allocated in it
-  delete bodies_[0];
+  bodies_[0]->Release();
 
   // delete objects allocated in mjCModel
-  for (int i=0; i<flexes_.size(); i++) delete flexes_[i];
-  for (int i=0; i<meshes_.size(); i++) delete meshes_[i];
-  for (int i=0; i<skins_.size(); i++) delete skins_[i];
-  for (int i=0; i<hfields_.size(); i++) delete hfields_[i];
-  for (int i=0; i<textures_.size(); i++) delete textures_[i];
-  for (int i=0; i<materials_.size(); i++) delete materials_[i];
-  for (int i=0; i<pairs_.size(); i++) delete pairs_[i];
-  for (int i=0; i<excludes_.size(); i++) delete excludes_[i];
-  for (int i=0; i<equalities_.size(); i++) delete equalities_[i];
-  for (int i=0; i<tendons_.size(); i++) delete tendons_[i];  // also deletes wraps
-  for (int i=0; i<actuators_.size(); i++) delete actuators_[i];
-  for (int i=0; i<sensors_.size(); i++) delete sensors_[i];
-  for (int i=0; i<numerics_.size(); i++) delete numerics_[i];
-  for (int i=0; i<texts_.size(); i++) delete texts_[i];
-  for (int i=0; i<tuples_.size(); i++) delete tuples_[i];
-  for (int i=0; i<keys_.size(); i++) delete keys_[i];
+  for (int i=0; i<flexes_.size(); i++) flexes_[i]->Release();
+  for (int i=0; i<meshes_.size(); i++) meshes_[i]->Release();
+  for (int i=0; i<skins_.size(); i++) skins_[i]->Release();
+  for (int i=0; i<hfields_.size(); i++) hfields_[i]->Release();
+  for (int i=0; i<textures_.size(); i++) textures_[i]->Release();
+  for (int i=0; i<materials_.size(); i++) materials_[i]->Release();
+  for (int i=0; i<pairs_.size(); i++) pairs_[i]->Release();
+  for (int i=0; i<excludes_.size(); i++) excludes_[i]->Release();
+  for (int i=0; i<equalities_.size(); i++) equalities_[i]->Release();
+  for (int i=0; i<tendons_.size(); i++) tendons_[i]->Release();  // also deletes wraps
+  for (int i=0; i<actuators_.size(); i++) actuators_[i]->Release();
+  for (int i=0; i<sensors_.size(); i++) sensors_[i]->Release();
+  for (int i=0; i<numerics_.size(); i++) numerics_[i]->Release();
+  for (int i=0; i<texts_.size(); i++) texts_[i]->Release();
+  for (int i=0; i<tuples_.size(); i++) tuples_[i]->Release();
+  for (int i=0; i<keys_.size(); i++) keys_[i]->Release();
   for (int i=0; i<defaults_.size(); i++) delete defaults_[i];
   for (int i=0; i<specs_.size(); i++) mj_deleteSpec(specs_[i]);
-  for (int i=0; i<plugins_.size(); i++) delete plugins_[i];
+  for (int i=0; i<plugins_.size(); i++) plugins_[i]->Release();
 
   // clear sizes and pointer lists created in Compile
   Clear();
@@ -748,6 +823,7 @@ void mjCModel::Clear() {
   nv = 0;
   nu = 0;
   na = 0;
+  nflexnode = 0;
   nflexvert = 0;
   nflexedge = 0;
   nflexelem = 0;
@@ -761,6 +837,9 @@ void mjCModel::Clear() {
   nmeshtexcoord = 0;
   nmeshface = 0;
   nmeshgraph = 0;
+  nmeshpoly = 0;
+  nmeshpolyvert = 0;
+  nmeshpolymap = 0;
   nskinvert = 0;
   nskintexvert = 0;
   nskinface = 0;
@@ -933,6 +1012,7 @@ mjCPlugin* mjCModel::AddPlugin() {
 
 // append spec to spec
 void mjCModel::AppendSpec(mjSpec* spec) {
+  // TODO: check if the spec is already in the list
   specs_.push_back(spec);
 }
 
@@ -1657,6 +1737,7 @@ void mjCModel::SetSizes() {
 
   // flex counts
   for (int i=0; i<nflex; i++) {
+    nflexnode += flexes_[i]->nnode;
     nflexvert += flexes_[i]->nvert;
     nflexedge += flexes_[i]->nedge;
     nflexelem += flexes_[i]->nelem;
@@ -1674,6 +1755,9 @@ void mjCModel::SetSizes() {
     nmeshface += meshes_[i]->nface();
     nmeshtexcoord += (meshes_[i]->HasTexcoord() ? meshes_[i]->ntexcoord() : 0);
     nmeshgraph += meshes_[i]->szgraph();
+    nmeshpoly += meshes_[i]->npolygon();
+    nmeshpolyvert += meshes_[i]->npolygonvert();
+    nmeshpolymap += meshes_[i]->npolygonmap();
   }
 
   // skin counts
@@ -1769,7 +1853,7 @@ void mjCModel::AutoSpringDamper(mjModel* m) {
     int adr = m->jnt_dofadr[n];
     int ndim = mjCJoint::nv((mjtJoint)m->jnt_type[n]);
 
-    // get timeconst and dampratio from joint specificatin
+    // get timeconst and dampratio from joint specification
     mjtNum timeconst = (mjtNum)joints_[n]->springdamper[0];
     mjtNum dampratio = (mjtNum)joints_[n]->springdamper[1];
 
@@ -1788,6 +1872,10 @@ void mjCModel::AutoSpringDamper(mjModel* m) {
     // compute stiffness and damping (same as solref computation)
     mjtNum stiffness = inertia / std::max(mjMINVAL, timeconst*timeconst*dampratio*dampratio);
     mjtNum damping = 2 * inertia / std::max(mjMINVAL, timeconst);
+
+    // save stiffness and damping in the private mjsJoints
+    joints_[n]->stiffness = stiffness;
+    joints_[n]->damping = damping;
 
     // assign
     m->jnt_stiffness[n] = stiffness;
@@ -2670,9 +2758,10 @@ int mjCModel::CountNJmom(const mjModel* m) {
 
 // copy objects outside kinematic tree
 void mjCModel::CopyObjects(mjModel* m) {
-  int adr, bone_adr, vert_adr, normal_adr, face_adr, texcoord_adr;
+  int adr, bone_adr, vert_adr, node_adr, normal_adr, face_adr, texcoord_adr;
   int edge_adr, elem_adr, elemdata_adr, elemedge_adr, shelldata_adr, evpair_adr;
   int bonevert_adr, graph_adr, data_adr, bvh_adr;
+  int poly_adr, polymap_adr, polyvert_adr;
 
   // sizes outside call to mj_makeModel
   m->nemax = nemax;
@@ -2694,11 +2783,16 @@ void mjCModel::CopyObjects(mjModel* m) {
   texcoord_adr = 0;
   face_adr = 0;
   graph_adr = 0;
+  poly_adr = 0;
+  polyvert_adr = 0;
+  polymap_adr = 0;
   for (int i=0; i<nmesh; i++) {
     // get pointer
     mjCMesh* pme = meshes_[i];
 
     // set fields
+    m->mesh_polyadr[i] = poly_adr;
+    m->mesh_polynum[i] = pme->npolygon();
     m->mesh_vertadr[i] = vert_adr;
     m->mesh_vertnum[i] = pme->nvert();
     m->mesh_normaladr[i] = normal_adr;
@@ -2711,8 +2805,8 @@ void mjCModel::CopyObjects(mjModel* m) {
     m->mesh_bvhnum[i] = pme->tree().Nbvh();
     m->mesh_bvhadr[i] = pme->tree().Nbvh() ? bvh_adr : -1;
     mjuu_copyvec(&m->mesh_scale[3 * i], pme->Scale(), 3);
-    mjuu_copyvec(&m->mesh_pos[3 * i], pme->GetOffsetPosPtr(), 3);
-    mjuu_copyvec(&m->mesh_quat[4 * i], pme->GetOffsetQuatPtr(), 4);
+    mjuu_copyvec(&m->mesh_pos[3 * i], pme->GetPosPtr(), 3);
+    mjuu_copyvec(&m->mesh_quat[4 * i], pme->GetQuatPtr(), 4);
 
     // copy vertices, normals, faces, texcoords, aux data
     pme->CopyVert(m->mesh_vert + 3*vert_adr);
@@ -2728,6 +2822,11 @@ void mjCModel::CopyObjects(mjModel* m) {
     if (pme->szgraph()) {
       pme->CopyGraph(m->mesh_graph + graph_adr);
     }
+    pme->CopyPolygonNormals(m->mesh_polynormal + 3*poly_adr);
+    pme->CopyPolygons(m->mesh_polyvert + polyvert_adr, m->mesh_polyvertadr + poly_adr,
+                      m->mesh_polyvertnum + poly_adr, polyvert_adr);
+    pme->CopyPolygonMap(m->mesh_polymap + polymap_adr, m->mesh_polymapadr + vert_adr,
+                        m->mesh_polymapnum + vert_adr, polymap_adr);
 
     // copy bvh data
     if (pme->tree().Nbvh()) {
@@ -2740,6 +2839,9 @@ void mjCModel::CopyObjects(mjModel* m) {
     }
 
     // advance counters
+    poly_adr += pme->npolygon();
+    polyvert_adr += pme->npolygonvert();
+    polymap_adr += pme->npolygonmap();
     vert_adr += pme->nvert();
     normal_adr += pme->nnormal();
     texcoord_adr += (pme->HasTexcoord() ? pme->ntexcoord() : 0);
@@ -2750,6 +2852,7 @@ void mjCModel::CopyObjects(mjModel* m) {
 
   // flexes
   vert_adr = 0;
+  node_adr = 0;
   edge_adr = 0;
   elem_adr = 0;
   elemdata_adr = 0;
@@ -2789,6 +2892,8 @@ void mjCModel::CopyObjects(mjModel* m) {
     m->flex_dim[i] = pfl->dim;
     m->flex_vertadr[i] = vert_adr;
     m->flex_vertnum[i] = pfl->nvert;
+    m->flex_nodeadr[i] = node_adr;
+    m->flex_nodenum[i] = pfl->nnode;
     m->flex_edgeadr[i] = edge_adr;
     m->flex_edgenum[i] = pfl->nedge;
     m->flex_elemadr[i] = elem_adr;
@@ -2848,15 +2953,26 @@ void mjCModel::CopyObjects(mjModel* m) {
     }
 
     // copy or set vert
-    if (pfl->centered) {
+    if (pfl->centered && !pfl->interpolated) {
       mjuu_zerovec(m->flex_vert + 3*vert_adr, 3*pfl->nvert);
     }
     else {
       mjuu_copyvec(m->flex_vert + 3*vert_adr, pfl->vert_.data(), 3*pfl->nvert);
     }
 
+    // copy or set node
+    if (pfl->centered && pfl->interpolated) {
+      mjuu_zerovec(m->flex_node + 3*node_adr, 3*pfl->nnode);
+    }
+    else if (pfl->interpolated) {
+      mjuu_copyvec(m->flex_node + 3*node_adr, pfl->node_.data(), 3*pfl->nnode);
+    }
+
     // copy vert0
     mjuu_copyvec(m->flex_vert0 + 3*vert_adr, pfl->vert0_.data(), 3*pfl->nvert);
+
+    // copy node0
+    mjuu_copyvec(m->flex_node0 + 3*node_adr, pfl->node0_.data(), 3*pfl->nnode);
 
     // copy or set vertbodyid
     if (pfl->rigid) {
@@ -2868,6 +2984,18 @@ void mjCModel::CopyObjects(mjModel* m) {
       memcpy(m->flex_vertbodyid + vert_adr, pfl->vertbodyid.data(), pfl->nvert*sizeof(int));
     }
 
+    // copy or set nodebodyid
+    if (pfl->rigid) {
+      for (int k=0; k<pfl->nnode; k++) {
+        m->flex_nodebodyid[node_adr + k] = pfl->nodebodyid[0];
+      }
+    } else {
+      memcpy(m->flex_nodebodyid + node_adr, pfl->nodebodyid.data(), pfl->nnode*sizeof(int));
+    }
+
+    // set interpolation type, only two types for now
+    m->flex_interp[i] = pfl->interpolated;
+
     // convert edge pairs to int array, set edge rigid
     for (int k=0; k<pfl->nedge; k++) {
       m->flex_edge[2*(edge_adr+k)] = pfl->edge[k].first;
@@ -2875,8 +3003,9 @@ void mjCModel::CopyObjects(mjModel* m) {
 
       if (pfl->rigid) {
         m->flexedge_rigid[edge_adr+k] = 1;
-      } else {
+      } else if (!pfl->interpolated) {
         // check if vertex body weldids are the same
+        // unsupported by trilinear interpolation
         int b1 = pfl->vertbodyid[pfl->edge[k].first];
         int b2 = pfl->vertbodyid[pfl->edge[k].second];
         m->flexedge_rigid[edge_adr+k] = (bodies_[b1]->weldid == bodies_[b2]->weldid);
@@ -2885,6 +3014,7 @@ void mjCModel::CopyObjects(mjModel* m) {
 
     // advance counters
     vert_adr += pfl->nvert;
+    node_adr += pfl->nnode;
     edge_adr += pfl->nedge;
     elem_adr += pfl->nelem;
     elemdata_adr += (pfl->dim+1) * pfl->nelem;
@@ -3397,7 +3527,30 @@ void mjCModel::StoreKeyframes(mjCModel* dest) {
     info.mpos = !key->spec_mpos_.empty();
     info.mquat = !key->spec_mquat_.empty();
     dest->key_pending_.push_back(info);
-    ResizeKeyframe(key, qpos0.data(), body_pos0.data(), body_quat0.data());
+    if (!key->spec_qpos_.empty() && key->spec_qpos_.size() != nq) {
+      throw mjCError(nullptr, "Keyframe '%s' has invalid qpos size, got %d, should be %d",
+                     key->name.c_str(), key->spec_qpos_.size(), nq);
+    }
+    if (!key->spec_qvel_.empty() && key->spec_qvel_.size() != nv) {
+      throw mjCError(nullptr, "Keyframe %s has invalid qvel size, got %d, should be %d",
+                     key->name.c_str(), key->spec_qvel_.size(), nv);
+    }
+    if (!key->spec_act_.empty() && key->spec_act_.size() != na) {
+      throw mjCError(nullptr, "Keyframe %s has invalid act size, got %d, should be %d",
+                     key->name.c_str(), key->spec_act_.size(), na);
+    }
+    if (!key->spec_ctrl_.empty() && key->spec_ctrl_.size() != nu) {
+      throw mjCError(nullptr, "Keyframe %s has invalid ctrl size, got %d, should be %d",
+                     key->name.c_str(), key->spec_ctrl_.size(), nu);
+    }
+    if (!key->spec_mpos_.empty() && key->spec_mpos_.size() != 3*nmocap) {
+      throw mjCError(nullptr, "Keyframe %s has invalid mpos size, got %d, should be %d",
+                     key->name.c_str(), key->spec_mpos_.size(), 3*nmocap);
+    }
+    if (!key->spec_mquat_.empty() && key->spec_mquat_.size() != 4*nmocap) {
+      throw mjCError(nullptr, "Keyframe %s has invalid mquat size, got %d, should be %d",
+                     key->name.c_str(), key->spec_mquat_.size(), 4*nmocap);
+    }
     SaveState(info.name, key->spec_qpos_.data(), key->spec_qvel_.data(),
               key->spec_act_.data(), key->spec_ctrl_.data(),
               key->spec_mpos_.data(), key->spec_mquat_.data());
@@ -4114,8 +4267,9 @@ void mjCModel::TryCompile(mjModel*& m, mjData*& d, const mjVFS* vfs) {
   // mark meshes that need convex hull
   for (int i=0; i<geoms_.size(); i++) {
     if (geoms_[i]->mesh &&
-        (geoms_[i]->spec.type==mjGEOM_MESH || geoms_[i]->spec.type==mjGEOM_SDF) &&
-        (geoms_[i]->spec.contype || geoms_[i]->spec.conaffinity)) {
+        (geoms_[i]->spec.type == mjGEOM_MESH || geoms_[i]->spec.type == mjGEOM_SDF) &&
+        (geoms_[i]->spec.contype || geoms_[i]->spec.conaffinity ||
+         geoms_[i]->mesh->spec.inertia == mjMESH_INERTIA_CONVEX)) {
       geoms_[i]->mesh->SetNeedHull(true);
     }
   }
@@ -4124,7 +4278,7 @@ void mjCModel::TryCompile(mjModel*& m, mjData*& d, const mjVFS* vfs) {
   SetNuser();
 
   // compile meshes (needed for geom compilation)
-  if (compiler.usethread && meshes_.size() > 1) {
+  if (!compiler.usethread && meshes_.size() > 1) {
     // multi-threaded mesh compile
     CompileMeshes(vfs);
   } else {
@@ -4185,44 +4339,22 @@ void mjCModel::TryCompile(mjModel*& m, mjData*& d, const mjVFS* vfs) {
     }
   }
 
-  // check body mass and inertia
-  for (int i=1; i<bodies_.size(); i++) {
-    mjCBody* b = bodies_[i];
-
-    // find moving body with small mass or inertia
-    if (!b->joints.empty() &&
-        (b->mass<mjMINVAL ||
-          b->inertia[0]<mjMINVAL ||
-          b->inertia[1]<mjMINVAL ||
-          b->inertia[2]<mjMINVAL)) {
-      // does it have static children with mass and inertia
-      bool ok = false;
-      for (size_t j=0; j<b->bodies.size(); j++) {
-        if (b->bodies[j]->joints.empty() &&
-            b->bodies[j]->mass>=mjMINVAL &&
-            b->bodies[j]->inertia[0]>=mjMINVAL &&
-            b->bodies[j]->inertia[1]>=mjMINVAL &&
-            b->bodies[j]->inertia[2]>=mjMINVAL) {
-          ok = true;
-          break;
-        }
-      }
-
-      // error
-      if (!ok) {
-        throw mjCError(b, "mass and inertia of moving bodies must be larger than mjMINVAL");
-      }
+  // check mass and inertia of moving bodies
+  if (bodies_.size() > 1) {
+    // we ignore the first body as it is the world body
+    if (!CheckBodiesMassInertia(std::vector<mjCBody*>(bodies_.begin()+1, bodies_.end()))) {
+      throw mjCError(0, "mass and inertia of moving bodies must be larger than mjMINVAL");
     }
   }
 
   // create low-level model
   mj_makeModel(&m,
                nq, nv, nu, na, nbody, nbvh, nbvhstatic, nbvhdynamic, njnt, ngeom, nsite,
-               ncam, nlight, nflex, nflexvert, nflexedge, nflexelem,
+               ncam, nlight, nflex, nflexnode, nflexvert, nflexedge, nflexelem,
                nflexelemdata, nflexelemedge, nflexshelldata, nflexevpair, nflextexcoord,
-               nmesh, nmeshvert, nmeshnormal, nmeshtexcoord, nmeshface, nmeshgraph,
-               nskin, nskinvert, nskintexvert, nskinface, nskinbone, nskinbonevert,
-               nhfield, nhfielddata, ntex, ntexdata, nmat, npair, nexclude,
+               nmesh, nmeshvert, nmeshnormal, nmeshtexcoord, nmeshface, nmeshgraph, nmeshpoly,
+               nmeshpolyvert, nmeshpolymap, nskin, nskinvert, nskintexvert, nskinface, nskinbone,
+               nskinbonevert, nhfield, nhfielddata, ntex, ntexdata, nmat, npair, nexclude,
                neq, ntendon, nwrap, nsensor, nnumeric, nnumericdata, ntext, ntextdata,
                ntuple, ntupledata, nkey, nmocap, nplugin, npluginattr,
                nuser_body, nuser_jnt, nuser_geom, nuser_site, nuser_cam,
@@ -4363,6 +4495,46 @@ void mjCModel::TryCompile(mjModel*& m, mjData*& d, const mjVFS* vfs) {
 
 
 
+bool mjCModel::CheckBodiesMassInertia(std::vector<mjCBody*> bodies) {
+  // check mass and inertia of moving bodies
+  for (int i=0; i<bodies.size(); i++) {
+    if (!bodies[i]->joints.empty()) {
+      if (!CheckBodyMassInertia(bodies[i])) {
+        return false;
+      }
+    }
+  }
+  return true;
+}
+
+
+
+bool mjCModel::CheckBodyMassInertia(mjCBody* body) {
+  // check if body has valid mass and inertia
+  if (body->mass>=mjMINVAL &&
+      body->inertia[0]>=mjMINVAL &&
+      body->inertia[1]>=mjMINVAL &&
+      body->inertia[2]>=mjMINVAL) {
+      return true;
+    }
+
+  // body is valid if we find a single static child with valid mass and inertia
+  for (int i=0; i<body->Bodies().size(); i++) {
+    // if we find a child with a joint, time to move on to the next moving body
+    if (!body->Bodies()[i]->joints.empty()) {
+      continue;
+    }
+    if (CheckBodyMassInertia(body->Bodies()[i])) {
+      return true;
+    }
+  }
+
+  // we did not find a child with valid mass and inertia
+  return false;
+}
+
+
+
 //------------------------------- DECOMPILER -------------------------------------------------------
 
 // get numeric data back from mjModel
@@ -4499,8 +4671,8 @@ bool mjCModel::CopyBack(const mjModel* m) {
   mjCMesh* pm;
   for (int i=0; i<nmesh; i++) {
     pm = meshes_[i];
-    mjuu_copyvec(pm->GetOffsetPosPtr(), m->mesh_pos+3*i, 3);
-    mjuu_copyvec(pm->GetOffsetQuatPtr(), m->mesh_quat+4*i, 4);
+    mjuu_copyvec(pm->GetPosPtr(), m->mesh_pos+3*i, 3);
+    mjuu_copyvec(pm->GetQuatPtr(), m->mesh_quat+4*i, 4);
   }
 
   // heightfield

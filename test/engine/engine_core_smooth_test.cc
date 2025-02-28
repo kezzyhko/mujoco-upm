@@ -109,6 +109,56 @@ TEST_F(CoreSmoothTest, MjKinematicsWorldXipos) {
   mj_deleteModel(model);
 }
 
+// ----------------------------- mj_tendon -------------------------------------
+
+TEST_F(CoreSmoothTest, FixedTendonSortedIndices) {
+  constexpr char xml[] = R"(
+  <mujoco>
+    <option jacobian="sparse"/>
+
+    <worldbody>
+      <body>
+        <geom size=".1"/>
+        <joint name="0"/>
+      </body>
+      <body pos="1 0 0">
+        <geom size=".1"/>
+        <joint name="1"/>
+      </body>
+      <body pos="2 0 0">
+        <geom size=".1"/>
+        <joint name="2"/>
+      </body>
+    </worldbody>
+
+    <tendon>
+      <fixed>
+        <joint coef="3" joint="2"/>
+        <joint coef="2" joint="1"/>
+        <joint coef="1" joint="0"/>
+      </fixed>
+    </tendon>
+  </mujoco>
+  )";
+  mjModel* model = LoadModelFromString(xml);
+  ASSERT_THAT(model, NotNull());
+  ASSERT_EQ(model->ntendon, 1);
+  ASSERT_EQ(model->nwrap, 3);
+
+  mjData* data = mj_makeData(model);
+  mj_fwdPosition(model, data);
+
+  int rowadr = data->ten_J_rowadr[0];
+  int* colind = data->ten_J_colind + rowadr;
+  mjtNum* J = data->ten_J + rowadr;
+
+  EXPECT_THAT(vector<mjtNum>(J, J + 3), ElementsAre(1, 2, 3));
+  EXPECT_THAT(vector<int>(colind, colind + 3), ElementsAre(0, 1, 2));
+
+  mj_deleteData(data);
+  mj_deleteModel(model);
+}
+
 // --------------------------- connect constraint ------------------------------
 
 // test that bodies hanging on connects lead to expected force sensor readings
@@ -353,58 +403,62 @@ TEST_F(CoreSmoothTest, RefsiteConservesMomentum) {
 
 static const char* const kIlslandEfcPath =
     "engine/testdata/island/island_efc.xml";
+static const char* const kModelPath =
+    "testdata/model.xml";
 
 TEST_F(CoreSmoothTest, SolveMIsland) {
-  const std::string xml_path = GetTestDataFilePath(kIlslandEfcPath);
-  mjModel* model = mj_loadXML(xml_path.c_str(), nullptr, nullptr, 0);
-  mjData* data = mj_makeData(model);
-  int nv = model->nv;
+  for (auto model_path : {kModelPath, kIlslandEfcPath}) {
+    const std::string xml_path = GetTestDataFilePath(model_path);
+    mjModel* model = mj_loadXML(xml_path.c_str(), nullptr, nullptr, 0);
+    mjData* data = mj_makeData(model);
+    int nv = model->nv;
 
-  // allocate vec, fill with arbitrary values, copy to sol
-  mjtNum* vec = (mjtNum*) mju_malloc(sizeof(mjtNum) * nv);
-  mjtNum* res = (mjtNum*) mju_malloc(sizeof(mjtNum) * nv);
-  for (int i=0; i < nv; i++) {
-    vec[i] = 0.2 + 0.3*i;
-  }
-  mju_copy(res, vec, nv);
+    // allocate vec, fill with arbitrary values, copy to sol
+    mjtNum* vec = (mjtNum*) mju_malloc(sizeof(mjtNum) * nv);
+    mjtNum* res = (mjtNum*) mju_malloc(sizeof(mjtNum) * nv);
+    for (int i=0; i < nv; i++) {
+      vec[i] = 0.2 + 0.3*i;
+    }
+    mju_copy(res, vec, nv);
 
-  // simulate for 0.2 seconds
-  mj_resetData(model, data);
-  while (data->time < 0.2) {
-    mj_step(model, data);
-  }
-  mj_forward(model, data);
+    if (model->nkey > 0) mj_resetDataKeyframe(model, data, 0);
 
-  // divide by mass matrix: sol = M^-1 * vec
-  mj_solveM(model, data, res, res, 1);
-
-  // iterate over islands
-  for (int i=0; i < data->nisland; i++) {
-    // allocate dof vectors for island
-    int dofnum = data->island_dofnum[i];
-    mjtNum* res_i = (mjtNum*)mju_malloc(sizeof(mjtNum) * dofnum);
-
-    // copy values into sol_i
-    int* dofind = data->island_dofind + data->island_dofadr[i];
-    for (int j=0; j < dofnum; j++) {
-      res_i[j] = vec[dofind[j]];
+    for (int i=0; i < 6; i++) {
+      mj_step(model, data);
     }
 
-    // divide by mass matrix, for this island
-    mj_solveM_island(model, data, res_i, i);
+    mj_forward(model, data);
 
-    // expect corresponding values to match
-    for (int j=0; j < dofnum; j++) {
-      EXPECT_THAT(res_i[j], DoubleNear(res[dofind[j]], 1e-12));
+    // divide by mass matrix: sol = M^-1 * vec
+    mj_solveM(model, data, res, res, 1);
+
+    // iterate over islands
+    for (int i=0; i < data->nisland; i++) {
+      // allocate dof vectors for island
+      int dofnum = data->island_dofnum[i];
+      mjtNum* res_i = (mjtNum*)mju_malloc(sizeof(mjtNum) * dofnum);
+
+      // copy values into sol_i
+      int* dofind = data->island_dofind + data->island_dofadr[i];
+      for (int j=0; j < dofnum; j++) {
+        res_i[j] = vec[dofind[j]];
+      }
+
+      // divide by mass matrix, for this island
+      mj_solveM_island(model, data, res_i, i);
+
+      // expect corresponding values to match
+      for (int j=0; j < dofnum; j++) {
+        EXPECT_THAT(res_i[j], DoubleNear(res[dofind[j]], 1e-12));
+      }
+      mju_free(res_i);
     }
 
-    mju_free(res_i);
+    mju_free(res);
+    mju_free(vec);
+    mj_deleteData(data);
+    mj_deleteModel(model);
   }
-
-  mju_free(res);
-  mju_free(vec);
-  mj_deleteData(data);
-  mj_deleteModel(model);
 }
 
 static const char* const kInertiaPath = "engine/testdata/inertia.xml";
@@ -420,21 +474,21 @@ TEST_F(CoreSmoothTest, FactorI) {
 
   // dense L matrix
   int nv = model->nv;
-  vector<mjtNum> Ldense(nv*nv);
-  mj_fullM(model, Ldense.data(), data->qLD);
-  // clear upper triangle, set diagonal to 1
+  vector<mjtNum> Ldense(nv*nv, 0);
+  mju_sparse2dense(Ldense.data(), data->qLD, nv, nv,
+                   data->C_rownnz, data->C_rowadr, data->C_colind);
   for (int i=0; i < nv; i++) {
-    for (int j=i; j < nv; j++) {
-      Ldense[i*nv+j] = i == j ? 1 : 0;
-    }
+    // set diagonal to 1
+    Ldense[i*nv+i] = 1;
   }
 
   // dense D matrix
   vector<mjtNum> Ddense(nv*nv);
-  mj_fullM(model, Ddense.data(), data->qLD);
-  // clear everything but the diagonal
+  mju_sparse2dense(Ddense.data(), data->qLD, nv, nv,
+                   data->C_rownnz, data->C_rowadr, data->C_colind);
   for (int i=0; i < nv; i++) {
     for (int j=0; j < nv; j++) {
+      // zero everything except the diagonal
       if (i != j) Ddense[i*nv+j] = 0;
     }
   }
@@ -466,20 +520,21 @@ TEST_F(CoreSmoothTest, SolveLDs) {
   mj_forward(m, d);
 
   int nv = m->nv;
+  int nM = m->nM;
   int nC = m->nC;
 
-  // copy LD into LDs: CSR format
-  vector<mjtNum> LDs(nC);
+  // copy M into LD: Legacy format
+  vector<mjtNum> LDlegacy(nM, 0);
   for (int i=0; i < nC; i++) {
-    LDs[i] = d->qLD[d->mapM2C[i]];
+    LDlegacy[d->mapM2C[i]] = d->qLD[i];
   }
 
   // compare LD and LDs densified matrices
   vector<mjtNum> LDdense(nv*nv);
-  mju_sparse2dense(LDdense.data(), LDs.data(), nv, nv,
+  mju_sparse2dense(LDdense.data(), d->qLD, nv, nv,
                    d->C_rownnz, d->C_rowadr, d->C_colind);
   vector<mjtNum> LDdense2(nv*nv);
-  mj_fullM(m, LDdense2.data(), d->qLD);
+  mj_fullM(m, LDdense2.data(), LDlegacy.data());
 
   // expect lower triangles to match exactly
   for (int i=0; i < nv; i++) {
@@ -488,15 +543,15 @@ TEST_F(CoreSmoothTest, SolveLDs) {
     }
   }
 
-  // compare LD and LDs vector solve
+  // compare legacy and CSR LD vector solve
   vector<mjtNum> vec(nv);
   vector<mjtNum> vec2(nv);
   for (int i=0; i < nv; i++) vec[i] = vec2[i] = 20 + 30*i;
   for (int i=0; i < nv; i+=2) vec[i] = vec2[i] = 0;
 
-  mj_solveLD(m, vec.data(), 1, d->qLD, d->qLDiagInv);
-  mj_solveLDs(vec2.data(), LDs.data(), d->qLDiagInv, nv, 1,
-              d->C_rownnz, d->C_rowadr, m->dof_simplenum, d->C_colind);
+  mj_solveLD_legacy(m, vec.data(), 1, LDlegacy.data(), d->qLDiagInv);
+  mj_solveLD(vec2.data(), d->qLD, d->qLDiagInv, nv, 1,
+             d->C_rownnz, d->C_rowadr, m->dof_simplenum, d->C_colind);
 
   // expect vectors to match up to floating point precision
   for (int i=0; i < nv; i++) {
@@ -517,12 +572,13 @@ TEST_F(CoreSmoothTest, SolveLDmultipleVectors) {
   mj_forward(m, d);
 
   int nv = m->nv;
+  int nM = m->nM;
   int nC = m->nC;
 
-  // copy LD into LDs: CSR format
-  vector<mjtNum> LDs(nC);
+  // copy LD into LDlegacy: Legacy format
+  vector<mjtNum> LDlegacy(nM, 0);
   for (int i=0; i < nC; i++) {
-    LDs[i] = d->qLD[d->mapM2C[i]];
+    LDlegacy[d->mapM2C[i]] = d->qLD[i];
   }
 
   // compare n LD and LDs vector solve
@@ -532,13 +588,52 @@ TEST_F(CoreSmoothTest, SolveLDmultipleVectors) {
   for (int i=0; i < nv*n; i++) vec[i] = vec2[i] = 2 + 3*i;
   for (int i=0; i < nv*n; i+=3) vec[i] = vec2[i] = 0;
 
-  mj_solveLD(m, vec.data(), n, d->qLD, d->qLDiagInv);
-  mj_solveLDs(vec2.data(), LDs.data(), d->qLDiagInv, nv, n,
-              d->C_rownnz, d->C_rowadr, m->dof_simplenum, d->C_colind);
+  mj_solveLD_legacy(m, vec.data(), n, LDlegacy.data(), d->qLDiagInv);
+  mj_solveLD(vec2.data(), d->qLD, d->qLDiagInv, nv, n,
+             d->C_rownnz, d->C_rowadr, m->dof_simplenum, d->C_colind);
 
   // expect vectors to match up to floating point precision
   for (int i=0; i < nv*n; i++) {
     EXPECT_FLOAT_EQ(vec[i], vec2[i]);
+  }
+
+  mj_deleteData(d);
+  mj_deleteModel(m);
+}
+
+TEST_F(CoreSmoothTest, SolveM2) {
+  const std::string xml_path = GetTestDataFilePath(kInertiaPath);
+  char error[1024];
+  mjModel* m = mj_loadXML(xml_path.c_str(), nullptr, error, sizeof(error));
+  ASSERT_THAT(m, NotNull()) << "Failed to load model: " << error;
+
+  mjData* d = mj_makeData(m);
+  mj_forward(m, d);
+
+  // inverse square root of D from inertia LDL decomposition
+  int nv = m->nv;
+  vector<mjtNum> sqrtInvD(nv);
+  for (int i=0; i < nv; i++) {
+    int diag = d->C_rowadr[i] + d->C_rownnz[i] - 1;
+    sqrtInvD[i] = 1 / mju_sqrt(d->qLD[diag]);
+  }
+
+  // compare full solve and half solve
+  int n = 3;
+  vector<mjtNum> vec(nv*n);
+  vector<mjtNum> vec2(nv*n);
+  for (int i=0; i < nv*n; i++) vec[i] = vec2[i] = 2 + 3*i;
+  for (int i=0; i < nv*n; i+=3) vec[i] = vec2[i] = 0;
+  vector<mjtNum> res(nv*n);
+
+  mj_solveM2(m, d, res.data(), vec.data(), sqrtInvD.data(), n);
+  mj_solveLD(vec2.data(), d->qLD, d->qLDiagInv, nv, n,
+             d->C_rownnz, d->C_rowadr, m->dof_simplenum, d->C_colind);
+
+  // expect equality of dot(v, M^-1 * v) and dot(M^-1/2 * v, M^-1/2 * v)
+  for (int i=0; i < n; i++) {
+    EXPECT_FLOAT_EQ(mju_dot(vec2.data() + i*nv, vec.data() + i*nv, nv),
+                    mju_dot(res.data() + i*nv, res.data() + i*nv, nv));
   }
 
   mj_deleteData(d);
@@ -554,25 +649,32 @@ TEST_F(CoreSmoothTest, FactorIs) {
   mjData* d = mj_makeData(m);
   mj_forward(m, d);
 
-  int nC = m->nC, nv = m->nv;
+  int nC = m->nC, nM = m->nM, nv = m->nv;
 
-  // copy qM into LDs, qLD into qLDexpected: CSR format
-  vector<mjtNum> qLDsExpected(nC);
-  vector<mjtNum> qLDs(nC);
+  // copy qM into into qLDlegacy and factorize
+  vector<mjtNum> qLDlegacy(nM);
+  mj_factorI_legacy(m, d, d->qM, qLDlegacy.data(), d->qLDiagInv);
+
+  // copy qLDlegacy into qLDexpected: CSR format
+  vector<mjtNum> qLDexpected(nC);
   for (int i=0; i < nC; i++) {
-    int index = d->mapM2C[i];
-    qLDs[i] = d->qM[index];  // mj_factorIs is in-place
-    qLDsExpected[i] = d->qLD[index];
+    qLDexpected[i] = qLDlegacy[d->mapM2C[i]];  // mj_factorIs is in-place
+  }
+
+  // copy qM into qLD: CSR format
+  vector<mjtNum> qLD(nC);
+  for (int i=0; i < nC; i++) {
+    qLD[i] = d->qM[d->mapM2C[i]];  // mj_factorIs is in-place
   }
 
   vector<mjtNum> qLDiagInvExpected(d->qLDiagInv, d->qLDiagInv + nv);
   vector<mjtNum> qLDiagInv(nv, 0);
 
-  mj_factorIs(qLDs.data(), qLDiagInv.data(), nv,
-              d->C_rownnz, d->C_rowadr, m->dof_simplenum, d->C_colind);
+  mj_factorI(qLD.data(), qLDiagInv.data(), nv,
+             d->C_rownnz, d->C_rowadr, m->dof_simplenum, d->C_colind);
 
   // expect outputs to match to floating point precision
-  EXPECT_THAT(qLDs, Pointwise(DoubleNear(1e-12), qLDsExpected));
+  EXPECT_THAT(qLD, Pointwise(DoubleNear(1e-12), qLDexpected));
   EXPECT_THAT(qLDiagInv, Pointwise(DoubleNear(1e-12), qLDiagInvExpected));
 
   /* uncomment for debugging

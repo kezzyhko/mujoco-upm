@@ -13,18 +13,20 @@
 # limitations under the License.
 # ==============================================================================
 """Engine support functions."""
-from collections.abc import Sequence
-from typing import Optional, Tuple, Union, Any
+from collections.abc import Iterable, Sequence
+from typing import Optional, Tuple, Union
 
 import jax
 from jax import numpy as jp
 import mujoco
+from mujoco.introspect import mjxmacro
 from mujoco.mjx._src import math
 from mujoco.mjx._src import scan
 # pylint: disable=g-importing-member
 from mujoco.mjx._src.types import ConeType
 from mujoco.mjx._src.types import Data
 from mujoco.mjx._src.types import JacobianType
+from mujoco.mjx._src.types import JointType
 from mujoco.mjx._src.types import Model
 # pylint: enable=g-importing-member
 import numpy as np
@@ -288,165 +290,253 @@ def name2id(
 class BindModel(object):
   """Class holding the requested MJX Model and spec id for binding a spec to Model."""
 
-  def __init__(self, model: Model, specs: Sequence[Any]):
+  def __init__(self, model: Model, specs: Sequence[mujoco.MjStruct]):
     self.model = model
-    try:
-      iter(specs)
-    except TypeError:
-      specs = [specs]
+    self.prefix = ''
     ids = []
     for spec in specs:
-      match spec:
-        case mujoco.MjsBody():
-          self.prefix = 'body_'
-          ids.append(name2id(model, mujoco.mjtObj.mjOBJ_BODY, spec.name))
-        case mujoco.MjsJoint():
-          self.prefix = 'jnt_'
-          ids.append(name2id(model, mujoco.mjtObj.mjOBJ_JOINT, spec.name))
-        case mujoco.MjsGeom():
-          self.prefix = 'geom_'
-          ids.append(name2id(model, mujoco.mjtObj.mjOBJ_GEOM, spec.name))
-        case mujoco.MjsSite():
-          self.prefix = 'site_'
-          ids.append(name2id(model, mujoco.mjtObj.mjOBJ_SITE, spec.name))
-        case mujoco.MjsLight():
-          self.prefix = 'light_'
-          ids.append(name2id(model, mujoco.mjtObj.mjOBJ_LIGHT, spec.name))
-        case mujoco.MjsCamera():
-          self.prefix = 'cam_'
-          ids.append(name2id(model, mujoco.mjtObj.mjOBJ_CAMERA, spec.name))
-        case mujoco.MjsMesh():
-          self.prefix = 'mesh_'
-          ids.append(name2id(model, mujoco.mjtObj.mjOBJ_MESH, spec.name))
-        case mujoco.MjsHfield():
-          self.prefix = 'hfield_'
-          ids.append(name2id(model, mujoco.mjtObj.mjOBJ_HFIELD, spec.name))
-        case mujoco.MjsPair():
-          self.prefix = 'pair_'
-          ids.append(name2id(model, mujoco.mjtObj.mjOBJ_PAIR, spec.name))
-        case mujoco.MjsTendon():
-          self.prefix = 'tendon_'
-          ids.append(name2id(model, mujoco.mjtObj.mjOBJ_TENDON, spec.name))
-        case mujoco.MjsActuator():
-          self.prefix = 'actuator_'
-          ids.append(name2id(model, mujoco.mjtObj.mjOBJ_ACTUATOR, spec.name))
-        case mujoco.MjsSensor():
-          self.prefix = 'sensor_'
-          ids.append(name2id(model, mujoco.mjtObj.mjOBJ_SENSOR, spec.name))
-        case mujoco.MjsNumeric():
-          self.prefix = 'numeric_'
-          ids.append(name2id(model, mujoco.mjtObj.mjOBJ_NUMERIC, spec.name))
-        case mujoco.MjsText():
-          self.prefix = 'text_'
-          ids.append(name2id(model, mujoco.mjtObj.mjOBJ_TEXT, spec.name))
-        case mujoco.MjsTuple():
-          self.prefix = 'tuple_'
-          ids.append(name2id(model, mujoco.mjtObj.mjOBJ_TUPLE, spec.name))
-        case mujoco.MjsKey():
-          self.prefix = 'key_'
-          ids.append(name2id(model, mujoco.mjtObj.mjOBJ_KEY, spec.name))
-        case mujoco.MjsEquality():
-          self.prefix = 'eq_'
-          ids.append(name2id(model, mujoco.mjtObj.mjOBJ_EQUALITY, spec.name))
-        case mujoco.MjsExclude():
-          self.prefix = 'exclude_'
-          ids.append(name2id(model, mujoco.mjtObj.mjOBJ_EXCLUDE, spec.name))
-        case mujoco.MjsSkin():
-          self.prefix = 'skin_'
-          ids.append(name2id(model, mujoco.mjtObj.mjOBJ_SKIN, spec.name))
-        case mujoco.MjsMaterial():
-          self.prefix = 'material_'
-          ids.append(name2id(model, mujoco.mjtObj.mjOBJ_MATERIAL, spec.name))
-        case _:
-          raise ValueError('invalid spec type')
+      if not spec.name:
+        raise KeyError(f'cannot bind spec with empty name')
+      elif isinstance(spec, mujoco.MjsBody):
+        self.prefix = 'body_'
+        idx = name2id(model, mujoco.mjtObj.mjOBJ_BODY, spec.name)
+      elif isinstance(spec, mujoco.MjsJoint):
+        self.prefix = 'jnt_'
+        idx = name2id(model, mujoco.mjtObj.mjOBJ_JOINT, spec.name)
+      elif isinstance(spec, mujoco.MjsGeom):
+        self.prefix = 'geom_'
+        idx = name2id(model, mujoco.mjtObj.mjOBJ_GEOM, spec.name)
+      elif isinstance(spec, mujoco.MjsSite):
+        self.prefix = 'site_'
+        idx = name2id(model, mujoco.mjtObj.mjOBJ_SITE, spec.name)
+      elif isinstance(spec, mujoco.MjsLight):
+        self.prefix = 'light_'
+        idx = name2id(model, mujoco.mjtObj.mjOBJ_LIGHT, spec.name)
+      elif isinstance(spec, mujoco.MjsCamera):
+        self.prefix = 'cam_'
+        idx = name2id(model, mujoco.mjtObj.mjOBJ_CAMERA, spec.name)
+      elif isinstance(spec, mujoco.MjsMesh):
+        self.prefix = 'mesh_'
+        idx = name2id(model, mujoco.mjtObj.mjOBJ_MESH, spec.name)
+      elif isinstance(spec, mujoco.MjsHField):
+        self.prefix = 'hfield_'
+        idx = name2id(model, mujoco.mjtObj.mjOBJ_HFIELD, spec.name)
+      elif isinstance(spec, mujoco.MjsPair):
+        self.prefix = 'pair_'
+        idx = name2id(model, mujoco.mjtObj.mjOBJ_PAIR, spec.name)
+      elif isinstance(spec, mujoco.MjsTendon):
+        self.prefix = 'tendon_'
+        idx = name2id(model, mujoco.mjtObj.mjOBJ_TENDON, spec.name)
+      elif isinstance(spec, mujoco.MjsActuator):
+        self.prefix = 'actuator_'
+        idx = name2id(model, mujoco.mjtObj.mjOBJ_ACTUATOR, spec.name)
+      elif isinstance(spec, mujoco.MjsSensor):
+        self.prefix = 'sensor_'
+        idx = name2id(model, mujoco.mjtObj.mjOBJ_SENSOR, spec.name)
+      elif isinstance(spec, mujoco.MjsNumeric):
+        self.prefix = 'numeric_'
+        idx = name2id(model, mujoco.mjtObj.mjOBJ_NUMERIC, spec.name)
+      elif isinstance(spec, mujoco.MjsText):
+        self.prefix = 'text_'
+        idx = name2id(model, mujoco.mjtObj.mjOBJ_TEXT, spec.name)
+      elif isinstance(spec, mujoco.MjsTuple):
+        self.prefix = 'tuple_'
+        idx = name2id(model, mujoco.mjtObj.mjOBJ_TUPLE, spec.name)
+      elif isinstance(spec, mujoco.MjsKey):
+        self.prefix = 'key_'
+        idx = name2id(model, mujoco.mjtObj.mjOBJ_KEY, spec.name)
+      elif isinstance(spec, mujoco.MjsEquality):
+        self.prefix = 'eq_'
+        idx = name2id(model, mujoco.mjtObj.mjOBJ_EQUALITY, spec.name)
+      elif isinstance(spec, mujoco.MjsExclude):
+        self.prefix = 'exclude_'
+        idx = name2id(model, mujoco.mjtObj.mjOBJ_EXCLUDE, spec.name)
+      elif isinstance(spec, mujoco.MjsSkin):
+        self.prefix = 'skin_'
+        idx = name2id(model, mujoco.mjtObj.mjOBJ_SKIN, spec.name)
+      elif isinstance(spec, mujoco.MjsMaterial):
+        self.prefix = 'material_'
+        idx = name2id(model, mujoco.mjtObj.mjOBJ_MATERIAL, spec.name)
+      else:
+        raise ValueError('invalid spec type')
+      if idx < 0:
+        raise KeyError(f'invalid name: {spec.name}')  # pytype: disable=attribute-error
+      ids.append(idx)
     if len(ids) == 1:
       self.id = ids[0]
     else:
       self.id = ids
 
+  def _slice(self, name: str, idx: Union[int, slice, Sequence[int]]):
+    _, expected_dim = mjxmacro.MJMODEL[name]
+    var = getattr(self.model, name)
+    if expected_dim == '1':
+      return var[..., idx]
+    elif expected_dim == '9':
+      return var[..., idx, :, :]
+    return var[..., idx, :]
+
   def __getattr__(self, name: str):
-    return getattr(self.model, self.prefix + name)[self.id, :]
+    return self._slice(self.prefix + name, self.id)
 
 
-def _bind_model(self: Model, obj: Sequence[Any]) -> BindModel:
+def _bind_model(
+    self: Model, obj: mujoco.MjStruct | Iterable[mujoco.MjStruct]
+) -> BindModel:
   """Bind a Mujoco spec to an MJX Model."""
+  if isinstance(obj, mujoco.MjStruct):
+    obj = (obj,)
+  else:
+    obj = tuple(obj)
   return BindModel(self, obj)
 
 
 class BindData(object):
   """Class holding the requested MJX Data and spec id for binding a spec to Data."""
 
-  def __init__(self, data: Data, model: Model, specs: Sequence[Any]):
+  def __init__(
+      self, data: Data, model: Model, specs: Sequence[mujoco.MjStruct]
+  ):
     self.data = data
-    try:
-      iter(specs)
-    except TypeError:
-      specs = [specs]
+    self.model = model
+    self.prefix = ''
     ids = []
     for spec in specs:
-      match spec:
-        case mujoco.MjsBody():
-          self.prefix = ''
-          ids.append(name2id(model, mujoco.mjtObj.mjOBJ_BODY, spec.name))
-        case mujoco.MjsJoint():
-          self.prefix = 'jnt_'
-          ids.append(name2id(model, mujoco.mjtObj.mjOBJ_JOINT, spec.name))
-        case mujoco.MjsGeom():
-          self.prefix = 'geom_'
-          ids.append(name2id(model, mujoco.mjtObj.mjOBJ_GEOM, spec.name))
-        case mujoco.MjsSite():
-          self.prefix = 'site_'
-          ids.append(name2id(model, mujoco.mjtObj.mjOBJ_SITE, spec.name))
-        case mujoco.MjsLight():
-          self.prefix = 'light_'
-          ids.append(name2id(model, mujoco.mjtObj.mjOBJ_LIGHT, spec.name))
-        case mujoco.MjsCamera():
-          self.prefix = 'cam_'
-          ids.append(name2id(model, mujoco.mjtObj.mjOBJ_CAMERA, spec.name))
-        case mujoco.MjsTendon():
-          self.prefix = 'ten_'
-          ids.append(name2id(model, mujoco.mjtObj.mjOBJ_TENDON, spec.name))
-        case mujoco.MjsActuator():
-          self.prefix = 'actuator_'
-          ids.append(name2id(model, mujoco.mjtObj.mjOBJ_ACTUATOR, spec.name))
-        case mujoco.MjsSensor():
-          self.prefix = 'sensor_'
-          ids.append(name2id(model, mujoco.mjtObj.mjOBJ_SENSOR, spec.name))
-        case mujoco.MjsEquality():
-          self.prefix = 'eq_'
-          ids.append(name2id(model, mujoco.mjtObj.mjOBJ_EQUALITY, spec.name))
-        case _:
-          raise ValueError('invalid spec type')
+      if not spec.name:
+        raise KeyError(f'cannot bind spec with empty name')
+      elif isinstance(spec, mujoco.MjsBody):
+        idx = name2id(model, mujoco.mjtObj.mjOBJ_BODY, spec.name)
+      elif isinstance(spec, mujoco.MjsJoint):
+        self.prefix = 'jnt_'
+        idx = name2id(model, mujoco.mjtObj.mjOBJ_JOINT, spec.name)
+      elif isinstance(spec, mujoco.MjsGeom):
+        self.prefix = 'geom_'
+        idx = name2id(model, mujoco.mjtObj.mjOBJ_GEOM, spec.name)
+      elif isinstance(spec, mujoco.MjsSite):
+        self.prefix = 'site_'
+        idx = name2id(model, mujoco.mjtObj.mjOBJ_SITE, spec.name)
+      elif isinstance(spec, mujoco.MjsLight):
+        self.prefix = 'light_'
+        idx = name2id(model, mujoco.mjtObj.mjOBJ_LIGHT, spec.name)
+      elif isinstance(spec, mujoco.MjsCamera):
+        self.prefix = 'cam_'
+        idx = name2id(model, mujoco.mjtObj.mjOBJ_CAMERA, spec.name)
+      elif isinstance(spec, mujoco.MjsTendon):
+        self.prefix = 'ten_'
+        idx = name2id(model, mujoco.mjtObj.mjOBJ_TENDON, spec.name)
+      elif isinstance(spec, mujoco.MjsActuator):
+        self.prefix = 'actuator_'
+        idx = name2id(model, mujoco.mjtObj.mjOBJ_ACTUATOR, spec.name)
+      elif isinstance(spec, mujoco.MjsSensor):
+        self.prefix = 'sensor_'
+        idx = name2id(model, mujoco.mjtObj.mjOBJ_SENSOR, spec.name)
+      elif isinstance(spec, mujoco.MjsEquality):
+        self.prefix = 'eq_'
+        idx = name2id(model, mujoco.mjtObj.mjOBJ_EQUALITY, spec.name)
+      else:
+        raise ValueError('invalid spec type')
+      if idx < 0:
+        raise KeyError(f'invalid name: {spec.name}')  # pytype: disable=attribute-error
+      ids.append(idx)
     if len(ids) == 1:
       self.id = ids[0]
     else:
       self.id = ids
 
   def __getname(self, name: str):
+    """Get the name of the attribute and check if the type is correct."""
+    if name == 'sensordata':
+      if self.prefix == 'sensor_':
+        return name
+      else:
+        raise AttributeError('sensordata is not available for this type')
     if name == 'ctrl':
       if self.prefix == 'actuator_':
         return name
       else:
         raise AttributeError('ctrl is not available for this type')
+    if name == 'qpos' or name == 'qvel' or name == 'qacc':
+      if self.prefix == 'jnt_':
+        return name
+      else:
+        raise AttributeError('qpos, qvel, qacc are not available for this type')
     else:
       return self.prefix + name
 
+  def _slice(self, name: str, idx: Union[int, slice, Sequence[int]]):
+    _, expected_dim = mjxmacro.MJDATA[name]
+    var = getattr(self.data, name)
+    if expected_dim == '1':
+      return var[..., idx]
+    elif expected_dim == '9':
+      return var[..., idx, :, :]
+    return var[..., idx, :]
+
   def __getattr__(self, name: str):
-    return getattr(self.data, self.__getname(name))[self.id, ...]
+    if name in ('sensordata', 'qpos', 'qvel', 'qacc'):
+      adr = num = 0
+      if name == 'sensordata':
+        adr = self.model.sensor_adr[self.id]
+        num = self.model.sensor_dim[self.id]
+      elif name == 'qpos':
+        adr = self.model.jnt_qposadr[self.id]
+        typ = self.model.jnt_type[self.id]
+        num = sum((typ == jt) * jt.qpos_width() for jt in JointType)
+      elif name == 'qvel' or name == 'qacc':
+        adr = self.model.jnt_dofadr[self.id]
+        typ = self.model.jnt_type[self.id]
+        num = sum((typ == jt) * jt.dof_width() for jt in JointType)
+      if isinstance(self.id, list):
+        idx = []
+        for a, n in zip(adr, num):
+          idx.extend(a + j for j in range(n))
+        return self._slice(self.__getname(name), idx)
+      elif num > 1:
+        return self._slice(self.__getname(name), slice(adr, adr + num))
+      else:
+        return self._slice(self.__getname(name), adr)
+    return self._slice(self.__getname(name), self.id)
 
   def set(self, name: str, value: jax.Array) -> Data:
     """Set the value of an array in an MJX Data."""
+    if name == 'sensordata':
+      raise AttributeError('sensordata is readonly')
     array = getattr(self.data, self.__getname(name))
-    if len(value) == 1:
-      array = array.at[self.id].set(value[0])
+    dim = 1 if len(array.shape) == 1 else array.shape[-1]
+    try:
+      iter(value)
+    except TypeError:
+      value = [value]
+    if name == 'qpos':
+      adr = self.model.jnt_qposadr[self.id]
+      typ = self.model.jnt_type[self.id]
+      num = sum((typ == jt) * jt.qpos_width() for jt in JointType)
+    elif name == 'qvel' or name == 'qacc':
+      adr = self.model.jnt_dofadr[self.id]
+      typ = self.model.jnt_type[self.id]
+      num = sum((typ == jt) * jt.dof_width() for jt in JointType)
+    elif isinstance(self.id, list):
+      adr = self.id * dim
+      num = [dim for _ in range(len(self.id))]
     else:
-      for i, v in enumerate(value):
-        array = array.at[self.id[i]].set(v)
+      adr = [self.id * dim]
+      num = [dim]
+    i = 0
+    for a, n in zip(adr, num):
+      shape = array.shape
+      array = array.flatten().at[a : a + n].set(value[i : i + n]).reshape(shape)
+      i += n
     return self.data.replace(**{self.__getname(name): array})
 
 
-def _bind_data(self: Data, model: Model, obj: Sequence[Any]) -> BindData:
+def _bind_data(
+    self: Data, model: Model, obj: mujoco.MjStruct | Iterable[mujoco.MjStruct]
+) -> BindData:
   """Bind a Mujoco spec to an MJX Data."""
+  if isinstance(obj, mujoco.MjStruct):
+    obj = (obj,)
+  else:
+    obj = tuple(obj)
   return BindData(self, model, obj)
 
 
@@ -652,6 +742,136 @@ def wrap_circle(
   return wlen, pnt
 
 
+def wrap_inside(
+    end: jax.Array,
+    radius: jax.Array,
+    maxiter: int,
+    tolerance: float,
+    z_init: float,
+) -> Tuple[jax.Array, jax.Array]:
+  """Compute 2D inside wrap point.
+
+  Args:
+    end: 2D points
+    radius: radius of circle
+
+  Returns:
+    status: 0 if wrap, else -1
+    concatentated 2D wrap points: jax.Array
+  """
+  mjMINVAL = mujoco.mjMINVAL  # pylint: disable=invalid-name
+
+  # constants
+  len0 = math.norm(end[:2])
+  len1 = math.norm(end[2:])
+  dif = jp.array([end[2] - end[0], end[3] - end[1]])
+  dd = dif[0] * dif[0] + dif[1] * dif[1]
+
+  # either point inside circle or circle too small: no wrap
+  no_wrap0 = (
+      (len0 <= radius)
+      | (len1 <= radius)
+      | (radius < mjMINVAL)
+      | (len0 < mjMINVAL)
+      | (len1 < mjMINVAL)
+  )
+
+  # find nearest point on line segment to origin: d0 + a*dif
+  a = -1 * (dif[0] * end[0] + dif[1] * end[1]) / jp.maximum(mjMINVAL, dd)
+  tmp = end[:2] + a * dif
+
+  # segment-circle intersection: no wrap
+  no_wrap1 = (dd > mjMINVAL) & (a > 0) & (a < 1) & (math.norm(tmp) <= radius)
+
+  # prepare default in case of numerical failure: average
+  pnt_avg = 0.5 * jp.array([end[0] + end[2], end[1] + end[3]])
+  pnt_avg = radius * math.normalize(pnt_avg)
+
+  # compute function parameters: asin(A*z) + asin(B*z) - 2*asin(z) + G = 0
+  A = radius / jp.maximum(mjMINVAL, len0)  # pylint: disable=invalid-name
+  B = radius / jp.maximum(mjMINVAL, len1)  # pylint: disable=invalid-name
+  cosG = (len0 * len0 + len1 * len1 - dd) / jp.maximum(mjMINVAL, 2 * len0 * len1)  # pylint: disable=invalid-name
+
+  no_wrap2 = cosG < -1 + mjMINVAL
+  early_return0 = cosG > 1 - mjMINVAL
+
+  G = jp.arccos(cosG)  # pylint: disable=invalid-name
+
+  # initialize solver
+  z = jp.array([z_init])
+  f = jp.arcsin(A * z) + jp.arcsin(B * z) - 2 * jp.arcsin(z) + G
+
+  # make sure initialization is not on the other side
+  early_return1 = f > 0
+
+  # iteratively solve with Newton's method
+  def _newton(carry, _):
+    # unpack
+    z, f, status_prev = carry
+
+    # check current solution
+    converged = jp.abs(f) <= tolerance
+
+    # compute derivative
+    df = (
+        A / jp.maximum(mjMINVAL, jp.sqrt(1 - z * z * A * A))
+        + B / jp.maximum(mjMINVAL, jp.sqrt(1 - z * z * B * B))
+        - 2 / jp.maximum(mjMINVAL, jp.sqrt(1 - z * z))
+    )
+
+    # check sign; SHOULD NOT OCCUR
+    status0 = df > -mjMINVAL
+
+    # new point
+    z_next = z - (1 - converged) * f / jp.where(
+        jp.abs(df) < mjMINVAL, mjMINVAL, df
+    )
+
+    # make sure we are moving to the left; SHOULD NOT OCCUR
+    status1 = z_next > z
+
+    # evaluate solution
+    f_next = (
+        jp.arcsin(A * z_next)
+        + jp.arcsin(B * z_next)
+        - 2 * jp.arcsin(z_next)
+        + G
+    )
+
+    # exit if positive; SHOULD NOT OCCUR
+    status2 = f_next > tolerance
+
+    return (
+        z_next,
+        f_next,
+        status_prev | status0 | status1 | status2,
+    ), None
+
+  # TODO(taylorhowell): compare performance of jax.lax.scan and jax.lax.while_loop
+  z, _, early_return2 = jax.lax.scan(
+      _newton, (z, f, jp.array([False])), None, maxiter
+  )[0]
+
+  # finalize: rotation by ang from vec = a or b, depending on cross(a,b) sign
+  sign = end[0] * end[3] - end[1] * end[2] > 0
+  vec = jp.where(sign, end[:2], end[2:])
+  vec = math.normalize(vec)
+  ang = jp.arcsin(z) - jp.where(sign, jp.arcsin(A * z), jp.arcsin(B * z))
+  pnt_sol = radius * jp.array([
+      jp.cos(ang) * vec[0] - jp.sin(ang) * vec[1],
+      jp.sin(ang) * vec[0] + jp.cos(ang) * vec[1],
+  ]).reshape(-1)
+
+  no_wrap = no_wrap0 | no_wrap1 | no_wrap2
+  early_return = early_return0 | early_return1 | early_return2
+  status = -1 * no_wrap * jp.ones(1)
+
+  pnt = jp.where(early_return, pnt_avg, pnt_sol)
+  pnt = jp.where(no_wrap, jp.zeros(2), pnt)
+
+  return status, jp.concatenate([pnt, pnt])
+
+
 def wrap(
     x0: jax.Array,
     x1: jax.Array,
@@ -661,7 +881,11 @@ def wrap(
     side: jax.Array,
     sidesite: jax.Array,
     is_sphere: jax.Array,
-):
+    is_wrap_inside: bool,
+    wrap_inside_maxiter: int,
+    wrap_inside_tolerance: float,
+    wrap_inside_z_init: float,
+) -> Tuple[jax.Array, jax.Array, jax.Array]:
   """Wrap tendon around sphere or cylinder."""
   # map sites to wrap object's local frame
   p0 = xmat.T @ (x0 - xpos)
@@ -709,8 +933,13 @@ def wrap(
   sd = jp.array([jp.dot(s, axis0), jp.dot(s, axis1)])
   sd = math.normalize(sd) * size
 
-  # TODO(taylorhowell): implement wrap_inside for internal wrapping case
-  wlen, pnt = wrap_circle(d, sd, sidesite, size)
+  if is_wrap_inside:
+    wlen, pnt = wrap_inside(
+        d, size, wrap_inside_maxiter, wrap_inside_tolerance, wrap_inside_z_init
+    )
+  else:
+    wlen, pnt = wrap_circle(d, sd, sidesite, size)
+
   no_wrap = wlen < 0
 
   # reconstruct 3D points in local frame: res

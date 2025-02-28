@@ -13,6 +13,7 @@
 // limitations under the License.
 
 #include <algorithm>
+#include <array>
 #include <climits>
 #include <cmath>
 #include <csetjmp>
@@ -21,6 +22,7 @@
 #include <cstring>
 #include <functional>
 #include <memory>
+#include <set>
 #include <string>
 #include <string_view>
 #include <unordered_map>
@@ -61,7 +63,6 @@
 #include "user/user_objects.h"
 #include "user/user_resource.h"
 #include "user/user_util.h"
-#include <tiny_obj_loader.h>
 
 extern "C" {
 #include "qhull_ra.h"
@@ -119,15 +120,10 @@ mjCMesh::mjCMesh(mjCModel* _model, mjCDef* _def) {
   elemtype = mjOBJ_MESH;
 
   // clear internal variables
-  mjuu_setvec(pos_surface_, 0, 0, 0);
-  mjuu_setvec(pos_volume_, 0, 0, 0);
-  mjuu_setvec(quat_surface_, 1, 0, 0, 0);
-  mjuu_setvec(quat_volume_, 1, 0, 0, 0);
   mjuu_setvec(pos_, 0, 0, 0);
   mjuu_setvec(quat_, 1, 0, 0, 0);
 
-  mjuu_setvec(boxsz_surface_, 0, 0, 0);
-  mjuu_setvec(boxsz_volume_, 0, 0, 0);
+  mjuu_setvec(boxsz_, 0, 0, 0);
   mjuu_setvec(aamm_, 1e10, 1e10, 1e10);
   mjuu_setvec(aamm_+3, -1e10, -1e10, -1e10);
   szgraph_ = 0;
@@ -138,7 +134,7 @@ mjCMesh::mjCMesh(mjCModel* _model, mjCDef* _def) {
   invalidorientation_.first = -1;
   invalidorientation_.second = -1;
   validarea_ = true;
-  validvolume_ = 1;
+  validvolume_ = MeshVolumeOK;
   valideigenvalue_ = true;
   validinequality_ = true;
   processed_ = false;
@@ -278,9 +274,6 @@ void mjCMesh::CopyPlugin() {
 mjCMesh::~mjCMesh() {
   if (center_) mju_free(center_);
   if (graph_) mju_free(graph_);
-  if (spec.plugin.active && spec.plugin.name->empty() && model) {
-    model->DeleteElement(spec.plugin.element);
-  }
 }
 
 
@@ -397,7 +390,7 @@ void mjCMesh::CacheMesh(mjCCache* cache, const mjResource* resource,
       + (sizeof(int) * vertex_index_.size())
       + (sizeof(int) * normal_index_.size())
       + (sizeof(int) * texcoord_index_.size())
-      + (sizeof(unsigned char) * num_face_vertices_.size());
+      + (sizeof(face_vertices_type) * num_face_vertices_.size());
 
   std::shared_ptr<const void> cached_data(mesh, +[](const void* data) {
     const mjCMesh* mesh = static_cast<const mjCMesh*>(data);
@@ -601,6 +594,8 @@ void mjCMesh::Compile(const mjVFS* vfs) {
     memcpy(facenormal_.data(), face_.data(), 3*nface()*sizeof(int));
   }
 
+  MakePolygons();
+
   // scale, center, orient, compute mass and inertia
   Process();
   processed_ = true;
@@ -609,6 +604,8 @@ void mjCMesh::Compile(const mjVFS* vfs) {
   if (!center_) {
     MakeCenter();
   }
+
+  MakePolygonNormals();
 
   // make bounding volume hierarchy
   if (tree_.Bvh().empty()) {
@@ -619,6 +616,9 @@ void mjCMesh::Compile(const mjVFS* vfs) {
     }
     tree_.CreateBVH();
   }
+
+  // check that processed mesh is valid
+  CheckMesh();
 }
 
 
@@ -652,35 +652,13 @@ void mjCMesh::SetBoundingVolume(int faceid) {
 
 
 
-// get position
-double* mjCMesh::GetPosPtr(mjtGeomInertia type) {
-  if (type==mjINERTIA_SHELL) {
-    return pos_surface_;
-  } else {
-    return pos_volume_;
-  }
-}
-
-
-
-// get orientation
-double* mjCMesh::GetQuatPtr(mjtGeomInertia type) {
-  if (type==mjINERTIA_SHELL) {
-    return quat_surface_;
-  } else {
-    return quat_volume_;
-  }
-}
-
-
-
-double* mjCMesh::GetOffsetPosPtr() {
+double* mjCMesh::GetPosPtr() {
   return pos_;
 }
 
 
 
-double* mjCMesh::GetOffsetQuatPtr() {
+double* mjCMesh::GetQuatPtr() {
   return quat_;
 }
 
@@ -734,6 +712,44 @@ void mjCMesh::CopyGraph(int* arr) const {
 
 
 
+void mjCMesh::CopyPolygons(int* verts, int* adr, int* num, int poly_adr) const {
+  int n = polygons_.size(), count = 0;
+  for (int i = 0; i < n; ++i) {
+    int m = num[i] = polygons_[i].size();
+    adr[i] = poly_adr + count;
+    count += m;
+    for (int j = 0; j < m; ++j) {
+      verts[adr[i] + j - poly_adr] = polygons_[i][j];
+    }
+  }
+}
+
+
+
+void mjCMesh::CopyPolygonMap(int* faces, int* adr, int* num, int poly_adr) const {
+  int n = polygon_map_.size(), count = 0;
+  for (int i = 0; i < n; ++i) {
+    int m = num[i] = polygon_map_[i].size();
+    adr[i] = poly_adr + count;
+    count += m;
+    for (int j = 0; j < m; ++j) {
+      faces[adr[i] + j - poly_adr] = polygon_map_[i][j];
+    }
+  }
+}
+
+
+
+void mjCMesh::CopyPolygonNormals(mjtNum* arr) {
+  for (int i = 0; i < polygon_normals_.size(); i += 3) {
+    arr[i + 0] = (mjtNum)polygon_normals_[i + 0];
+    arr[i + 1] = (mjtNum)polygon_normals_[i + 1];
+    arr[i + 2] = (mjtNum)polygon_normals_[i + 2];
+  }
+}
+
+
+
 void mjCMesh::DelTexcoord() {
   texcoord_.clear();
 }
@@ -743,12 +759,12 @@ void mjCMesh::DelTexcoord() {
 // set geom size to match mesh
 void mjCMesh::FitGeom(mjCGeom* geom, double* meshpos) {
   // copy mesh pos into meshpos
-  mjuu_copyvec(meshpos, GetPosPtr(geom->typeinertia), 3);
+  mjuu_copyvec(meshpos, GetPosPtr(), 3);
 
   // use inertial box
   if (!model->compiler.fitaabb) {
     // get inertia box type (shell or volume)
-    double* boxsz = GetInertiaBoxPtr(geom->typeinertia);
+    double* boxsz = GetInertiaBoxPtr();
     switch (geom->type) {
     case mjGEOM_SPHERE:
       geom->size[0] = (boxsz[0] + boxsz[1] + boxsz[2])/3;
@@ -1256,14 +1272,13 @@ void mjCMesh::LoadMSH(mjResource* resource) {
 }
 
 
-void mjCMesh::ComputeVolume(double CoM[3], mjtGeomInertia type,
-                              const double facecen[3]) {
+void mjCMesh::ComputeVolume(double CoM[3], const double facecen[3]) {
   double nrm[3];
   double cen[3];
-  GetVolumeRef(type) = 0;
+  GetVolumeRef() = 0;
   mjuu_zerovec(CoM, 3);
-  int nf = (inertia == mjINERTIA_CONVEX) ? graph_[1] : nface();
-  int* f = (inertia == mjINERTIA_CONVEX) ? graph_ + 2 + 3*(graph_[0]+graph_[1]) : face_.data();
+  int nf = (inertia == mjMESH_INERTIA_CONVEX) ? graph_[1] : nface();
+  int* f = (inertia == mjMESH_INERTIA_CONVEX) ? graph_ + 2 + 3*(graph_[0]+graph_[1]) : face_.data();
   float* vv = vert_.data();
   for (int i=0; i < nf; i++) {
     // get area, normal and center
@@ -1271,17 +1286,55 @@ void mjCMesh::ComputeVolume(double CoM[3], mjtGeomInertia type,
 
     // compute and add volume
     const double vec[3] = {cen[0]-facecen[0], cen[1]-facecen[1], cen[2]-facecen[2]};
-    double vol = type==mjINERTIA_SHELL ? a : mjuu_dot3(vec, nrm) * a / 3;
+    double vol = mjuu_dot3(vec, nrm) * a / 3;
 
     // if legacy computation requested, then always positive
-    if (inertia == mjINERTIA_LEGACY) {
+    if (inertia == mjMESH_INERTIA_LEGACY) {
       vol = abs(vol);
     }
 
     // add pyramid com
-    GetVolumeRef(type) += vol;
+    GetVolumeRef() += vol;
     for (int j=0; j<3; j++) {
       CoM[j] += vol*(cen[j]*3.0/4.0 + facecen[j]/4.0);
+    }
+  }
+
+  // if volume is valid normalize CoM
+  if (GetVolumeRef() < mjMINVAL) {
+    validvolume_ = GetVolumeRef() < 0 ? MeshNegativeVolume : MeshZeroVolume;
+  } else {
+    for (int j=0; j<3; j++) {
+      CoM[j] /= GetVolumeRef();
+    }
+  }
+}
+
+
+void mjCMesh::ComputeSurfaceArea(double CoM[3], const double facecen[3]) {
+  double nrm[3];
+  double cen[3];
+  GetVolumeRef() = 0;
+  mjuu_zerovec(CoM, 3);
+  float* vv = vert_.data();
+  for (int i=0; i < nface(); i++) {
+    // get area, normal and center
+    double a = _triangle(nrm, cen, vv+3*face_.data()[3*i],
+                         vv+3*face_.data()[3*i+1], vv+3*face_.data()[3*i+2]);
+
+    // add pyramid com
+    GetVolumeRef() += a;
+    for (int j=0; j<3; j++) {
+      CoM[j] += a*(cen[j]*3.0/4.0 + facecen[j]/4.0);
+    }
+  }
+
+  // if area is valid normalize CoM
+  if (GetVolumeRef() < mjMINVAL) {
+    validarea_ = false;
+  } else {
+    for (int j=0; j<3; j++) {
+      CoM[j] /= GetVolumeRef();
     }
   }
 }
@@ -1404,9 +1457,6 @@ void mjCMesh::ComputeFaceCentroid(double facecen[3]) {
 
 void mjCMesh::Process() {
   double facecen[3] = {0, 0, 0};
-  double nrm[3];
-  double cen[3];
-
   // user offset, rotation, scaling
   ApplyTransformations();
 
@@ -1415,163 +1465,181 @@ void mjCMesh::Process() {
 
   double density = model->def_map[classname]->Geom().density;
 
-  // compute inertial properties for both inertia types
-  for ( const auto type : { mjtGeomInertia::mjINERTIA_VOLUME, mjtGeomInertia::mjINERTIA_SHELL } ) {
-    double CoM[3] = {0, 0, 0};
-    double inert[6] = {0, 0, 0, 0, 0, 0};
+  // compute inertia and transform mesh. The mesh is transformed such that it is
+  // centered at the CoM and the axes are the principle axes of inertia
+  double CoM[3] = {0, 0, 0};
+  double inert[6] = {0, 0, 0, 0, 0, 0};
 
-    // compute CoM and volume from pyramid volumes
-    ComputeVolume(CoM, type, facecen);
-
-    // if volume is invalid, skip the rest of the computations
-    if (GetVolumeRef(type) < mjMINVAL) {
-      if (type == mjINERTIA_SHELL) {
-        validarea_ = 0;
-      } else {
-        validvolume_ = GetVolumeRef(type) < 0 ? -1 : 0;
-      }
-      continue;
+  // compute CoM and volume/area
+  if (inertia == mjMESH_INERTIA_SHELL) {
+    ComputeSurfaceArea(CoM, facecen);
+    if (!validarea_) {
+      return;
     }
+  } else {
+    ComputeVolume(CoM, facecen);
+    if (validvolume_ != MeshVolumeOK) {
+      return;
+    }
+  }
 
-    // finalize CoM, save as mesh center
+  // compute inertia
+  ComputeInertia(inert, CoM);
+
+  // get quaternion and diagonal inertia
+  double eigval[3], eigvec[9], quattmp[4];
+  double full[9] = {
+    inert[0], inert[3], inert[4],
+    inert[3], inert[1], inert[5],
+    inert[4], inert[5], inert[2]
+  };
+  mjuu_eig3(eigval, eigvec, quattmp, full);
+
+  constexpr double inequality_atol = 1e-9;
+  constexpr double inequality_rtol = 1e-6;
+
+  // check eigval - SHOULD NOT OCCUR
+  if (eigval[2]<=0) {
+    valideigenvalue_= false;
+    return;
+  }
+  if (eigval[0] + eigval[1] < eigval[2] * (1.0 - inequality_rtol) - inequality_atol ||
+      eigval[0] + eigval[2] < eigval[1] * (1.0 - inequality_rtol) - inequality_atol ||
+      eigval[1] + eigval[2] < eigval[0] * (1.0 - inequality_rtol) - inequality_atol) {
+    validinequality_ = false;
+    return;
+  }
+
+  // compute sizes of equivalent inertia box
+  double mass = GetVolumeRef() * density;
+  double* boxsz = GetInertiaBoxPtr();
+  boxsz[0] = sqrt(6*(eigval[1]+eigval[2]-eigval[0])/mass)/2;
+  boxsz[1] = sqrt(6*(eigval[0]+eigval[2]-eigval[1])/mass)/2;
+  boxsz[2] = sqrt(6*(eigval[0]+eigval[1]-eigval[2])/mass)/2;
+
+  // transform CoM to origin
+  Transform(CoM, quattmp);
+}
+
+void mjCMesh::ComputeInertia(double inert[6], double CoM[3]) {
+  double nrm[3];
+  double cen[3];
+  double density = model->def_map[classname]->Geom().density;
+
+  // copy vertices to avoid modifying the original mesh
+  std::vector<float> vert_centered(vert_);
+
+  // translate vertices to origin in order to compute inertia
+  for (int i=0; i < nvert(); i++) {
     for (int j=0; j<3; j++) {
-      CoM[j] /= GetVolumeRef(type);
+      vert_centered[3*i+j] -= CoM[j];
     }
-    mjuu_copyvec(GetPosPtr(type), CoM, 3);
+  }
 
-    // re-center mesh at CoM
-    if (type==mjINERTIA_VOLUME || validvolume_<=0) {
-      for (int i=0; i < nvert(); i++) {
-        for (int j=0; j<3; j++) {
-          vert_[3*i+j] -= CoM[j];
-        }
-      }
-    }
+  // accumulate products of inertia, recompute volume
+  const int k[6][2] = {{0, 0}, {1, 1}, {2, 2}, {0, 1}, {0, 2}, {1, 2}};
+  double P[6] = {0, 0, 0, 0, 0, 0};
+  GetVolumeRef() = 0;
+  int nf = (inertia == mjMESH_INERTIA_CONVEX) ? graph_[1] : nface();
+  int* f = (inertia == mjMESH_INERTIA_CONVEX) ? graph_ + 2 + 3*(graph_[0]+graph_[1]) : face_.data();
+  for (int i=0; i < nf; i++) {
+    float* D = vert_centered.data()+3*f[3*i];
+    float* E = vert_centered.data()+3*f[3*i+1];
+    float* F = vert_centered.data()+3*f[3*i+2];
 
-    // accumulate products of inertia, recompute volume
-    const int k[6][2] = {{0, 0}, {1, 1}, {2, 2}, {0, 1}, {0, 2}, {1, 2}};
-    double P[6] = {0, 0, 0, 0, 0, 0};
-    GetVolumeRef(type) = 0;
-    int nf = (inertia == mjINERTIA_CONVEX) ? graph_[1] : nface();
-    int* f = (inertia == mjINERTIA_CONVEX) ? graph_ + 2 + 3*(graph_[0]+graph_[1]) : face_.data();
-    for (int i=0; i < nf; i++) {
-      float* D = vert_.data()+3*f[3*i];
-      float* E = vert_.data()+3*f[3*i+1];
-      float* F = vert_.data()+3*f[3*i+2];
+    // get area, normal and center; update volume
+    double a = _triangle(nrm, cen, D, E, F);
+    double vol = inertia==mjMESH_INERTIA_SHELL ? a : mjuu_dot3(cen, nrm) * a / 3;
 
-      // get area, normal and center; update volume
-      double a = _triangle(nrm, cen, D, E, F);
-      double vol = type==mjINERTIA_SHELL ? a : mjuu_dot3(cen, nrm) * a / 3;
-
-      // if legacy computation requested, then always positive
-      if (inertia == mjINERTIA_LEGACY) {
-        vol = abs(vol);
-      }
-
-      // apply formula, accumulate
-      GetVolumeRef(type) += vol;
-      for (int j=0; j<6; j++) {
-        P[j] += density*vol /
-                  (type==mjINERTIA_SHELL ? 12 : 20) * (
-                  2*(D[k[j][0]] * D[k[j][1]] +
-                    E[k[j][0]] * E[k[j][1]] +
-                    F[k[j][0]] * F[k[j][1]]) +
-                  D[k[j][0]] * E[k[j][1]]  +  D[k[j][1]] * E[k[j][0]] +
-                  D[k[j][0]] * F[k[j][1]]  +  D[k[j][1]] * F[k[j][0]] +
-                  E[k[j][0]] * F[k[j][1]]  +  E[k[j][1]] * F[k[j][0]]);
-      }
+    // if legacy computation requested, then always positive
+    if (inertia == mjMESH_INERTIA_LEGACY) {
+      vol = abs(vol);
     }
 
-    // convert from products of inertia to moments of inertia
-    inert[0] = P[1] + P[2];
-    inert[1] = P[0] + P[2];
-    inert[2] = P[0] + P[1];
-    inert[3] = -P[3];
-    inert[4] = -P[4];
-    inert[5] = -P[5];
-
-    // get quaternion and diagonal inertia
-    double eigval[3], eigvec[9], quattmp[4];
-    double full[9] = {
-      inert[0], inert[3], inert[4],
-      inert[3], inert[1], inert[5],
-      inert[4], inert[5], inert[2]
-    };
-    mjuu_eig3(eigval, eigvec, quattmp, full);
-
-    // check eigval - SHOULD NOT OCCUR
-    if (eigval[2]<=0) {
-      valideigenvalue_ = false;
-      return;
+    // apply formula, accumulate
+    GetVolumeRef() += vol;
+    for (int j=0; j<6; j++) {
+      P[j] += density*vol /
+                (inertia==mjMESH_INERTIA_SHELL ? 12 : 20) * (
+                2*(D[k[j][0]] * D[k[j][1]] +
+                  E[k[j][0]] * E[k[j][1]] +
+                  F[k[j][0]] * F[k[j][1]]) +
+                D[k[j][0]] * E[k[j][1]]  +  D[k[j][1]] * E[k[j][0]] +
+                D[k[j][0]] * F[k[j][1]]  +  D[k[j][1]] * F[k[j][0]] +
+                E[k[j][0]] * F[k[j][1]]  +  E[k[j][1]] * F[k[j][0]]);
     }
-    if (eigval[0] + eigval[1] < eigval[2] ||
-        eigval[0] + eigval[2] < eigval[1] ||
-        eigval[1] + eigval[2] < eigval[0]) {
-      validinequality_ = false;
-      return;
+  }
+
+  // convert from products of inertia to moments of inertia
+  inert[0] = P[1] + P[2];
+  inert[1] = P[0] + P[2];
+  inert[2] = P[0] + P[1];
+  inert[3] = -P[3];
+  inert[4] = -P[4];
+  inert[5] = -P[5];
+}
+
+
+void mjCMesh::Rotate(double quat[4]) {
+  // rotate vertices and normals of mesh by quaternion
+  double neg[4] = {quat[0], -quat[1], -quat[2], -quat[3]};
+  double mat[9];
+  mjuu_quat2mat(mat, neg);
+  for (int i=0; i < nvert(); i++) {
+    // vertices
+    const double vec[3] = {vert_[3*i], vert_[3*i+1], vert_[3*i+2]};
+    double res[3];
+    mjuu_mulvecmat(res, vec, mat);
+    for (int j=0; j<3; j++) {
+      vert_[3*i+j] = (float) res[j];
+
+      // axis-aligned bounding box
+      aamm_[j+0] = min(aamm_[j+0], res[j]);
+      aamm_[j+3] = max(aamm_[j+3], res[j]);
     }
-
-    // compute sizes of equivalent inertia box
-    double mass = GetVolumeRef(type) * density;
-    double* boxsz = GetInertiaBoxPtr(type);
-    boxsz[0] = sqrt(6*(eigval[1]+eigval[2]-eigval[0])/mass)/2;
-    boxsz[1] = sqrt(6*(eigval[0]+eigval[2]-eigval[1])/mass)/2;
-    boxsz[2] = sqrt(6*(eigval[0]+eigval[1]-eigval[2])/mass)/2;
-
-    // if volume was valid, copy volume quat to shell and stop,
-    // otherwise use shell quat for coordinate transformations
-    if (type==mjINERTIA_SHELL && validvolume_>0) {
-      mjuu_copyvec(GetQuatPtr(type), GetQuatPtr(mjINERTIA_VOLUME), 4);
-      continue;
-    }
-
-    // rotate vertices and normals into axis-aligned frame
-    mjuu_copyvec(GetQuatPtr(type), quattmp, 4);
-    double neg[4] = {quattmp[0], -quattmp[1], -quattmp[2], -quattmp[3]};
-    double mat[9];
-    mjuu_quat2mat(mat, neg);
-    for (int i=0; i < nvert(); i++) {
-      // vertices
-      const double vec[3] = {vert_[3*i], vert_[3*i+1], vert_[3*i+2]};
-      double res[3];
-      mjuu_mulvecmat(res, vec, mat);
-      for (int j=0; j<3; j++) {
-        vert_[3*i+j] = (float) res[j];
-
-        // axis-aligned bounding box
-        aamm_[j+0] = min(aamm_[j+0], res[j]);
-        aamm_[j+3] = max(aamm_[j+3], res[j]);
-      }
-    }
-    for (int i=0; i < nnormal(); i++) {
-      // normals
-      const double nrm[3] = {normal_[3*i], normal_[3*i+1], normal_[3*i+2]};
-      double res[3];
-      mjuu_mulvecmat(res, nrm, mat);
-      for (int j=0; j<3; j++) {
-        normal_[3*i+j] = (float) res[j];
-      }
+  }
+  for (int i=0; i < nnormal(); i++) {
+    // normals
+    const double nrm[3] = {normal_[3*i], normal_[3*i+1], normal_[3*i+2]};
+    double res[3];
+    mjuu_mulvecmat(res, nrm, mat);
+    for (int j=0; j<3; j++) {
+      normal_[3*i+j] = (float) res[j];
     }
   }
 }
 
 
+void mjCMesh::Transform(double pos[3], double quat[4]) {
+  // subtract CoM position from vertices
+  for (int i=0; i < nvert(); i++) {
+      for (int j=0; j<3; j++) {
+        vert_[3*i+j] -= pos[j];
+      }
+    }
+  Rotate(quat);
+
+  // save the pos and quat that was used to transform the mesh
+  mjuu_copyvec(GetPosPtr(), pos, 3);
+  mjuu_copyvec(GetQuatPtr(), quat, 4);
+}
 // check that the mesh is valid
-void mjCMesh::CheckMesh(mjtGeomInertia type) {
+void mjCMesh::CheckMesh() {
   if (!processed_) {
     return;
   }
-  if ((invalidorientation_.first>=0 || invalidorientation_.second>=0) && inertia == mjINERTIA_EXACT)
+  if ((invalidorientation_.first>=0 || invalidorientation_.second>=0) && inertia == mjMESH_INERTIA_EXACT)
     throw mjCError(this,
                    "faces of mesh '%s' have inconsistent orientation. Please check the "
                    "faces containing the vertices %d and %d.",
                    name.c_str(), invalidorientation_.first, invalidorientation_.second);
-  if (!validarea_ && type==mjINERTIA_SHELL)
+  if (!validarea_ && inertia==mjMESH_INERTIA_SHELL)
     throw mjCError(this, "mesh surface area is too small: %s", name.c_str());
-  if (validvolume_<0 && type==mjINERTIA_VOLUME)
+  if (validvolume_==MeshNegativeVolume && inertia!=mjMESH_INERTIA_SHELL)
     throw mjCError(this, "mesh volume is negative (misoriented triangles): %s", name.c_str());
-  if (!validvolume_ && type==mjINERTIA_VOLUME)
-    throw mjCError(this, "mesh volume is too small: %s", name.c_str());
+  if (validvolume_==MeshZeroVolume && inertia!=mjMESH_INERTIA_SHELL)
+    throw mjCError(this, "mesh volume is too small: %s . Try setting inertia to shell",
+                   name.c_str());
   if (!valideigenvalue_)
     throw mjCError(this, "eigenvalue of mesh inertia must be positive: %s", name.c_str());
   if (!validinequality_)
@@ -1580,15 +1648,14 @@ void mjCMesh::CheckMesh(mjtGeomInertia type) {
 
 
 // get inertia pointer
-double* mjCMesh::GetInertiaBoxPtr(mjtGeomInertia type) {
-  CheckMesh(type);
-  return type==mjINERTIA_SHELL ? boxsz_surface_ : boxsz_volume_;
+double* mjCMesh::GetInertiaBoxPtr() {
+  return boxsz_;
 }
 
 
-double& mjCMesh::GetVolumeRef(mjtGeomInertia type) {
-  CheckMesh(type);
-  return type==mjINERTIA_SHELL ? surface_ : volume_;
+double& mjCMesh::GetVolumeRef() {
+  CheckMesh();
+  return inertia==mjMESH_INERTIA_SHELL ? surface_ : volume_;
 }
 
 
@@ -1971,6 +2038,295 @@ void mjCMesh::MakeCenter(void) {
   }
 }
 
+
+
+// compute the normals of the polygons
+void mjCMesh::MakePolygonNormals() {
+  for (int i = 0; i < polygons_.size(); ++i) {
+  double n[3];
+  mjuu_makenormal(n, &vert_[3*polygons_[i][0]], &vert_[3*polygons_[i][1]],
+                  &vert_[3*polygons_[i][2]]);
+  polygon_normals_[3*i + 0] = n[0];
+  polygon_normals_[3*i + 1] = n[1];
+  polygon_normals_[3*i + 2] = n[2];
+  }
+}
+
+
+
+// helper class to compute the polygons of a mesh
+class MeshPolygon {
+ public:
+  // constructors (need starting face)
+  MeshPolygon(const float v1[3], const float v2[3], const float v3[3],
+              int v1i, int v2i, int v3i);
+  MeshPolygon() = delete;
+  MeshPolygon(const MeshPolygon&) = delete;
+  MeshPolygon& operator=(const MeshPolygon&) = delete;
+
+  void InsertFace(int v1, int v2, int v3);          // insert a face into the polygon
+  std::vector<std::vector<int>> Paths() const;      // return trace of the polygons
+  const double* Normal() const { return normal_; }  // return the normal of the polygon
+
+  // return the ith component of the normal of the polygon
+  double Normal(int i) const { return normal_[i]; }
+
+ private:
+  std::vector<std::pair<int, int>> edges_;
+
+  // inserted faces do not necessarily share edges with the current polygon, so they're grouped as
+  // islands until they can be combined with later face insertions
+  std::vector<int> islands_;
+  int nisland_ = 0;
+  double normal_[3] = {0.0, 0.0, 0.0};
+  void CombineIslands(int& island1, int& island2);
+};
+
+
+
+MeshPolygon::MeshPolygon(const float v1[3], const float v2[3], const float v3[3],
+                         int v1i, int v2i, int v3i) {
+  mjuu_makenormal(normal_, v1, v2, v3);
+  edges_ = {{v1i, v2i}, {v2i, v3i}, {v3i, v1i}};
+  nisland_ = 1;
+  islands_ = {0, 0, 0};
+}
+
+
+
+// comparison operator for std::set
+bool PolygonCmp(const MeshPolygon& p1, const MeshPolygon& p2)  {
+  const double* n1 = p1.Normal();
+  const double* n2 = p2.Normal();
+  double dot3 = n1[0] * n2[0] + n1[1] * n2[1] + n1[2] * n2[2];
+
+  // TODO(kylebayes): The tolerance should be a parameter set the user, as it should be optimized
+  // from mesh to mesh.
+  if (dot3 > 0.99999872) {
+    return false;
+  }
+
+  if (std::abs(n1[0] - n2[0]) > mjMINVAL) {
+    return n1[0] > n2[0];
+  }
+  if (std::abs(n1[1] - n2[1]) > mjMINVAL) {
+    return n1[1] > n2[1];
+  }
+  if (std::abs(n1[2] - n2[2]) > mjMINVAL) {
+    return n1[2] > n2[2];
+  }
+  return false;
+}
+
+
+
+// combine two islands when a newly inserted face connects them
+void MeshPolygon::CombineIslands(int& island1, int& island2) {
+  // pick the smaller island
+  if (island2 < island1) {
+    int tmp = island1;
+    island1 = island2;
+    island2 = tmp;
+  }
+
+  // renumber the islands
+  for (int k = 0; k < islands_.size(); ++k) {
+    if (islands_[k] == island2) {
+      islands_[k] = island1;
+    } else if (islands_[k] > island2) {
+      islands_[k]--;
+    }
+  }
+}
+
+
+
+// insert a triangular face into the polygon
+void MeshPolygon::InsertFace(int v1, int v2, int v3) {
+  int add1 = 1, add2 = 1, add3 = 1;
+  int island = -1;
+
+  // check if face can be attached via edge v1v2
+  for (int i = 0; i < edges_.size(); ++i) {
+    if (edges_[i].first == v2 && edges_[i].second == v1) {
+      add1 = 0;
+      island = islands_[i];
+      edges_.erase(edges_.begin() + i);
+      islands_.erase(islands_.begin() + i);
+      break;
+    }
+  }
+
+  // check if face can be attached via edge v2v3
+  for (int i = 0; i < edges_.size(); ++i) {
+    if (edges_[i].first == v3 && edges_[i].second == v2) {
+      int island2 = islands_[i];
+      if (island == -1) {
+        island = island2;
+      } else if (island2 != island) {
+        nisland_--;
+        CombineIslands(island, island2);
+      }
+      add2 = 0;
+      edges_.erase(edges_.begin() + i);
+      islands_.erase(islands_.begin() + i);
+      break;
+    }
+  }
+
+  // check if face can be attached via edge v3v1
+  for (int i = 0; i < edges_.size(); ++i) {
+    if (edges_[i].first == v1 && edges_[i].second == v3) {
+      int island3 = islands_[i];
+      if (island == -1) {
+        island = island3;
+      } else if (island3 != island) {
+        nisland_--;
+        CombineIslands(island, island3);
+      }
+      add3 = 0;
+      edges_.erase(edges_.begin() + i);
+      islands_.erase(islands_.begin() + i);
+      break;
+    }
+  }
+
+  if (island == -1) {
+    island = nisland_++;
+  }
+
+  // add only new edges to the polygon
+
+  if (add1) {
+    edges_.push_back({v1, v2});
+    islands_.push_back(island);
+  }
+  if (add2) {
+    edges_.push_back({v2, v3});
+    islands_.push_back(island);
+  }
+  if (add3) {
+    edges_.push_back({v3, v1});
+    islands_.push_back(island);
+  }
+}
+
+
+
+// return the traverse vertices of the polygon; there may be multiple paths if the polygon is
+// not connected
+std::vector<std::vector<int>> MeshPolygon::Paths() const {
+  std::vector<std::vector<int>> paths;
+  // shortcut if polygon is just a triangular face
+  if (edges_.size() == 3) {
+    return {{edges_[0].first, edges_[1].first, edges_[2].first}};
+  }
+
+  // go through each connected component of the polygon
+  for (int i = 0; i < nisland_; ++i) {
+    std::vector<int> path;
+
+    // find starting vertex
+    for (int j = 0; j < edges_.size(); ++j) {
+      if (islands_[j] == i) {
+        path.push_back(edges_[j].first);
+        path.push_back(edges_[j].second);
+        break;
+      }
+    }
+
+    // SHOULD NOT OCCUR (See logic in MeshPolygon::CombineIslands)
+    if (path.empty()) {
+      continue;
+    }
+
+    // visit the next vertex given the current edge
+    int next = path.back();
+    for (int l = 0; l < edges_.size(); ++l) {
+      int finished = 0;
+      for (int k = 1; k < edges_.size(); ++k) {
+        if (islands_[k] == i && edges_[k].first == next) {
+          next = edges_[k].second;
+          if (next == path[0]) {
+            paths.push_back(path);
+            finished = 1;
+            break;
+          }
+          path.push_back(next);
+          break;
+       }
+      }
+
+      // back at start
+      if (finished) {
+        break;
+      }
+    }
+  }
+  return paths;
+}
+
+
+
+// merge coplanar mesh triangular faces into polygonal sides to represent the geometry of the mesh
+void mjCMesh::MakePolygons() {
+  std::set<MeshPolygon, decltype(PolygonCmp)*> polygons(PolygonCmp);
+  polygons_.clear();
+  polygon_normals_.clear();
+  polygon_map_.clear();
+
+  // initialize polygon map
+  for (int i = 0; i < nvert(); i++) {
+    polygon_map_.push_back(std::vector<int>());
+  }
+
+  // use graph data if available
+  int *faces, nfaces;
+  if (graph_) {
+    int nvert = graph_[0];
+    nfaces = graph_[1];
+    faces = graph_ + 2 + 3*nvert + 3*nfaces;
+  } else {
+    nfaces = nface();
+    faces = face_.data();
+  }
+
+  // process each face
+  for (int i = 0; i < nfaces; i++) {
+    float* v1 = &vert_[3*faces[3*i + 0]];
+    float* v2 = &vert_[3*faces[3*i + 1]];
+    float* v3 = &vert_[3*faces[3*i + 2]];
+
+    MeshPolygon face(v1, v2, v3, faces[3*i + 0], faces[3*i + 1], faces[3*i + 2]);
+    auto it = polygons.find(face);
+    if (it == polygons.end()) {
+      polygons.emplace(v1, v2, v3, faces[3*i + 0], faces[3*i + 1], faces[3*i + 2]);
+    } else {
+      MeshPolygon& p = const_cast<MeshPolygon&>(*it);
+      p.InsertFace(faces[3*i + 0], faces[3*i + 1], faces[3*i + 2]);
+    }
+  }
+
+  for (const auto& polygon : polygons) {
+    std::vector<std::vector<int>> paths = polygon.Paths();
+
+    // separate the polygons if they were grouped together
+    for (const auto& path : paths) {
+      if (path.size() < 3) continue;
+      polygons_.push_back(path);
+      polygon_normals_.push_back(polygon.Normal(0));
+      polygon_normals_.push_back(polygon.Normal(1));
+      polygon_normals_.push_back(polygon.Normal(2));
+    }
+  }
+
+  // populate the polygon map
+  for (int i = 0; i < polygons_.size(); i++) {
+    for (int j = 0; j < polygons_[i].size(); ++j) {
+      polygon_map_[polygons_[i][j]].push_back(i);
+    }
+  }
+}
 
 
 //------------------ class mjCSkin implementation --------------------------------------------------
@@ -2405,7 +2761,7 @@ void mjCSkin::LoadSKN(mjResource* resource) {
 
 
 
-//--------------------- elasticity implementation --------------------------------------------------
+//-------------------------- nonlinear elasticity --------------------------------------------------
 
 // hash function for std::pair
 struct PairHash
@@ -2631,6 +2987,153 @@ void inline ComputeStiffness(std::vector<double>& stiffness,
   MetricTensor<T>(stiffness.data(), t, mu, la, basis);
 }
 
+//----------------------------- linear elasticity --------------------------------------------------
+
+// Gauss Legendre quadrature points in 1 dimension on the interval [a, b]
+void quadratureGaussLegendre(double* points, double* weights,
+                             const int order, const double a, const double b) {
+  if (order > 2)
+    mju_error("Integration order > 2 not yet supported.");
+
+  // x is on [-1, 1], p on [a, b]
+  double p0 = (a+b)/2.;
+  double dpdx = (b-a)/2;
+  points[0] = -dpdx/sqrt(3) + p0;
+  points[1] =  dpdx/sqrt(3) + p0;
+  weights[0] = dpdx;
+  weights[1] = dpdx;
+}
+
+// evaluate 1-dimensional basis function
+double phi(const double s, const double component) {
+  if (component == 0) {
+    return 1-s;
+  } else {
+    return s;
+  }
+}
+
+// evaluate gradient fo 1-dimensional basis function
+double dphi(const double s, const double component) {
+  if (component == 0) {
+    return -1;
+  } else {
+    return 1;
+  }
+}
+
+typedef std::array<std::array<double, 3>, 3> Matrix;
+
+// symmetrize a tensor
+Matrix inline sym(const Matrix& tensor) {
+  Matrix eps;
+  for (int i = 0; i < 3; i++) {
+    for (int j = 0; j < 3; j++) {
+      eps[i][j] = (tensor[i][j] + tensor[j][i]) / 2;
+    }
+  }
+  return eps;
+}
+
+// compute tensor inner product
+Matrix inline inner(const Matrix& tensor1, const Matrix& tensor2) {
+  Matrix inner;
+  for (int i = 0; i < 3; i++) {
+    for (int j = 0; j < 3; j++) {
+      inner[i][j] = tensor1[i][0] * tensor2[0][j] +
+                    tensor1[i][1] * tensor2[1][j] +
+                    tensor1[i][2] * tensor2[2][j];
+    }
+  }
+  return inner;
+}
+
+// compute trace of a tensor
+double inline trace(const Matrix& tensor) {
+  return tensor[0][0] + tensor[1][1] + tensor[2][2];
+}
+
+void inline ComputeLinearStiffness(std::vector<double>& K,
+                                   const double* pos,
+                                   double E, double nu) {
+  // only linear elements are supported for now
+  int order = 2;
+  int n = std::pow(order, 3);
+  int ndof = 3*n;
+
+  // compute quadrature points
+  std::vector<double> points(order);     // quadrature points
+  std::vector<double> weight(order);     // quadrature weights
+  quadratureGaussLegendre(points.data(), weight.data(), order, 0, 1);
+
+  // compute element transformation
+  double dx = (pos+12)[0] - pos[0];
+  double dy = (pos+ 6)[1] - pos[1];
+  double dz = (pos+ 3)[2] - pos[2];
+  double detJ = dx * dy * dz;
+  double invJ[3] = {1.0 / dx, 1.0 / dy, 1.0 / dz};
+
+  // compute stiffness matrix
+  std::vector<std::array<double, 3>> F(n);
+  double la = E * nu / (1 + nu) / (1 - 2 * nu);
+  double mu = E / (2 * (1 + nu));
+
+  // loop over quadrature points
+  for (int ps=0; ps < order; ps++) {
+    for (int pt=0; pt < order; pt++) {
+      for (int pu=0; pu < order; pu++) {
+        double s = points[ps];
+        double t = points[pt];
+        double u = points[pu];
+        double dvol = weight[ps] * weight[pt] * weight[pu] * detJ;
+        int dof = 0;
+
+        // cartesian product of basis functions
+        for (int bx=0; bx < order; bx++) {
+          for (int by=0; by < order; by++) {
+            for (int bz=0; bz < order; bz++) {
+              std::array<double, 3> gradient;
+              gradient[0] = dphi(s, bx) *  phi(t, by) *  phi(u, bz);
+              gradient[1] =  phi(s, bx) * dphi(t, by) *  phi(u, bz);
+              gradient[2] =  phi(s, bx) *  phi(t, by) * dphi(u, bz);
+              F[dof++] = gradient;
+            }
+          }
+        }
+
+        if (dof != n) {  // SHOULD NOT OCCUR
+          throw mjCError(NULL, "incorrect number of basis functions");
+        }
+
+        // tensor contraction of the gradients of elastic strains
+        // (d(F+F')/dx : d(F+F')/dx)
+        for (int i=0; i < n; i++) {
+          for (int j=0; j < n; j++) {
+            Matrix du;
+            Matrix dv;
+            du.fill({0, 0, 0});
+            dv.fill({0, 0, 0});
+            for (int k=0; k < 3; k++) {
+              for (int l=0; l < 3; l++) {
+                du[k][0] = invJ[0] * F[i][0];
+                du[k][1] = invJ[1] * F[i][1];
+                du[k][2] = invJ[2] * F[i][2];
+                dv[l][0] = invJ[0] * F[j][0];
+                dv[l][1] = invJ[1] * F[j][1];
+                dv[l][2] = invJ[2] * F[j][2];
+                K[ndof*(3*i+k) + 3*j+l] -= la * trace(du) * trace(dv) * dvol;
+                K[ndof*(3*i+k) + 3*j+l] -= mu * trace(inner(sym(du), sym(dv))) * dvol;
+                mjuu_zerovec(du[k].data(), 3);
+                mjuu_zerovec(dv[l].data(), 3);
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}
+
 //------------------ class mjCFlex implementation --------------------------------------------------
 
 // constructor
@@ -2644,6 +3147,7 @@ mjCFlex::mjCFlex(mjCModel* _model) {
 
   // clear internal variables
   nvert = 0;
+  nnode = 0;
   nedge = 0;
   nelem = 0;
   matid = -1;
@@ -2676,13 +3180,17 @@ void mjCFlex::PointToLocal() {
   spec.name = &name;
   spec.material = &spec_material_;
   spec.vertbody = &spec_vertbody_;
+  spec.nodebody = &spec_nodebody_;
   spec.vert = &spec_vert_;
+  spec.node = &spec_node_;
   spec.texcoord = &spec_texcoord_;
   spec.elem = &spec_elem_;
   spec.info = &info;
   material = nullptr;
   vertbody = nullptr;
+  nodebody = nullptr;
   vert = nullptr;
+  node = nullptr;
   texcoord = nullptr;
   elem = nullptr;
 }
@@ -2691,6 +3199,9 @@ void mjCFlex::PointToLocal() {
 
 void mjCFlex::NameSpace(const mjCModel* m) {
   for (auto& name : spec_vertbody_) {
+    name = m->prefix + name + m->suffix;
+  }
+  for (auto& name : spec_nodebody_) {
     name = m->prefix + name + m->suffix;
   }
 }
@@ -2702,7 +3213,9 @@ void mjCFlex::CopyFromSpec() {
   spec.info = &info;
   material_ = spec_material_;
   vertbody_ = spec_vertbody_;
+  nodebody_ = spec_nodebody_;
   vert_ = spec_vert_;
+  node_ = spec_node_;
   texcoord_ = spec_texcoord_;
   elem_ = spec_elem_;
 
@@ -2725,6 +3238,8 @@ void mjCFlex::DelTexcoord() {
 
 
 void mjCFlex::ResolveReferences(const mjCModel* m) {
+  vertbodyid.clear();
+  nodebodyid.clear();
   for (const auto& vertbody : vertbody_) {
     mjCBase* pbody = m->FindObject(mjOBJ_BODY, vertbody);
     if (pbody) {
@@ -2733,12 +3248,21 @@ void mjCFlex::ResolveReferences(const mjCModel* m) {
       throw mjCError(this, "unknown body '%s' in flex", vertbody.c_str());
     }
   }
+  for (const auto& nodebody : nodebody_) {
+    mjCBase* pbody = m->FindObject(mjOBJ_BODY, nodebody);
+    if (pbody) {
+      nodebodyid.push_back(pbody->id);
+    } else {
+      throw mjCError(this, "unknown body '%s' in flex", nodebody.c_str());
+    }
+  }
 }
 
 
 // compiler
 void mjCFlex::Compile(const mjVFS* vfs) {
   CopyFromSpec();
+  interpolated = !nodebody_.empty();
 
   // set nelem; check sizes
   if (dim<1 || dim>3) {
@@ -2750,14 +3274,20 @@ void mjCFlex::Compile(const mjVFS* vfs) {
   if (elem_.size() % (dim+1)) {
       throw mjCError(this, "elem size must be multiple of (dim+1)");
   }
-  if (vertbody_.empty()) {
-      throw mjCError(this, "vertbody is empty");
+  if (vertbody_.empty() && !interpolated) {
+      throw mjCError(this, "vertbody and nodebody are both empty");
   }
   if (vert_.size() % 3) {
       throw mjCError(this, "vert size must be a multiple of 3");
   }
   if (edgestiffness>0 && dim>1) {
     throw mjCError(this, "edge stiffness only available for dim=1, please use elasticity plugins");
+  }
+  if (interpolated && selfcollide != mjFLEXSELF_NONE) {
+    throw mjCError(this, "trilinear interpolation cannot do self-collision");
+  }
+  if (interpolated && internal) {
+    throw mjCError(this, "trilinear interpolation cannot do internal collisions");
   }
   nelem = (int)elem_.size()/(dim+1);
 
@@ -2774,6 +3304,12 @@ void mjCFlex::Compile(const mjVFS* vfs) {
   }
   if (nvert<dim+1) {
     throw mjCError(this, "not enough vertices");
+  }
+
+  // set nnode
+  nnode = (int)nodebody_.size();
+  if (nnode && nnode!=8) {
+    throw mjCError(this, "number of nodes must be 2^dim, it is %d", "", nnode);
   }
 
   // check elem vertex ids
@@ -2815,7 +3351,7 @@ void mjCFlex::Compile(const mjVFS* vfs) {
   }
 
   // determine rigid if not already set
-  if (!rigid) {
+  if (!rigid && !interpolated) {
     rigid = true;
     for (unsigned i=1; i < vertbodyid.size(); i++) {
       if (vertbodyid[i]!=vertbodyid[0]) {
@@ -2826,10 +3362,20 @@ void mjCFlex::Compile(const mjVFS* vfs) {
   }
 
   // determine centered if not already set
-  if (!centered) {
+  if (!centered && !interpolated) {
     centered = true;
     for (const auto& vert : vert_) {
       if (vert!=0) {
+        centered = false;
+        break;
+      }
+    }
+  }
+
+  if (!centered && interpolated) {
+    centered = true;
+    for (const auto& node : node_) {
+      if (node!=0) {
         centered = false;
         break;
       }
@@ -2844,10 +3390,31 @@ void mjCFlex::Compile(const mjVFS* vfs) {
     mjuu_copyvec(vertxpos.data()+3*i, model->Bodies()[b]->xpos0, 3);
 
     // add vertex offset within body if not centered
-    if (!centered) {
+    if (!centered || interpolated) {
       double offset[3];
       mjuu_rotVecQuat(offset, vert_.data()+3*i, model->Bodies()[b]->xquat0);
       mjuu_addtovec(vertxpos.data()+3*i, offset, 3);
+    }
+
+    if (interpolated) {
+      // this should happen in ResolveReferences but we need a body id in this loop to compute
+      // the global vertex position, this is a hack since it is the id of the parent body
+      vertbodyid[i] = -1;
+    }
+  }
+
+  // compute global node positions
+  std::vector<double> nodexpos = std::vector<double> (3*nnode);
+  for (int i=0; i < nnode; i++) {
+    // get body id, set nodexpos = body.xpos0
+    int b = nodebodyid[i];
+    mjuu_copyvec(nodexpos.data()+3*i, model->Bodies()[b]->xpos0, 3);
+
+    // add node offset within body if not centered
+    if (!centered) {
+      double offset[3];
+      mjuu_rotVecQuat(offset, node_.data()+3*i, model->Bodies()[b]->xquat0);
+      mjuu_addtovec(nodexpos.data()+3*i, offset, 3);
     }
   }
 
@@ -2912,7 +3479,17 @@ void mjCFlex::Compile(const mjVFS* vfs) {
       throw mjCError(this, "Poisson ratio must be in [0, 0.5)");
     }
     stiffness.assign(21*nelem, 0);
+    if (interpolated) {
+      int min_size = ceil(nodexpos.size()*nodexpos.size() / 21);
+      if (min_size > nelem) {
+        throw mjCError(this, "Trilinear dofs are require at least %d elements", "", min_size);
+      }
+      ComputeLinearStiffness(stiffness, nodexpos.data(), young, poisson);
+    }
     for (unsigned int t = 0; t < nelem; t++) {
+      if (interpolated) {
+        continue;
+      }
       if (dim==2) {
         ComputeStiffness<Stencil2D>(stiffness, vertxpos,
                                     elem_.data() + (dim + 1) * t, t, young,
@@ -2931,6 +3508,9 @@ void mjCFlex::Compile(const mjVFS* vfs) {
   useredge = VectorToString(edgeidx_);
 
   for (const auto& vbodyid : vertbodyid) {
+    if (vbodyid < 0) {
+      continue;
+    }
     if (model->Bodies()[vbodyid]->plugin.element) {
       mjCPlugin* plugin_instance =
           static_cast<mjCPlugin*>(model->Bodies()[vbodyid]->plugin.element);
@@ -2956,6 +3536,12 @@ void mjCFlex::Compile(const mjVFS* vfs) {
       double size = 2*(bvh[k+3] - radius);
       vert0_[3*j+k] = (vertxpos[3*j+k] - bvh[k]) / size + 0.5;
     }
+  }
+
+  // store node cartesian positions
+  node0_.assign(3*nnode, 0);
+  for (int i=0; i < nnode; i++) {
+    mjuu_copyvec(node0_.data()+3*i, nodexpos.data()+3*i, 3);
   }
 }
 

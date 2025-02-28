@@ -33,38 +33,38 @@
 // call libccd or nativeccd to recover penetration info
 static int mjc_penetration(const mjModel* m, mjCCDObj* obj1, mjCCDObj* obj2,
                            const ccd_t* ccd, ccd_real_t* depth, ccd_vec3_t* dir, ccd_vec3_t* pos) {
-  if (mjENABLED(mjENBL_NATIVECCD)) {
-    mjCCDConfig config;
-    mjCCDStatus status;
-
-    // set config
-    config.max_iterations = ccd->max_iterations,
-    config.tolerance = ccd->mpr_tolerance,
-    config.max_contacts = 1;
-    config.dist_cutoff = 0;  // no geom distances needed
-
-    mjtNum dist = mjc_ccd(&config, &status, obj1, obj2);
-    if (dist < 0) {
-      if (depth) *depth = -dist;
-      if (dir) {
-        mju_sub3(dir->v, status.x1, status.x2);
-        mju_normalize3(dir->v);
-      }
-      if (pos) {
-        pos->v[0] = 0.5 * (status.x1[0] + status.x2[0]);
-        pos->v[1] = 0.5 * (status.x1[1] + status.x2[1]);
-        pos->v[2] = 0.5 * (status.x1[2] + status.x2[2]);
-      }
-      return 0;
-    }
-    if (depth) *depth = 0;
-    if (dir) mju_zero3(dir->v);
-    if (pos) mju_zero3(dir->v);
-    return 1;
+  // fallback to MPR
+  if (mjDISABLED(mjDSBL_NATIVECCD)) {
+    return ccdMPRPenetration(obj1, obj2, ccd, depth, dir, pos);
   }
 
-  // fallback to MPR
-  return ccdMPRPenetration(obj1, obj2, ccd, depth, dir, pos);
+  mjCCDConfig config;
+  mjCCDStatus status;
+
+  // set config
+  config.max_iterations = ccd->max_iterations,
+  config.tolerance = ccd->mpr_tolerance,
+  config.max_contacts = 1;
+  config.dist_cutoff = 0;  // no geom distances needed
+
+  mjtNum dist = mjc_ccd(&config, &status, obj1, obj2);
+  if (dist < 0) {
+    if (depth) *depth = -dist;
+    if (dir) {
+      mju_sub3(dir->v, status.x1, status.x2);
+      mju_normalize3(dir->v);
+    }
+    if (pos) {
+      pos->v[0] = 0.5 * (status.x1[0] + status.x2[0]);
+      pos->v[1] = 0.5 * (status.x1[1] + status.x2[1]);
+      pos->v[2] = 0.5 * (status.x1[2] + status.x2[2]);
+    }
+    return 0;
+  }
+  if (depth) *depth = 0;
+  if (dir) mju_zero3(dir->v);
+  if (pos) mju_zero3(dir->v);
+  return 1;
 }
 
 
@@ -311,11 +311,18 @@ static void mjc_boxSupport(mjtNum res[3], mjCCDObj* obj, const mjtNum dir[3]) {
   mjtNum local_dir[3], tmp[3];
   mulMatTVec3(local_dir, mat, dir);
 
+  // find support point in local frame
   tmp[0] = (local_dir[0] >= 0 ? 1 : -1) * size[0];
   tmp[1] = (local_dir[1] >= 0 ? 1 : -1) * size[1];
   tmp[2] = (local_dir[2] >= 0 ? 1 : -1) * size[2];
 
-  // transform result to global frame
+  // mark the index of the corner of the box for fast lookup
+  obj->vertindex = 0;
+  if (tmp[0] > 0) obj->vertindex |= 1;
+  if (tmp[1] > 0) obj->vertindex |= 2;
+  if (tmp[2] > 0) obj->vertindex |= 4;
+
+  // transform support point to global frame
   localToGlobal(res, mat, tmp, pos);
 }
 
@@ -347,8 +354,8 @@ static void mjc_meshSupport(mjtNum res[3], mjCCDObj* obj, const mjtNum dir[3]) {
   int imax = 0;
 
   // used cached results from previous search
-  if (obj->meshindex >= 0) {
-    imax = obj->meshindex;
+  if (obj->vertindex >= 0) {
+    imax = obj->vertindex;
     max = dot3f(local_dir, verts + 3*imax);
   }
 
@@ -364,7 +371,7 @@ static void mjc_meshSupport(mjtNum res[3], mjCCDObj* obj, const mjtNum dir[3]) {
   }
 
   // record vertex index of maximum
-  obj->meshindex = imax;
+  obj->vertindex = imax;
 
   local_dir[0] = (mjtNum)verts[3*imax + 0];
   local_dir[1] = (mjtNum)verts[3*imax + 1];
@@ -416,6 +423,7 @@ static void mjc_hillclimbSupport(mjtNum res[3], mjCCDObj* obj, const mjtNum dir[
 
   // get resulting support vertex
   imax = 3*vert_globalid[imax];
+  obj->vertindex = imax / 3;
   local_dir[0] = (mjtNum)verts[imax + 0];
   local_dir[1] = (mjtNum)verts[imax + 1];
   local_dir[2] = (mjtNum)verts[imax + 2];
@@ -711,6 +719,7 @@ void mjc_initCCDObj(mjCCDObj* obj, const mjModel* m, const mjData* d, int g, mjt
   obj->geom = g;
   obj->margin = margin;
   obj->center = mjc_center;
+  obj->vertindex = -1;
   obj->meshindex = -1;
   obj->flex = -1;
   obj->elem = -1;
@@ -779,29 +788,32 @@ static void mjc_initCCD(ccd_t* ccd, const mjModel* m) {
 
 
 
-// find single convex-convex collision
+// find convex-convex collision
 static int mjc_CCDIteration(const mjModel* m, const mjData* d, mjCCDObj* obj1, mjCCDObj* obj2,
-                            mjContact* con, mjtNum margin) {
-  if (mjENABLED(mjENBL_NATIVECCD)) {
+                            mjContact* con, int max_contacts, mjtNum margin) {
+  if (!mjDISABLED(mjDSBL_NATIVECCD)) {
     mjCCDConfig config;
     mjCCDStatus status;
 
     // set config
     config.max_iterations = m->opt.ccd_iterations;
     config.tolerance = m->opt.ccd_tolerance;
-    config.max_contacts = 1;
+    config.max_contacts = max_contacts;
     config.dist_cutoff = 0;  // no geom distances needed
 
     mjtNum dist = mjc_ccd(&config, &status, obj1, obj2);
     if (dist < 0) {
-      con->dist = margin + dist;
-      mju_sub3(con->frame, status.x1, status.x2);
-      mju_normalize3(con->frame);
-      con->pos[0] = 0.5 * (status.x1[0] + status.x2[0]);
-      con->pos[1] = 0.5 * (status.x1[1] + status.x2[1]);
-      con->pos[2] = 0.5 * (status.x1[2] + status.x2[2]);
-      mju_zero3(con->frame+3);
-      return 1;
+      for (int i = 0; i < status.nx; i++) {
+        mjContact* c = con++;
+        c->dist = margin + dist;
+        mju_sub3(c->frame, status.x1 + 3*i, status.x2 + 3*i);
+        mju_normalize3(c->frame);
+        c->pos[0] = 0.5 * (status.x1[0 + 3*i] + status.x2[0 + 3*i]);
+        c->pos[1] = 0.5 * (status.x1[1 + 3*i] + status.x2[1 + 3*i]);
+        c->pos[2] = 0.5 * (status.x1[2 + 3*i] + status.x2[2 + 3*i]);
+        mju_zero3(c->frame+3);
+      }
+      return status.nx;
     }
     return 0;
   }
@@ -877,6 +889,28 @@ static void mju_rotateFrame(const mjtNum origin[3], const mjtNum rot[9],
 
 
 
+// return true if multiccd can run in a single pass
+static int singlePass(const mjCCDObj* obj1, const mjCCDObj* obj2) {
+  const mjModel* m = obj1->model;
+
+  // single pass not supported for margins
+  if (obj1->margin > 0 || obj2->margin > 0) {
+    return 0;
+  }
+
+  // supported geoms for single pass
+  int type1 = m->geom_type[obj1->geom];
+  int type2 = m->geom_type[obj2->geom];
+  if (type1 == mjGEOM_BOX || type1 == mjGEOM_MESH) {
+    if (type2 == mjGEOM_BOX || type2 == mjGEOM_MESH) {
+      return 1;
+    }
+  }
+  return 0;
+}
+
+
+
 // multi-point convex-convex collision, using libccd
 int mjc_Convex(const mjModel* m, const mjData* d,
                mjContact* con, int g1, int g2, mjtNum margin) {
@@ -884,12 +918,22 @@ int mjc_Convex(const mjModel* m, const mjData* d,
   mjCCDObj obj1, obj2;
   mjc_initCCDObj(&obj1, m, d, g1, margin);
   mjc_initCCDObj(&obj2, m, d, g2, margin);
+  int max_contacts = 1;
+
+  if (mjENABLED(mjENBL_MULTICCD) && singlePass(&obj1, &obj2)) {
+    max_contacts = 4;
+  }
 
   // find initial contact
-  int ncon = mjc_CCDIteration(m, d, &obj1, &obj2, con, margin);
+  int ncon = mjc_CCDIteration(m, d, &obj1, &obj2, con, max_contacts, margin);
+
+  // nativeccd supports multi Box-Box collision directly
+  if (!mjDISABLED(mjDSBL_NATIVECCD) && singlePass(&obj1, &obj2)) {
+    return ncon;
+  }
 
   // look for additional contacts
-  if (ncon && mjENABLED(mjENBL_MULTICCD)  // TODO(tassa) leave as bitflag or make geom attribute (?)
+  if (ncon == 1 && mjENABLED(mjENBL_MULTICCD)  // TODO(tassa) leave as bitflag or make geom attribute (?)
       && m->geom_type[g1] != mjGEOM_ELLIPSOID && m->geom_type[g1] != mjGEOM_SPHERE
       && m->geom_type[g2] != mjGEOM_ELLIPSOID && m->geom_type[g2] != mjGEOM_SPHERE) {
     // multiCCD parameters
@@ -935,7 +979,7 @@ int mjc_Convex(const mjModel* m, const mjData* d,
         mju_rotateFrame(con[0].pos, invrot, d->geom_xmat+9*g2, d->geom_xpos+3*g2);
 
         // search for new contact
-        int new_contact = mjc_CCDIteration(m, d, &obj1, &obj2, con+ncon, margin);
+        int new_contact = mjc_CCDIteration(m, d, &obj1, &obj2, con+ncon, 1, margin);
 
         // check new contact
         if (new_contact && mjc_isDistinctContact(con, ncon + 1, tolerance)) {
@@ -1583,7 +1627,7 @@ int mjc_ConvexElem(const mjModel* m, const mjData* d, mjContact* con,
   mjc_setCCDObjFlex(&obj2, f2, e2, -1);
 
   // find contacts
-  return mjc_CCDIteration(m, d, &obj1, &obj2, con, margin);
+  return mjc_CCDIteration(m, d, &obj1, &obj2, con, 1, margin);
 }
 
 

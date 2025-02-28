@@ -779,6 +779,10 @@ class Model(PyTreeNode):
     wrap_type: wrap object type (mjtWrap)                     (nwrap,)
     wrap_objid: object id: geom, site, joint                  (nwrap,)
     wrap_prm: divisor, joint coef, or site id                 (nwrap,)
+    wrap_inside_maxiter: maximum iterations for wrap_inside
+    wrap_inside_tolerance: tolerance for wrap_inside
+    wrap_inside_z_init: initialization for wrap_inside
+    is_wrap_inside: spatial tendon sidesite inside geom       (nwrapinside,)
     actuator_trntype: transmission type (mjtTrn)              (nu,)
     actuator_dyntype: dynamics type (mjtDyn)                  (nu,)
     actuator_gaintype: gain type (mjtGain)                    (nu,)
@@ -818,6 +822,13 @@ class Model(PyTreeNode):
     tuple_objtype: array of object types in all tuples        (ntupledata,)
     tuple_objid: array of object ids in all tuples            (ntupledata,)
     tuple_objprm: array of object params in all tuples        (ntupledata,)
+    key_time: key time                                        (nkey,)
+    key_qpos: key position                                    (nkey, nq)
+    key_qvel: key velocity                                    (nkey, nv)
+    key_act: key activation                                   (nkey, na)
+    key_mpos: key mocap position                              (nkey, nmocap, 3)
+    key_mquat: key mocap quaternion                           (nkey, nmocap, 4)
+    key_ctrl: key control                                     (nkey, nu)
     name_bodyadr: body name pointers                          (nbody,)
     name_jntadr: joint name pointers                          (njnt,)
     name_geomadr: geom name pointers                          (ngeom,)
@@ -999,7 +1010,7 @@ class Model(PyTreeNode):
   light_castshadow: jax.Array
   light_pos: jax.Array
   light_dir: jax.Array
-  light_poscom0: np.ndarray = _restricted_to('mujoco')
+  light_poscom0: jax.Array
   light_pos0: np.ndarray
   light_dir0: np.ndarray
   light_cutoff: jax.Array
@@ -1109,6 +1120,10 @@ class Model(PyTreeNode):
   wrap_type: np.ndarray
   wrap_objid: np.ndarray
   wrap_prm: np.ndarray
+  wrap_inside_maxiter: int = _restricted_to('mjx')
+  wrap_inside_tolerance: float = _restricted_to('mjx')
+  wrap_inside_z_init: float = _restricted_to('mjx')
+  is_wrap_inside: np.ndarray = _restricted_to('mjx')
   actuator_trntype: np.ndarray
   actuator_dyntype: np.ndarray
   actuator_gaintype: np.ndarray
@@ -1129,7 +1144,7 @@ class Model(PyTreeNode):
   actuator_actrange: jax.Array
   actuator_gear: jax.Array
   actuator_cranklength: np.ndarray
-  actuator_acc0: np.ndarray
+  actuator_acc0: jax.Array
   actuator_lengthrange: np.ndarray
   actuator_plugin: np.ndarray = _restricted_to('mujoco')
   sensor_type: np.ndarray
@@ -1149,6 +1164,13 @@ class Model(PyTreeNode):
   tuple_objtype: np.ndarray
   tuple_objid: np.ndarray
   tuple_objprm: np.ndarray
+  key_time: np.ndarray
+  key_qpos: np.ndarray
+  key_qvel: np.ndarray
+  key_act: np.ndarray
+  key_mpos: np.ndarray
+  key_mquat: np.ndarray
+  key_ctrl: np.ndarray
   name_bodyadr: np.ndarray
   name_jntadr: np.ndarray
   name_geomadr: np.ndarray
@@ -1238,7 +1260,7 @@ class Data(PyTreeNode):
     geom_xpos: Cartesian geom position                          (ngeom, 3)
     geom_xmat: Cartesian geom orientation                       (ngeom, 3, 3)
     site_xpos: Cartesian site position                          (nsite, 3)
-    site_xmat: Cartesian site orientation                       (nsite, 9)
+    site_xmat: Cartesian site orientation                       (nsite, 3, 3)
     cam_xpos: Cartesian camera position                         (ncam, 3)
     cam_xmat: Cartesian camera orientation                      (ncam, 3, 3)
     light_xpos: Cartesian light position                        (nlight, 3)
@@ -1326,7 +1348,7 @@ class Data(PyTreeNode):
     efc_aref: reference pseudo-acceleration                     (nefc,)
     efc_force: constraint force in constraint space             (nefc,)
     _qM_sparse: qM in sparse representation                     (nM,)
-    _qLD_sparse: qLD in sparse representation                   (nM,)
+    _qLD_sparse: qLD in sparse representation                   (nC,)
     _qLDiagInv_sparse: qLDiagInv in sparse representation       (nv,)
   """  # fmt: skip
   # constant sizes:

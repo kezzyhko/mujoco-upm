@@ -222,16 +222,16 @@ Returns the smallest signed distance between two geoms and optionally the segmen
 Returned distances are bounded from above by ``distmax``. |br| If no collision of distance smaller than ``distmax`` is
 found, the function will return ``distmax`` and ``fromto``, if given, will be set to (0, 0, 0, 0, 0, 0).
 
-.. admonition:: Positive ``distmax`` values
-   :class: note
+   .. admonition:: different (correct) behavior under `nativeccd`
+      :class: note
 
-   .. TODO: b/339596989 - Improve mjc_Convex.
+      As explained in :ref:`Collision Detection<coDistance>`, distances are inaccurate when using the
+      :ref:`legacy CCD pipeline<coCCD>`, and its use is discouraged.
 
-   For some colliders, a large, positive ``distmax`` will result in an accurate measurement. However, for collision
-   pairs which use the general ``mjc_Convex`` collider, the result will be approximate and likely innacurate.
-   This is considered a bug to be fixed in a future release.
-   In order to determine whether a geom pair uses ``mjc_Convex``, inspect the table at the top of
-   `engine_collision_driver.c <https://github.com/google-deepmind/mujoco/blob/main/src/engine/engine_collision_driver.c>`__.
+.. _mj_fullM:
+
+Convert sparse inertia matrix ``M`` into full (i.e. dense) matrix.
+|br| ``dst`` must be of size ``nv x nv``, ``M`` must be of the same size as ``mjData.qM``.
 
 .. _mj_mulM:
 

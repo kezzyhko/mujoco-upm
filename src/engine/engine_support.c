@@ -15,7 +15,6 @@
 #include "engine/engine_support.h"
 
 #include <stddef.h>
-#include <string.h>
 
 #include <mujoco/mjdata.h>
 #include <mujoco/mjmodel.h>
@@ -42,8 +41,8 @@
 
 //-------------------------- Constants -------------------------------------------------------------
 
- #define mjVERSION 327
-#define mjVERSIONSTRING "3.2.7"
+ #define mjVERSION 330
+#define mjVERSIONSTRING "3.3.0"
 
 // names of disable flags
 const char* mjDISABLESTRING[mjNDISABLE] = {
@@ -62,7 +61,8 @@ const char* mjDISABLESTRING[mjNDISABLE] = {
   "Sensor",
   "Midphase",
   "Eulerdamp",
-  "AutoReset"
+  "AutoReset",
+  "NativeCCD"
 };
 
 
@@ -73,8 +73,7 @@ const char* mjENABLESTRING[mjNENABLE] = {
   "Fwdinv",
   "InvDiscrete",
   "MultiCCD",
-  "Island",
-  "NativeCCD"
+  "Island"
 };
 
 
@@ -527,9 +526,6 @@ void mj_jacPointAxis(const mjModel* m, mjData* d, mjtNum* jacPoint, mjtNum* jacA
 void mj_jacSparse(const mjModel* m, const mjData* d,
                   mjtNum* jacp, mjtNum* jacr, const mjtNum* point, int body,
                   int NV, const int* chain) {
-  int da, ci;
-  mjtNum offset[3], tmp[3], *cdof = d->cdof;
-
   // clear jacobians
   if (jacp) {
     mju_zero(jacp, 3*NV);
@@ -539,6 +535,7 @@ void mj_jacSparse(const mjModel* m, const mjData* d,
   }
 
   // compute point-com offset
+  mjtNum offset[3];
   mju_sub3(offset, point, d->subtree_com+3*m->body_rootid[body]);
 
   // skip fixed bodies
@@ -552,10 +549,10 @@ void mj_jacSparse(const mjModel* m, const mjData* d,
   }
 
   // get last dof that affects this (as well as the original) body
-  da = m->body_dofadr[body] + m->body_dofnum[body] - 1;
+  int da = m->body_dofadr[body] + m->body_dofnum[body] - 1;
 
   // start and the end of the chain (chain is in increasing order)
-  ci = NV-1;
+  int ci = NV-1;
 
   // backward pass over dof ancestor chain
   while (da >= 0) {
@@ -569,20 +566,23 @@ void mj_jacSparse(const mjModel* m, const mjData* d,
       mjERROR("dof index %d not found in chain", da);
     }
 
+    const mjtNum* cdof = d->cdof + 6*da;
+
     // construct rotation jacobian
     if (jacr) {
-      jacr[ci] = cdof[6*da];
-      jacr[ci+NV] = cdof[6*da+1];
-      jacr[ci+2*NV] = cdof[6*da+2];
+      jacr[ci+0*NV] = cdof[0];
+      jacr[ci+1*NV] = cdof[1];
+      jacr[ci+2*NV] = cdof[2];
     }
 
     // construct translation jacobian (correct for rotation)
     if (jacp) {
-      mju_cross(tmp, cdof+6*da, offset);
+      mjtNum tmp[3];
+      mju_cross(tmp, cdof, offset);
 
-      jacp[ci] = cdof[6*da+3] + tmp[0];
-      jacp[ci+NV] = cdof[6*da+4] + tmp[1];
-      jacp[ci+2*NV] = cdof[6*da+5] + tmp[2];
+      jacp[ci+0*NV] = cdof[3] + tmp[0];
+      jacp[ci+1*NV] = cdof[4] + tmp[1];
+      jacp[ci+2*NV] = cdof[5] + tmp[2];
     }
 
     // advance to parent dof
@@ -596,9 +596,8 @@ void mj_jacSparse(const mjModel* m, const mjData* d,
 void mj_jacSparseSimple(const mjModel* m, const mjData* d,
                         mjtNum* jacdifp, mjtNum* jacdifr, const mjtNum* point,
                         int body, int flg_second, int NV, int start) {
-  mjtNum offset[3], tmp[3];
-
   // compute point-com offset
+  mjtNum offset[3];
   mju_sub3(offset, point, d->subtree_com+3*m->body_rootid[body]);
 
   // skip fixed body
@@ -631,6 +630,7 @@ void mj_jacSparseSimple(const mjModel* m, const mjData* d,
 
     // construct translation jacobian (correct for rotation)
     if (jacdifp) {
+      mjtNum tmp[3];
       mju_cross(tmp, cdof, offset);
 
       // plus sign
@@ -1087,38 +1087,25 @@ void mj_mulM_island(const mjModel* m, const mjData* d, mjtNum* res, const mjtNum
 void mj_mulM2(const mjModel* m, const mjData* d, mjtNum* res, const mjtNum* vec) {
   int  nv = m->nv;
   const mjtNum* qLD = d->qLD;
-  const int* dofMadr = m->dof_Madr;
 
   mju_zero(res, nv);
 
   // res = L * vec
   for (int i=0; i < nv; i++) {
-    // simple: diagonal
-    if (m->dof_simplenum[i]) {
-      res[i] = vec[i];
-    }
+    // diagonal
+    res[i] = vec[i];
 
-    // regular: full multiplication
-    else {
-      // diagonal
-      res[i] += vec[i];
-
-      // off-diagonal
-      int j = m->dof_parentid[i];
-      int adr = dofMadr[i] + 1;
-      while (j >= 0) {
-        res[i] += qLD[adr]*vec[j];
-
-        // advance to next element
-        j = m->dof_parentid[j];
-        adr++;
-      }
+    // non-simple: add off-diagonals
+    if (!m->dof_simplenum[i]) {
+      int adr = d->C_rowadr[i];
+      res[i] += mju_dotSparse(qLD+adr, vec, d->C_rownnz[i] - 1, d->C_colind+adr, /*flg_unc1=*/0);
     }
   }
 
   // res *= sqrt(D)
   for (int i=0; i < nv; i++) {
-    res[i] *= mju_sqrt(qLD[dofMadr[i]]);
+    int diag = d->C_rowadr[i] + d->C_rownnz[i] - 1;
+    res[i] *= mju_sqrt(qLD[diag]);
   }
 }
 
@@ -1438,7 +1425,7 @@ mjtNum mj_geomDistance(const mjModel* m, const mjData* d, int geom1, int geom2, 
   }
 
   // use nativecdd if flag is enabled
-  if (mjENABLED(mjENBL_NATIVECCD)) {
+  if (!mjDISABLED(mjDSBL_NATIVECCD)) {
     if (func == mjc_Convex || func == mjc_BoxBox) {
       return mj_geomDistanceCCD(m, d, g1, g2, distmax, fromto);
     }

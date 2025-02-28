@@ -2,6 +2,91 @@
 Changelog
 =========
 
+Version 3.3.0 (Feb 26, 2025)
+----------------------------
+
+
+Feature promotion
+^^^^^^^^^^^^^^^^^
+.. youtube:: qJFbx-FR7Bc
+   :aspect: 16:7
+   :align: right
+   :width: 240px
+
+1. Introduced a new kind of **fast deformable body**, activated by setting :ref:`flexcomp/dof<body-flexcomp-dof>` to
+   "trilinear". This type of :ref:`deformable<CDeformable>` flex object has the same collision geometry as a regular
+   flex, but has far fewer degrees of freedom. Instead of 3 dofs per vertex, only the corners of the bounding box are
+   free to move, with the positions of the interior vertices computed with trilinear interpolation of the 8 corners, for
+   a total of 24 dofs for the entire flex object (or less, if some of the corners are pinned). This limits the types of
+   deformation achievable by the flex, but allows for much faster simulation. For example, see the video on the right
+   comparing `full <https://github.com/google-deepmind/mujoco/blob/main/model/flex/gripper.xml>`__ and `trilinear
+   <https://github.com/google-deepmind/mujoco/blob/main/model/flex/gripper_trilinear.xml>`__ flexes for modeling
+   deformable gripper pads.
+
+
+.. image:: images/computation/ccd_light.gif
+      :width: 20%
+      :align: right
+      :class: only-light
+
+.. image:: images/computation/ccd_dark.gif
+   :width: 20%
+   :align: right
+   :class: only-dark
+
+2. The native convex collision detection pipeline introduced in 3.2.3 and enabled by the
+   :ref:`nativeccd<option-flag-nativeccd>` flag, is now the default. See the section on
+   :ref:`Convex Collision Detection<coCCD>` for more details.
+
+   **Migration:** If the new pipeline breaks your workflow, set :ref:`nativeccd<option-flag-nativeccd>` to "disable".
+
+General
+^^^^^^^
+3. Add support for custom plots in the MuJoCo viewer by exposing a ``viewport`` property, a ``set_figures`` method,
+   and a ``clear_figures`` method.
+4. Separate collision and deformation meshes for :ref:`flex<deformable-flex>`. This enables a fixed cost for the soft
+   body computations, while preserving the fidelity of high-resolution collisions.
+5. Added :ref:`potential<sensor-e_potential>` and :ref:`kinetic<sensor-e_kinetic>` energy sensors.
+6. Improved shadow rendering in the native renderer.
+7. Moved ``introspect`` to ``python/introspect``.
+
+.. admonition:: Breaking API changes
+   :class: attention
+
+   8. As mentioned above, the native convex collision detection pipeline is now the default, which may break some
+      workflows. In this case, set :ref:`nativeccd<option-flag-nativeccd>` to "disable" to restore the old behavior.
+   9. Added :ref:`mjs_setDeepCopy` API function. When the deep copy flag is 0, attaching a model will not copy it to the
+      parent, so the original references to the child can be used to modify the parent after attachment. The default
+      behavior is to perform such a shallow copy. The old behavior of creating a deep copy of the child model while
+      attaching can be restored by setting the deep copy flag to 1.
+   10. Changes to inertia inference from meshes:
+
+       Previously, in order to specify that the mass lies on the surface, :ref:`geom/shellinertia<body-geom-shellinertia>`
+       could be used for any geom type. Now this attribute is ignored if the geom is a mesh; instead, inertia inference
+       for meshes is specified in the asset, using the :ref:`asset/mesh/inertia<asset-mesh-inertia>` attribute.
+
+       Previously, if the volumetric inertia computation failed (for example due to a very flat mesh), the compiler
+       would silently fall back to surface inertia computation. Now, the compiler will throw an informative error.
+   11. Removed the composite type ``grid``. Users should instead use :ref:`flexcomp<body-flexcomp>`.
+   12. Removed the ``particle`` composite type. It is recommended to use the more generic :ref:`replicate<replicate>`
+       instead, see for example `this model
+       <https://github.com/google-deepmind/mujoco/blob/main/model/replicate/particle.xml>`__.
+
+MJX
+^^^
+13. Added support for spatial tendons with internal sphere and cylinder wrapping.
+14. Fix a bug with box-box collisions :github:issue:`2356`.
+
+Python bindings
+^^^^^^^^^^^^^^^
+
+15. Added a pedagogical colab notebook for ``mujoco.rollout``, a Python module for multithreaded simulation rollouts.
+    It is available here |rollout_colab|.
+    |br| Contribution by :github:user:`aftersomemath`.
+
+.. |rollout_colab| image:: https://colab.research.google.com/assets/colab-badge.svg
+                   :target: https://colab.research.google.com/github/google-deepmind/mujoco/blob/main/python/rollout.ipynb
+
 Version 3.2.7 (Jan 14, 2025)
 ----------------------------
 
@@ -77,7 +162,7 @@ General
 4. The not-useful ``convexhull`` compiler option (to disable computation of mesh convex hulls) has been removed.
 5. Removed the deprecated ``mju_rotVecMat``, ``mju_rotVecMatT`` and ``mjv_makeConnector`` functions.
 6. Sorting now uses a faster, native sort function (fixes :github:issue:`1638`).
-7. The PBR texture layers introduced in 3.2.1 were refactored from seperate sub-elements to a single
+7. The PBR texture layers introduced in 3.2.1 were refactored from separate sub-elements to a single
    :ref:`layer<material-layer>` sub-element.
 8. The composite types box, cylinder, and sphere have been removed. Users should instead use the equivalent types
    available in :ref:`flexcomp<body-flexcomp>`.
@@ -112,13 +197,14 @@ General
 ^^^^^^^
 
 .. youtube:: e8lUuykQPGs
+   :aspect: 16:7
    :align: right
    :width: 240px
 
 1. The Newton solver no longer requires ``nv*nv`` memory allocation, allowing for much larger models. See e.g.,
    `100_humanoids.xml  <https://github.com/google-deepmind/mujoco/blob/main/model/humanoid/100_humanoids.xml>`__.
-   Two quadratic-memory allocations still remain to be fully sparsified: ``mjData.actuator_moment`` and the matrices used
-   by the PGS solver.
+   Two quadratic-memory allocations still remain to be fully sparsified: ``mjData.actuator_moment`` and the matrices
+   used by the PGS solver.
 2. Removed the :at:`solid` and :at:`membrane` plugins and moved the associated computations into the engine. See `3D
    example model <https://github.com/google-deepmind/mujoco/blob/main/model/flex/floppy.xml>`__ and `2D example model
    <https://github.com/google-deepmind/mujoco/blob/main/model/flex/trampoline.xml>`__ for examples of flex objects
@@ -167,10 +253,11 @@ General
 
 4. Added the :ref:`nativeccd<option-flag-nativeccd>` flag. When this flag is enabled, general convex collision
    detection is handled with a new native code path, rather than `libccd <https://github.com/danfis/libccd>`__.
-   This feature is in early stages of testing, but users who've experienced issues related to collsion detection are
+   This feature is in early stages of testing, but users who've experienced issues related to collision detection are
    welcome to experiment with it and report any issues.
 
 .. youtube:: kcM_oauk3ZA
+   :aspect: 16:7
    :align: right
    :width: 240px
 
@@ -305,7 +392,7 @@ General
       The older functions have been removed from the Python bindings and will be removed from the C API in the next
       release.
    5. Removed the ``actuator_actdim`` callback from actuator plugins. They now have the ``actdim`` attribute, which
-      must be used with actuators that write state to the ``act`` array. This fixed a crash which happend when
+      must be used with actuators that write state to the ``act`` array. This fixed a crash which happened when
       keyframes were used in a model with stateful actuator plugins. The PID plugin will give an error when the wrong
       value of actdim is provided.
 
@@ -315,6 +402,7 @@ General
    speed and memory footprint.
 
 .. youtube:: ZXBTEIDWHhs
+   :aspect: 16:7
    :align: right
    :width: 240px
 
@@ -403,6 +491,7 @@ General
 ^^^^^^^
 
 .. youtube:: 5k0_wsIRAFc
+   :aspect: 16:7
    :align: right
    :width: 240px
 
@@ -507,6 +596,7 @@ Python bindings
 ^^^^^^^^^^^^^^^
 
 .. youtube:: xHDS0n5DpqM
+   :aspect: 16:7
    :align: right
    :width: 240px
 
@@ -566,7 +656,7 @@ General
 1. Improved the :ref:`discardvisual<compiler-discardvisual>` compiler flag, which now discards all visual-only assets.
    See :ref:`discardvisual<compiler-discardvisual>` for details.
 2. Removed the :ref:`timer<mjtTimer>` for midphase colllision detection, it is now folded in with the narrowphase
-   timer. This is because timing the two phases seperately required fine-grained timers inside the collision
+   timer. This is because timing the two phases separately required fine-grained timers inside the collision
    functions; these functions are so small and fast that the timer itself was incurring a measurable cost.
 3. Added the flag :ref:`bvactive<visual-global-bvactive>` to ``visual/global``, allowing users to turn off
    visualisation of active bounding volumes (the red/green boxes in this :ref:`this changelog item<midphase>`). For
@@ -671,6 +761,7 @@ General
    ``qfrc_{spring, damper, gravcomp, fluid}``. The sum of these vectors equals ``qfrc_passive``.
 
 .. youtube:: H9qG9Zf2W44
+   :aspect: 16:7
    :align: right
    :width: 240px
 
@@ -734,6 +825,7 @@ Documentation
 ^^^^^^^^^^^^^
 
 .. youtube:: cE3s_IfO4g4
+   :aspect: 16:7
    :align: right
    :width: 240px
 
@@ -765,6 +857,7 @@ New features
            :target: https://colab.research.google.com/github/google-deepmind/mujoco/blob/main/mjx/tutorial.ipynb
 
 .. youtube:: QewlEqIZi1o
+   :aspect: 16:7
    :align: right
    :width: 240px
 
@@ -775,6 +868,7 @@ New features
      gradient at query points. See the :ref:`documentation<exWriting>` for more details.
 
 .. youtube:: ra2bTiZHGlw
+   :aspect: 16:7
    :align: right
    :width: 240px
 
@@ -795,6 +889,7 @@ New features
    this functionality to be unified in the future.
 
 .. youtube:: Vc1tq0fFvQA
+   :aspect: 16:7
    :align: right
    :width: 240px
 
@@ -923,6 +1018,7 @@ Simulate
 ^^^^^^^^
 
 .. youtube:: YSvWn_poqWs
+   :aspect: 16:7
    :align: right
    :width: 240px
 
@@ -937,6 +1033,7 @@ Documentation
 ^^^^^^^^^^^^^
 
 .. youtube:: nljr0X79vI0
+   :aspect: 16:7
    :align: right
    :width: 240px
 
@@ -1035,11 +1132,12 @@ Simulate
 ^^^^^^^^
 
 .. youtube:: mXVPbppGk5I
+   :aspect: 16:7
    :align: right
    :width: 240px
 
 6. Added Visualization tab to simulate UI, corresponding to elements of the :ref:`visual<visual>` MJCF element. After
-   modifying values in the GUI, a saved XML will contain the new values. The modifyable members of
+   modifying values in the GUI, a saved XML will contain the new values. The modifiable members of
    :ref:`mjStatistic` (:ref:`extent<statistic-extent>`, :ref:`meansize<statistic-meansize>` and
    :ref:`center<statistic-center>`) are computed by the compiler and therefore do not have defaults. In order for these
    attributes to appear in the saved XML, a value must be specified in the loaded XML.
@@ -1158,7 +1256,7 @@ Python bindings
    passive viewer now also requires an explicit call to ``sync`` on its handle to pick up any update to the physics
    state. This is to avoid race conditions that can result in visual artifacts. See
    :ref:`documentation<PyViewerPassive>` for details.
-#. The ``viewer.launch_repl`` function has been removed since its functionality is superceded by ``launch_passive``.
+#. The ``viewer.launch_repl`` function has been removed since its functionality is superseded by ``launch_passive``.
 #. Added a small number of missing struct fields discovered through the new ``introspect`` metadata.
 
 Bug fixes
@@ -1408,6 +1506,7 @@ General
    See the :ref:`Memory allocation <CSize>` section for details.
 
    .. youtube:: RHnXD6uO3Mg
+      :aspect: 16:7
       :align: right
       :height: 150px
 
@@ -1495,6 +1594,7 @@ General
 ^^^^^^^
 
 .. youtube:: BcHZ5BFeTmU
+   :aspect: 16:7
    :align: right
    :height: 150px
 
@@ -1511,6 +1611,7 @@ General
    different uses of new weld attributes.
 
    .. youtube:: s-0JHanqV1A
+      :aspect: 16:7
       :align: right
       :height: 150px
 

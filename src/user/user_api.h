@@ -63,6 +63,9 @@ MJAPI void mjs_addSpec(mjSpec* s, mjSpec* child);
 // Activate plugin, return 0 on success.
 MJAPI int mjs_activatePlugin(mjSpec* s, const char* name);
 
+// Turn deep copy on or off attach. Returns 0 on success.
+MJAPI int mjs_setDeepCopy(mjSpec* s, int deepcopy);
+
 
 //---------------------------------- Attachment ----------------------------------------------------
 
@@ -77,6 +80,10 @@ MJAPI mjsFrame* mjs_attachFrame(mjsBody* parent, const mjsFrame* child,
 // Attach child body to a parent site, return the attached body if success or NULL otherwise.
 MJAPI mjsBody* mjs_attachToSite(mjsSite* parent, const mjsBody* child,
                                 const char* prefix, const char* suffix);
+
+// Attach child frame to a parent site, return the attached frame if success or NULL otherwise.
+MJAPI mjsFrame* mjs_attachFrameToSite(mjsSite* parent, const mjsFrame* child,
+                                      const char* prefix, const char* suffix);
 
 // Detach body from mjSpec, remove all references and delete the body, return 0 on success.
 MJAPI int mjs_detachBody(mjSpec* s, mjsBody* b);
@@ -200,6 +207,9 @@ MJAPI mjsElement* mjs_findElement(mjSpec* s, mjtObj type, const char* name);
 
 // Find child body by name.
 MJAPI mjsBody* mjs_findChild(mjsBody* body, const char* name);
+
+// Get parent body.
+MJAPI mjsBody* mjs_getParent(mjsElement* element);
 
 // Find frame by name.
 MJAPI mjsFrame* mjs_findFrame(mjSpec* s, const char* name);
