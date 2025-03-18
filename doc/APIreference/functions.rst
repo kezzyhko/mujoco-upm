@@ -99,7 +99,7 @@ Free last XML model if loaded. Called internally at each load.
 .. mujoco-include:: mj_saveXMLString
 
 Save spec to XML string, return 0 on success, -1 on failure. If the length of the output buffer is too small, returns
-the required size. XML saving requires that the spec first be compiled.
+the required size. XML saving automatically compiles the spec before saving.
 
 .. _mj_saveXML:
 
@@ -4201,6 +4201,15 @@ Find child body by name.
 .. mujoco-include:: mjs_getParent
 
 Get parent body.
+
+.. _mjs_getFrame:
+
+`mjs_getFrame <#mjs_getFrame>`__
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+.. mujoco-include:: mjs_getFrame
+
+Get parent frame.
 
 .. _mjs_findFrame:
 

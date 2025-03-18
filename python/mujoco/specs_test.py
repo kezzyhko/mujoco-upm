@@ -520,13 +520,9 @@ class SpecsTest(absltest.TestCase):
     np.testing.assert_array_equal(data_new.qpos[:4], data.qpos)
     np.testing.assert_array_equal(data_new.qvel[:3], data.qvel)
 
-  def test_uncompiled_spec_cannot_be_written(self):
+  def test_uncompiled_spec_can_be_written(self):
     spec = mujoco.MjSpec()
-
-    # Cannot write XML of an uncompiled spec.
-    expected_error = 'XML Write error: Only compiled model can be written'
-    with self.assertRaisesWithLiteralMatch(mujoco.FatalError, expected_error):
-      spec.to_xml()
+    spec.to_xml()
 
   def test_modelname_default_class(self):
     XML = textwrap.dedent("""\
@@ -1076,6 +1072,7 @@ class SpecsTest(absltest.TestCase):
     child2 = mujoco.MjSpec()
     child2.assets = {'cube2.obj': 'cube2_content'}
     body2 = child2.worldbody.add_body(name='body')
+    body2.set_frame(child2.worldbody.add_frame(pos=[-1, -1, 1]))
     self.assertIsNotNone(parent.attach(child2, frame=frame, prefix='child-'))
     self.assertIsNotNone(child2.worldbody)
     self.assertEqual(child2.parent, parent)
@@ -1084,7 +1081,7 @@ class SpecsTest(absltest.TestCase):
     self.assertIsNotNone(model2)
     self.assertEqual(model2.nbody, 3)
     np.testing.assert_array_equal(model2.body_pos[1], [0, 1, 4])
-    np.testing.assert_array_equal(model2.body_pos[2], [2, 3, 2])
+    np.testing.assert_array_equal(model2.body_pos[2], [3, 4, 3])
     np.testing.assert_array_equal(model2.body_quat[1], [0, 0, 0, 1])
     np.testing.assert_array_equal(model2.body_quat[2], [0, 0, 0, 1])
     self.assertEqual(parent.assets['cube.obj'], 'cube_content')
@@ -1094,6 +1091,7 @@ class SpecsTest(absltest.TestCase):
     child3 = mujoco.MjSpec()
     child3.assets = {'cube2.obj': 'new_cube2_content'}
     body3 = child3.worldbody.add_body(name='body')
+    body3.set_frame(child3.worldbody.add_frame(pos=[-1, -1, 1]))
     self.assertIsNotNone(parent.attach(child3, frame='frame', prefix='child3-'))
     self.assertIsNotNone(child3.worldbody)
     self.assertEqual(child3.parent, parent)
@@ -1102,8 +1100,8 @@ class SpecsTest(absltest.TestCase):
     self.assertIsNotNone(model3)
     self.assertEqual(model3.nbody, 4)
     np.testing.assert_array_equal(model3.body_pos[1], [0, 1, 4])
-    np.testing.assert_array_equal(model3.body_pos[2], [2, 3, 2])
-    np.testing.assert_array_equal(model3.body_pos[3], [3, 4, 1])
+    np.testing.assert_array_equal(model3.body_pos[2], [3, 4, 3])
+    np.testing.assert_array_equal(model3.body_pos[3], [4, 5, 2])
     np.testing.assert_array_equal(model3.body_quat[1], [0, 0, 0, 1])
     np.testing.assert_array_equal(model3.body_quat[2], [0, 0, 0, 1])
     np.testing.assert_array_equal(model3.body_quat[3], [0, 0, 0, 1])
