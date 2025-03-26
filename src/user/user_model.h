@@ -16,6 +16,7 @@
 #define MUJOCO_SRC_USER_USER_MODEL_H_
 
 #include <array>
+#include <cstdint>
 #include <functional>
 #include <map>
 #include <string>
@@ -324,6 +325,9 @@ class mjCModel : public mjCModel_, private mjSpec {
   // set attached flag
   void SetAttached(bool deepcopy) { attached_ |= !deepcopy; }
 
+  // get new uid
+  int GetUid() { return uid_count_++; }
+
  private:
   // settings for each defaults class
   std::vector<mjCDef*> defaults_;
@@ -334,9 +338,11 @@ class mjCModel : public mjCModel_, private mjSpec {
   // list of active plugins
   std::vector<std::pair<const mjpPlugin*, int>> active_plugins_;
 
+  // make lists of bodies and children
+  void MakeTreeLists(mjCBody* body = nullptr);
+
   // compile phases
   void TryCompile(mjModel*& m, mjData*& d, const mjVFS* vfs);
-  void MakeLists(mjCBody* body);        // make lists of bodies, geoms, joints, sites
   void SetNuser();                      // set nuser fields
   void IndexAssets(bool discard);       // convert asset names into indices
   void CheckEmptyNames();               // check empty names
@@ -438,11 +444,14 @@ class mjCModel : public mjCModel_, private mjSpec {
   void MarkPluginInstance(std::unordered_map<std::string, bool>& instances,
                           const std::vector<T*>& list);
 
+  // generate a signature for the model
+  uint64_t Signature();
 
   mjListKeyMap ids;   // map from object names to ids
   mjCError errInfo;   // last error info
   std::vector<mjKeyInfo> key_pending_;  // attached keyframes
   bool deepcopy_;     // copy objects when attaching
   bool attached_ = false;  // true if model is attached to a parent model
+  int uid_count_ = 0;  // unique id count for all objects
 };
 #endif  // MUJOCO_SRC_USER_USER_MODEL_H_

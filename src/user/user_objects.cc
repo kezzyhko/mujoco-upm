@@ -837,6 +837,7 @@ mjCBody::mjCBody(mjCModel* _model) {
 
 mjCBody::mjCBody(const mjCBody& other, mjCModel* _model) {
   model = _model;
+  uid = model->GetUid();
   mjSpec* origin = model->FindSpec(other.compiler);
   compiler = origin ? &origin->compiler : &model->spec.compiler;
   *this = other;
@@ -930,6 +931,7 @@ mjCBody& mjCBody::operator+=(const mjCFrame& other) {
   frames.back()->frame = other.frame;
   if (model->deepcopy_) {
     frames.back()->NameSpace(other_model);
+    frames.back()->uid = model->GetUid();
   } else {
     frames.back()->AddRef();
   }
@@ -1022,6 +1024,8 @@ void mjCBody::CopyList(std::vector<T*>& dst, const std::vector<T*>& src,
     // increment refcount if shallow copy is made
     if (!model->deepcopy_) {
       dst.back()->AddRef();
+    } else {
+      dst.back()->uid = model->GetUid();
     }
 
     // set namespace
@@ -1231,7 +1235,16 @@ mjCBody* mjCBody::AddBody(mjCDef* _def) {
   obj->classname = _def ? _def->name : classname;
 
   bodies.push_back(obj);
+
+  // recompute lists
+  model->ResetTreeLists();
+  model->MakeTreeLists();
+
   obj->parent = this;
+
+  // update signature
+  obj->uid = model->GetUid();
+  model->spec.element->signature = model->Signature();
   return obj;
 }
 
@@ -1241,6 +1254,12 @@ mjCBody* mjCBody::AddBody(mjCDef* _def) {
 mjCFrame* mjCBody::AddFrame(mjCFrame* _frame) {
   mjCFrame* obj = new mjCFrame(model, _frame ? _frame : NULL);
   frames.push_back(obj);
+  model->ResetTreeLists();
+  model->MakeTreeLists();
+
+  // update signature
+  obj->uid = model->GetUid();
+  model->spec.element->signature = model->Signature();
   return obj;
 }
 
@@ -1256,6 +1275,15 @@ mjCJoint* mjCBody::AddFreeJoint() {
   obj->body = this;
 
   joints.push_back(obj);
+
+  // recompute lists
+  model->ResetTreeLists();
+  model->MakeTreeLists();
+
+
+  // update signature
+  obj->uid = model->GetUid();
+  model->spec.element->signature = model->Signature();
   return obj;
 }
 
@@ -1270,6 +1298,15 @@ mjCJoint* mjCBody::AddJoint(mjCDef* _def) {
   obj->body = this;
 
   joints.push_back(obj);
+
+  // recompute lists
+  model->ResetTreeLists();
+  model->MakeTreeLists();
+
+
+  // update signature
+  obj->uid = model->GetUid();
+  model->spec.element->signature = model->Signature();
   return obj;
 }
 
@@ -1284,6 +1321,15 @@ mjCGeom* mjCBody::AddGeom(mjCDef* _def) {
   obj->body = this;
 
   geoms.push_back(obj);
+
+  // recompute lists
+  model->ResetTreeLists();
+  model->MakeTreeLists();
+
+
+  // update signature
+  obj->uid = model->GetUid();
+  model->spec.element->signature = model->Signature();
   return obj;
 }
 
@@ -1298,6 +1344,15 @@ mjCSite* mjCBody::AddSite(mjCDef* _def) {
   obj->body = this;
 
   sites.push_back(obj);
+
+  // recompute lists
+  model->ResetTreeLists();
+  model->MakeTreeLists();
+
+
+  // update signature
+  obj->uid = model->GetUid();
+  model->spec.element->signature = model->Signature();
   return obj;
 }
 
@@ -1312,6 +1367,15 @@ mjCCamera* mjCBody::AddCamera(mjCDef* _def) {
   obj->body = this;
 
   cameras.push_back(obj);
+
+  // recompute lists
+  model->ResetTreeLists();
+  model->MakeTreeLists();
+
+
+  // update signature
+  obj->uid = model->GetUid();
+  model->spec.element->signature = model->Signature();
   return obj;
 }
 
@@ -1326,6 +1390,15 @@ mjCLight* mjCBody::AddLight(mjCDef* _def) {
   obj->body = this;
 
   lights.push_back(obj);
+
+  // recompute lists
+  model->ResetTreeLists();
+  model->MakeTreeLists();
+
+
+  // update signature
+  obj->uid = model->GetUid();
+  model->spec.element->signature = model->Signature();
   return obj;
 }
 
@@ -1347,11 +1420,9 @@ mjCFrame* mjCBody::ToFrame() {
       std::remove_if(parent->bodies.begin(), parent->bodies.end(),
                      [this](mjCBody* body) { return body == this; }),
       parent->bodies.end());
-  if (model->IsCompiled()) {
-    mjCBody *world = model->bodies_[0];
-    model->ResetTreeLists();
-    model->MakeLists(world);
-  }
+  model->ResetTreeLists();
+  model->MakeTreeLists();
+  model->spec.element->signature = model->Signature();
   return newframe;
 }
 
