@@ -175,11 +175,10 @@ replicating 200 times, suffixes will be ``000, 001, ...`` etc). All referencing 
 and namespaced appropriately. Detailed examples of models using replicate can be found in the
 `model/replicate/ <https://github.com/google-deepmind/mujoco/tree/main/model/replicate>`__ directory.
 
-There is a caveat concerning :ref:`keyframes<keyframe>` when using replicate. Since :ref:`mjs_attachFrame` is used to
+There is a caveat concerning :ref:`keyframes<keyframe>` when using replicate. Since :ref:`mjs_attach` is used to
 self-attach multiple times the enclosed kinematic tree, if this tree contains further :ref:`attach<body-attach>`
 elements, keyframes will not be replicated nor namespaced by :ref:`replicate<replicate>`, but they will be attached and
-namespaced once by the innermost call of :ref:`mjs_attachFrame` or :ref:`mjs_attachBody`. See the limitations discussed
-in :ref:`attach<body-attach>`.
+namespaced once by the innermost call of :ref:`mjs_attach`. See the limitations discussed in :ref:`attach<body-attach>`.
 
 .. _replicate-count:
 
@@ -3717,8 +3716,9 @@ all attachments will appear in the saved XML file.
 
 .. _body-attach-body:
 
-:at:`body`: :at-val:`string, required`
-   Name of the body in the sub-model to attach here. The body and its subtree will be attached.
+:at:`body`: :at-val:`string, optional`
+   Name of the body in the sub-model to attach here. The body and its subtree will be attached. If this attribute is not
+   specified, the contents of the world body will be attached in a new :ref:`frame<body-frame>`.
 
 .. _body-attach-prefix:
 
