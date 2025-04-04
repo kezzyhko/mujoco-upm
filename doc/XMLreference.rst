@@ -832,6 +832,10 @@ has any effect. The settings here are global and apply to the entire model.
    necessary to adjust this attribute and the geom-specific groups so as to exclude world geoms from the inertial
    computation.
 
+.. _compiler-saveinertial:
+
+:at:`saveinertial`: :at-val:`[false, true], "false"`
+   If set to "true", the compiler will save explicit :ref:`inertial <body-inertial>` clauses for all bodies.
 
 .. _compiler-lengthrange:
 
@@ -4702,6 +4706,13 @@ length X, as in the clip on the right of `this example model
    joint damping which is integrated implicitly by the Euler method, tendon damping is not integrated implicitly, thus
    joint damping should be used if possible.
 
+.. TODO(tassa): Update here once the feature is implemented.
+
+.. _tendon-spatial-armature:
+
+:at:`armature`: :at-val:`real, "0"`
+   Inertia associated with tendon. This feature is not yet implemented.
+
 .. _tendon-spatial-user:
 
 :at:`user`: :at-val:`real(nuser_tendon), "0 0 ..."`
@@ -4810,6 +4821,8 @@ as above.
 .. _tendon-fixed-stiffness:
 
 .. _tendon-fixed-damping:
+
+.. _tendon-fixed-armature:
 
 .. _tendon-fixed-user:
 
