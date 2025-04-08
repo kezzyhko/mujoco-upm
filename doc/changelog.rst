@@ -20,6 +20,8 @@ General
   bodies when saving to XML.
 - Added :ref:`orientation<body-composite-quat>` attribute to :ref:`composite<body-composite>`. Moreover, allow the
   composite to be the direct child of a frame.
+- Added :ref:`tendon actuator force limits<tendon-spatial-actuatorfrclimited>` and
+  :ref:`tendon actuator force sensor<sensor-tendonactuatorfrc>`.
 
 Bug fixes
 ^^^^^^^^^
@@ -32,8 +34,18 @@ Bug fixes
 
 Python bindings
 ^^^^^^^^^^^^^^^
+
+.. youtube:: LbANnKMDOHg
+   :aspect: 16:7
+   :align: right
+   :width: 240px
+
+- Added examples of procedural model creation to the Model Editing tutorial: |mjspec_colab|
 - Added support for nameless :ref:`mjSpec` objects in the ``bind`` method, see the corresponding :ref:`section<PyMJCF>`
   in the documentation.
+
+.. |mjspec_colab| image:: https://colab.research.google.com/assets/colab-badge.svg
+                  :target: https://colab.research.google.com/github/google-deepmind/mujoco/blob/main/python/mjspec.ipynb
 
 Version 3.3.0 (Feb 26, 2025)
 ----------------------------
