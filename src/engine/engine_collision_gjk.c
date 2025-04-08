@@ -14,7 +14,6 @@
 
 #include "engine/engine_collision_gjk.h"
 
-#include <float.h>
 #include <stddef.h>
 #include <stdint.h>
 #include <stdlib.h>
@@ -206,16 +205,16 @@ static void gjk(mjCCDStatus* status, mjCCDObj* obj1, mjCCDObj* obj2) {
         status->gjk_iterations = k;
         status->nsimplex = 0;
         status->nx = 0;
-        status->dist = mjMAXVAL;
+        status->dist = mjMAX_LIMIT;
         return;
       }
-    } else if (status->dist_cutoff < mjMAXVAL) {
+    } else if (status->dist_cutoff < mjMAX_LIMIT) {
       mjtNum vs = dot3(x_k, s_k), vv = dot3(x_k, x_k);
       if (dot3(x_k, s_k) > 0 && (vs*vs / vv) >= cutoff2) {
         status->gjk_iterations = k;
         status->nsimplex = 0;
         status->nx = 0;
-        status->dist = mjMAXVAL;
+        status->dist = mjMAX_LIMIT;
         return;
       }
     }
@@ -227,7 +226,7 @@ static void gjk(mjCCDStatus* status, mjCCDObj* obj1, mjCCDObj* obj2) {
       int ret = gjkIntersect(status, obj1, obj2);
       if (ret != -1) {
         status->nx = 0;
-        status->dist = ret > 0 ? 0 : mjMAXVAL;
+        status->dist = ret > 0 ? 0 : mjMAX_LIMIT;
         return;
       }
       k = status->gjk_iterations;
@@ -251,7 +250,7 @@ static void gjk(mjCCDStatus* status, mjCCDObj* obj1, mjCCDObj* obj2) {
       status->gjk_iterations = k;
       status->nsimplex = 0;
       status->nx = 0;
-      status->dist = mjMAXVAL;
+      status->dist = mjMAX_LIMIT;
       return;
     }
 
@@ -399,7 +398,7 @@ static inline mjtNum signedDistance(mjtNum normal[3], const Vertex* v1, const Ve
     scl3(normal, normal, norm);
     return dot3(normal, v1->vert);
   }
-  return mjMAXVAL;  // cannot recover normal (ignore face)
+  return mjMAX_LIMIT;  // cannot recover normal (ignore face)
 }
 
 
@@ -607,7 +606,7 @@ static void S3D(mjtNum lambda[4], const mjtNum s1[3], const mjtNum s2[3], const 
   }
 
   // find the smallest distance, and use the corresponding barycentric coordinates
-  mjtNum dmin = mjMAXVAL;
+  mjtNum dmin = mjMAX_LIMIT;
 
   if (!comp1) {
     mjtNum lambda_2d[3], x[3];
@@ -758,7 +757,7 @@ static void S2D(mjtNum lambda[3], const mjtNum s1[3], const mjtNum s2[3], const 
   }
 
   // find the smallest distance, and use the corresponding barycentric coordinates
-  mjtNum dmin = mjMAXVAL;
+  mjtNum dmin = mjMAX_LIMIT;
 
   if (!comp1) {
     mjtNum lambda_1d[2], x[3];
@@ -931,7 +930,7 @@ static int polytope2(Polytope* pt, mjCCDStatus* status, mjCCDObj* obj1, mjCCDObj
   sub3(diff, v2, v1);
 
   // find component with smallest magnitude (so cross product is largest)
-  mjtNum value = mjMAXVAL;
+  mjtNum value = mjMAX_LIMIT;
   int index = 0;
   for (int i = 0; i < 3; i++) {
     if (mju_abs(diff[i]) < value) {
@@ -1351,7 +1350,7 @@ static void epaWitness(const Polytope* pt, const Face* face, mjtNum x1[3], mjtNu
 // return a face of the expanded polytope that best approximates the pentration depth
 // witness points are in status->{x1, x2}
 static Face* epa(mjCCDStatus* status, Polytope* pt, mjCCDObj* obj1, mjCCDObj* obj2) {
-  mjtNum tolerance = status->tolerance, lower, upper = FLT_MAX;
+  mjtNum tolerance = status->tolerance, lower, upper = mjMAX_LIMIT;
   int k, kmax = status->max_iterations;
   Face* face = NULL, *pface = NULL;  // face closest to origin
 
@@ -1359,7 +1358,7 @@ static Face* epa(mjCCDStatus* status, Polytope* pt, mjCCDObj* obj1, mjCCDObj* ob
     pface = face;
 
     // find the face closest to the origin (lower bound for penetration depth)
-    lower = FLT_MAX;
+    lower = mjMAX_LIMIT;
     for (int i = 0; i < pt->nmap; i++) {
       if (pt->map[i]->dist < lower) {
         face = pt->map[i];
@@ -1577,7 +1576,7 @@ static mjtNum planeIntersect(mjtNum res[3], const mjtNum pn[3], mjtNum pd,
   mjtNum ab[3];
   sub3(ab, b, a);
   mjtNum temp = dot3(pn, ab);
-  if (temp == 0.0) return mjMAXVAL;  // parallel; no intersection
+  if (temp == 0.0) return mjMAX_LIMIT;  // parallel; no intersection
   mjtNum t = (pd - dot3(pn, a)) / temp;
   if (t >= 0.0 && t <= 1.0) {
     res[0] = a[0] + t*ab[0];
@@ -1864,36 +1863,38 @@ static int boxNormals(mjtNum res[9], int resind[3], int dim, mjCCDObj* obj,
   const mjtNum* mat = obj->data->geom_xmat + 3*g;
 
   if (dim == 3) {
+    int c = 0;
     int x = ((v1 & 1) && (v2 & 1) && (v3 & 1)) - (!(v1 & 1) && !(v2 & 1) && !(v3 & 1));
     int y = ((v1 & 2) && (v2 & 2) && (v3 & 2)) - (!(v1 & 2) && !(v2 & 2) && !(v3 & 2));
     int z = ((v1 & 4) && (v2 & 4) && (v3 & 4)) - (!(v1 & 4) && !(v2 & 4) && !(v3 & 4));
     globalcoord(res, mat, NULL, x, y, z);
     int sgn = x + y + z;
-    if (x) resind[0] = 0;
-    if (y) resind[0] = 2;
-    if (z) resind[0] = 4;
+    if (x) resind[c++] = 0;
+    if (y) resind[c++] = 2;
+    if (z) resind[c++] = 4;
     if (sgn == -1) resind[0]++;
-    return 1;
+    return c == 1 ? 1 : 0;  // return 1 only if vertices make a valid face
   }
 
   if (dim == 2) {
+    int c = 0;
     int x = ((v1 & 1) && (v2 & 1)) - (!(v1 & 1) && !(v2 & 1));
     int y = ((v1 & 2) && (v2 & 2)) - (!(v1 & 2) && !(v2 & 2));
     int z = ((v1 & 4) && (v2 & 4)) - (!(v1 & 4) && !(v2 & 4));
     if (x) {
       globalcoord(res, mat, NULL, x, 0, 0);
-      resind[0] = (x > 0) ? 0 : 1;
+      resind[c++] = (x > 0) ? 0 : 1;
     }
     if (y) {
-      int i = (x ? 1 : 0);
-      globalcoord(res + 3*i, mat, NULL, 0, y, 0);
-      resind[i] = (y > 0) ? 2 : 3;
+      globalcoord(res + 3*c, mat, NULL, 0, y, 0);
+      resind[c++] = (y > 0) ? 2 : 3;
     }
     if (z) {
       globalcoord(res + 3, mat, NULL, 0, 0, z);
-      resind[1] = (z > 0) ? 4 : 5;
+      resind[c++] = (z > 0) ? 4 : 5;
     }
-    return 2;
+    // TODO(kylebayes): Should be able to recover multiple contacts here.
+    return c == 2 ? 2 : 0;
   }
 
   if (dim == 1) {
@@ -2292,7 +2293,7 @@ mjtNum mjc_ccd(const mjCCDConfig* config, mjCCDStatus* status, mjCCDObj* obj1, m
     if (status->dist > status->tolerance) {
       inflate(status, full_margin1, full_margin2);
       if (status->dist > status->dist_cutoff) {
-        status->dist = mjMAXVAL;
+        status->dist = mjMAX_LIMIT;
       }
       return status->dist;
     }
