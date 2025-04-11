@@ -25,10 +25,23 @@
 #include <mujoco/mjmodel.h>
 #include "engine/engine_collision_gjk.h"
 #include "engine/engine_collision_primitive.h"
+#include "engine/engine_io.h"
 #include "engine/engine_util_blas.h"
 #include "engine/engine_util_errmem.h"
 #include "engine/engine_util_misc.h"
 #include "engine/engine_util_spatial.h"
+
+
+// allocate callback for EPA in nativeccd
+static void* ccd_allocate(void* data, size_t nbytes) {
+  mj_markStack((mjData*)data);
+  return mj_stackAllocByte((mjData*)data, nbytes, sizeof(mjtNum));
+}
+
+// free callback for EPA in nativeccd
+static void ccd_free(void* data, void* buffer) {
+  mj_freeStack((mjData*)data);
+}
 
 // call libccd or nativeccd to recover penetration info
 static int mjc_penetration(const mjModel* m, mjCCDObj* obj1, mjCCDObj* obj2,
@@ -46,6 +59,9 @@ static int mjc_penetration(const mjModel* m, mjCCDObj* obj1, mjCCDObj* obj2,
   config.tolerance = ccd->mpr_tolerance,
   config.max_contacts = 1;
   config.dist_cutoff = 0;  // no geom distances needed
+  config.context = (void*)obj1->data;
+  config.alloc = ccd_allocate;
+  config.free = ccd_free;
 
   mjtNum dist = mjc_ccd(&config, &status, obj1, obj2);
   if (dist < 0) {
@@ -800,6 +816,9 @@ static int mjc_CCDIteration(const mjModel* m, const mjData* d, mjCCDObj* obj1, m
     config.tolerance = m->opt.ccd_tolerance;
     config.max_contacts = max_contacts;
     config.dist_cutoff = 0;  // no geom distances needed
+    config.context = (void*)d;
+    config.alloc = ccd_allocate;
+    config.free = ccd_free;
 
     mjtNum dist = mjc_ccd(&config, &status, obj1, obj2);
     if (dist < 0) {
@@ -889,24 +908,31 @@ static void mju_rotateFrame(const mjtNum origin[3], const mjtNum rot[9],
 
 
 
-// return true if multiccd can run in a single pass
-static int singlePass(const mjCCDObj* obj1, const mjCCDObj* obj2) {
+// return number of contacts supported by a single pass of narrowphase
+static int maxContacts(const mjCCDObj* obj1, const mjCCDObj* obj2) {
   const mjModel* m = obj1->model;
 
   // single pass not supported for margins
   if (obj1->margin > 0 || obj2->margin > 0) {
-    return 0;
+    return 1;
   }
 
-  // supported geoms for single pass
+  // can return 8 contacts for box-box collision in one pass
   int type1 = m->geom_type[obj1->geom];
   int type2 = m->geom_type[obj2->geom];
+  if (type1 == mjGEOM_BOX && type2 == mjGEOM_BOX) {
+    return 8;
+  }
+
+  // reduce mesh collisions to 4 contacts max
   if (type1 == mjGEOM_BOX || type1 == mjGEOM_MESH) {
     if (type2 == mjGEOM_BOX || type2 == mjGEOM_MESH) {
-      return 1;
+      return mjENABLED(mjENBL_MULTICCD) ? 4 : 1;
     }
   }
-  return 0;
+
+  // not supported for other geom types
+  return 1;
 }
 
 
@@ -918,17 +944,14 @@ int mjc_Convex(const mjModel* m, const mjData* d,
   mjCCDObj obj1, obj2;
   mjc_initCCDObj(&obj1, m, d, g1, margin);
   mjc_initCCDObj(&obj2, m, d, g2, margin);
-  int max_contacts = 1;
-
-  if (mjENABLED(mjENBL_MULTICCD) && singlePass(&obj1, &obj2)) {
-    max_contacts = 4;
-  }
+  int max_contacts = maxContacts(&obj1, &obj2);
 
   // find initial contact
   int ncon = mjc_CCDIteration(m, d, &obj1, &obj2, con, max_contacts, margin);
 
-  // nativeccd supports multi Box-Box collision directly
-  if (!mjDISABLED(mjDSBL_NATIVECCD) && singlePass(&obj1, &obj2)) {
+
+  // no additional contacts needed
+  if (!mjDISABLED(mjDSBL_NATIVECCD) && max_contacts > 1) {
     return ncon;
   }
 

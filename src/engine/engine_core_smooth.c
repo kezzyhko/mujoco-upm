@@ -861,6 +861,126 @@ void mj_tendon(const mjModel* m, mjData* d) {
 
 
 
+// compute time derivative of dense tendon Jacobian for one tendon
+void mj_tendonDot(const mjModel* m, mjData* d, int id, mjtNum* Jdot) {
+  int nv = m->nv;
+
+  // tendon id is invalid: return
+  if (id < 0 || id >= m->ntendon) {
+    return;
+  }
+
+  // clear output
+  mju_zero(Jdot, nv);
+
+  // fixed tendon has zero Jdot: return
+  int adr = m->tendon_adr[id];
+  if (m->wrap_type[adr] == mjWRAP_JOINT) {
+    return;
+  }
+
+  // allocate stack arrays
+  mj_markStack(d);
+  mjtNum* jac1 = mjSTACKALLOC(d, 3*nv, mjtNum);
+  mjtNum* jac2 = mjSTACKALLOC(d, 3*nv, mjtNum);
+  mjtNum* jacdif = mjSTACKALLOC(d, 3*nv, mjtNum);
+  mjtNum* tmp = mjSTACKALLOC(d, nv, mjtNum);
+
+  // process spatial tendon
+  mjtNum divisor = 1;
+  int wraptype, j = 0;
+  int num = m->tendon_num[id];
+  while (j < num-1) {
+    // get 1st and 2nd object
+    int type0 = m->wrap_type[adr+j+0];
+    int type1 = m->wrap_type[adr+j+1];
+    int id0 = m->wrap_objid[adr+j+0];
+    int id1 = m->wrap_objid[adr+j+1];
+
+    // pulley
+    if (type0 == mjWRAP_PULLEY || type1 == mjWRAP_PULLEY) {
+      // get divisor, insert obj=-2
+      if (type0 == mjWRAP_PULLEY) {
+        divisor = m->wrap_prm[adr+j];
+      }
+
+      // move to next
+      j++;
+      continue;
+    }
+
+    // init sequence; assume it starts with site
+    mjtNum wpnt[6];
+    mju_copy3(wpnt, d->site_xpos+3*id0);
+    mjtNum vel[6];
+    mj_objectVelocity(m, d, mjOBJ_SITE, id0, vel, /*flg_local=*/0);
+    mjtNum wvel[6] = {vel[3], vel[4], vel[5], 0, 0, 0};
+    int wbody[2];
+    wbody[0] = m->site_bodyid[id0];
+
+    // second object is geom: process site-geom-site
+    if (type1 == mjWRAP_SPHERE || type1 == mjWRAP_CYLINDER) {
+      // TODO(tassa) support geom wrapping (requires derivatives of mju_wrap)
+      mjERROR("geom wrapping not supported");
+    } else {
+      wraptype = mjWRAP_NONE;
+    }
+
+    // complete sequence
+    wbody[1] = m->site_bodyid[id1];
+    mju_copy3(wpnt+3, d->site_xpos+3*id1);
+    mj_objectVelocity(m, d, mjOBJ_SITE, id1, vel, /*flg_local=*/0);
+    mju_copy3(wvel+3, vel+3);
+
+    // accumulate moments if consecutive points are in different bodies
+    if (wbody[0] != wbody[1]) {
+      // dpnt = 3D position difference, normalize
+      mjtNum dpnt[3];
+      mju_sub3(dpnt, wpnt+3, wpnt);
+      mjtNum norm = mju_normalize3(dpnt);
+
+      // dvel = d / dt (dpnt)
+      mjtNum dvel[3];
+      mju_sub3(dvel, wvel+3, wvel);
+      mjtNum dot = mju_dot3(dpnt, dvel);
+      mju_addToScl3(dvel, dpnt, -dot);
+      mju_scl3(dvel, dvel, norm > mjMINVAL ? 1/norm : 0);
+
+      // TODO(tassa ) write sparse branch, requires mj_jacDotSparse
+      // if (mj_isSparse(m)) { ... }
+
+      // get endpoint JacobianDots, subtract
+      mj_jacDot(m, d, jac1, 0, wpnt, wbody[0]);
+      mj_jacDot(m, d, jac2, 0, wpnt+3, wbody[1]);
+      mju_sub(jacdif, jac2, jac1, 3*nv);
+
+      // chain rule, first term: Jdot += d/dt(jac2 - jac1) * dpnt
+      mju_mulMatTVec(tmp, jacdif, dpnt, 3, nv);
+
+      // add to existing
+      mju_addToScl(Jdot, tmp, 1/divisor, nv);
+
+      // get endpoint Jacobians, subtract
+      mj_jac(m, d, jac1, 0, wpnt, wbody[0]);
+      mj_jac(m, d, jac2, 0, wpnt+3, wbody[1]);
+      mju_sub(jacdif, jac2, jac1, 3*nv);
+
+      // chain rule, second term: Jdot += (jac2 - jac1) * d/dt(dpnt)
+      mju_mulMatTVec(tmp, jacdif, dvel, 3, nv);
+
+      // add to existing
+      mju_addToScl(Jdot, tmp, 1/divisor, nv);
+    }
+
+    // advance
+    j += (wraptype != mjWRAP_NONE ? 2 : 1);
+  }
+
+  mj_freeStack(d);
+}
+
+
+
 // compute actuator/transmission lengths and moments
 void mj_transmission(const mjModel* m, mjData* d) {
   int nv = m->nv, nu = m->nu;
@@ -1349,6 +1469,63 @@ void mj_transmission(const mjModel* m, mjData* d) {
 
 //-------------------------- inertia ---------------------------------------------------------------
 
+// add tendon armature to qM
+void mj_tendonArmature(const mjModel* m, mjData* d) {
+  TM_START;
+  int nv = m->nv, ntendon = m->ntendon, issparse = mj_isSparse(m);
+
+  for (int k=0; k < ntendon; k++) {
+    mjtNum armature = m->tendon_armature[k];
+
+    if (!armature) {
+      continue;
+    }
+
+    // dense
+    if (!issparse) {
+      mjtNum* ten_J = d->ten_J + nv*k;
+      for (int i=0; i < m->nv; i++) {
+        int Madr = m->dof_Madr[i];
+        for (int j = i; j >= 0; j = m->dof_parentid[j]) {
+          d->qM[Madr++] += armature * ten_J[j] * ten_J[i];
+        }
+      }
+    }
+
+    // sparse
+    else {
+      // get sparse info for tendon k
+      int rowadr = d->ten_J_rowadr[k];
+      int rownnz = d->ten_J_rownnz[k];
+      const int* colind = d->ten_J_colind + rowadr;
+      mjtNum* ten_J = d->ten_J + rowadr;
+
+      // iterate forward on nonzero rows i
+      for (int adr_i=0; adr_i < rownnz; adr_i++) {
+        int i = colind[adr_i];
+        int Madr = m->dof_Madr[i];
+        int adr_j = rownnz - 1;
+
+        // iterate backward on ancestors of i, find matching column j
+        for (int j = i; j >= 0; j = m->dof_parentid[j]) {
+          // reduce adr_j until column index is no bigger than j
+          while (colind[adr_j] > j && adr_j >= 0) {
+            adr_j--;
+          }
+
+          // found match, update qM
+          if (colind[adr_j] == j) {
+            d->qM[Madr++] += armature * ten_J[adr_j] * ten_J[adr_i];
+          }
+        }
+      }
+    }
+  }
+  TM_END(mjTIMER_POS_INERTIA);
+}
+
+
+
 // composite rigid body inertia algorithm
 void mj_crb(const mjModel* m, mjData* d) {
   TM_START;
@@ -1469,11 +1646,11 @@ void mj_factorI_legacy(const mjModel* m, mjData* d, const mjtNum* M, mjtNum* qLD
 // sparse L'*D*L factorizaton of the inertia matrix M, assumed spd
 void mj_factorM(const mjModel* m, mjData* d) {
   TM_START;
-  int nC = m->nC;
-  for (int i=0; i < nC; i++) {
-    d->qLD[i] = d->qM[d->mapM2C[i]];
+  int nM = m->nM;
+  for (int i=0; i < nM; i++) {
+    d->qLD[i] = d->qM[d->mapM2M[i]];
   }
-  mj_factorI(d->qLD, d->qLDiagInv, m->nv, d->C_rownnz, d->C_rowadr, m->dof_simplenum, d->C_colind);
+  mj_factorI(d->qLD, d->qLDiagInv, m->nv, d->M_rownnz, d->M_rowadr, m->dof_simplenum, d->M_colind);
   TM_ADD(mjTIMER_POS_INERTIA);
 }
 
@@ -1715,7 +1892,7 @@ void mj_solveM(const mjModel* m, mjData* d, mjtNum* x, const mjtNum* y, int n) {
     mju_copy(x, y, n*m->nv);
   }
   mj_solveLD(x, d->qLD, d->qLDiagInv, m->nv, n,
-             d->C_rownnz, d->C_rowadr, m->dof_simplenum, d->C_colind);
+             d->M_rownnz, d->M_rowadr, m->dof_simplenum, d->M_colind);
 }
 
 
@@ -1727,14 +1904,14 @@ void mj_solveM_island(const mjModel* m, const mjData* d, mjtNum* restrict x, int
   const mjtNum* qLDiagInv = d->qLDiagInv;
   if (island < 0) {
     mj_solveLD(x, qLD, qLDiagInv, m->nv, 1,
-               d->C_rownnz, d->C_rowadr, m->dof_simplenum, d->C_colind);
+               d->M_rownnz, d->M_rowadr, m->dof_simplenum, d->M_colind);
     return;
   }
 
   // local copies of key variables
-  const int* rownnz = d->C_rownnz;
-  const int* rowadr = d->C_rowadr;
-  const int* colind = d->C_colind;
+  const int* rownnz = d->M_rownnz;
+  const int* rowadr = d->M_rowadr;
+  const int* colind = d->M_colind;
   const int* diagnum = m->dof_simplenum;
 
   // local constants: island specific
@@ -1785,9 +1962,9 @@ void mj_solveM2(const mjModel* m, mjData* d, mjtNum* x, const mjtNum* y,
   int nv = m->nv;
 
   // local copies of key variables
-  const int* rownnz = d->C_rownnz;
-  const int* rowadr = d->C_rowadr;
-  const int* colind = d->C_colind;
+  const int* rownnz = d->M_rownnz;
+  const int* rowadr = d->M_rowadr;
+  const int* colind = d->M_colind;
   const int* diagnum = m->dof_simplenum;
   const mjtNum* qLD = d->qLD;
 
@@ -1893,7 +2070,7 @@ void mj_comVel(const mjModel* m, mjData* d) {
 
     // assign cvel, cdofdot
     mju_copy(d->cvel+6*i, cvel, 6);
-    mju_copy(d->cdof_dot+6*bda, cdofdot, 6*m->body_dofnum[i]);
+    mju_copy(d->cdof_dot+6*bda, cdofdot, 6*dofnum);
   }
 }
 
@@ -2199,4 +2376,54 @@ void mj_rnePostConstraint(const mjModel* m, mjData* d) {
   for (int j=nbody-1; j > 0; j--) {
     mju_addTo(d->cfrc_int+6*m->body_parentid[j], d->cfrc_int+6*j, 6);
   }
+}
+
+
+
+// add bias force due to tendon armature
+void mj_tendonBias(const mjModel* m, mjData* d, mjtNum* qfrc) {
+  int ntendon = m->ntendon, nv = m->nv, issparse = mj_isSparse(m);
+  mjtNum* ten_Jdot = NULL;
+  mj_markStack(d);
+
+  // add bias term due to tendon armature
+  for (int i=0; i < ntendon; i++) {
+    mjtNum armature = m->tendon_armature[i];
+
+    // no armature: skip
+    if (!armature) {
+      continue;
+    }
+
+    // allocate if required
+    if (!ten_Jdot) {
+      ten_Jdot = mjSTACKALLOC(d, nv, mjtNum);
+    }
+
+    // get dense d/dt(tendon Jacobian) for tendon i
+    mj_tendonDot(m, d, i, ten_Jdot);
+
+    // add bias term:  qfrc += ten_J * armature * dot(ten_Jdot, qvel)
+    mjtNum coef = armature * mju_dot(ten_Jdot, d->qvel, nv);
+
+    if (coef) {
+      // dense
+      if (!issparse) {
+        mju_addToScl(qfrc, d->ten_J + nv*i, coef, nv);
+      }
+
+      // sparse
+      else {
+        int nnz = d->ten_J_rownnz[i];
+        int adr = d->ten_J_rowadr[i];
+        const int* colind = d->ten_J_colind + adr;
+        const mjtNum* ten_J = d->ten_J + adr;
+        for (int j=0; j < nnz; j++) {
+          qfrc[colind[j]] += coef * ten_J[j];
+        }
+      }
+    }
+  }
+
+  mj_freeStack(d);
 }

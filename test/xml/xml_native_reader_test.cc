@@ -15,6 +15,7 @@
 // Tests for xml/xml_native_reader.cc.
 
 #include <array>
+#include <cmath>
 #include <limits>
 #include <memory>
 #include <string>
@@ -1148,6 +1149,88 @@ TEST_F(XMLReaderTest, ParsePolycoef) {
   mj_deleteModel(m);
 }
 
+TEST_F(XMLReaderTest, TendonArmature) {
+  static constexpr char xml[] = R"(
+  <mujoco>
+    <worldbody>
+      <site name="a"/>
+      <body pos="1 0 0">
+        <joint name="slide" type="slide"/>
+        <geom size=".1"/>
+        <site name="b"/>
+      </body>
+    </worldbody>
+
+    <tendon>
+      <spatial armature="1.5">
+        <site site="a"/>
+        <site site="b"/>
+      </spatial>
+      <fixed armature="2.5">
+        <joint joint="slide" coef="1"/>
+      </fixed>
+      <fixed>
+        <joint joint="slide" coef="2"/>
+      </fixed>
+    </tendon>
+  </mujoco>
+  )";
+  std::array<char, 1024> error;
+  mjModel* m = LoadModelFromString(xml, error.data(), error.size());
+  EXPECT_THAT(m, NotNull()) << error.data();
+  EXPECT_EQ(m->ntendon, 3);
+  EXPECT_FLOAT_EQ(m->tendon_armature[0], 1.5);
+  EXPECT_FLOAT_EQ(m->tendon_armature[1], 2.5);
+  EXPECT_FLOAT_EQ(m->tendon_armature[2], 0);
+  mj_deleteModel(m);
+}
+
+TEST_F(XMLReaderTest, TendonArmatureNegative) {
+  static constexpr char xml[] = R"(
+  <mujoco>
+    <worldbody>
+      <site name="a"/>
+      <site name="b" pos="1 0 0"/>
+    </worldbody>
+
+    <tendon>
+      <spatial armature="-1.5">
+        <site site="a"/>
+        <site site="b"/>
+      </spatial>
+    </tendon>
+  </mujoco>
+  )";
+  std::array<char, 1024> error;
+  mjModel* m = LoadModelFromString(xml, error.data(), error.size());
+  EXPECT_THAT(m, IsNull());
+  EXPECT_THAT(error.data(), HasSubstr("tendon armature cannot be negative"));
+}
+
+TEST_F(XMLReaderTest, TendonArmatureGeomWrap) {
+  static constexpr char xml[] = R"(
+  <mujoco>
+    <worldbody>
+      <site name="a"/>
+      <geom name="g" type="sphere" size=".1"/>
+      <site name="b" pos="1 0 0"/>
+    </worldbody>
+
+    <tendon>
+      <spatial armature="1.5">
+        <site site="a"/>
+        <geom geom="g"/>
+        <site site="b"/>
+      </spatial>
+    </tendon>
+  </mujoco>
+  )";
+  std::array<char, 1024> error;
+  mjModel* m = LoadModelFromString(xml, error.data(), error.size());
+  EXPECT_THAT(m, IsNull());
+  EXPECT_THAT(error.data(), HasSubstr("geom wrapping not supported"));
+}
+
 // ------------------------ test frame parsing ---------------------------------
 TEST_F(XMLReaderTest, ParseFrame) {
   static constexpr char xml[] = R"(
@@ -1230,7 +1313,7 @@ TEST_F(XMLReaderTest, ParseReplicate) {
     </asset>
 
     <worldbody>
-      <replicate count="101" euler="0 0 1.8">
+      <replicate count="101" offset="3 0 .1" euler="0 0 1.8">
         <body name="body" pos="0 -1 0">
           <joint type="slide"/>
           <geom name="g" size="1"/>
@@ -1260,6 +1343,7 @@ TEST_F(XMLReaderTest, ParseReplicate) {
   EXPECT_THAT(m, testing::NotNull()) << error.data();
   EXPECT_THAT(m->ngeom, 105);
   EXPECT_THAT(m->nsensor, 4);
+  EXPECT_THAT(m->nbody, 102);
 
   // check that the separator is used correctly
   for (int i = 0; i < 2; ++i) {
@@ -1289,12 +1373,19 @@ TEST_F(XMLReaderTest, ParseReplicate) {
     }
   }
 
+  // check body positions
+  mjtNum pos[2] = {0, 0};
+  for (int i = 1; i < 102; ++i) {
+    mjtNum theta = (i-1) * 1.8 * mjPI / 180;
+    EXPECT_NEAR(m->body_pos[3*i+0], pos[0] + sin(theta), 1e-8) << i;
+    EXPECT_NEAR(m->body_pos[3*i+1], pos[1] - cos(theta), 1e-8) << i;
+    EXPECT_NEAR(m->body_pos[3*i+2], (i-1) * .1, 1e-8);
+    pos[0] += 3 * cos(theta);
+    pos[1] += 3 * sin(theta);
+  }
+
   // check that the final pose is correct
   int n = m->nbody-1;
-  EXPECT_THAT(m->nbody, 102);
-  EXPECT_NEAR(m->body_pos[3*n+0], 0, 1e-8);
-  EXPECT_NEAR(m->body_pos[3*n+1], 1, 1e-8);
-  EXPECT_EQ(m->body_pos[3*n+2], 0);
   EXPECT_NEAR(m->body_quat[4*n+0], 0, 1e-8);
   EXPECT_EQ(m->body_quat[4*n+1], 0);
   EXPECT_EQ(m->body_quat[4*n+2], 0);
@@ -1441,7 +1532,68 @@ TEST_F(XMLReaderTest, ParseReplicateRepeatedName) {
   EXPECT_THAT(error.data(), HasSubstr("Element 'replicate'"));
 }
 
-TEST_F(XMLReaderTest, ParseReplicateTendon) {
+TEST_F(XMLReaderTest, RepeatedPrefix) {
+  static constexpr char parent[] = R"(
+  <mujoco>
+    <asset>
+      <model name="1" file="child_1.xml" content_type="text/xml" />
+      <model name="2" file="child_2.xml" content_type="text/xml" />
+    </asset>
+
+    <worldbody>
+      <attach model="1" body="1" prefix="prefix-"/>
+      <replicate count="1">
+        <attach model="2" body="2" prefix="prefix-"/>
+      </replicate>
+    </worldbody>
+  </mujoco>
+  )";
+
+  static constexpr char child_1[] = R"(
+  <mujoco>
+    <asset>
+      <model name="2" file="child_2.xml" content_type="text/xml"/>
+    </asset>
+
+    <worldbody>
+      <body name="1">
+        <body name="2">
+          <attach model="2" body="2" prefix="prefix2"/>
+        </body>
+      </body>
+    </worldbody>
+  </mujoco>
+  )";
+
+  static constexpr char child_2[] = R"(
+  <mujoco>
+    <worldbody>
+      <body name="2"/>
+    </worldbody>
+  </mujoco>
+  )";
+
+  auto vfs = std::make_unique<mjVFS>();
+  mj_defaultVFS(vfs.get());
+  mj_addBufferVFS(vfs.get(), "child_1.xml", child_1, sizeof(child_1));
+  mj_addBufferVFS(vfs.get(), "child_2.xml", child_2, sizeof(child_2));
+
+  std::array<char, 1024> err;
+  mjSpec* c2 = mj_parseXMLString(child_2, 0, err.data(), err.size());
+  EXPECT_THAT(c2, NotNull()) << err.data();
+  mjSpec* c1 = mj_parseXMLString(child_1, vfs.get(), err.data(), err.size());
+  EXPECT_THAT(c1, NotNull()) << err.data();
+  mj_deleteSpec(c1);
+  mj_deleteSpec(c2);
+
+  mjSpec* spec = mj_parseXMLString(parent, vfs.get(), err.data(), err.size());
+  EXPECT_THAT(spec, IsNull());
+  EXPECT_THAT(err.data(), HasSubstr("mismatched parents"));
+  mj_deleteSpec(spec);
+  mj_deleteVFS(vfs.get());
+}
+
+TEST_F(XMLReaderTest, ParseReplicateExcludeTendon) {
   static constexpr char xml[] = R"(
   <mujoco>
     <worldbody>
@@ -1501,6 +1653,70 @@ TEST_F(XMLReaderTest, ParseReplicateTendon) {
   EXPECT_THAT(m->nsite, 6);
   EXPECT_THAT(m->nu, 1);
   EXPECT_THAT(m->ntendon, 1);
+  mj_deleteModel(m);
+  mj_deleteSpec(spec);
+}
+
+TEST_F(XMLReaderTest, ParseReplicateWithTendon) {
+  static constexpr char xml[] = R"(
+  <mujoco>
+    <worldbody>
+      <replicate count="2" offset=".025 0 0">
+        <replicate count="2" offset="0 .025 0">
+          <replicate count="2" offset="0 0 .025">
+            <body name="winch" pos="-.01 0 .35">
+              <joint name="winch" damping="1"/>
+              <geom type="cylinder" size=".015 .01"/>
+              <site name="anchor" pos=".1 0 .04"/>
+            </body>
+            <site name="pulley" pos=".1 0 .32"/>
+            <site name="hook_left" pos=".08 0 .3"/>
+            <site name="hook_right" pos=".12 0 .3"/>
+            <body name="sphere" pos=".1 0 .2">
+              <freejoint/>
+              <geom type="sphere" size=".03"/>
+              <site name="pin_left" pos="-.025 0 .025"/>
+              <site name="pin_right" pos=".025 0 .025"/>
+            </body>
+            <body pos=".06 -.04 .05">
+              <geom type="sphere" size=".012"/>
+            </body>
+          </replicate>
+        </replicate>
+      </replicate>
+    </worldbody>
+
+    <tendon>
+      <spatial range="0 .19" limited="true" name="tendon">
+        <site site="anchor"/>
+        <site site="pulley"/>
+        <pulley divisor="3"/>
+        <site site="pulley"/>
+        <site site="hook_left"/>
+        <site site="pin_left"/>
+        <pulley divisor="3"/>
+        <site site="pulley"/>
+        <site site="hook_right"/>
+        <site site="pin_right"/>
+      </spatial>
+    </tendon>
+
+    <actuator>
+      <position name="winch" joint="winch" ctrlrange="-.7 .5" ctrllimited="true" kp="10"/>
+      <position name="tendon" tendon="tendon" ctrlrange="0 1" kp="100" dampratio="1"/>
+  </actuator>
+  </mujoco>
+  )";
+  std::array<char, 1024> error;
+  mjSpec* spec = mj_parseXMLString(xml, 0, error.data(), error.size());
+  EXPECT_THAT(spec, NotNull()) << error.data();
+  mjModel* m = mj_compile(spec, 0);
+  EXPECT_THAT(m, NotNull()) << mjs_getError(spec);
+  EXPECT_THAT(m->nbody, 25);
+  EXPECT_THAT(m->ngeom, 24);
+  EXPECT_THAT(m->nsite, 48);
+  EXPECT_THAT(m->nu, 16);
+  EXPECT_THAT(m->ntendon, 8);
   mj_deleteModel(m);
   mj_deleteSpec(spec);
 }
@@ -1729,7 +1945,7 @@ TEST_F(XMLReaderTest, CameraInvalidFovyAndSensorsize) {
   EXPECT_THAT(error.data(), HasSubstr("line 6"));
 }
 
-TEST_F(XMLReaderTest, CameraPricipalRequiresSensorsize) {
+TEST_F(XMLReaderTest, CameraPrincipalRequiresSensorsize) {
   static constexpr char xml[] = R"(
   <mujoco>
     <worldbody>

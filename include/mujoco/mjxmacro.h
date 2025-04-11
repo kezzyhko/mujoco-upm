@@ -350,6 +350,7 @@
     X   ( int,     flex_vertbodyid,       nflexvert,     1                    ) \
     X   ( int,     flex_edge,             nflexedge,     2                    ) \
     XMJV( int,     flex_elem,             nflexelemdata, 1                    ) \
+    XMJV( int,     flex_elemtexcoord,     nflexelemdata, 1                    ) \
     X   ( int,     flex_elemedge,         nflexelemedge, 1                    ) \
     XMJV( int,     flex_elemlayer,        nflexelem,     1                    ) \
     XMJV( int,     flex_shell,            nflexshelldata,1                    ) \
@@ -474,15 +475,18 @@
     XMJV( int,     tendon_matid,          ntendon,       1                    ) \
     XMJV( int,     tendon_group,          ntendon,       1                    ) \
     XMJV( mjtByte, tendon_limited,        ntendon,       1                    ) \
+    XMJV( mjtByte, tendon_actfrclimited,  ntendon,       1                    ) \
     XMJV( mjtNum,  tendon_width,          ntendon,       1                    ) \
     X   ( mjtNum,  tendon_solref_lim,     ntendon,       mjNREF               ) \
     X   ( mjtNum,  tendon_solimp_lim,     ntendon,       mjNIMP               ) \
     X   ( mjtNum,  tendon_solref_fri,     ntendon,       mjNREF               ) \
     X   ( mjtNum,  tendon_solimp_fri,     ntendon,       mjNIMP               ) \
     XMJV( mjtNum,  tendon_range,          ntendon,       2                    ) \
+    XMJV( mjtNum,  tendon_actfrcrange,    ntendon,       2                    ) \
     X   ( mjtNum,  tendon_margin,         ntendon,       1                    ) \
     XMJV( mjtNum,  tendon_stiffness,      ntendon,       1                    ) \
     XMJV( mjtNum,  tendon_damping,        ntendon,       1                    ) \
+    X   ( mjtNum,  tendon_armature,       ntendon,       1                    ) \
     XMJV( mjtNum,  tendon_frictionloss,   ntendon,       1                    ) \
     XMJV( mjtNum,  tendon_lengthspring,   ntendon,       2                    ) \
     X   ( mjtNum,  tendon_length0,        ntendon,       1                    ) \
@@ -649,7 +653,7 @@
     X   ( mjtNum,    actuator_moment,   nJmom,       1           ) \
     X   ( mjtNum,    crb,               nbody,       10          ) \
     X   ( mjtNum,    qM,                nM,          1           ) \
-    X   ( mjtNum,    qLD,               nC,          1           ) \
+    X   ( mjtNum,    qLD,               nM,          1           ) \
     X   ( mjtNum,    qLDiagInv,         nv,          1           ) \
     XMJV( mjtNum,    bvh_aabb_dyn,      nbvhdynamic, 6           ) \
     XMJV( mjtByte,   bvh_active,        nbvh,        1           ) \
@@ -666,11 +670,15 @@
     X   ( mjtNum,    qfrc_passive,      nv,          1           ) \
     X   ( mjtNum,    subtree_linvel,    nbody,       3           ) \
     X   ( mjtNum,    subtree_angmom,    nbody,       3           ) \
-    X   ( mjtNum,    qH,                nC,          1           ) \
+    X   ( mjtNum,    qH,                nM,          1           ) \
     X   ( mjtNum,    qHDiagInv,         nv,          1           ) \
     X   ( int,       B_rownnz,          nbody,       1           ) \
     X   ( int,       B_rowadr,          nbody,       1           ) \
     X   ( int,       B_colind,          nB,          1           ) \
+    X   ( int,       M_rownnz,          nv,          1           ) \
+    X   ( int,       M_rowadr,          nv,          1           ) \
+    X   ( int,       M_colind,          nM,          1           ) \
+    X   ( int,       mapM2M,            nM,          1           ) \
     X   ( int,       C_rownnz,          nv,          1           ) \
     X   ( int,       C_rowadr,          nv,          1           ) \
     X   ( int,       C_colind,          nC,          1           ) \

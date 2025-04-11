@@ -272,7 +272,7 @@ struct mjData_ {
   mjtNum* qM;                // total inertia (sparse)                           (nM x 1)
 
   // computed by mj_fwdPosition/mj_factorM
-  mjtNum* qLD;               // L'*D*L factorization of M (sparse)               (nC x 1)
+  mjtNum* qLD;               // L'*D*L factorization of M (sparse)               (nM x 1)
   mjtNum* qLDiagInv;         // 1/diag(D)                                        (nv x 1)
 
   // computed by mj_collisionTree
@@ -305,13 +305,17 @@ struct mjData_ {
   mjtNum* subtree_angmom;    // angular momentum about subtree com               (nbody x 3)
 
   // computed by mj_Euler or mj_implicit
-  mjtNum* qH;                // L'*D*L factorization of modified M               (nC x 1)
+  mjtNum* qH;                // L'*D*L factorization of modified M               (nM x 1)
   mjtNum* qHDiagInv;         // 1/diag(D) of modified M                          (nv x 1)
 
   // computed by mj_resetData
   int*    B_rownnz;          // body-dof: non-zeros in each row                  (nbody x 1)
   int*    B_rowadr;          // body-dof: address of each row in B_colind        (nbody x 1)
   int*    B_colind;          // body-dof: column indices of non-zeros            (nB x 1)
+  int*    M_rownnz;          // inertia: non-zeros in each row                   (nv x 1)
+  int*    M_rowadr;          // inertia: address of each row in M_colind         (nv x 1)
+  int*    M_colind;          // inertia: column indices of non-zeros             (nM x 1)
+  int*    mapM2M;            // index mapping from M (legacy) to M (CSR)         (nM x 1)
   int*    C_rownnz;          // reduced dof-dof: non-zeros in each row           (nv x 1)
   int*    C_rowadr;          // reduced dof-dof: address of each row in C_colind (nv x 1)
   int*    C_colind;          // reduced dof-dof: column indices of non-zeros     (nC x 1)
@@ -410,6 +414,9 @@ struct mjData_ {
 
   // thread pool pointer
   uintptr_t threadpool;
+
+  // compilation signature
+  uint64_t  signature;       // also held by the mjSpec that compiled the model
 };
 typedef struct mjData_ mjData;
 typedef enum mjtDisableBit_ {     // disable default feature bitflags
@@ -599,7 +606,10 @@ typedef enum mjtObj_ {            // type of MujoCo object
   mjNOBJECT,                      // number of object types
 
   // meta elements, do not appear in mjModel
-  mjOBJ_FRAME         = 100       // frame
+  mjOBJ_FRAME         = 100,      // frame
+  mjOBJ_DEFAULT,                  // default
+  mjOBJ_MODEL                     // entire model
+
 } mjtObj;
 typedef enum mjtConstraint_ {     // type of constraint
   mjCNSTR_EQUALITY    = 0,        // equality constraint
@@ -639,6 +649,7 @@ typedef enum mjtSensor_ {         // type of sensor
   mjSENS_ACTUATORVEL,             // scalar actuator velocity
   mjSENS_ACTUATORFRC,             // scalar actuator force
   mjSENS_JOINTACTFRC,             // scalar actuator force, measured at the joint
+  mjSENS_TENDONACTFRC,            // scalar actuator force, measured at the tendon
 
   // sensors related to ball joints
   mjSENS_BALLQUAT,                // 4D ball joint quaternion
@@ -901,7 +912,7 @@ struct mjModel_ {
   int ncam;                       // number of cameras
   int nlight;                     // number of lights
   int nflex;                      // number of flexes
-  int nflexnode;                   // number of dofs in all flexes
+  int nflexnode;                  // number of dofs in all flexes
   int nflexvert;                  // number of vertices in all flexes
   int nflexedge;                  // number of edges in all flexes
   int nflexelem;                  // number of elements in all flexes
@@ -1177,6 +1188,7 @@ struct mjModel_ {
   int*      flex_vertbodyid;      // vertex body ids                          (nflexvert x 1)
   int*      flex_edge;            // edge vertex ids (2 per edge)             (nflexedge x 2)
   int*      flex_elem;            // element vertex ids (dim+1 per elem)      (nflexelemdata x 1)
+  int*      flex_elemtexcoord;    // element texture coordinates (dim+1)      (nflexelemdata x 1)
   int*      flex_elemedge;        // element edge ids                         (nflexelemedge x 1)
   int*      flex_elemlayer;       // element distance from surface, 3D only   (nflexelem x 1)
   int*      flex_shell;           // shell fragment vertex ids (dim per frag) (nflexshelldata x 1)
@@ -1319,15 +1331,18 @@ struct mjModel_ {
   int*      tendon_matid;         // material id for rendering                (ntendon x 1)
   int*      tendon_group;         // group for visibility                     (ntendon x 1)
   mjtByte*  tendon_limited;       // does tendon have length limits           (ntendon x 1)
+  mjtByte*  tendon_actfrclimited; // does tendon have actuator force limits   (ntendon x 1)
   mjtNum*   tendon_width;         // width for rendering                      (ntendon x 1)
   mjtNum*   tendon_solref_lim;    // constraint solver reference: limit       (ntendon x mjNREF)
   mjtNum*   tendon_solimp_lim;    // constraint solver impedance: limit       (ntendon x mjNIMP)
   mjtNum*   tendon_solref_fri;    // constraint solver reference: friction    (ntendon x mjNREF)
   mjtNum*   tendon_solimp_fri;    // constraint solver impedance: friction    (ntendon x mjNIMP)
   mjtNum*   tendon_range;         // tendon length limits                     (ntendon x 2)
+  mjtNum*   tendon_actfrcrange;   // range of total actuator force            (ntendon x 2)
   mjtNum*   tendon_margin;        // min distance for limit detection         (ntendon x 1)
   mjtNum*   tendon_stiffness;     // stiffness coefficient                    (ntendon x 1)
   mjtNum*   tendon_damping;       // damping coefficient                      (ntendon x 1)
+  mjtNum*   tendon_armature;      // inertia associated with tendon velocity  (ntendon x 1)
   mjtNum*   tendon_frictionloss;  // loss due to friction                     (ntendon x 1)
   mjtNum*   tendon_lengthspring;  // spring resting length range              (ntendon x 2)
   mjtNum*   tendon_length0;       // tendon length in qpos0                   (ntendon x 1)
@@ -1444,6 +1459,9 @@ struct mjModel_ {
 
   // paths
   char*     paths;                // paths to assets, 0-terminated            (npaths x 1)
+
+  // compilation signature
+  uint64_t  signature;            // also held by the mjSpec that compiled this model
 };
 typedef struct mjModel_ mjModel;
 struct mjResource_ {
@@ -1706,6 +1724,7 @@ typedef enum mjtOrientation_ {     // type of orientation specifier
 } mjtOrientation;
 typedef struct mjsElement_ {       // element type, do not modify
   mjtObj elemtype;                 // element type
+  uint64_t signature;              // compilation signature
 } mjsElement;
 typedef struct mjsCompiler_ {      // compiler options
   mjtByte autolimits;              // infer "limited" attribute based on range
@@ -1721,6 +1740,7 @@ typedef struct mjsCompiler_ {      // compiler options
   mjtByte fusestatic;              // fuse static bodies with parent
   int inertiafromgeom;             // use geom inertias (mjtInertiaFromGeom)
   int inertiagrouprange[2];        // range of geom groups used to compute inertia
+  mjtByte saveinertial;            // save explicit inertial clause for all bodies to XML
   int alignfree;                   // align free joints with inertial frame
   mjLROpt LRopt;                   // options for lengthrange computation
 } mjsCompiler;
@@ -2009,6 +2029,7 @@ typedef struct mjsFlex_ {          // flex specification
   mjDoubleVec* vert;               // vertex positions
   mjIntVec* elem;                  // element vertex ids
   mjFloatVec* texcoord;            // vertex texture coordinates
+  mjIntVec* elemtexcoord;          // element texture coordinates
 
   // other
   mjString* info;                  // message appended to compiler errors
@@ -2157,17 +2178,20 @@ typedef struct mjsTendon_ {        // tendon specification
   mjsElement* element;             // element type
   mjString* name;                  // name
 
-  // stiffness, damping, friction
+  // stiffness, damping, friction, armature
   double stiffness;                // stiffness coefficient
   double springlength[2];          // spring resting length; {-1, -1}: use qpos_spring
   double damping;                  // damping coefficient
   double frictionloss;             // friction loss
   mjtNum solref_friction[mjNREF];  // solver reference: tendon friction
   mjtNum solimp_friction[mjNIMP];  // solver impedance: tendon friction
+  double armature;                 // inertia associated with tendon velocity
 
   // length range
   int limited;                     // does tendon have limits (mjtLimited)
+  int actfrclimited;               // does tendon have actuator force limits
   double range[2];                 // length limits
+  double actfrcrange[2];           // actuator force limits
   double margin;                   // margin value for tendon limit detection
   mjtNum solref_limit[mjNREF];     // solver reference: tendon limits
   mjtNum solimp_limit[mjNIMP];     // solver impedance: tendon limits
@@ -2997,6 +3021,7 @@ struct mjvSceneState_ {
     int* flex_vertadr;
     int* flex_vertnum;
     int* flex_elem;
+    int* flex_elemtexcoord;
     int* flex_elemlayer;
     int* flex_elemadr;
     int* flex_elemnum;
@@ -3066,8 +3091,10 @@ struct mjvSceneState_ {
     int* tendon_matid;
     int* tendon_group;
     mjtByte* tendon_limited;
+    mjtByte* tendon_actfrclimited;
     mjtNum* tendon_width;
     mjtNum* tendon_range;
+    mjtNum* tendon_actfrcrange;
     mjtNum* tendon_stiffness;
     mjtNum* tendon_damping;
     mjtNum* tendon_frictionloss;
@@ -3596,15 +3623,10 @@ void mju_threadPoolEnqueue(mjThreadPool* thread_pool, mjTask* task);
 void mju_threadPoolDestroy(mjThreadPool* thread_pool);
 void mju_defaultTask(mjTask* task);
 void mju_taskJoin(mjTask* task);
-mjsBody* mjs_attachBody(mjsFrame* parent, const mjsBody* child,
-                        const char* prefix, const char* suffix);
-mjsFrame* mjs_attachFrame(mjsBody* parent, const mjsFrame* child,
-                          const char* prefix, const char* suffix);
-mjsBody* mjs_attachToSite(mjsSite* parent, const mjsBody* child,
-                          const char* prefix, const char* suffix);
-mjsFrame* mjs_attachFrameToSite(mjsSite* parent, const mjsFrame* child,
-                                const char* prefix, const char* suffix);
+mjsElement* mjs_attach(mjsElement* parent, const mjsElement* child,
+                       const char* prefix, const char* suffix);
 int mjs_detachBody(mjSpec* s, mjsBody* b);
+int mjs_detachDefault(mjSpec* s, mjsDefault* d);
 mjsBody* mjs_addBody(mjsBody* body, const mjsDefault* def);
 mjsSite* mjs_addSite(mjsBody* body, const mjsDefault* def);
 mjsJoint* mjs_addJoint(mjsBody* body, const mjsDefault* def);
@@ -3642,9 +3664,10 @@ mjsBody* mjs_findBody(mjSpec* s, const char* name);
 mjsElement* mjs_findElement(mjSpec* s, mjtObj type, const char* name);
 mjsBody* mjs_findChild(mjsBody* body, const char* name);
 mjsBody* mjs_getParent(mjsElement* element);
+mjsFrame* mjs_getFrame(mjsElement* element);
 mjsFrame* mjs_findFrame(mjSpec* s, const char* name);
 mjsDefault* mjs_getDefault(mjsElement* element);
-const mjsDefault* mjs_findDefault(mjSpec* s, const char* classname);
+mjsDefault* mjs_findDefault(mjSpec* s, const char* classname);
 mjsDefault* mjs_getSpecDefault(mjSpec* s);
 int mjs_getId(mjsElement* element);
 mjsElement* mjs_firstChild(mjsBody* body, mjtObj type, int recurse);
@@ -3665,10 +3688,13 @@ void mjs_setPluginAttributes(mjsPlugin* plugin, void* attributes);
 const char* mjs_getString(const mjString* source);
 const double* mjs_getDouble(const mjDoubleVec* source, int* size);
 void mjs_setDefault(mjsElement* element, const mjsDefault* def);
-void mjs_setFrame(mjsElement* dest, mjsFrame* frame);
+int mjs_setFrame(mjsElement* dest, mjsFrame* frame);
 const char* mjs_resolveOrientation(double quat[4], mjtByte degree, const char* sequence,
                                    const mjsOrientation* orientation);
 mjsFrame* mjs_bodyToFrame(mjsBody** body);
+void mjs_setUserValue(mjsElement* element, const char* key, const void* data);
+const void* mjs_getUserValue(mjsElement* element, const char* key);
+void mjs_deleteUserValue(mjsElement* element, const char* key);
 void mjs_defaultSpec(mjSpec* spec);
 void mjs_defaultOrientation(mjsOrientation* orient);
 void mjs_defaultBody(mjsBody* body);

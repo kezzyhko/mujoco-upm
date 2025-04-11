@@ -14,6 +14,7 @@
 # ==============================================================================
 """Tests for mjSpec bindings."""
 
+import gc
 import inspect
 import os
 import textwrap
@@ -519,13 +520,9 @@ class SpecsTest(absltest.TestCase):
     np.testing.assert_array_equal(data_new.qpos[:4], data.qpos)
     np.testing.assert_array_equal(data_new.qvel[:3], data.qvel)
 
-  def test_uncompiled_spec_cannot_be_written(self):
+  def test_uncompiled_spec_can_be_written(self):
     spec = mujoco.MjSpec()
-
-    # Cannot write XML of an uncompiled spec.
-    expected_error = 'XML Write error: Only compiled model can be written'
-    with self.assertRaisesWithLiteralMatch(mujoco.FatalError, expected_error):
-      spec.to_xml()
+    spec.to_xml()
 
   def test_modelname_default_class(self):
     XML = textwrap.dedent("""\
@@ -592,6 +589,12 @@ class SpecsTest(absltest.TestCase):
     spec.compile()
     self.assertEqual(spec.to_xml(), XML)
 
+    # test delete default
+    def1 = spec.find_default('def1')
+    spec.detach_default(def1)
+    def1 = spec.find_default('def1')
+    self.assertIsNone(def1)
+
   def test_element_list(self):
     spec = mujoco.MjSpec()
     sensor1 = spec.add_sensor()
@@ -633,6 +636,8 @@ class SpecsTest(absltest.TestCase):
             <site name="site4"/>
             <body name="body4">
               <site name="site5"/>
+              <joint name="joint1"/>
+              <geom name="geom1" size="1"/>
             </body>
           </body>
         </body>
@@ -646,6 +651,8 @@ class SpecsTest(absltest.TestCase):
     self.assertLen(spec.sites, 5)
     self.assertLen(spec.worldbody.find_all('body'), 4)
     self.assertLen(spec.worldbody.find_all('site'), 5)
+    self.assertLen(spec.worldbody.find_all('joint'), 1)
+    self.assertLen(spec.worldbody.find_all('geom'), 1)
     self.assertEqual(spec.bodies[1].name, 'body1')
     self.assertEqual(spec.bodies[2].name, 'body2')
     self.assertEqual(spec.bodies[3].name, 'body3')
@@ -750,14 +757,21 @@ class SpecsTest(absltest.TestCase):
     model = spec.compile()
     self.assertEqual(model.nmeshvert, 8)
     self.assertEqual(spec.assets['cube.obj'], cube)
+    self.assertIs(
+        spec.assets['cube.obj'], cube,
+        'Asset dict should contain a reference, not a copy'
+    )
 
     xml = """
     <mujoco model="test">
+      <compiler angle="radian"/>
+
       <asset>
         <mesh name="cube" file="cube.obj"/>
       </asset>
+
       <worldbody>
-        <geom mesh="cube"/>
+        <geom type="mesh" mesh="cube"/>
       </worldbody>
     </mujoco>
     """
@@ -765,6 +779,13 @@ class SpecsTest(absltest.TestCase):
     spec = mujoco.MjSpec.from_string(xml, assets=assets)
     model = spec.compile()
     self.assertEqual(model.nmeshvert, 8)
+    self.assertEqual(spec.assets['cube.obj'], cube)
+    self.assertIs(
+        spec.assets['cube.obj'], cube,
+        'Asset dict should contain a reference, not a copy'
+    )
+    del assets
+    gc.collect()
     self.assertEqual(spec.assets['cube.obj'], cube)
 
   def test_include(self):
@@ -814,22 +835,19 @@ class SpecsTest(absltest.TestCase):
     self.assertEqual(model.nsensor, 9)
 
   def test_plugin(self):
-    xml = """
-    <mujoco>
-      <extension>
-        <plugin plugin="mujoco.elasticity.cable"/>
-      </extension>
-    </mujoco>
-    """
-
-    spec = mujoco.MjSpec.from_string(xml)
-    self.assertIsNotNone(spec.worldbody)
+    spec = mujoco.MjSpec()
+    spec.activate_plugin('mujoco.elasticity.cable')
+    plugin = spec.add_plugin(
+        name='instance_name',
+        plugin_name='mujoco.elasticity.cable',
+        active=True,
+        info='info',
+    )
 
     body = spec.worldbody.add_body()
+    body.plugin = plugin
     body.plugin.plugin_name = 'mujoco.elasticity.cable'
-    body.plugin.id = spec.add_plugin()
     body.plugin.active = True
-    self.assertEqual(body.plugin.id, 0)
 
     geom = body.add_geom()
     geom.type = mujoco.mjtGeom.mjGEOM_BOX
@@ -1061,6 +1079,7 @@ class SpecsTest(absltest.TestCase):
     child2 = mujoco.MjSpec()
     child2.assets = {'cube2.obj': 'cube2_content'}
     body2 = child2.worldbody.add_body(name='body')
+    body2.set_frame(child2.worldbody.add_frame(pos=[-1, -1, 1]))
     self.assertIsNotNone(parent.attach(child2, frame=frame, prefix='child-'))
     self.assertIsNotNone(child2.worldbody)
     self.assertEqual(child2.parent, parent)
@@ -1069,7 +1088,7 @@ class SpecsTest(absltest.TestCase):
     self.assertIsNotNone(model2)
     self.assertEqual(model2.nbody, 3)
     np.testing.assert_array_equal(model2.body_pos[1], [0, 1, 4])
-    np.testing.assert_array_equal(model2.body_pos[2], [2, 3, 2])
+    np.testing.assert_array_equal(model2.body_pos[2], [3, 4, 3])
     np.testing.assert_array_equal(model2.body_quat[1], [0, 0, 0, 1])
     np.testing.assert_array_equal(model2.body_quat[2], [0, 0, 0, 1])
     self.assertEqual(parent.assets['cube.obj'], 'cube_content')
@@ -1079,6 +1098,7 @@ class SpecsTest(absltest.TestCase):
     child3 = mujoco.MjSpec()
     child3.assets = {'cube2.obj': 'new_cube2_content'}
     body3 = child3.worldbody.add_body(name='body')
+    body3.set_frame(child3.worldbody.add_frame(pos=[-1, -1, 1]))
     self.assertIsNotNone(parent.attach(child3, frame='frame', prefix='child3-'))
     self.assertIsNotNone(child3.worldbody)
     self.assertEqual(child3.parent, parent)
@@ -1087,8 +1107,8 @@ class SpecsTest(absltest.TestCase):
     self.assertIsNotNone(model3)
     self.assertEqual(model3.nbody, 4)
     np.testing.assert_array_equal(model3.body_pos[1], [0, 1, 4])
-    np.testing.assert_array_equal(model3.body_pos[2], [2, 3, 2])
-    np.testing.assert_array_equal(model3.body_pos[3], [3, 4, 1])
+    np.testing.assert_array_equal(model3.body_pos[2], [3, 4, 3])
+    np.testing.assert_array_equal(model3.body_pos[3], [4, 5, 2])
     np.testing.assert_array_equal(model3.body_quat[1], [0, 0, 0, 1])
     np.testing.assert_array_equal(model3.body_quat[2], [0, 0, 0, 1])
     np.testing.assert_array_equal(model3.body_quat[3], [0, 0, 0, 1])
@@ -1134,6 +1154,13 @@ class SpecsTest(absltest.TestCase):
         AttributeError, "object has no attribute 'invalid'"
     ):
       print(mj_model.bind(joints).invalid)
+    invalid_spec = mujoco.MjSpec()
+    invalid_spec.worldbody.add_body(name='main')
+    with self.assertRaisesRegex(
+        ValueError,
+        'The mjSpec does not match mjModel. Please recompile the mjSpec.',
+    ):
+      print(mj_model.bind(invalid_spec.body('main')))
 
   def test_incorrect_hfield_size(self):
     nrow = 300

@@ -300,7 +300,7 @@ struct mjData_ {
   mjtNum* qM;                // total inertia (sparse)                           (nM x 1)
 
   // computed by mj_fwdPosition/mj_factorM
-  mjtNum* qLD;               // L'*D*L factorization of M (sparse)               (nC x 1)
+  mjtNum* qLD;               // L'*D*L factorization of M (sparse)               (nM x 1)
   mjtNum* qLDiagInv;         // 1/diag(D)                                        (nv x 1)
 
   // computed by mj_collisionTree
@@ -333,13 +333,17 @@ struct mjData_ {
   mjtNum* subtree_angmom;    // angular momentum about subtree com               (nbody x 3)
 
   // computed by mj_Euler or mj_implicit
-  mjtNum* qH;                // L'*D*L factorization of modified M               (nC x 1)
+  mjtNum* qH;                // L'*D*L factorization of modified M               (nM x 1)
   mjtNum* qHDiagInv;         // 1/diag(D) of modified M                          (nv x 1)
 
   // computed by mj_resetData
   int*    B_rownnz;          // body-dof: non-zeros in each row                  (nbody x 1)
   int*    B_rowadr;          // body-dof: address of each row in B_colind        (nbody x 1)
   int*    B_colind;          // body-dof: column indices of non-zeros            (nB x 1)
+  int*    M_rownnz;          // inertia: non-zeros in each row                   (nv x 1)
+  int*    M_rowadr;          // inertia: address of each row in M_colind         (nv x 1)
+  int*    M_colind;          // inertia: column indices of non-zeros             (nM x 1)
+  int*    mapM2M;            // index mapping from M (legacy) to M (CSR)         (nM x 1)
   int*    C_rownnz;          // reduced dof-dof: non-zeros in each row           (nv x 1)
   int*    C_rowadr;          // reduced dof-dof: address of each row in C_colind (nv x 1)
   int*    C_colind;          // reduced dof-dof: column indices of non-zeros     (nC x 1)
@@ -438,6 +442,9 @@ struct mjData_ {
 
   // thread pool pointer
   uintptr_t threadpool;
+
+  // compilation signature
+  uint64_t  signature;       // also held by the mjSpec that compiled the model
 };
 typedef struct mjData_ mjData;
 

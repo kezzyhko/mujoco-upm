@@ -523,6 +523,7 @@ struct mjvSceneState_ {
     int* flex_vertadr;
     int* flex_vertnum;
     int* flex_elem;
+    int* flex_elemtexcoord;
     int* flex_elemlayer;
     int* flex_elemadr;
     int* flex_elemnum;
@@ -592,8 +593,10 @@ struct mjvSceneState_ {
     int* tendon_matid;
     int* tendon_group;
     mjtByte* tendon_limited;
+    mjtByte* tendon_actfrclimited;
     mjtNum* tendon_width;
     mjtNum* tendon_range;
+    mjtNum* tendon_actfrcrange;
     mjtNum* tendon_stiffness;
     mjtNum* tendon_damping;
     mjtNum* tendon_frictionloss;

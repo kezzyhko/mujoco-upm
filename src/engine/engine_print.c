@@ -1127,9 +1127,14 @@ void mj_printFormattedData(const mjModel* m, const mjData* d, const char* filena
 
   printInertia("QM", d->qM, m, fp, float_format);
 
-  printSparse("QLD", d->qLD, m->nv, d->C_rownnz,
-              d->C_rowadr, d->C_colind, fp, float_format);
+  printSparse("QLD", d->qLD, m->nv, d->M_rownnz,
+              d->M_rowadr, d->M_colind, fp, float_format);
   printArray("QLDIAGINV", m->nv, 1, d->qLDiagInv, fp, float_format);
+
+  if (!mju_isZero(d->qHDiagInv, m->nv)) {
+    printSparse("QH", d->qH, m->nv, d->M_rownnz, d->M_rowadr, d->M_colind, fp, float_format);
+    printArray("QHDIAGINV", m->nv, 1, d->qHDiagInv, fp, float_format);
+  }
 
   // B sparse structure
   mj_printSparsity("B: body-dof matrix", m->nbody, m->nv, d->B_rowadr, NULL, d->B_rownnz, NULL,
@@ -1153,6 +1158,37 @@ void mj_printFormattedData(const mjModel* m, const mjData* d, const char* filena
   fprintf(fp, NAME_FORMAT, "B_colind");
   for (int i = 0; i < m->nB; i++) {
     fprintf(fp, " %d", d->B_colind[i]);
+  }
+  fprintf(fp, "\n\n");
+
+  // M sparse structure
+  mj_printSparsity("M: inertia matrix", m->nv, m->nv, d->M_rowadr, NULL, d->M_rownnz,
+                   NULL, d->M_colind, fp);
+
+  fprintf(fp, NAME_FORMAT, "M_rownnz");
+  for (int i = 0; i < m->nv; i++) {
+    fprintf(fp, " %d", d->M_rownnz[i]);
+  }
+  fprintf(fp, "\n\n");
+
+  // M_rowadr
+  fprintf(fp, NAME_FORMAT, "M_rowadr");
+  for (int i = 0; i < m->nv; i++) {
+    fprintf(fp, " %d", d->M_rowadr[i]);
+  }
+  fprintf(fp, "\n\n");
+
+  // M_colind
+  fprintf(fp, NAME_FORMAT, "M_colind");
+  for (int i = 0; i < m->nM; i++) {
+    fprintf(fp, " %d", d->M_colind[i]);
+  }
+  fprintf(fp, "\n\n");
+
+  // mapM2M
+  fprintf(fp, NAME_FORMAT, "mapM2M");
+  for (int i = 0; i < m->nM; i++) {
+    fprintf(fp, " %d", d->mapM2M[i]);
   }
   fprintf(fp, "\n\n");
 
@@ -1227,12 +1263,15 @@ void mj_printFormattedData(const mjModel* m, const mjData* d, const char* filena
   fprintf(fp, "\n\n");
 
   // print qDeriv
-  printSparse("QDERIV", d->qDeriv, m->nv, d->D_rownnz, d->D_rowadr, d->D_colind,
-              fp, float_format);
+  if (!mju_isZero(d->qDeriv, m->nD)) {
+    printSparse("QDERIV", d->qDeriv, m->nv, d->D_rownnz, d->D_rowadr, d->D_colind,
+                fp, float_format);
+  }
 
   // print qLU
-  printSparse("QLU", d->qLU, m->nv, d->D_rownnz, d->D_rowadr, d->D_colind,
-              fp, float_format);
+  if (!mju_isZero(d->qLU, m->nD)) {
+    printSparse("QLU", d->qLU, m->nv, d->D_rownnz, d->D_rowadr, d->D_colind, fp, float_format);
+  }
 
   // contact
   fprintf(fp, "CONTACT\n");

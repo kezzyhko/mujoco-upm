@@ -243,7 +243,9 @@ access to the raw memory used by MuJoCo without copying or buffering. This means
 :ref:`mj_step`) change the content of fields *in place*. The user is therefore advised to create copies where required.
 For example, when logging the position of a body, one could write
 ``positions.append(data.body('my_body').xpos.copy())``. Without the ``.copy()``, the list would contain identical
-elements, all pointing to the most recent value.
+elements, all pointing to the most recent value. The same applies to NumPy slices. For example if a local
+variable ``qpos_slice = data.qpos[3:8]`` is created and then :ref:`mj_step` is called, the values in ``qpos_slice``
+will have been changed.
 
 In order to conform to `PEP 8 <https://peps.python.org/pep-0008/>`__
 naming guidelines, struct names begin with a capital letter, for example ``mjData`` becomes ``mujoco.MjData`` in Python.
@@ -556,7 +558,7 @@ It is possible to combine multiple specs by using attachments. The following opt
 The default behavior of attaching is to not copy, so all the child references (except for the worldbody) are still valid
 in the parent and therefore modifying the child will modify the parent. This is not true for the attach
 :ref:`attach<body-attach>` and :ref:`replicate<replicate>` meta-elements in MJCF, which create deep copies while
-attaching. However, it is possible to override the default behavior by setting ``spec.copy_during_attaching`` to
+attaching. However, it is possible to override the default behavior by setting ``spec.copy_during_attach`` to
 ``True``. In this case, the child spec is copied and the references to the child will not point to the parent.
 
 .. code-block:: python
@@ -599,6 +601,14 @@ Lists of all elements in a spec can be accessed using named properties, using th
 ``equalities``, ``tendons``, ``actuators``, ``skins``, ``textures``, ``texts``, ``tuples``, ``flexes``, ``hfields``,
 ``keys``, ``numerics``, ``excludes``, ``sensors``, ``plugins``.
 
+Element removal
+^^^^^^^^^^^^^^^
+For elements that can have children (bodies and defaults), the methods ``spec.detach_body(body)`` and
+``spec.detach_default(def)`` remove, respectively, ``body`` and ``def`` from the spec, together with all of their
+children. When detaching body subtrees, all elements which reference elements in the subtree, will also be removed. For
+all other elements, the method ``delete()`` removes the corresponding element from the spec, e.g.
+``spec.geom('my_geom').delete()`` will remove the geom named "my_geom" and all of the elements that reference it.
+
 Tree traversal
 ^^^^^^^^^^^^^^
 Traversal of the kinematic tree is aided by the following methods which return tree-related lists of elements:
@@ -618,8 +628,10 @@ Parent:
   The parent body of a given element -- including bodies and frames -- can be accessed via the ``parent`` property.
   For example, the parent of a site can be accessed via ``site.parent``.
 
-Relationship to ``PyMJCF``
---------------------------
+.. _PyMJCF:
+
+Relationship to ``PyMJCF`` and ``bind``
+---------------------------------------
 
 `dm_control <https://github.com/google-deepmind/dm_control/tree/main>`__'s
 `PyMJCF <https://github.com/google-deepmind/dm_control/blob/main/dm_control/mjcf/README.md>`__ module provides similar
@@ -635,15 +647,17 @@ includes a reimplementation of the ``PyMJCF`` example in the ``dm_control``
 
 ``PyMJCF`` provides a notion of "binding", giving access to :ref:`mjModel` and :ref:`mjData` values via a helper class.
 In the native API, the helper class is not needed, so it is possible to directly bind an ``mjs`` object to
-:ref:`mjModel` and :ref:`mjData`. This requires the objects to have a non-empty name. For example, say we have multiple
-geoms containing the string "torso" in their name. We want to get their Cartesian positions in the XY plane from
-``mjData``. This can be done as follows:
+:ref:`mjModel` and :ref:`mjData`. For example, say we have multiple geoms containing the string "torso" in their name.
+We want to get their Cartesian positions in the XY plane from ``mjData``. This can be done as follows:
 
 .. code-block:: python
 
    torsos = [data.bind(geom) for geom in spec.geoms if 'torso' in geom.name]
    pos_x = [torso.xpos[0] for torso in torsos]
    pos_y = [torso.xpos[1] for torso in torsos]
+
+Using the ``bind`` method requires the :ref:`mjModel` and :ref:`mjData` to be compiled from the :`ref:`mjSpec`. If
+objects are added or removed from the :ref:`mjSpec` since the last compilation, an error is raised.
 
 Notes
 -----

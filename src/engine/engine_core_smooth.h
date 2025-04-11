@@ -39,6 +39,9 @@ MJAPI void mj_flex(const mjModel* m, mjData* d);
 // compute tendon lengths, velocities and moment arms
 MJAPI void mj_tendon(const mjModel* m, mjData* d);
 
+// compute time derivative of dense tendon Jacobian for one tendon
+MJAPI void mj_tendonDot(const mjModel* m, mjData* d, int id, mjtNum* Jdot);
+
 // compute actuator transmission lengths and moments
 MJAPI void mj_transmission(const mjModel* m, mjData* d);
 
@@ -47,6 +50,9 @@ MJAPI void mj_transmission(const mjModel* m, mjData* d);
 
 // composite rigid body inertia algorithm
 MJAPI void mj_crb(const mjModel* m, mjData* d);
+
+// add tendon armature to qM
+MJAPI void mj_tendonArmature(const mjModel* m, mjData* d);
 
 // sparse L'*D*L factorizaton of inertia-like matrix M, assumed spd  (legacy implementation)
 MJAPI void mj_factorI_legacy(const mjModel* m, mjData* d, const mjtNum* M,
@@ -95,6 +101,12 @@ MJAPI void mj_rne(const mjModel* m, mjData* d, int flg_acc, mjtNum* result);
 
 // RNE with complete data: compute cacc, cfrc_ext, cfrc_int
 MJAPI void mj_rnePostConstraint(const mjModel* m, mjData* d);
+
+
+//-------------------------- tendon bias -----------------------------------------------------------
+
+// add bias force due to tendon armature
+MJAPI void mj_tendonBias(const mjModel* m, mjData* d, mjtNum* qfrc);
 
 #ifdef __cplusplus
 }

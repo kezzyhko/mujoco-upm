@@ -114,8 +114,9 @@ typedef struct mjFwdPositionArgs_ mjFwdPositionArgs;
 // wrapper for mj_crb and mj_factorM
 void* mj_inertialThreaded(void* args) {
   mjFwdPositionArgs* forward_args = (mjFwdPositionArgs*) args;
-  mj_crb(forward_args->m, forward_args->d);       // timed internally (POS_INERTIA)
-  mj_factorM(forward_args->m, forward_args->d);   // timed internally (POS_INERTIA)
+  mj_crb(forward_args->m, forward_args->d);             // timed internally (POS_INERTIA)
+  mj_tendonArmature(forward_args->m, forward_args->d);  // timed internally (POS_INERTIA)
+  mj_factorM(forward_args->m, forward_args->d);         // timed internally (POS_INERTIA)
   return NULL;
 }
 
@@ -142,9 +143,10 @@ void mj_fwdPosition(const mjModel* m, mjData* d) {
 
   // no threadpool: inertia and collision on main thread
   if (!d->threadpool) {
-    mj_crb(m, d);        // timed internally (POS_INERTIA)
-    mj_factorM(m, d);    // timed internally (POS_INERTIA)
-    mj_collision(m, d);  // timed internally (POS_COLLISION)
+    mj_crb(m, d);             // timed internally (POS_INERTIA)
+    mj_tendonArmature(m, d);  // timed internally (POS_INERTIA)
+    mj_factorM(m, d);         // timed internally (POS_INERTIA)
+    mj_collision(m, d);       // timed internally (POS_COLLISION)
   }
 
   // have threadpool: inertia and collision on separate threads
@@ -222,6 +224,9 @@ void mj_fwdVelocity(const mjModel* m, mjData* d) {
   // compute qfrc_bias with abbreviated RNE (without acceleration)
   mj_rne(m, d, 0, d->qfrc_bias);
 
+  // add bias force due to tendon armature
+  mj_tendonBias(m, d, d->qfrc_bias);
+
   TM_END(mjTIMER_VELOCITY);
 }
 
@@ -271,7 +276,7 @@ static void clampVec(mjtNum* vec, const mjtNum* range, const mjtByte* limited, i
 // (qpos, qvel, ctrl, act) => (qfrc_actuator, actuator_force, act_dot)
 void mj_fwdActuation(const mjModel* m, mjData* d) {
   TM_START;
-  int nv = m->nv, nu = m->nu;
+  int nv = m->nv, nu = m->nu, ntendon = m->ntendon;
   mjtNum gain, bias, tau;
   mjtNum *prm, *force = d->actuator_force;
 
@@ -283,6 +288,9 @@ void mj_fwdActuation(const mjModel* m, mjData* d) {
     mju_zero(d->qfrc_actuator, nv);
     return;
   }
+
+  // any tendon transmission targets with force limits
+  int tendon_frclimited = 0;
 
   // local, clamped copy of ctrl
   mj_markStack(d);
@@ -379,6 +387,11 @@ void mj_fwdActuation(const mjModel* m, mjData* d) {
       continue;
     }
 
+    // check for tendon transmission with force limits
+    if (ntendon && !tendon_frclimited && m->actuator_trntype[i] == mjTRN_TENDON) {
+      tendon_frclimited = m->tendon_actfrclimited[m->actuator_trnid[2*i]];
+    }
+
     // extract gain info
     prm = m->actuator_gainprm + mjNGAIN*i;
 
@@ -470,6 +483,38 @@ void mj_fwdActuation(const mjModel* m, mjData* d) {
           mjERROR("`compute` is a null function pointer for plugin at slot %d", slot);
         }
         plugin->compute(m, d, i, mjPLUGIN_ACTUATOR);
+      }
+    }
+  }
+
+  // clamp tendon total actuator force
+  if (tendon_frclimited) {
+    // compute total force for each tendon
+    mjtNum* tendon_total_force = mjSTACKALLOC(d, ntendon, mjtNum);
+    mju_zero(tendon_total_force, ntendon);
+    for (int i=0; i < nu; i++) {
+      if (m->actuator_trntype[i] == mjTRN_TENDON) {
+        int tendon_id = m->actuator_trnid[2*i];
+        if (m->tendon_actfrclimited[tendon_id]) {
+          tendon_total_force[tendon_id] += force[i];
+        }
+      }
+    }
+
+    // scale tendon actuator forces if limited and outside range
+    for (int i=0; i < nu; i++) {
+      if (m->actuator_trntype[i] != mjTRN_TENDON) {
+        continue;
+      }
+      int tendon_id = m->actuator_trnid[2*i];
+      mjtNum tendon_force = tendon_total_force[tendon_id];
+      if (m->tendon_actfrclimited[tendon_id] && tendon_force) {
+        const mjtNum* range = m->tendon_actfrcrange + 2 * tendon_id;
+        if (tendon_force < range[0]) {
+          force[i] *= range[0] / tendon_force;
+        } else if (tendon_force > range[1]) {
+          force[i] *= range[1] / tendon_force;
+        }
       }
     }
   }
@@ -770,7 +815,7 @@ static void mj_advance(const mjModel* m, mjData* d,
 // Euler integrator, semi-implicit in velocity, possibly skipping factorisation
 void mj_EulerSkip(const mjModel* m, mjData* d, int skipfactor) {
   TM_START;
-  int nv = m->nv, nC = m->nC;
+  int nv = m->nv, nM = m->nM;
   mj_markStack(d);
   mjtNum* qfrc = mjSTACKALLOC(d, nv, mjtNum);
   mjtNum* qacc = mjSTACKALLOC(d, nv, mjtNum);
@@ -795,22 +840,22 @@ void mj_EulerSkip(const mjModel* m, mjData* d, int skipfactor) {
   else {
     if (!skipfactor) {
       // qH = M + h*diag(B)
-      for (int i=0; i < nC; i++) {
-        d->qH[i] = d->qM[d->mapM2C[i]];
+      for (int i=0; i < nM; i++) {
+        d->qH[i] = d->qM[d->mapM2M[i]];
       }
       for (int i=0; i < nv; i++) {
-        d->qH[d->C_rowadr[i] + d->C_rownnz[i] - 1] += m->opt.timestep * m->dof_damping[i];
+        d->qH[d->M_rowadr[i] + d->M_rownnz[i] - 1] += m->opt.timestep * m->dof_damping[i];
       }
 
       // factorize in-place
-      mj_factorI(d->qH, d->qHDiagInv, nv, d->C_rownnz, d->C_rowadr, m->dof_simplenum, d->C_colind);
+      mj_factorI(d->qH, d->qHDiagInv, nv, d->M_rownnz, d->M_rowadr, m->dof_simplenum, d->M_colind);
     }
 
     // solve
     mju_add(qfrc, d->qfrc_smooth, d->qfrc_constraint, nv);
     mju_copy(qacc, qfrc, m->nv);
     mj_solveLD(qacc, d->qH, d->qHDiagInv, nv, 1,
-               d->C_rownnz, d->C_rowadr, m->dof_simplenum, d->C_colind);
+               d->M_rownnz, d->M_rowadr, m->dof_simplenum, d->M_colind);
   }
 
   // advance state and time
@@ -939,7 +984,7 @@ void mj_RungeKutta(const mjModel* m, mjData* d, int N) {
 // fully implicit in velocity, possibly skipping factorization
 void mj_implicitSkip(const mjModel* m, mjData* d, int skipfactor) {
   TM_START;
-  int nv = m->nv, nM = m->nM, nD = m->nD, nC = m->nC;
+  int nv = m->nv, nM = m->nM, nD = m->nD;
 
   mj_markStack(d);
   mjtNum* qfrc = mjSTACKALLOC(d, nv, mjtNum);
@@ -987,18 +1032,18 @@ void mj_implicitSkip(const mjModel* m, mjData* d, int skipfactor) {
       mju_addScl(MhB, d->qM, MhB, -m->opt.timestep, nM);
 
       // copy into qH
-      for (int i=0; i < nC; i++) {
-        d->qH[i] = MhB[d->mapM2C[i]];
+      for (int i=0; i < nM; i++) {
+        d->qH[i] = MhB[d->mapM2M[i]];
       }
 
       // factorize in-place
-      mj_factorI(d->qH, d->qHDiagInv, nv, d->C_rownnz, d->C_rowadr, m->dof_simplenum, d->C_colind);
+      mj_factorI(d->qH, d->qHDiagInv, nv, d->M_rownnz, d->M_rowadr, m->dof_simplenum, d->M_colind);
     }
 
     // solve for qacc: (qM - dt*qDeriv) * qacc = qfrc
     mju_copy(qacc, qfrc, nv);
     mj_solveLD(qacc, d->qH, d->qHDiagInv, nv, 1,
-               d->C_rownnz, d->C_rowadr, m->dof_simplenum, d->C_colind);
+               d->M_rownnz, d->M_rowadr, m->dof_simplenum, d->M_colind);
 
   } else {
     mjERROR("integrator must be implicit or implicitfast");

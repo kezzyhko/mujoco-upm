@@ -308,7 +308,7 @@ FUNCTIONS: Mapping[str, FunctionDecl] = dict([
                  type=ValueType(name='int'),
              ),
          ),
-         doc='Update XML data structures with info from low-level model, save as MJCF. If error is not NULL, it must have size error_sz.',  # pylint: disable=line-too-long
+         doc='Update XML data structures with info from low-level model created with mj_loadXML, save as MJCF. If error is not NULL, it must have size error_sz.',  # pylint: disable=line-too-long
      )),
     ('mj_freeLastXML',
      FunctionDecl(
@@ -9000,23 +9000,23 @@ FUNCTIONS: Mapping[str, FunctionDecl] = dict([
          ),
          doc='Wait for a task to complete.',
      )),
-    ('mjs_attachBody',
+    ('mjs_attach',
      FunctionDecl(
-         name='mjs_attachBody',
+         name='mjs_attach',
          return_type=PointerType(
-             inner_type=ValueType(name='mjsBody'),
+             inner_type=ValueType(name='mjsElement'),
          ),
          parameters=(
              FunctionParameterDecl(
                  name='parent',
                  type=PointerType(
-                     inner_type=ValueType(name='mjsFrame'),
+                     inner_type=ValueType(name='mjsElement'),
                  ),
              ),
              FunctionParameterDecl(
                  name='child',
                  type=PointerType(
-                     inner_type=ValueType(name='mjsBody', is_const=True),
+                     inner_type=ValueType(name='mjsElement', is_const=True),
                  ),
              ),
              FunctionParameterDecl(
@@ -9032,109 +9032,7 @@ FUNCTIONS: Mapping[str, FunctionDecl] = dict([
                  ),
              ),
          ),
-         doc='Attach child body to a parent frame, return the attached body if success or NULL otherwise.',  # pylint: disable=line-too-long
-     )),
-    ('mjs_attachFrame',
-     FunctionDecl(
-         name='mjs_attachFrame',
-         return_type=PointerType(
-             inner_type=ValueType(name='mjsFrame'),
-         ),
-         parameters=(
-             FunctionParameterDecl(
-                 name='parent',
-                 type=PointerType(
-                     inner_type=ValueType(name='mjsBody'),
-                 ),
-             ),
-             FunctionParameterDecl(
-                 name='child',
-                 type=PointerType(
-                     inner_type=ValueType(name='mjsFrame', is_const=True),
-                 ),
-             ),
-             FunctionParameterDecl(
-                 name='prefix',
-                 type=PointerType(
-                     inner_type=ValueType(name='char', is_const=True),
-                 ),
-             ),
-             FunctionParameterDecl(
-                 name='suffix',
-                 type=PointerType(
-                     inner_type=ValueType(name='char', is_const=True),
-                 ),
-             ),
-         ),
-         doc='Attach child frame to a parent body, return the attached frame if success or NULL otherwise.',  # pylint: disable=line-too-long
-     )),
-    ('mjs_attachToSite',
-     FunctionDecl(
-         name='mjs_attachToSite',
-         return_type=PointerType(
-             inner_type=ValueType(name='mjsBody'),
-         ),
-         parameters=(
-             FunctionParameterDecl(
-                 name='parent',
-                 type=PointerType(
-                     inner_type=ValueType(name='mjsSite'),
-                 ),
-             ),
-             FunctionParameterDecl(
-                 name='child',
-                 type=PointerType(
-                     inner_type=ValueType(name='mjsBody', is_const=True),
-                 ),
-             ),
-             FunctionParameterDecl(
-                 name='prefix',
-                 type=PointerType(
-                     inner_type=ValueType(name='char', is_const=True),
-                 ),
-             ),
-             FunctionParameterDecl(
-                 name='suffix',
-                 type=PointerType(
-                     inner_type=ValueType(name='char', is_const=True),
-                 ),
-             ),
-         ),
-         doc='Attach child body to a parent site, return the attached body if success or NULL otherwise.',  # pylint: disable=line-too-long
-     )),
-    ('mjs_attachFrameToSite',
-     FunctionDecl(
-         name='mjs_attachFrameToSite',
-         return_type=PointerType(
-             inner_type=ValueType(name='mjsFrame'),
-         ),
-         parameters=(
-             FunctionParameterDecl(
-                 name='parent',
-                 type=PointerType(
-                     inner_type=ValueType(name='mjsSite'),
-                 ),
-             ),
-             FunctionParameterDecl(
-                 name='child',
-                 type=PointerType(
-                     inner_type=ValueType(name='mjsFrame', is_const=True),
-                 ),
-             ),
-             FunctionParameterDecl(
-                 name='prefix',
-                 type=PointerType(
-                     inner_type=ValueType(name='char', is_const=True),
-                 ),
-             ),
-             FunctionParameterDecl(
-                 name='suffix',
-                 type=PointerType(
-                     inner_type=ValueType(name='char', is_const=True),
-                 ),
-             ),
-         ),
-         doc='Attach child frame to a parent site, return the attached frame if success or NULL otherwise.',  # pylint: disable=line-too-long
+         doc='Attach child to a parent, return the attached element if success or NULL otherwise.',  # pylint: disable=line-too-long
      )),
     ('mjs_detachBody',
      FunctionDecl(
@@ -9154,7 +9052,27 @@ FUNCTIONS: Mapping[str, FunctionDecl] = dict([
                  ),
              ),
          ),
-         doc='Detach body from mjSpec, remove all references and delete the body, return 0 on success.',  # pylint: disable=line-too-long
+         doc='Delete body and descendants from mjSpec, remove all references, return 0 on success.',  # pylint: disable=line-too-long
+     )),
+    ('mjs_detachDefault',
+     FunctionDecl(
+         name='mjs_detachDefault',
+         return_type=ValueType(name='int'),
+         parameters=(
+             FunctionParameterDecl(
+                 name='s',
+                 type=PointerType(
+                     inner_type=ValueType(name='mjSpec'),
+                 ),
+             ),
+             FunctionParameterDecl(
+                 name='d',
+                 type=PointerType(
+                     inner_type=ValueType(name='mjsDefault'),
+                 ),
+             ),
+         ),
+         doc='Delete default class and descendants from mjSpec, remove all references, return 0 on success.',  # pylint: disable=line-too-long
      )),
     ('mjs_addBody',
      FunctionDecl(
@@ -9896,6 +9814,22 @@ FUNCTIONS: Mapping[str, FunctionDecl] = dict([
          ),
          doc='Get parent body.',
      )),
+    ('mjs_getFrame',
+     FunctionDecl(
+         name='mjs_getFrame',
+         return_type=PointerType(
+             inner_type=ValueType(name='mjsFrame'),
+         ),
+         parameters=(
+             FunctionParameterDecl(
+                 name='element',
+                 type=PointerType(
+                     inner_type=ValueType(name='mjsElement'),
+                 ),
+             ),
+         ),
+         doc='Get parent frame.',
+     )),
     ('mjs_findFrame',
      FunctionDecl(
          name='mjs_findFrame',
@@ -9938,7 +9872,7 @@ FUNCTIONS: Mapping[str, FunctionDecl] = dict([
      FunctionDecl(
          name='mjs_findDefault',
          return_type=PointerType(
-             inner_type=ValueType(name='mjsDefault', is_const=True),
+             inner_type=ValueType(name='mjsDefault'),
          ),
          parameters=(
              FunctionParameterDecl(
@@ -10387,7 +10321,7 @@ FUNCTIONS: Mapping[str, FunctionDecl] = dict([
     ('mjs_setFrame',
      FunctionDecl(
          name='mjs_setFrame',
-         return_type=ValueType(name='void'),
+         return_type=ValueType(name='int'),
          parameters=(
              FunctionParameterDecl(
                  name='dest',
@@ -10402,7 +10336,7 @@ FUNCTIONS: Mapping[str, FunctionDecl] = dict([
                  ),
              ),
          ),
-         doc="Set element's enclosing frame.",
+         doc="Set element's enclosing frame, return 0 on success.",
      )),
     ('mjs_resolveOrientation',
      FunctionDecl(
@@ -10454,6 +10388,74 @@ FUNCTIONS: Mapping[str, FunctionDecl] = dict([
              ),
          ),
          doc='Transform body into a frame.',
+     )),
+    ('mjs_setUserValue',
+     FunctionDecl(
+         name='mjs_setUserValue',
+         return_type=ValueType(name='void'),
+         parameters=(
+             FunctionParameterDecl(
+                 name='element',
+                 type=PointerType(
+                     inner_type=ValueType(name='mjsElement'),
+                 ),
+             ),
+             FunctionParameterDecl(
+                 name='key',
+                 type=PointerType(
+                     inner_type=ValueType(name='char', is_const=True),
+                 ),
+             ),
+             FunctionParameterDecl(
+                 name='data',
+                 type=PointerType(
+                     inner_type=ValueType(name='void', is_const=True),
+                 ),
+             ),
+         ),
+         doc='Set user payload, overriding the existing value for the specified key if present.',  # pylint: disable=line-too-long
+     )),
+    ('mjs_getUserValue',
+     FunctionDecl(
+         name='mjs_getUserValue',
+         return_type=PointerType(
+             inner_type=ValueType(name='void', is_const=True),
+         ),
+         parameters=(
+             FunctionParameterDecl(
+                 name='element',
+                 type=PointerType(
+                     inner_type=ValueType(name='mjsElement'),
+                 ),
+             ),
+             FunctionParameterDecl(
+                 name='key',
+                 type=PointerType(
+                     inner_type=ValueType(name='char', is_const=True),
+                 ),
+             ),
+         ),
+         doc='Return user payload or NULL if none found.',
+     )),
+    ('mjs_deleteUserValue',
+     FunctionDecl(
+         name='mjs_deleteUserValue',
+         return_type=ValueType(name='void'),
+         parameters=(
+             FunctionParameterDecl(
+                 name='element',
+                 type=PointerType(
+                     inner_type=ValueType(name='mjsElement'),
+                 ),
+             ),
+             FunctionParameterDecl(
+                 name='key',
+                 type=PointerType(
+                     inner_type=ValueType(name='char', is_const=True),
+                 ),
+             ),
+         ),
+         doc='Delete user payload.',
      )),
     ('mjs_defaultSpec',
      FunctionDecl(

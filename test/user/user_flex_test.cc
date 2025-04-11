@@ -435,6 +435,22 @@ TEST_F(UserFlexTest, StiffnessMatrix) {
   mj_deleteModel(m);
 }
 
+TEST_F(UserFlexTest, LoadTexture) {
+  const std::string xml_path =
+      GetTestDataFilePath("user/testdata/textured_torus_flex.xml");
+  std::array<char, 1024> error;
+  mjModel* m = mj_loadXML(xml_path.c_str(), 0, error.data(), error.size());
+  ASSERT_THAT(m, NotNull()) << error.data();
+  EXPECT_THAT(m->nflextexcoord, 637);
+  EXPECT_THAT(m->flex_elemtexcoord[0], 0);
+  EXPECT_THAT(m->flex_elemtexcoord[1], 1);
+  EXPECT_THAT(m->flex_elemtexcoord[2], 2);
+  EXPECT_THAT(m->flex_elemtexcoord[3], 0);
+  EXPECT_THAT(m->flex_elemtexcoord[4], 2);
+  EXPECT_THAT(m->flex_elemtexcoord[5], 3);
+  mj_deleteModel(m);
+}
+
 TEST_F(UserFlexTest, LoadMSHBinary_41_Success) {
   const std::string xml_path =
       GetTestDataFilePath("user/testdata/cube_41_binary_vol_gmshApp.xml");
@@ -678,6 +694,18 @@ TEST_F(UserFlexTest, LoadMSHASCII_41_MissingElement_Fail) {
   mjModel* m = mj_loadXML(xml_path.c_str(), 0, error.data(), error.size());
   EXPECT_THAT(error.data(), HasSubstr(
         "XML Error: Error: Error reading Elements"));
+  mj_deleteModel(m);
+}
+
+TEST_F(UserFlexTest,
+       LoadMSHASCII_41_MismatchBetweenMaxNodesAndNodesInBlock_Fail) {
+  const std::string xml_path =
+      GetTestDataFilePath(
+          "user/testdata/malformed_cube_41_ascii_mismatch_between_max_nodes_and_nodes_in_block.xml");
+  std::array<char, 1024> error;
+  mjModel* m = mj_loadXML(xml_path.c_str(), 0, error.data(), error.size());
+  EXPECT_THAT(error.data(), HasSubstr(
+        "XML Error: Error: Maximum number of nodes must be equal to number of nodes in a block\nElement 'flexcomp', line 22\n"));
   mj_deleteModel(m);
 }
 

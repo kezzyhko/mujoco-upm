@@ -22,7 +22,7 @@
 #include <array>
 #include <clocale>
 #include <cstdio>
-#include <filesystem>
+#include <filesystem>  // NOLINT(build/c++17)
 #include <string>
 #include <vector>
 
@@ -32,7 +32,6 @@
 #include <mujoco/mjmodel.h>
 #include <mujoco/mjtnum.h>
 #include <mujoco/mujoco.h>
-#include "src/cc/array_safety.h"
 #include "src/xml/xml_numeric_format.h"
 #include "test/fixture.h"
 
@@ -45,6 +44,9 @@ using ::testing::NotNull;
 using ::testing::FloatEq;
 
 using XMLWriterTest = PluginTest;
+
+static const char* const kNonRgbTextureXMLPath =
+    "xml/testdata/hfield_png_nonrgb.xml";
 
 TEST_F(XMLWriterTest, EmptyModel) {
   static constexpr char xml[] = "<mujoco/>";
@@ -129,6 +131,23 @@ TEST_F(XMLWriterTest, SavesDisableSensor) {
   mjModel* model = LoadModelFromString(xml);
   std::string saved_xml = SaveAndReadXml(model);
   EXPECT_THAT(saved_xml, HasSubstr("sensor=\"disable\""));
+  mj_deleteModel(model);
+}
+
+TEST_F(XMLWriterTest, SavesInertial) {
+  static constexpr char xml[] = R"(
+  <mujoco>
+    <compiler saveinertial="true"/>
+    <worldbody>
+      <body>
+        <geom type="box" size=".05 .05 .05"/>
+      </body>
+    </worldbody>
+  </mujoco>
+  )";
+  mjModel* model = LoadModelFromString(xml);
+  std::string saved_xml = SaveAndReadXml(model);
+  EXPECT_THAT(saved_xml, HasSubstr("mass=\"1\""));
   mj_deleteModel(model);
 }
 
@@ -954,8 +973,10 @@ TEST_F(XMLWriterTest, WritesSkin) {
   ASSERT_THAT(model, NotNull());
   EXPECT_THAT(model->nskin, 1);
 
-  mjModel* mtemp = LoadModelFromString(SaveAndReadXml(model));
-  ASSERT_THAT(mtemp, NotNull());
+  char error[1024];
+  mjModel* mtemp = LoadModelFromString(SaveAndReadXml(model),
+                                       error, sizeof(error));
+  ASSERT_THAT(mtemp, NotNull()) << error;
   EXPECT_THAT(mtemp->nskin, 1);
 
   mj_deleteModel(model);
@@ -1326,6 +1347,24 @@ TEST_F(XMLWriterLocaleTest, IgnoresLocale) {
   EXPECT_EQ(std::string(formatted), "3,9375");
 }
 
+TEST_F(XMLWriterTest, NonRGBTextures) {
+  const std::string xml_path = GetTestDataFilePath(kNonRgbTextureXMLPath);
+  std::array<char, 1024> error;
+  mjModel* model = mj_loadXML(xml_path.c_str(), 0, error.data(), error.size());
+  ASSERT_THAT(model, NotNull()) << error.data();
+
+  std::string saved_xml = SaveAndReadXml(model);
+  EXPECT_FALSE(saved_xml.empty());
+
+  // check that layers are written correctly
+  EXPECT_THAT(saved_xml, HasSubstr("<material name=\"hfield\">"));
+  EXPECT_THAT(saved_xml, HasSubstr("<layer texture=\"hfield\" role=\"rgb\"/>"));
+  EXPECT_THAT(saved_xml, HasSubstr("<layer texture=\"hfield\" role=\"orm\"/>"));
+  EXPECT_THAT(saved_xml,
+              HasSubstr("<layer texture=\"hfield\" role=\"normal\"/>"));
+
+  mj_deleteModel(model);
+}
 
 // ------------------- test loading and saving multiple files ------------------
 TEST_F(XMLWriterTest, WriteReadCompare) {

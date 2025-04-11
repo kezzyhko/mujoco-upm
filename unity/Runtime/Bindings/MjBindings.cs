@@ -110,7 +110,7 @@ public const int mjMAXLINEPNT = 1000;
 public const int mjMAXPLANEGRID = 200;
 public const bool THIRD_PARTY_MUJOCO_MJXMACRO_H_ = true;
 public const bool THIRD_PARTY_MUJOCO_MUJOCO_H_ = true;
-public const int mjVERSION_HEADER = 330;
+public const int mjVERSION_HEADER = 331;
 
 
 // ------------------------------------Enums------------------------------------
@@ -319,6 +319,8 @@ public enum mjtObj : int{
   mjOBJ_PLUGIN = 25,
   mjNOBJECT = 26,
   mjOBJ_FRAME = 100,
+  mjOBJ_DEFAULT = 101,
+  mjOBJ_MODEL = 102,
 }
 public enum mjtConstraint : int{
   mjCNSTR_EQUALITY = 0,
@@ -355,34 +357,35 @@ public enum mjtSensor : int{
   mjSENS_ACTUATORVEL = 14,
   mjSENS_ACTUATORFRC = 15,
   mjSENS_JOINTACTFRC = 16,
-  mjSENS_BALLQUAT = 17,
-  mjSENS_BALLANGVEL = 18,
-  mjSENS_JOINTLIMITPOS = 19,
-  mjSENS_JOINTLIMITVEL = 20,
-  mjSENS_JOINTLIMITFRC = 21,
-  mjSENS_TENDONLIMITPOS = 22,
-  mjSENS_TENDONLIMITVEL = 23,
-  mjSENS_TENDONLIMITFRC = 24,
-  mjSENS_FRAMEPOS = 25,
-  mjSENS_FRAMEQUAT = 26,
-  mjSENS_FRAMEXAXIS = 27,
-  mjSENS_FRAMEYAXIS = 28,
-  mjSENS_FRAMEZAXIS = 29,
-  mjSENS_FRAMELINVEL = 30,
-  mjSENS_FRAMEANGVEL = 31,
-  mjSENS_FRAMELINACC = 32,
-  mjSENS_FRAMEANGACC = 33,
-  mjSENS_SUBTREECOM = 34,
-  mjSENS_SUBTREELINVEL = 35,
-  mjSENS_SUBTREEANGMOM = 36,
-  mjSENS_GEOMDIST = 37,
-  mjSENS_GEOMNORMAL = 38,
-  mjSENS_GEOMFROMTO = 39,
-  mjSENS_E_POTENTIAL = 40,
-  mjSENS_E_KINETIC = 41,
-  mjSENS_CLOCK = 42,
-  mjSENS_PLUGIN = 43,
-  mjSENS_USER = 44,
+  mjSENS_TENDONACTFRC = 17,
+  mjSENS_BALLQUAT = 18,
+  mjSENS_BALLANGVEL = 19,
+  mjSENS_JOINTLIMITPOS = 20,
+  mjSENS_JOINTLIMITVEL = 21,
+  mjSENS_JOINTLIMITFRC = 22,
+  mjSENS_TENDONLIMITPOS = 23,
+  mjSENS_TENDONLIMITVEL = 24,
+  mjSENS_TENDONLIMITFRC = 25,
+  mjSENS_FRAMEPOS = 26,
+  mjSENS_FRAMEQUAT = 27,
+  mjSENS_FRAMEXAXIS = 28,
+  mjSENS_FRAMEYAXIS = 29,
+  mjSENS_FRAMEZAXIS = 30,
+  mjSENS_FRAMELINVEL = 31,
+  mjSENS_FRAMEANGVEL = 32,
+  mjSENS_FRAMELINACC = 33,
+  mjSENS_FRAMEANGACC = 34,
+  mjSENS_SUBTREECOM = 35,
+  mjSENS_SUBTREELINVEL = 36,
+  mjSENS_SUBTREEANGMOM = 37,
+  mjSENS_GEOMDIST = 38,
+  mjSENS_GEOMNORMAL = 39,
+  mjSENS_GEOMFROMTO = 40,
+  mjSENS_E_POTENTIAL = 41,
+  mjSENS_E_KINETIC = 42,
+  mjSENS_CLOCK = 43,
+  mjSENS_PLUGIN = 44,
+  mjSENS_USER = 45,
 }
 public enum mjtStage : int{
   mjSTAGE_NONE = 0,
@@ -4942,6 +4945,10 @@ public unsafe struct mjData_ {
   public int* B_rownnz;
   public int* B_rowadr;
   public int* B_colind;
+  public int* M_rownnz;
+  public int* M_rowadr;
+  public int* M_colind;
+  public int* mapM2M;
   public int* C_rownnz;
   public int* C_rowadr;
   public int* C_colind;
@@ -5003,6 +5010,7 @@ public unsafe struct mjData_ {
   public double* efc_force;
   public int* efc_state;
   public UIntPtr threadpool;
+  public UInt64 signature;
 }
 
 [StructLayout(LayoutKind.Sequential)]
@@ -5437,6 +5445,7 @@ public unsafe struct mjModel_ {
   public int* flex_vertbodyid;
   public int* flex_edge;
   public int* flex_elem;
+  public int* flex_elemtexcoord;
   public int* flex_elemedge;
   public int* flex_elemlayer;
   public int* flex_shell;
@@ -5561,15 +5570,18 @@ public unsafe struct mjModel_ {
   public int* tendon_matid;
   public int* tendon_group;
   public byte* tendon_limited;
+  public byte* tendon_actfrclimited;
   public double* tendon_width;
   public double* tendon_solref_lim;
   public double* tendon_solimp_lim;
   public double* tendon_solref_fri;
   public double* tendon_solimp_fri;
   public double* tendon_range;
+  public double* tendon_actfrcrange;
   public double* tendon_margin;
   public double* tendon_stiffness;
   public double* tendon_damping;
+  public double* tendon_armature;
   public double* tendon_frictionloss;
   public double* tendon_lengthspring;
   public double* tendon_length0;
@@ -5666,6 +5678,7 @@ public unsafe struct mjModel_ {
   public char* names;
   public int* names_map;
   public char* paths;
+  public UInt64 signature;
 }
 
 [StructLayout(LayoutKind.Sequential)]
@@ -5756,6 +5769,7 @@ public unsafe struct mjsCompiler_ {
   public byte fusestatic;
   public int inertiafromgeom;
   public fixed int inertiagrouprange[2];
+  public byte saveinertial;
   public int alignfree;
   public mjLROpt_ LRopt;
 }
@@ -6324,6 +6338,7 @@ public unsafe struct model {
   public int* flex_vertadr;
   public int* flex_vertnum;
   public int* flex_elem;
+  public int* flex_elemtexcoord;
   public int* flex_elemlayer;
   public int* flex_elemadr;
   public int* flex_elemnum;
@@ -6386,8 +6401,10 @@ public unsafe struct model {
   public int* tendon_matid;
   public int* tendon_group;
   public byte* tendon_limited;
+  public byte* tendon_actfrclimited;
   public double* tendon_width;
   public double* tendon_range;
+  public double* tendon_actfrcrange;
   public double* tendon_stiffness;
   public double* tendon_damping;
   public double* tendon_frictionloss;

@@ -16,7 +16,7 @@
 #define MUJOCO_MUJOCO_H_
 
 // header version; should match the library version as returned by mj_version()
-#define mjVERSION_HEADER 330
+#define mjVERSION_HEADER 331
 
 // needed to define size_t, fabs and log10
 #include <stdlib.h>
@@ -110,7 +110,7 @@ MJAPI mjModel* mj_compile(mjSpec* s, const mjVFS* vfs);
 // Recompile spec to model, preserving the state, return 0 on success.
 MJAPI int mj_recompile(mjSpec* s, const mjVFS* vfs, mjModel* m, mjData* d);
 
-// Update XML data structures with info from low-level model, save as MJCF.
+// Update XML data structures with info from low-level model created with mj_loadXML, save as MJCF.
 // If error is not NULL, it must have size error_sz.
 MJAPI int mj_saveLastXML(const char* filename, const mjModel* m, char* error, int error_sz);
 
@@ -1414,25 +1414,15 @@ MJAPI void mju_taskJoin(mjTask* task);
 
 //---------------------------------- Attachment ----------------------------------------------------
 
-// Attach child body to a parent frame, return the attached body if success or NULL otherwise.
-MJAPI mjsBody* mjs_attachBody(mjsFrame* parent, const mjsBody* child,
-                              const char* prefix, const char* suffix);
+// Attach child to a parent, return the attached element if success or NULL otherwise.
+MJAPI mjsElement* mjs_attach(mjsElement* parent, const mjsElement* child,
+                             const char* prefix, const char* suffix);
 
-// Attach child frame to a parent body, return the attached frame if success or NULL otherwise.
-MJAPI mjsFrame* mjs_attachFrame(mjsBody* parent, const mjsFrame* child,
-                                const char* prefix, const char* suffix);
-
-// Attach child body to a parent site, return the attached body if success or NULL otherwise.
-MJAPI mjsBody* mjs_attachToSite(mjsSite* parent, const mjsBody* child,
-                                const char* prefix, const char* suffix);
-
-// Attach child frame to a parent site, return the attached frame if success or NULL otherwise.
-MJAPI mjsFrame* mjs_attachFrameToSite(mjsSite* parent, const mjsFrame* child,
-                                      const char* prefix, const char* suffix);
-
-// Detach body from mjSpec, remove all references and delete the body, return 0 on success.
+// Delete body and descendants from mjSpec, remove all references, return 0 on success.
 MJAPI int mjs_detachBody(mjSpec* s, mjsBody* b);
 
+// Delete default class and descendants from mjSpec, remove all references, return 0 on success.
+MJAPI int mjs_detachDefault(mjSpec* s, mjsDefault* d);
 
 //---------------------------------- Tree elements -------------------------------------------------
 
@@ -1556,6 +1546,9 @@ MJAPI mjsBody* mjs_findChild(mjsBody* body, const char* name);
 // Get parent body.
 MJAPI mjsBody* mjs_getParent(mjsElement* element);
 
+// Get parent frame.
+MJAPI mjsFrame* mjs_getFrame(mjsElement* element);
+
 // Find frame by name.
 MJAPI mjsFrame* mjs_findFrame(mjSpec* s, const char* name);
 
@@ -1563,7 +1556,7 @@ MJAPI mjsFrame* mjs_findFrame(mjSpec* s, const char* name);
 MJAPI mjsDefault* mjs_getDefault(mjsElement* element);
 
 // Find default in model by class name.
-MJAPI const mjsDefault* mjs_findDefault(mjSpec* s, const char* classname);
+MJAPI mjsDefault* mjs_findDefault(mjSpec* s, const char* classname);
 
 // Get global default from model.
 MJAPI mjsDefault* mjs_getSpecDefault(mjSpec* s);
@@ -1635,8 +1628,8 @@ MJAPI const double* mjs_getDouble(const mjDoubleVec* source, int* size);
 // Set element's default.
 MJAPI void mjs_setDefault(mjsElement* element, const mjsDefault* def);
 
-// Set element's enclosing frame.
-MJAPI void mjs_setFrame(mjsElement* dest, mjsFrame* frame);
+// Set element's enclosing frame, return 0 on success.
+MJAPI int mjs_setFrame(mjsElement* dest, mjsFrame* frame);
 
 // Resolve alternative orientations to quat, return error if any.
 MJAPI const char* mjs_resolveOrientation(double quat[4], mjtByte degree, const char* sequence,
@@ -1644,6 +1637,15 @@ MJAPI const char* mjs_resolveOrientation(double quat[4], mjtByte degree, const c
 
 // Transform body into a frame.
 MJAPI mjsFrame* mjs_bodyToFrame(mjsBody** body);
+
+// Set user payload, overriding the existing value for the specified key if present.
+MJAPI void mjs_setUserValue(mjsElement* element, const char* key, const void* data);
+
+// Return user payload or NULL if none found.
+MJAPI const void* mjs_getUserValue(mjsElement* element, const char* key);
+
+// Delete user payload.
+MJAPI void mjs_deleteUserValue(mjsElement* element, const char* key);
 
 //---------------------------------- Element initialization  ---------------------------------------
 
