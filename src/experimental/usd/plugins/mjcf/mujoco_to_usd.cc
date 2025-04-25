@@ -777,6 +777,43 @@ class ModelWriter {
     return WriteSphere(name, geom_size, body_path);
   }
 
+  pxr::SdfPath WritePlane(const pxr::TfToken &name, const mjtNum *size,
+                          const pxr::SdfPath &body_path) {
+    pxr::SdfPath plane_path =
+        CreatePrimSpec(data_, body_path, name, pxr::UsdGeomTokens->Plane);
+
+    // MuJoCo uses half sizes.
+    // Note that UsdGeomPlane is infinite for simulation purposes but can have
+    // width/length for visualization, same as MuJoCo.
+    double width = size[0] * 2.0;
+    double length = size[1] * 2.0;
+
+    pxr::SdfPath width_attr_path =
+        CreateAttributeSpec(data_, plane_path, pxr::UsdGeomTokens->width,
+                            pxr::SdfValueTypeNames->Double);
+    SetAttributeDefault(data_, width_attr_path, width);
+
+    pxr::SdfPath length_attr_path =
+        CreateAttributeSpec(data_, plane_path, pxr::UsdGeomTokens->length,
+                            pxr::SdfValueTypeNames->Double);
+    SetAttributeDefault(data_, length_attr_path, length);
+
+    // MuJoCo plane is always a XY plane with +Z up.
+    // UsdGeomPlane is also a XY plane if axis is 'Z', which is default.
+    // So no need to set axis attribute explicitly.
+
+    return plane_path;
+  }
+
+  pxr::SdfPath WritePlaneGeom(const mjsGeom *geom,
+                              const pxr::SdfPath &body_path) {
+    auto name =
+        GetAvailablePrimName(*geom->name, pxr::UsdGeomTokens->Plane, body_path);
+    int geom_idx = mjs_getId(geom->element);
+    mjtNum *geom_size = &model_->geom_size[geom_idx * 3];
+    return WritePlane(name, geom_size, body_path);
+  }
+
   void WriteSite(mjsSite *site, const mjsBody *body) {
     const int body_id = mjs_getId(body->element);
     const auto &body_path = body_paths_[body_id];
@@ -804,6 +841,9 @@ class ModelWriter {
     pxr::SdfPath geom_path;
     int geom_id = mjs_getId(geom->element);
     switch (geom->type) {
+      case mjGEOM_PLANE:
+        geom_path = WritePlaneGeom(geom, body_path);
+        break;
       case mjGEOM_MESH:
         geom_path = WriteMeshGeom(geom, body_path);
         break;
@@ -854,6 +894,29 @@ class ModelWriter {
         CreateRelationshipSpec(data_, geom_path,
                                pxr::UsdShadeTokens->materialBinding,
                                material_path, pxr::SdfVariabilityUniform);
+      }
+    }
+
+    // If geom rgba is not the default (0.5, 0.5, 0.5, 1), then set the
+    // displayColor attribute.
+    // No effort is made to properly handle the interaction between geom rgba
+    // and the material if both are specified.
+    if (geom->rgba[0] != 0.5f || geom->rgba[1] != 0.5f ||
+        geom->rgba[2] != 0.5f || geom->rgba[3] != 1.0f) {
+      // Set the displayColor attribute.
+      pxr::SdfPath display_color_attr = CreateAttributeSpec(
+          data_, geom_path, pxr::UsdGeomTokens->primvarsDisplayColor,
+          pxr::SdfValueTypeNames->Color3fArray);
+      SetAttributeDefault(data_, display_color_attr,
+                          pxr::VtArray<pxr::GfVec3f>{
+                              {geom->rgba[0], geom->rgba[1], geom->rgba[2]}});
+      // Set the displayOpacity attribute, only if the opacity is not 1.
+      if (geom->rgba[3] != 1.0f) {
+        pxr::SdfPath display_opacity_attr = CreateAttributeSpec(
+            data_, geom_path, pxr::UsdGeomTokens->primvarsDisplayOpacity,
+            pxr::SdfValueTypeNames->FloatArray);
+        SetAttributeDefault(data_, display_opacity_attr,
+                            pxr::VtArray<float>{geom->rgba[3]});
       }
     }
 
