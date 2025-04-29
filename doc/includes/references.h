@@ -154,7 +154,6 @@ struct mjData_ {
 
   // solver statistics
   mjSolverStat  solver[mjNISLAND*mjNSOLVER];  // solver statistics per island, per iteration
-  int           solver_nisland;               // number of islands processed by solver
   int           solver_niter[mjNISLAND];      // number of solver iterations, per island
   int           solver_nnz[mjNISLAND];        // number of nonzeros in Hessian or efc_AR, per island
   mjtNum        solver_fwdinv[2];             // forward-inverse comparison: qfrc, efc
@@ -347,8 +346,8 @@ struct mjData_ {
   mjtNum* qfrc_constraint;   // constraint force                                 (nv x 1)
 
   // computed by mj_inverse
-  mjtNum* qfrc_inverse;      // net external force; should equal:                (nv x 1)
-                             // qfrc_applied + J'*xfrc_applied + qfrc_actuator
+  mjtNum* qfrc_inverse;      // net external force; should equal:
+                             // qfrc_applied + J'*xfrc_applied + qfrc_actuator   (nv x 1)
 
   // computed by mj_sensorAcc/mj_rnePostConstraint if needed; rotation:translation format
   mjtNum* cacc;              // com-based acceleration                           (nbody x 6)

@@ -110,7 +110,7 @@ public const int mjMAXLINEPNT = 1000;
 public const int mjMAXPLANEGRID = 200;
 public const bool THIRD_PARTY_MUJOCO_MJXMACRO_H_ = true;
 public const bool THIRD_PARTY_MUJOCO_MUJOCO_H_ = true;
-public const int mjVERSION_HEADER = 331;
+public const int mjVERSION_HEADER = 332;
 
 
 // ------------------------------------Enums------------------------------------
@@ -4826,7 +4826,6 @@ public unsafe struct mjData_ {
   public mjSolverStat_ solver3997;
   public mjSolverStat_ solver3998;
   public mjSolverStat_ solver3999;
-  public int solver_nisland;
   public fixed int solver_niter[20];
   public fixed int solver_nnz[20];
   public fixed double solver_fwdinv[2];

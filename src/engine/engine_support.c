@@ -41,8 +41,8 @@
 
 //-------------------------- Constants -------------------------------------------------------------
 
- #define mjVERSION 331
-#define mjVERSIONSTRING "3.3.1"
+ #define mjVERSION 332
+#define mjVERSIONSTRING "3.3.2"
 
 // names of disable flags
 const char* mjDISABLESTRING[mjNDISABLE] = {
@@ -1130,14 +1130,12 @@ void mj_addM(const mjModel* m, mjData* d, mjtNum* dst,
     int nC = m->nC;
     mj_markStack(d);
 
-    // create reduced sparse inertia matrix C
+    // gather C <- qM (legacy to CSR)
     mjtNum* C = mjSTACKALLOC(d, nC, mjtNum);
-    for (int i=0; i < nC; i++) {
-      C[i] = d->qM[d->mapM2C[i]];
-    }
+    mju_gather(C, d->qM, d->mapM2C, nC);
 
-    mj_addMSparse(m, d, dst, rownnz, rowadr, colind, C,
-                  d->C_rownnz, d->C_rowadr, d->C_colind);
+    // add to dst
+    mj_addMSparse(m, d, dst, rownnz, rowadr, colind, C, d->C_rownnz, d->C_rowadr, d->C_colind);
     mj_freeStack(d);
   }
 

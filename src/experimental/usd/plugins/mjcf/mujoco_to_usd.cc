@@ -49,6 +49,7 @@
 #include <pxr/usd/usdGeom/metrics.h>
 #include <pxr/usd/usdGeom/tokens.h>
 #include <pxr/usd/usdLux/tokens.h>
+#include <pxr/usd/usdPhysics/tokens.h>
 #include <pxr/usd/usdShade/tokens.h>
 #include <pxr/usdImaging/usdImaging/tokens.h>
 
@@ -122,6 +123,7 @@ using mujoco::usd::SetAttributeMetadata;
 using mujoco::usd::SetLayerMetadata;
 using mujoco::usd::SetPrimKind;
 using mujoco::usd::SetPrimMetadata;
+using mujoco::usd::SetPrimPurpose;
 
 pxr::GfMatrix4d MujocoPosQuatToTransform(double *pos, double *quat) {
   pxr::GfQuatd quaternion = pxr::GfQuatd::GetIdentity();
@@ -148,7 +150,7 @@ class ModelWriter {
   }
   ~ModelWriter() { mj_deleteModel(model_); }
 
-  void Write() {
+  void Write(bool write_physics) {
     // Create top level class holder.
     class_path_ = CreateClassSpec(data_, pxr::SdfPath::AbsoluteRootPath(),
                                   pxr::TfToken("__class__"));
@@ -172,7 +174,7 @@ class ModelWriter {
     // Author mesh scope + mesh prims to be referenced.
     WriteMeshes();
     WriteMaterials();
-    WriteBodies();
+    WriteBodies(write_physics);
   }
 
  private:
@@ -598,34 +600,57 @@ class ModelWriter {
     return subcomponent_path;
   }
 
-  pxr::SdfPath WriteBoxGeom(const mjsGeom *geom,
-                            const pxr::SdfPath &body_path) {
+  pxr::SdfPath WriteSiteGeom(const mjsSite *site,
+                             const pxr::SdfPath &body_path) {
     auto name =
-        GetAvailablePrimName(*geom->name, pxr::UsdGeomTokens->Cube, body_path);
+        GetAvailablePrimName(*site->name, pxr::UsdGeomTokens->Cube, body_path);
+
+    int site_idx = mjs_getId(site->element);
+    const mjtNum *size = &model_->site_size[site_idx * 3];
+    pxr::SdfPath site_path;
+    switch (site->type) {
+      case mjGEOM_BOX:
+        site_path = WriteBox(name, size, body_path);
+        break;
+      case mjGEOM_SPHERE:
+        site_path = WriteSphere(name, size, body_path);
+        break;
+      case mjGEOM_CAPSULE:
+        site_path = WriteCapsule(name, size, body_path);
+        break;
+      case mjGEOM_CYLINDER:
+        site_path = WriteCylinder(name, size, body_path);
+        break;
+      case mjGEOM_ELLIPSOID:
+        site_path = WriteEllipsoid(name, size, body_path);
+        break;
+      default:
+        break;
+    }
+
+    return site_path;
+  }
+
+  pxr::SdfPath WriteBox(const pxr::TfToken &name, const mjtNum *size,
+                        const pxr::SdfPath &body_path) {
     pxr::SdfPath box_path =
         CreatePrimSpec(data_, body_path, name, pxr::UsdGeomTokens->Cube);
-
-    int geom_idx = mjs_getId(geom->element);
-    mjtNum *geom_size = &model_->geom_size[geom_idx * 3];
-
     // MuJoCo uses half sizes.
     pxr::SdfPath size_attr_path =
         CreateAttributeSpec(data_, box_path, pxr::UsdGeomTokens->size,
                             pxr::SdfValueTypeNames->Float);
-    pxr::GfVec3f scale(static_cast<float>(geom_size[0]),
-                       static_cast<float>(geom_size[1]),
-                       static_cast<float>(geom_size[2]));
+    pxr::GfVec3f scale(static_cast<float>(size[0]), static_cast<float>(size[1]),
+                       static_cast<float>(size[2]));
     SetAttributeDefault(data_, size_attr_path, 2.0);
 
     pxr::SdfPath extent_attr_path =
         CreateAttributeSpec(data_, box_path, pxr::UsdGeomTokens->extent,
                             pxr::SdfValueTypeNames->Float3Array);
-    SetAttributeDefault(
-        data_, extent_attr_path,
-        pxr::VtArray<pxr::GfVec3f>({
-            pxr::GfVec3f(-geom_size[0], -geom_size[1], -geom_size[2]),
-            pxr::GfVec3f(geom_size[0], geom_size[1], geom_size[2]),
-        }));
+    SetAttributeDefault(data_, extent_attr_path,
+                        pxr::VtArray<pxr::GfVec3f>({
+                            pxr::GfVec3f(-size[0], -size[1], -size[2]),
+                            pxr::GfVec3f(size[0], size[1], size[2]),
+                        }));
 
     WriteScaleXformOp(box_path, scale);
     WriteXformOpOrder(box_path,
@@ -633,65 +658,80 @@ class ModelWriter {
     return box_path;
   }
 
-  pxr::SdfPath WriteCapsuleGeom(const mjsGeom *geom,
-                                const pxr::SdfPath &body_path) {
-    auto name = GetAvailablePrimName(*geom->name, pxr::UsdGeomTokens->Capsule,
-                                     body_path);
-    pxr::SdfPath capsule_path =
-        CreatePrimSpec(data_, body_path, name, pxr::UsdGeomTokens->Capsule);
+  pxr::SdfPath WriteBoxGeom(const mjsGeom *geom,
+                            const pxr::SdfPath &body_path) {
+    auto name =
+        GetAvailablePrimName(*geom->name, pxr::UsdGeomTokens->Cube, body_path);
 
     int geom_idx = mjs_getId(geom->element);
     mjtNum *geom_size = &model_->geom_size[geom_idx * 3];
+    return WriteBox(name, geom_size, body_path);
+  }
+
+  pxr::SdfPath WriteCapsule(const pxr::TfToken name, const mjtNum *size,
+                            const pxr::SdfPath &body_path) {
+    pxr::SdfPath capsule_path =
+        CreatePrimSpec(data_, body_path, name, pxr::UsdGeomTokens->Capsule);
 
     // MuJoCo uses half sizes.
     pxr::SdfPath radius_attr_path =
         CreateAttributeSpec(data_, capsule_path, pxr::UsdGeomTokens->radius,
                             pxr::SdfValueTypeNames->Float);
-    SetAttributeDefault(data_, radius_attr_path, geom_size[0] * 2);
+    SetAttributeDefault(data_, radius_attr_path, size[0] * 2);
 
     pxr::SdfPath height_attr_path =
         CreateAttributeSpec(data_, capsule_path, pxr::UsdGeomTokens->height,
                             pxr::SdfValueTypeNames->Float);
-    SetAttributeDefault(data_, height_attr_path, geom_size[1] * 2);
+    SetAttributeDefault(data_, height_attr_path, size[1] * 2);
     return capsule_path;
+  }
+
+  pxr::SdfPath WriteCapsuleGeom(const mjsGeom *geom,
+                                const pxr::SdfPath &body_path) {
+    auto name = GetAvailablePrimName(*geom->name, pxr::UsdGeomTokens->Capsule,
+                                     body_path);
+    int geom_idx = mjs_getId(geom->element);
+    mjtNum *geom_size = &model_->geom_size[geom_idx * 3];
+
+    return WriteCapsule(name, geom_size, body_path);
+  }
+
+  pxr::SdfPath WriteCylinder(const pxr::TfToken name, const mjtNum *size,
+                             const pxr::SdfPath &body_path) {
+    pxr::SdfPath cylinder_path =
+        CreatePrimSpec(data_, body_path, name, pxr::UsdGeomTokens->Cylinder);
+
+    // MuJoCo uses half sizes.
+    pxr::SdfPath radius_attr_path =
+        CreateAttributeSpec(data_, cylinder_path, pxr::UsdGeomTokens->radius,
+                            pxr::SdfValueTypeNames->Float);
+    SetAttributeDefault(data_, radius_attr_path, size[0] * 2);
+
+    pxr::SdfPath height_attr_path =
+        CreateAttributeSpec(data_, cylinder_path, pxr::UsdGeomTokens->height,
+                            pxr::SdfValueTypeNames->Float);
+    SetAttributeDefault(data_, height_attr_path, size[1] * 2);
+    return cylinder_path;
   }
 
   pxr::SdfPath WriteCylinderGeom(const mjsGeom *geom,
                                  const pxr::SdfPath &body_path) {
     auto name = GetAvailablePrimName(*geom->name, pxr::UsdGeomTokens->Cylinder,
                                      body_path);
-    pxr::SdfPath cylinder_path =
-        CreatePrimSpec(data_, body_path, name, pxr::UsdGeomTokens->Cylinder);
 
     int geom_idx = mjs_getId(geom->element);
     mjtNum *geom_size = &model_->geom_size[geom_idx * 3];
-
-    // MuJoCo uses half sizes.
-    pxr::SdfPath radius_attr_path =
-        CreateAttributeSpec(data_, cylinder_path, pxr::UsdGeomTokens->radius,
-                            pxr::SdfValueTypeNames->Float);
-    SetAttributeDefault(data_, radius_attr_path, geom_size[0] * 2);
-
-    pxr::SdfPath height_attr_path =
-        CreateAttributeSpec(data_, cylinder_path, pxr::UsdGeomTokens->height,
-                            pxr::SdfValueTypeNames->Float);
-    SetAttributeDefault(data_, height_attr_path, geom_size[1] * 2);
-    return cylinder_path;
+    return WriteCylinder(name, geom_size, body_path);
   }
 
-  pxr::SdfPath WriteEllipsoidGeom(const mjsGeom *geom,
-                                  const pxr::SdfPath &body_path) {
-    auto name = GetAvailablePrimName(*geom->name, pxr::UsdGeomTokens->Sphere,
-                                     body_path);
+  pxr::SdfPath WriteEllipsoid(const pxr::TfToken name, const mjtNum *size,
+                              const pxr::SdfPath &body_path) {
     pxr::SdfPath ellipsoid_path =
         CreatePrimSpec(data_, body_path, name, pxr::UsdGeomTokens->Sphere);
 
-    int geom_idx = mjs_getId(geom->element);
-    mjtNum *geom_size = &model_->geom_size[geom_idx * 3];
-
-    pxr::GfVec3f scale = {static_cast<float>(geom_size[0] * 2),
-                          static_cast<float>(geom_size[1] * 2),
-                          static_cast<float>(geom_size[2] * 2)};
+    pxr::GfVec3f scale = {static_cast<float>(size[0] * 2),
+                          static_cast<float>(size[1] * 2),
+                          static_cast<float>(size[2] * 2)};
 
     // MuJoCo uses half sizes.
     pxr::SdfPath radius_attr_path =
@@ -705,32 +745,105 @@ class ModelWriter {
     return ellipsoid_path;
   }
 
-  pxr::SdfPath WriteSphereGeom(const mjsGeom *geom,
-                               const pxr::SdfPath &body_path) {
+  pxr::SdfPath WriteEllipsoidGeom(const mjsGeom *geom,
+                                  const pxr::SdfPath &body_path) {
     auto name = GetAvailablePrimName(*geom->name, pxr::UsdGeomTokens->Sphere,
                                      body_path);
-    pxr::SdfPath sphere_path =
-        CreatePrimSpec(data_, body_path, name, pxr::UsdGeomTokens->Sphere);
-
     int geom_idx = mjs_getId(geom->element);
     mjtNum *geom_size = &model_->geom_size[geom_idx * 3];
+
+    return WriteEllipsoid(name, geom_size, body_path);
+  }
+
+  pxr::SdfPath WriteSphere(const pxr::TfToken name, const mjtNum *size,
+                           const pxr::SdfPath &body_path) {
+    pxr::SdfPath sphere_path =
+        CreatePrimSpec(data_, body_path, name, pxr::UsdGeomTokens->Sphere);
 
     // MuJoCo uses half sizes.
     pxr::SdfPath radius_attr_path =
         CreateAttributeSpec(data_, sphere_path, pxr::UsdGeomTokens->radius,
                             pxr::SdfValueTypeNames->Float);
-    SetAttributeDefault(data_, radius_attr_path, geom_size[0] * 2);
+    SetAttributeDefault(data_, radius_attr_path, size[0] * 2);
     return sphere_path;
+  }
+
+  pxr::SdfPath WriteSphereGeom(const mjsGeom *geom,
+                               const pxr::SdfPath &body_path) {
+    auto name = GetAvailablePrimName(*geom->name, pxr::UsdGeomTokens->Sphere,
+                                     body_path);
+    int geom_idx = mjs_getId(geom->element);
+    mjtNum *geom_size = &model_->geom_size[geom_idx * 3];
+    return WriteSphere(name, geom_size, body_path);
+  }
+
+  pxr::SdfPath WritePlane(const pxr::TfToken &name, const mjtNum *size,
+                          const pxr::SdfPath &body_path) {
+    pxr::SdfPath plane_path =
+        CreatePrimSpec(data_, body_path, name, pxr::UsdGeomTokens->Plane);
+
+    // MuJoCo uses half sizes.
+    // Note that UsdGeomPlane is infinite for simulation purposes but can have
+    // width/length for visualization, same as MuJoCo.
+    double width = size[0] * 2.0;
+    double length = size[1] * 2.0;
+
+    pxr::SdfPath width_attr_path =
+        CreateAttributeSpec(data_, plane_path, pxr::UsdGeomTokens->width,
+                            pxr::SdfValueTypeNames->Double);
+    SetAttributeDefault(data_, width_attr_path, width);
+
+    pxr::SdfPath length_attr_path =
+        CreateAttributeSpec(data_, plane_path, pxr::UsdGeomTokens->length,
+                            pxr::SdfValueTypeNames->Double);
+    SetAttributeDefault(data_, length_attr_path, length);
+
+    // MuJoCo plane is always a XY plane with +Z up.
+    // UsdGeomPlane is also a XY plane if axis is 'Z', which is default.
+    // So no need to set axis attribute explicitly.
+
+    return plane_path;
+  }
+
+  pxr::SdfPath WritePlaneGeom(const mjsGeom *geom,
+                              const pxr::SdfPath &body_path) {
+    auto name =
+        GetAvailablePrimName(*geom->name, pxr::UsdGeomTokens->Plane, body_path);
+    int geom_idx = mjs_getId(geom->element);
+    mjtNum *geom_size = &model_->geom_size[geom_idx * 3];
+    return WritePlane(name, geom_size, body_path);
+  }
+
+  void WriteSite(mjsSite *site, const mjsBody *body) {
+    const int body_id = mjs_getId(body->element);
+    const auto &body_path = body_paths_[body_id];
+    auto name =
+        GetAvailablePrimName(*site->name, pxr::UsdGeomTokens->Xform, body_path);
+
+    // Create a geom primitive and set its purpose to guide so it won't be
+    // rendered.
+    pxr::SdfPath site_path = WriteSiteGeom(site, body_path);
+    SetPrimPurpose(data_, site_path, pxr::UsdGeomTokens->guide);
+
+    int site_id = mjs_getId(site->element);
+    auto transform = MujocoPosQuatToTransform(&model_->site_pos[3 * site_id],
+                                              &model_->site_quat[4 * site_id]);
+    WriteTransformXformOp(site_path, transform);
+
+    PrependToXformOpOrder(
+        site_path, pxr::VtArray<pxr::TfToken>{kTokens->xformOpTransform});
   }
 
   void WriteGeom(mjsGeom *geom, const mjsBody *body) {
     const int body_id = mjs_getId(body->element);
     const auto &body_path = body_paths_[body_id];
-    auto name = GetAvailablePrimName(*geom->name, kTokens->geom, body_path);
 
     pxr::SdfPath geom_path;
     int geom_id = mjs_getId(geom->element);
     switch (geom->type) {
+      case mjGEOM_PLANE:
+        geom_path = WritePlaneGeom(geom, body_path);
+        break;
       case mjGEOM_MESH:
         geom_path = WriteMeshGeom(geom, body_path);
         break;
@@ -784,6 +897,29 @@ class ModelWriter {
       }
     }
 
+    // If geom rgba is not the default (0.5, 0.5, 0.5, 1), then set the
+    // displayColor attribute.
+    // No effort is made to properly handle the interaction between geom rgba
+    // and the material if both are specified.
+    if (geom->rgba[0] != 0.5f || geom->rgba[1] != 0.5f ||
+        geom->rgba[2] != 0.5f || geom->rgba[3] != 1.0f) {
+      // Set the displayColor attribute.
+      pxr::SdfPath display_color_attr = CreateAttributeSpec(
+          data_, geom_path, pxr::UsdGeomTokens->primvarsDisplayColor,
+          pxr::SdfValueTypeNames->Color3fArray);
+      SetAttributeDefault(data_, display_color_attr,
+                          pxr::VtArray<pxr::GfVec3f>{
+                              {geom->rgba[0], geom->rgba[1], geom->rgba[2]}});
+      // Set the displayOpacity attribute, only if the opacity is not 1.
+      if (geom->rgba[3] != 1.0f) {
+        pxr::SdfPath display_opacity_attr = CreateAttributeSpec(
+            data_, geom_path, pxr::UsdGeomTokens->primvarsDisplayOpacity,
+            pxr::SdfValueTypeNames->FloatArray);
+        SetAttributeDefault(data_, display_opacity_attr,
+                            pxr::VtArray<float>{geom->rgba[3]});
+      }
+    }
+
     if (body_id == kWorldIndex) {
       SetPrimKind(data_, geom_path, pxr::KindTokens->component);
     }
@@ -796,6 +932,14 @@ class ModelWriter {
 
     PrependToXformOpOrder(
         geom_path, pxr::VtArray<pxr::TfToken>{kTokens->xformOpTransform});
+  }
+
+  void WriteSites(mjsBody *body) {
+    mjsSite *site = mjs_asSite(mjs_firstChild(body, mjOBJ_SITE, false));
+    while (site) {
+      WriteSite(site, body);
+      site = mjs_asSite(mjs_nextChild(body, site->element, false));
+    }
   }
 
   void WriteGeoms(mjsBody *body) {
@@ -897,7 +1041,7 @@ class ModelWriter {
     }
   }
 
-  void WriteBody(mjsBody *body) {
+  void WriteBody(mjsBody *body, bool write_physics) {
     int body_id = mjs_getId(body->element);
     pxr::SdfPath parent_path =
         CreateParentIfNotExists(body, body_paths_[kWorldIndex], data_);
@@ -909,6 +1053,12 @@ class ModelWriter {
     // The parent_path will be a component which makes the actual articulated
     // bodies subcomponents.
     SetPrimKind(data_, body_path, pxr::KindTokens->subcomponent);
+
+    // Apply the PhysicsRigidBodyAPI schema if we are writing physics.
+    if (write_physics) {
+      ApplyApiSchema(data_, body_path,
+                     pxr::UsdPhysicsTokens->PhysicsRigidBodyAPI);
+    }
 
     // Create classes if necessary
     mjsDefault *spec_default = mjs_getDefault(body->element);
@@ -948,15 +1098,16 @@ class ModelWriter {
     body_paths_[body_id] = body_path;
   }
 
-  void WriteBodies() {
+  void WriteBodies(bool write_physics) {
     mjsBody *body = mjs_asBody(mjs_firstElement(spec_, mjOBJ_BODY));
     while (body) {
       // Only write a rigidbody if we are not the world body.
       // We fall through since the world body might have static
       // geom children.
       if (mjs_getId(body->element) != kWorldIndex) {
-        WriteBody(body);
+        WriteBody(body, write_physics);
       }
+      WriteSites(body);
       WriteGeoms(body);
       WriteCameras(body);
       WriteLights(body);
@@ -980,7 +1131,8 @@ class ModelWriter {
 namespace mujoco {
 namespace usd {
 
-bool WriteSpecToData(mjSpec *spec, pxr::SdfAbstractDataRefPtr &data) {
+bool WriteSpecToData(mjSpec *spec, pxr::SdfAbstractDataRefPtr &data,
+                     bool write_physics) {
   // Create pseudo root first.
   data->CreateSpec(pxr::SdfPath::AbsoluteRootPath(),
                    pxr::SdfSpecTypePseudoRoot);
@@ -991,7 +1143,7 @@ bool WriteSpecToData(mjSpec *spec, pxr::SdfAbstractDataRefPtr &data) {
     return false;
   }
 
-  ModelWriter(spec, model, data).Write();
+  ModelWriter(spec, model, data).Write(write_physics);
 
   return true;
 }
