@@ -18,7 +18,6 @@
 #include <string>
 
 #include <gtest/gtest.h>
-#include "test/fixture.h"
 #include <pxr/usd/sdf/assetPath.h>
 #include <pxr/usd/sdf/declareHandles.h>
 #include <pxr/usd/sdf/fileFormat.h>
@@ -68,6 +67,7 @@
   EXPECT_FALSE((stage)->GetAttributeAtPath(SdfPath(path)).HasValue());
 
 namespace mujoco {
+namespace usd {
 
 pxr::SdfLayerRefPtr LoadLayer(
     const std::string& xml,
@@ -95,8 +95,6 @@ void ExpectAttributeEqual<pxr::SdfAssetPath>(pxr::UsdStageRefPtr stage,
 
 void ExpectAttributeHasConnection(pxr::UsdStageRefPtr stage, const char* path,
                                   const char* connection_path);
-
-using MjcfSdfFileFormatPluginTest = MujocoTest;
-
+}  // namespace usd
 }  // namespace mujoco
 #endif  // MUJOCO_TEST_EXPERIMENTAL_USD_PLUGINS_MJCF_FIXTURE_H_
