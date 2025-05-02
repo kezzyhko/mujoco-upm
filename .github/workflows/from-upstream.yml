@@ -14,13 +14,14 @@ jobs:
     - name: Checkout
       uses: actions/checkout@v4
       with:
+        token: ${{ secrets.WORKFLOW_PUSH_TOKEN }}
         ref: main
         fetch-depth: 0
     - name: Sync master with upstream latest
       id: sync
       uses: aormsby/Fork-Sync-With-Upstream-action@v3.4.1
       with:
-        target_repo_token: ${{ secrets.GITHUB_TOKEN }}
+        target_repo_token: ${{ secrets.WORKFLOW_PUSH_TOKEN }}
         upstream_sync_repo: google-deepmind/mujoco
         upstream_sync_branch: main
         target_sync_branch: main
