@@ -66,7 +66,6 @@ using TfStaticData = pxr::TfStaticData<T>;
 
 // clang-format off
 TF_DEFINE_PRIVATE_TOKENS(kTokens,
-                         // Xform ops
                          ((body, "Body"))
                          ((body_name, "mujoco:body_name"))
                          ((geom, "Geom"))
@@ -89,7 +88,8 @@ TF_DEFINE_PRIVATE_TOKENS(kTokens,
                          ((outputsRgb, "outputs:rgb"))
                          ((inputsMetallic, "inputs:metallic"))
                          (repeat)
-                         );
+                         ((sourceMesh, pxr::UsdGeomTokens->Mesh))
+                        );
 
 // Using to satisfy TF_REGISTRY_FUNCTION macro below and avoid operating in PXR_NS.
 using pxr::TfEnum;
@@ -330,7 +330,7 @@ class ModelWriter {
     pxr::SdfPath subcomponent_path =
         CreatePrimSpec(data_, parent_path, name, pxr::UsdGeomTokens->Xform);
     pxr::SdfPath mesh_path =
-        CreatePrimSpec(data_, subcomponent_path, pxr::UsdGeomTokens->Mesh,
+        CreatePrimSpec(data_, subcomponent_path, kTokens->sourceMesh,
                        pxr::UsdGeomTokens->Mesh);
     mesh_paths_[*mesh->name] = subcomponent_path;
 
@@ -600,7 +600,15 @@ class ModelWriter {
     // Reference the mesh asset written in WriteMeshes.
     AddPrimReference(data_, subcomponent_path, mesh_paths_[*geom->meshname]);
 
-    return subcomponent_path;
+    // We want to use instancing with meshes, and it requires creating a parent
+    // scope to be referenced, with the Mesh prim as a child.
+    // To be able to actually manipulate the Mesh prim, we need to create and
+    // return the corresponding `over` prim as a child of the referencing prim.
+    pxr::SdfPath over_mesh_path =
+        CreatePrimSpec(data_, subcomponent_path, kTokens->sourceMesh,
+                       pxr::UsdGeomTokens->Mesh, pxr::SdfSpecifierOver);
+
+    return over_mesh_path;
   }
 
   pxr::SdfPath WriteSiteGeom(const mjsSite *site,
@@ -875,6 +883,21 @@ class ModelWriter {
                           model_->geom_conaffinity[geom_id] != 0)) {
       ApplyApiSchema(data_, geom_path,
                      pxr::UsdPhysicsTokens->PhysicsCollisionAPI);
+      // For meshes, also apply PhysicsMeshCollisionAPI and set the
+      // approximation attribute.
+      if (geom->type == mjGEOM_MESH) {
+        ApplyApiSchema(data_, geom_path,
+                       pxr::UsdPhysicsTokens->PhysicsMeshCollisionAPI);
+
+        // Note: MuJoCo documentation states that for collision purposes, meshes
+        // are always replaced with their convex hulls. Therefore, we set the
+        // approximation attribute to convexHull explicitly.
+        pxr::SdfPath approximation_attr = CreateAttributeSpec(
+            data_, geom_path, pxr::UsdPhysicsTokens->physicsApproximation,
+            pxr::SdfValueTypeNames->Token, pxr::SdfVariabilityUniform);
+        SetAttributeDefault(data_, approximation_attr,
+                            pxr::UsdPhysicsTokens->convexHull);
+      }
     }
 
     mjsDefault *spec_default = mjs_getDefault(geom->element);
