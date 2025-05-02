@@ -14,6 +14,7 @@ jobs:
     - name: Checkout
       uses: actions/checkout@v4
       with:
+        token: ${{ secrets.WORKFLOW_PUSH_TOKEN }}
         ref: main
         fetch-depth: 0
     - name: Sync master with upstream latest
