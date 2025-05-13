@@ -388,7 +388,7 @@ struct mjData_ {
   int*    island_idofadr;    // island start address in idof vector              (nisland x 1)
   int*    island_dofadr;     // island start address in dof vector               (nisland x 1)
   int*    map_dof2idof;      // map from dof to idof                             (nv x 1)
-  int*    map_idof2dof;      // map from idof to dof; idof >= ni: unconstrained  (nv x 1)
+  int*    map_idof2dof;      // map from idof to dof;  >= nidof: unconstrained   (nv x 1)
 
   // computed by mj_island (dofs sorted by island)
   mjtNum* ifrc_smooth;       // net unconstrained force                          (nidof x 1)
@@ -766,6 +766,12 @@ typedef enum mjtFlexSelf_ {       // mode for flex selfcollide
   mjFLEXSELF_SAP,                 // use SAP in midphase
   mjFLEXSELF_AUTO                 // choose between BVH and SAP automatically
 } mjtFlexSelf;
+typedef enum mjtSDFType_ {        // signed distance function (SDF) type
+  mjSDFTYPE_SINGLE     = 0,       // single SDF
+  mjSDFTYPE_INTERSECTION,         // max(A, B)
+  mjSDFTYPE_MIDSURFACE,           // A - B
+  mjSDFTYPE_COLLISION,            // A + B + abs(max(A, B))
+} mjtSDFType;
 struct mjLROpt_ {                 // options for mj_setLengthRange()
   // flags
   int mode;                       // which actuators to process (mjtLRMode)
@@ -1586,6 +1592,15 @@ struct mjpPlugin_ {
   void (*sdf_aabb)(mjtNum aabb[6], const mjtNum* attributes);
 };
 typedef struct mjpPlugin_ mjpPlugin;
+struct mjSDF_ {
+  const mjpPlugin** plugin;
+  int* id;
+  mjtSDFType type;
+  mjtNum* relpos;
+  mjtNum* relmat;
+  mjtGeom* geomtype;
+};
+typedef struct mjSDF_ mjSDF;
 typedef enum mjtGridPos_ {        // grid position for overlay
   mjGRID_TOPLEFT      = 0,        // top left
   mjGRID_TOPRIGHT,                // top right
@@ -2049,7 +2064,8 @@ typedef struct mjsFlex_ {          // flex specification
   double radius;                   // radius around primitive element
   mjtByte internal;                // enable internal collisions
   mjtByte flatskin;                // render flex skin with flat shading
-  int selfcollide;                 // mode for flex self colllision
+  int selfcollide;                 // mode for flex self collision
+  int vertcollide;                 // mode for vertex collision
   int activelayers;                // number of active element layers in 3D
   int group;                       // group for visualizatioh
   double edgestiffness;            // edge stiffness
@@ -3636,6 +3652,10 @@ void mju_insertionSortInt(int* list, int n);
 mjtNum mju_Halton(int index, int base);
 char* mju_strncpy(char *dst, const char *src, int n);
 mjtNum mju_sigmoid(mjtNum x);
+const mjpPlugin* mjc_getSDF(const mjModel* m, int id);
+mjtNum mjc_distance(const mjModel* m, const mjData* d, const mjSDF* s, const mjtNum x[3]);
+void mjc_gradient(const mjModel* m, const mjData* d, const mjSDF* s, mjtNum gradient[3],
+                  const mjtNum x[3]);
 void mjd_transitionFD(const mjModel* m, mjData* d, mjtNum eps, mjtByte flg_centered,
                       mjtNum* A, mjtNum* B, mjtNum* C, mjtNum* D);
 void mjd_inverseFD(const mjModel* m, mjData* d, mjtNum eps, mjtByte flg_actuation,

@@ -485,7 +485,7 @@ MJAPI void mj_mulM(const mjModel* m, const mjData* d, mjtNum* res, const mjtNum*
 MJAPI void mj_mulM2(const mjModel* m, const mjData* d, mjtNum* res, const mjtNum* vec);
 
 // Add inertia matrix to destination matrix.
-// Destination can be sparse uncompressed, or dense when all int* are NULL
+// Destination can be sparse or dense when all int* are NULL.
 MJAPI void mj_addM(const mjModel* m, mjData* d, mjtNum* dst, int* rownnz, int* rowadr, int* colind);
 
 // Apply Cartesian force and torque (outside xfrc_applied mechanism).
@@ -1306,6 +1306,19 @@ MJAPI char* mju_strncpy(char *dst, const char *src, int n);
 
 // Sigmoid function over 0<=x<=1 using quintic polynomial.
 MJAPI mjtNum mju_sigmoid(mjtNum x);
+
+
+//---------------------------------- Signed Distance Function --------------------------------------
+
+// get sdf from geom id
+MJAPI const mjpPlugin* mjc_getSDF(const mjModel* m, int id);
+
+// signed distance function
+MJAPI mjtNum mjc_distance(const mjModel* m, const mjData* d, const mjSDF* s, const mjtNum x[3]);
+
+// gradient of sdf
+MJAPI void mjc_gradient(const mjModel* m, const mjData* d, const mjSDF* s, mjtNum gradient[3],
+                        const mjtNum x[3]);
 
 
 //---------------------------------- Derivatives ---------------------------------------------------

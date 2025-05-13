@@ -60,9 +60,8 @@ void mju_dotSparseX3(mjtNum* res0, mjtNum* res1, mjtNum* res2,
 
 
 // dot-product, both vectors are sparse
-//  flg_unc2: is vec2 memory layout uncompressed
-mjtNum mju_dotSparse2(const mjtNum* vec1, const mjtNum* vec2, int nnz1, const int* ind1, int nnz2,
-                      const int* ind2, int flg_unc2) {
+mjtNum mju_dotSparse2(const mjtNum* vec1, const int* ind1, int nnz1,
+                      const mjtNum* vec2, const int* ind2, int nnz2) {
   int i1 = 0, i2 = 0;
   mjtNum res = 0;
 
@@ -77,12 +76,7 @@ mjtNum mju_dotSparse2(const mjtNum* vec1, const mjtNum* vec2, int nnz1, const in
 
     // match: accumulate result, advance both
     if (adr1 == adr2) {
-      if (flg_unc2) {
-        res += vec1[i1++] * vec2[adr2];
-        i2++;
-      } else {
-        res += vec1[i1++] * vec2[i2++];
-      }
+      res += vec1[i1++] * vec2[i2++];
     }
 
     // otherwise advance smaller
@@ -161,7 +155,7 @@ void mju_mulMatVecSparse(mjtNum* res, const mjtNum* mat, const mjtNum* vec,
 #else
   // regular sparse dot-product
   for (int r=0; r < nr; r++) {
-    res[r] = mju_dotSparse(mat+rowadr[r], vec, rownnz[r], colind+rowadr[r], /*flg_unc1=*/0);
+    res[r] = mju_dotSparse(mat+rowadr[r], vec, rownnz[r], colind+rowadr[r]);
   }
 #endif  // mjUSEAVX
 }
@@ -187,6 +181,41 @@ void mju_mulMatTVecSparse(mjtNum* res, const mjtNum* mat, const mjtNum* vec, int
     const mjtNum* row = mat + adr;
     for (int j=0; j < nnz; j++) {
       res[ind[j]] += row[j] * scl;
+    }
+  }
+}
+
+
+// add sparse matrix M to sparse destination matrix, requires pre-allocated buffers
+void mju_addToMatSparse(mjtNum* dst, int* rownnz, int* rowadr, int* colind, int nr,
+                        const mjtNum* M, const int* M_rownnz, const int* M_rowadr,
+                        const int* M_colind,
+                        mjtNum* buf_val, int* buf_ind) {
+  for (int i=0; i < nr; i++) {
+    rownnz[i] = mju_combineSparse(dst + rowadr[i], M + M_rowadr[i], 1, 1,
+                                  rownnz[i], M_rownnz[i], colind + rowadr[i],
+                                  M_colind + M_rowadr[i], buf_val, buf_ind);
+  }
+}
+
+
+// add symmetric matrix (lower triangle) to dense matrix, upper triangle optional
+void mju_addToSymSparse(mjtNum* res, const mjtNum* mat, int n,
+                        const int* rownnz, const int* rowadr, const int* colind, int flg_upper) {
+  for (int i=0; i < n; i++) {
+    int start = rowadr[i];
+    int end = start + rownnz[i];
+    for (int adr=start; adr < end; adr++) {
+      mjtNum val = mat[adr];
+      int j = colind[adr];
+
+      // lower + diagonal
+      res[i*n + j] += val;
+
+      // strict upper
+      if (flg_upper && j < i) {
+        res[j*n + i] += val;
+      }
     }
   }
 }
@@ -220,7 +249,7 @@ void mju_mulSymVecSparse(mjtNum* restrict res, const mjtNum* restrict mat,
 
     // off-diagonals
     const int* ind = colind + adr;
-    for (int k=0; k < diag; k++) {
+    for (int k=diag-1; k >= 0; k--) {
       int j = ind[k];
       mjtNum val = row[k];
       res[i] += val * vec[j]; // strict lower

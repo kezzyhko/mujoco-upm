@@ -54,57 +54,36 @@ using EngineUtilSparseTest = MujocoTest;
 
 TEST_F(EngineUtilSparseTest, MjuDot) {
   mjtNum a[] = {2,    3,       4,          5,          6,       7,    8};
-  mjtNum u[] = {2, 1, 3, 1, 1, 4, 1, 1, 1, 5, 1, 1, 1, 6, 1, 1, 7, 1, 8};
   mjtNum b[] = {8, 1, 7, 1, 1, 6, 1, 1, 1, 5, 1, 1, 1, 4, 1, 1, 3, 1, 2};
   int i[] = {0, 2, 5, 9, 13, 16, 18};
 
   // test various vector lengths as mju_dotSparse adds numbers in groups of four
 
-  // a is compressed
-  int flg_unc1 = 0;
-  EXPECT_EQ(mju_dotSparse(a, b, 0, i, flg_unc1), 0);
-  EXPECT_EQ(mju_dotSparse(a, b, 1, i, flg_unc1), 2*8);
-  EXPECT_EQ(mju_dotSparse(a, b, 2, i, flg_unc1), 2*8 + 3*7);
-  EXPECT_EQ(mju_dotSparse(a, b, 3, i, flg_unc1), 2*8 + 3*7 + 4*6);
-  EXPECT_EQ(mju_dotSparse(a, b, 4, i, flg_unc1), 2*8 + 3*7 + 4*6 + 5*5);
-  EXPECT_EQ(mju_dotSparse(a, b, 5, i, flg_unc1), 2*8 + 3*7 + 4*6 + 5*5 + 6*4);
-  EXPECT_EQ(mju_dotSparse(a, b, 6, i, flg_unc1),
+  EXPECT_EQ(mju_dotSparse(a, b, 0, i), 0);
+  EXPECT_EQ(mju_dotSparse(a, b, 1, i), 2*8);
+  EXPECT_EQ(mju_dotSparse(a, b, 2, i), 2*8 + 3*7);
+  EXPECT_EQ(mju_dotSparse(a, b, 3, i), 2*8 + 3*7 + 4*6);
+  EXPECT_EQ(mju_dotSparse(a, b, 4, i), 2*8 + 3*7 + 4*6 + 5*5);
+  EXPECT_EQ(mju_dotSparse(a, b, 5, i), 2*8 + 3*7 + 4*6 + 5*5 + 6*4);
+  EXPECT_EQ(mju_dotSparse(a, b, 6, i),
             2*8 + 3*7 + 4*6 + 5*5 + 6*4 + 7*3);
-  EXPECT_EQ(mju_dotSparse(a, b, 7, i, flg_unc1),
-            2*8 + 3*7 + 4*6 + 5*5 + 6*4 + 7*3 + 8*2);
-
-  // u is compressed
-  flg_unc1 = 1;
-  EXPECT_EQ(mju_dotSparse(u, b, 0, i, flg_unc1), 0);
-  EXPECT_EQ(mju_dotSparse(u, b, 1, i, flg_unc1), 2*8);
-  EXPECT_EQ(mju_dotSparse(u, b, 2, i, flg_unc1), 2*8 + 3*7);
-  EXPECT_EQ(mju_dotSparse(u, b, 3, i, flg_unc1), 2*8 + 3*7 + 4*6);
-  EXPECT_EQ(mju_dotSparse(u, b, 4, i, flg_unc1), 2*8 + 3*7 + 4*6 + 5*5);
-  EXPECT_EQ(mju_dotSparse(u, b, 5, i, flg_unc1), 2*8 + 3*7 + 4*6 + 5*5 + 6*4);
-  EXPECT_EQ(mju_dotSparse(u, b, 6, i, flg_unc1),
-            2*8 + 3*7 + 4*6 + 5*5 + 6*4 + 7*3);
-  EXPECT_EQ(mju_dotSparse(u, b, 7, i, flg_unc1),
+  EXPECT_EQ(mju_dotSparse(a, b, 7, i),
             2*8 + 3*7 + 4*6 + 5*5 + 6*4 + 7*3 + 8*2);
 }
 
 TEST_F(EngineUtilSparseTest, MjuDot2) {
   constexpr int annz = 6;
   constexpr int bnnz = 5;
-  int ia[annz]   = {0,    2,       5, 6, 7};
+
+  // values
   mjtNum a[annz] = {2,    3,       4, 5, 6};
-  int ib[bnnz]   = {   1, 2, 3,    5,    7};
   mjtNum b[bnnz] = {   8, 7, 6,    5,    4};
-  mjtNum u[]     = {1, 8, 7, 6, 1, 5, 1, 4};
 
-  // test various vector lengths as mju_dotSparse adds numbers in groups of four
+  // indices
+  int ia[annz]   = {0,    2,       5, 6, 7};
+  int ib[bnnz]   = {   1, 2, 3,    5,    7};
 
-  // a is compressed
-  int flg_unc2 = 0;
-  EXPECT_EQ(mju_dotSparse2(a, b, annz, ia, bnnz, ib, flg_unc2), 3*7+4*5+6*4);
-
-  // u is uncompressed
-  flg_unc2 = 1;
-  EXPECT_EQ(mju_dotSparse2(a, u, annz, ia, bnnz, ib, flg_unc2), 3*7+4*5+6*4);
+  EXPECT_EQ(mju_dotSparse2(a, ia, annz, b, ib, bnnz), 3 * 7 + 4 * 5 + 6 * 4);
 }
 
 TEST_F(EngineUtilSparseTest, CombineSparseCount) {
@@ -1055,6 +1034,40 @@ TEST_F(EngineUtilSparseTest, MjuMulMatTVec) {
   mju_mulMatTVecSparse(res, mat_sparse, vec, nr, nc, rownnz, rowadr, colind);
 
   EXPECT_THAT(AsVector(res, 3), ElementsAre(5, 28, 24));
+}
+
+TEST_F(EngineUtilSparseTest, MjuAddToSymSparse) {
+  //     1 2 4
+  // M = 2 3 0
+  //     4 0 5
+
+  // only lower triangle represented
+  mjtNum mat[] = {1, 2, 3, 4, 5};
+  int colind[] = {0, 0, 1, 0, 2};
+  int rownnz[] = {1, 2, 2};
+  int rowadr[] = {0, 1, 3};
+
+  //     0 0 0
+  // A = 5 4 2
+  //     4 3 2
+  mjtNum A[] = {0, 0, 0,
+                5, 4, 2,
+                4, 3, 2};
+
+  mju_addToSymSparse(A, mat, 3, rownnz, rowadr, colind, /*flg_upper=*/1);
+  EXPECT_THAT(AsVector(A, 9), ElementsAre(1, 2, 4,
+                                          7, 7, 2,
+                                          8, 3, 7));
+
+  // same as A
+  mjtNum B[] = {0, 0, 0,
+                5, 4, 2,
+                4, 3, 2};
+
+  mju_addToSymSparse(B, mat, 3, rownnz, rowadr, colind, /*flg_upper=*/0);
+  EXPECT_THAT(AsVector(B, 9), ElementsAre(1, 0, 0,
+                                          7, 7, 2,
+                                          8, 3, 7));
 }
 
 TEST_F(EngineUtilSparseTest, MjuMulSymVecSparse) {

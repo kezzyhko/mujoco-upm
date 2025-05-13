@@ -5981,7 +5981,7 @@ STRUCTS: Mapping[str, StructDecl] = dict([
                  type=PointerType(
                      inner_type=ValueType(name='int'),
                  ),
-                 doc='map from idof to dof; idof >= ni: unconstrained',
+                 doc='map from idof to dof;  >= nidof: unconstrained',
                  array_extent=('nv',),
              ),
              StructFieldDecl(
@@ -8966,6 +8966,55 @@ STRUCTS: Mapping[str, StructDecl] = dict([
              ),
          ),
      )),
+    ('mjSDF',
+     StructDecl(
+         name='mjSDF',
+         declname='struct mjSDF_',
+         fields=(
+             StructFieldDecl(
+                 name='plugin',
+                 type=PointerType(
+                     inner_type=PointerType(
+                         inner_type=ValueType(name='mjpPlugin', is_const=True),
+                     ),
+                 ),
+                 doc='',
+             ),
+             StructFieldDecl(
+                 name='id',
+                 type=PointerType(
+                     inner_type=ValueType(name='int'),
+                 ),
+                 doc='',
+             ),
+             StructFieldDecl(
+                 name='type',
+                 type=ValueType(name='mjtSDFType'),
+                 doc='',
+             ),
+             StructFieldDecl(
+                 name='relpos',
+                 type=PointerType(
+                     inner_type=ValueType(name='mjtNum'),
+                 ),
+                 doc='',
+             ),
+             StructFieldDecl(
+                 name='relmat',
+                 type=PointerType(
+                     inner_type=ValueType(name='mjtNum'),
+                 ),
+                 doc='',
+             ),
+             StructFieldDecl(
+                 name='geomtype',
+                 type=PointerType(
+                     inner_type=ValueType(name='mjtGeom'),
+                 ),
+                 doc='',
+             ),
+         ),
+     )),
     ('mjrRect',
      StructDecl(
          name='mjrRect',
@@ -10722,7 +10771,12 @@ STRUCTS: Mapping[str, StructDecl] = dict([
              StructFieldDecl(
                  name='selfcollide',
                  type=ValueType(name='int'),
-                 doc='mode for flex self colllision',
+                 doc='mode for flex self collision',
+             ),
+             StructFieldDecl(
+                 name='vertcollide',
+                 type=ValueType(name='int'),
+                 doc='mode for vertex collision',
              ),
              StructFieldDecl(
                  name='activelayers',
