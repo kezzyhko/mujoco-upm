@@ -5393,12 +5393,20 @@ STRUCTS: Mapping[str, StructDecl] = dict([
                  array_extent=('nM',),
              ),
              StructFieldDecl(
+                 name='M',
+                 type=PointerType(
+                     inner_type=ValueType(name='mjtNum'),
+                 ),
+                 doc='total inertia (compressed sparse row)',
+                 array_extent=('nC',),
+             ),
+             StructFieldDecl(
                  name='qLD',
                  type=PointerType(
                      inner_type=ValueType(name='mjtNum'),
                  ),
                  doc="L'*D*L factorization of M (sparse)",
-                 array_extent=('nM',),
+                 array_extent=('nC',),
              ),
              StructFieldDecl(
                  name='qLDiagInv',
@@ -5534,7 +5542,7 @@ STRUCTS: Mapping[str, StructDecl] = dict([
                      inner_type=ValueType(name='mjtNum'),
                  ),
                  doc="L'*D*L factorization of modified M",
-                 array_extent=('nM',),
+                 array_extent=('nC',),
              ),
              StructFieldDecl(
                  name='qHDiagInv',
@@ -5567,38 +5575,6 @@ STRUCTS: Mapping[str, StructDecl] = dict([
                  ),
                  doc='body-dof: column indices of non-zeros',
                  array_extent=('nB',),
-             ),
-             StructFieldDecl(
-                 name='M_rownnz',
-                 type=PointerType(
-                     inner_type=ValueType(name='int'),
-                 ),
-                 doc='inertia: non-zeros in each row',
-                 array_extent=('nv',),
-             ),
-             StructFieldDecl(
-                 name='M_rowadr',
-                 type=PointerType(
-                     inner_type=ValueType(name='int'),
-                 ),
-                 doc='inertia: address of each row in M_colind',
-                 array_extent=('nv',),
-             ),
-             StructFieldDecl(
-                 name='M_colind',
-                 type=PointerType(
-                     inner_type=ValueType(name='int'),
-                 ),
-                 doc='inertia: column indices of non-zeros',
-                 array_extent=('nM',),
-             ),
-             StructFieldDecl(
-                 name='mapM2M',
-                 type=PointerType(
-                     inner_type=ValueType(name='int'),
-                 ),
-                 doc='index mapping from M (legacy) to M (CSR)',
-                 array_extent=('nM',),
              ),
              StructFieldDecl(
                  name='C_rownnz',
@@ -6030,7 +6006,7 @@ STRUCTS: Mapping[str, StructDecl] = dict([
                      inner_type=ValueType(name='int'),
                  ),
                  doc='inertia: column indices of non-zeros',
-                 array_extent=('nM',),
+                 array_extent=('nC',),
              ),
              StructFieldDecl(
                  name='iM',
@@ -6038,7 +6014,7 @@ STRUCTS: Mapping[str, StructDecl] = dict([
                      inner_type=ValueType(name='mjtNum'),
                  ),
                  doc='total inertia (sparse)',
-                 array_extent=('nM',),
+                 array_extent=('nC',),
              ),
              StructFieldDecl(
                  name='iLD',
@@ -6046,7 +6022,7 @@ STRUCTS: Mapping[str, StructDecl] = dict([
                      inner_type=ValueType(name='mjtNum'),
                  ),
                  doc="L'*D*L factorization of M (sparse)",
-                 array_extent=('nM',),
+                 array_extent=('nC',),
              ),
              StructFieldDecl(
                  name='iLDiagInv',

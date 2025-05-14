@@ -4929,6 +4929,7 @@ public unsafe struct mjData_ {
   public double* actuator_moment;
   public double* crb;
   public double* qM;
+  public double* M;
   public double* qLD;
   public double* qLDiagInv;
   public double* bvh_aabb_dyn;
@@ -4951,10 +4952,6 @@ public unsafe struct mjData_ {
   public int* B_rownnz;
   public int* B_rowadr;
   public int* B_colind;
-  public int* M_rownnz;
-  public int* M_rowadr;
-  public int* M_colind;
-  public int* mapM2M;
   public int* C_rownnz;
   public int* C_rowadr;
   public int* C_colind;
