@@ -723,16 +723,16 @@ void mj_fwdConstraint(const mjModel* m, mjData* d) {
   mju_zeroInt(d->solver_niter, mjNISLAND);
 
   // check if islands are supported
-  int islands_supported = mjENABLED(mjENBL_ISLAND)  &&
-                          nisland > 0               &&
-                          m->opt.solver == mjSOL_CG &&
-                          m->opt.noslip_iterations == 0;
+  int islands_supported = mjENABLED(mjENBL_ISLAND)      &&
+                          nisland > 0                   &&
+                          m->opt.noslip_iterations == 0 &&
+                          (m->opt.solver == mjSOL_CG || m->opt.solver == mjSOL_NEWTON);
 
   // run solver over constraint islands
   if (islands_supported) {
     int nidof = d->nidof;
 
-    // copy CG inputs to islands (vel+acc deps, pos-dependent already copied in mj_island)
+    // copy inputs to islands (vel+acc deps, pos-dependent already copied in mj_island)
     mju_gather(d->ifrc_smooth,     d->qfrc_smooth,     d->map_idof2dof, nidof);
     mju_gather(d->ifrc_constraint, d->qfrc_constraint, d->map_idof2dof, nidof);
     mju_gather(d->iacc_smooth,     d->qacc_smooth,     d->map_idof2dof, nidof);
@@ -741,14 +741,20 @@ void mj_fwdConstraint(const mjModel* m, mjData* d) {
     mju_gather(d->iefc_aref,       d->efc_aref,        d->map_iefc2efc, nefc);
 
     // solve per island
-    if (!d->threadpool) {
-      // no threadpool, loop over islands
-      for (int island=0; island < nisland; island++) {
-        mj_solCG_island(m, d, island, m->opt.iterations);
+    if (m->opt.solver == mjSOL_CG) {
+      if (!d->threadpool) {
+        // no threadpool, loop over islands
+        for (int island=0; island < nisland; island++) {
+          mj_solCG_island(m, d, island, m->opt.iterations);
+        }
+      } else {
+        // have threadpool, solve using threads
+        mj_solCG_island_multithreaded(m, d);
       }
     } else {
-      // have threadpool, solve using threads
-      mj_solCG_island_multithreaded(m, d);
+      for (int island=0; island < nisland; island++) {
+        mj_solNewton_island(m, d, island, m->opt.iterations);
+      }
     }
 
     // copy back solver outputs (scatter dofs since ni <= nv)
@@ -863,18 +869,18 @@ void mj_EulerSkip(const mjModel* m, mjData* d, int skipfactor) {
       // qH = M + h*diag(B)
       mju_copy(d->qH, d->M, nC);
       for (int i=0; i < nv; i++) {
-        d->qH[d->C_rowadr[i] + d->C_rownnz[i] - 1] += m->opt.timestep * m->dof_damping[i];
+        d->qH[d->M_rowadr[i] + d->M_rownnz[i] - 1] += m->opt.timestep * m->dof_damping[i];
       }
 
       // factorize in-place
-      mj_factorI(d->qH, d->qHDiagInv, nv, d->C_rownnz, d->C_rowadr, m->dof_simplenum, d->C_colind);
+      mj_factorI(d->qH, d->qHDiagInv, nv, d->M_rownnz, d->M_rowadr, m->dof_simplenum, d->M_colind);
     }
 
     // solve
     mju_add(qfrc, d->qfrc_smooth, d->qfrc_constraint, nv);
     mju_copy(qacc, qfrc, m->nv);
     mj_solveLD(qacc, d->qH, d->qHDiagInv, nv, 1,
-               d->C_rownnz, d->C_rowadr, m->dof_simplenum, d->C_colind);
+               d->M_rownnz, d->M_rowadr, m->dof_simplenum, d->M_colind);
   }
 
   // advance state and time
@@ -1047,16 +1053,16 @@ void mj_implicitSkip(const mjModel* m, mjData* d, int skipfactor) {
       mju_addScl(MhB, d->qM, MhB, -m->opt.timestep, nM);
 
       // gather qH <- MhB (legacy to CSR)
-      mju_gather(d->qH, MhB, d->mapM2C, nC);
+      mju_gather(d->qH, MhB, d->mapM2M, nC);
 
       // factorize in-place
-      mj_factorI(d->qH, d->qHDiagInv, nv, d->C_rownnz, d->C_rowadr, m->dof_simplenum, d->C_colind);
+      mj_factorI(d->qH, d->qHDiagInv, nv, d->M_rownnz, d->M_rowadr, m->dof_simplenum, d->M_colind);
     }
 
     // solve for qacc: (qM - dt*qDeriv) * qacc = qfrc
     mju_copy(qacc, qfrc, nv);
     mj_solveLD(qacc, d->qH, d->qHDiagInv, nv, 1,
-               d->C_rownnz, d->C_rowadr, m->dof_simplenum, d->C_colind);
+               d->M_rownnz, d->M_rowadr, m->dof_simplenum, d->M_colind);
 
   } else {
     mjERROR("integrator must be implicit or implicitfast");

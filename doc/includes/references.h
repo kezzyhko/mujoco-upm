@@ -269,8 +269,8 @@ struct mjData_ {
 
   // computed by mj_fwdPosition/mj_crb
   mjtNum* crb;               // com-based composite inertia and mass             (nbody x 10)
-  mjtNum* qM;                // total inertia (sparse)                           (nM x 1)
-  mjtNum* M;                 // total inertia (compressed sparse row)            (nC x 1)
+  mjtNum* qM;                // inertia (sparse)                                 (nM x 1)
+  mjtNum* M;                 // reduced inertia (compressed sparse row)          (nC x 1)
 
   // computed by mj_fwdPosition/mj_factorM
   mjtNum* qLD;               // L'*D*L factorization of M (sparse)               (nC x 1)
@@ -313,16 +313,16 @@ struct mjData_ {
   int*    B_rownnz;          // body-dof: non-zeros in each row                  (nbody x 1)
   int*    B_rowadr;          // body-dof: address of each row in B_colind        (nbody x 1)
   int*    B_colind;          // body-dof: column indices of non-zeros            (nB x 1)
-  int*    C_rownnz;          // reduced dof-dof: non-zeros in each row           (nv x 1)
-  int*    C_rowadr;          // reduced dof-dof: address of each row in C_colind (nv x 1)
-  int*    C_colind;          // reduced dof-dof: column indices of non-zeros     (nC x 1)
-  int*    mapM2C;            // index mapping from M to C                        (nC x 1)
-  int*    D_rownnz;          // dof-dof: non-zeros in each row                   (nv x 1)
-  int*    D_rowadr;          // dof-dof: address of each row in D_colind         (nv x 1)
-  int*    D_diag;            // dof-dof: index of diagonal element               (nv x 1)
-  int*    D_colind;          // dof-dof: column indices of non-zeros             (nD x 1)
-  int*    mapM2D;            // index mapping from M to D                        (nD x 1)
-  int*    mapD2M;            // index mapping from D to M                        (nM x 1)
+  int*    M_rownnz;          // reduced inertia: non-zeros in each row           (nv x 1)
+  int*    M_rowadr;          // reduced inertia: address of each row in M_colind (nv x 1)
+  int*    M_colind;          // reduced inertia: column indices of non-zeros     (nC x 1)
+  int*    mapM2M;            // index mapping from qM to M                       (nC x 1)
+  int*    D_rownnz;          // full inertia: non-zeros in each row              (nv x 1)
+  int*    D_rowadr;          // full inertia: address of each row in D_colind    (nv x 1)
+  int*    D_diag;            // full inertia: index of diagonal element          (nv x 1)
+  int*    D_colind;          // full inertia: column indices of non-zeros        (nD x 1)
+  int*    mapM2D;            // index mapping from qM to D                       (nD x 1)
+  int*    mapD2M;            // index mapping from D to qM                       (nM x 1)
 
   // computed by mj_implicit/mj_derivative
   mjtNum* qDeriv;            // d (passive + actuator - bias) / d qvel           (nD x 1)
@@ -1178,6 +1178,8 @@ struct mjModel_ {
   mjtByte*  light_directional;    // directional light                        (nlight x 1)
   mjtByte*  light_castshadow;     // does light cast shadows                  (nlight x 1)
   float*    light_bulbradius;     // light radius for soft shadows            (nlight x 1)
+  float*    light_intensity;      // intensity, in candela                    (nlight x 1)
+  float*    light_range;          // range of effectiveness                   (nlight x 1)
   mjtByte*  light_active;         // is light on                              (nlight x 1)
   mjtNum*   light_pos;            // position rel. to body frame              (nlight x 3)
   mjtNum*   light_dir;            // direction rel. to body frame             (nlight x 3)
@@ -1229,6 +1231,7 @@ struct mjModel_ {
   int*      flex_nodebodyid;      // node body ids                            (nflexnode x 1)
   int*      flex_vertbodyid;      // vertex body ids                          (nflexvert x 1)
   int*      flex_edge;            // edge vertex ids (2 per edge)             (nflexedge x 2)
+  int*      flex_edgeflap;        // adjacent vertex ids (dim=2 only)         (nflexedge x 2)
   int*      flex_elem;            // element vertex ids (dim+1 per elem)      (nflexelemdata x 1)
   int*      flex_elemtexcoord;    // element texture coordinates (dim+1)      (nflexelemdata x 1)
   int*      flex_elemedge;        // element edge ids                         (nflexelemedge x 1)
@@ -2029,7 +2032,9 @@ typedef struct mjsLight_ {         // light specification
   mjtByte active;                  // is light active
   mjtByte directional;             // is light directional or spot
   mjtByte castshadow;              // does light cast shadows
-  double bulbradius;               // bulb radius, for soft shadows
+  float bulbradius;                // bulb radius, for soft shadows
+  float intensity;                 // intensity, in candelas
+  float range;                     // range of effectiveness
   float attenuation[3];            // OpenGL attenuation (quadratic model)
   float cutoff;                    // OpenGL cutoff
   float exponent;                  // OpenGL exponent
@@ -2837,6 +2842,8 @@ struct mjvLight_ {                // OpenGL light
   mjtByte  directional;           // directional light
   mjtByte  castshadow;            // does light cast shadows
   float    bulbradius;            // bulb radius for soft shadows
+  float    intensity;             // intensity, in candelas
+  float    range;                 // range of effectiveness
 };
 typedef struct mjvLight_ mjvLight;
 struct mjvOption_ {                  // abstract visualization options
@@ -3054,6 +3061,8 @@ struct mjvSceneState_ {
     mjtByte* light_directional;
     mjtByte* light_castshadow;
     float* light_bulbradius;
+    float* light_intensity;
+    float* light_range;
     mjtByte* light_active;
     float* light_attenuation;
     float* light_cutoff;

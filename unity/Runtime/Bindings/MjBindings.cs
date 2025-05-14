@@ -4952,10 +4952,10 @@ public unsafe struct mjData_ {
   public int* B_rownnz;
   public int* B_rowadr;
   public int* B_colind;
-  public int* C_rownnz;
-  public int* C_rowadr;
-  public int* C_colind;
-  public int* mapM2C;
+  public int* M_rownnz;
+  public int* M_rowadr;
+  public int* M_colind;
+  public int* mapM2M;
   public int* D_rownnz;
   public int* D_rowadr;
   public int* D_diag;
@@ -5433,6 +5433,8 @@ public unsafe struct mjModel_ {
   public byte* light_directional;
   public byte* light_castshadow;
   public float* light_bulbradius;
+  public float* light_intensity;
+  public float* light_range;
   public byte* light_active;
   public double* light_pos;
   public double* light_dir;
@@ -5480,6 +5482,7 @@ public unsafe struct mjModel_ {
   public int* flex_nodebodyid;
   public int* flex_vertbodyid;
   public int* flex_edge;
+  public int* flex_edgeflap;
   public int* flex_elem;
   public int* flex_elemtexcoord;
   public int* flex_elemedge;
@@ -6076,6 +6079,8 @@ public unsafe struct mjvLight_ {
   public byte directional;
   public byte castshadow;
   public float bulbradius;
+  public float intensity;
+  public float range;
 }
 
 [StructLayout(LayoutKind.Sequential)]
@@ -6356,6 +6361,8 @@ public unsafe struct model {
   public byte* light_directional;
   public byte* light_castshadow;
   public float* light_bulbradius;
+  public float* light_intensity;
+  public float* light_range;
   public byte* light_active;
   public float* light_attenuation;
   public float* light_cutoff;

@@ -302,6 +302,8 @@
     XMJV( mjtByte, light_directional,     nlight,        1                    ) \
     XMJV( mjtByte, light_castshadow,      nlight,        1                    ) \
     XMJV( float,   light_bulbradius,      nlight,        1                    ) \
+    XMJV( float,   light_intensity,       nlight,        1                    ) \
+    XMJV( float,   light_range,           nlight,        1                    ) \
     XMJV( mjtByte, light_active,          nlight,        1                    ) \
     X   ( mjtNum,  light_pos,             nlight,        3                    ) \
     X   ( mjtNum,  light_dir,             nlight,        3                    ) \
@@ -349,6 +351,7 @@
     XMJV( int,     flex_nodebodyid,       nflexnode,     1                    ) \
     X   ( int,     flex_vertbodyid,       nflexvert,     1                    ) \
     X   ( int,     flex_edge,             nflexedge,     2                    ) \
+    X   ( int,     flex_edgeflap,         nflexedge,     2                    ) \
     XMJV( int,     flex_elem,             nflexelemdata, 1                    ) \
     XMJV( int,     flex_elemtexcoord,     nflexelemdata, 1                    ) \
     X   ( int,     flex_elemedge,         nflexelemedge, 1                    ) \
@@ -676,10 +679,10 @@
     X   ( int,       B_rownnz,          nbody,       1           ) \
     X   ( int,       B_rowadr,          nbody,       1           ) \
     X   ( int,       B_colind,          nB,          1           ) \
-    X   ( int,       C_rownnz,          nv,          1           ) \
-    X   ( int,       C_rowadr,          nv,          1           ) \
-    X   ( int,       C_colind,          nC,          1           ) \
-    X   ( int,       mapM2C,            nC,          1           ) \
+    X   ( int,       M_rownnz,          nv,          1           ) \
+    X   ( int,       M_rowadr,          nv,          1           ) \
+    X   ( int,       M_colind,          nC,          1           ) \
+    X   ( int,       mapM2M,            nC,          1           ) \
     X   ( int,       D_rownnz,          nv,          1           ) \
     X   ( int,       D_rowadr,          nv,          1           ) \
     X   ( int,       D_diag,            nv,          1           ) \
