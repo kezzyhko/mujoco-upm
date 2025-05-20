@@ -745,6 +745,34 @@ FUNCTIONS: Mapping[str, FunctionDecl] = dict([
          ),
          doc='Copy mjData. m is only required to contain the size fields from MJMODEL_INTS.',  # pylint: disable=line-too-long
      )),
+    ('mjv_copyData',
+     FunctionDecl(
+         name='mjv_copyData',
+         return_type=PointerType(
+             inner_type=ValueType(name='mjData'),
+         ),
+         parameters=(
+             FunctionParameterDecl(
+                 name='dest',
+                 type=PointerType(
+                     inner_type=ValueType(name='mjData'),
+                 ),
+             ),
+             FunctionParameterDecl(
+                 name='m',
+                 type=PointerType(
+                     inner_type=ValueType(name='mjModel', is_const=True),
+                 ),
+             ),
+             FunctionParameterDecl(
+                 name='src',
+                 type=PointerType(
+                     inner_type=ValueType(name='mjData', is_const=True),
+                 ),
+             ),
+         ),
+         doc='Copy mjData, skip large arrays not required for visualization.',
+     )),
     ('mj_resetData',
      FunctionDecl(
          name='mj_resetData',
@@ -3983,44 +4011,6 @@ FUNCTIONS: Mapping[str, FunctionDecl] = dict([
          ),
          doc='Move camera with mouse; action is mjtMouse.',
      )),
-    ('mjv_moveCameraFromState',
-     FunctionDecl(
-         name='mjv_moveCameraFromState',
-         return_type=ValueType(name='void'),
-         parameters=(
-             FunctionParameterDecl(
-                 name='scnstate',
-                 type=PointerType(
-                     inner_type=ValueType(name='mjvSceneState', is_const=True),
-                 ),
-             ),
-             FunctionParameterDecl(
-                 name='action',
-                 type=ValueType(name='int'),
-             ),
-             FunctionParameterDecl(
-                 name='reldx',
-                 type=ValueType(name='mjtNum'),
-             ),
-             FunctionParameterDecl(
-                 name='reldy',
-                 type=ValueType(name='mjtNum'),
-             ),
-             FunctionParameterDecl(
-                 name='scn',
-                 type=PointerType(
-                     inner_type=ValueType(name='mjvScene', is_const=True),
-                 ),
-             ),
-             FunctionParameterDecl(
-                 name='cam',
-                 type=PointerType(
-                     inner_type=ValueType(name='mjvCamera'),
-                 ),
-             ),
-         ),
-         doc='Move camera with mouse given a scene state; action is mjtMouse.',
-     )),
     ('mjv_movePerturb',
      FunctionDecl(
          name='mjv_movePerturb',
@@ -4064,44 +4054,6 @@ FUNCTIONS: Mapping[str, FunctionDecl] = dict([
              ),
          ),
          doc='Move perturb object with mouse; action is mjtMouse.',
-     )),
-    ('mjv_movePerturbFromState',
-     FunctionDecl(
-         name='mjv_movePerturbFromState',
-         return_type=ValueType(name='void'),
-         parameters=(
-             FunctionParameterDecl(
-                 name='scnstate',
-                 type=PointerType(
-                     inner_type=ValueType(name='mjvSceneState', is_const=True),
-                 ),
-             ),
-             FunctionParameterDecl(
-                 name='action',
-                 type=ValueType(name='int'),
-             ),
-             FunctionParameterDecl(
-                 name='reldx',
-                 type=ValueType(name='mjtNum'),
-             ),
-             FunctionParameterDecl(
-                 name='reldy',
-                 type=ValueType(name='mjtNum'),
-             ),
-             FunctionParameterDecl(
-                 name='scn',
-                 type=PointerType(
-                     inner_type=ValueType(name='mjvScene', is_const=True),
-                 ),
-             ),
-             FunctionParameterDecl(
-                 name='pert',
-                 type=PointerType(
-                     inner_type=ValueType(name='mjvPerturb'),
-                 ),
-             ),
-         ),
-         doc='Move perturb object with mouse given a scene state; action is mjtMouse.',  # pylint: disable=line-too-long
      )),
     ('mjv_moveModel',
      FunctionDecl(
@@ -4532,48 +4484,6 @@ FUNCTIONS: Mapping[str, FunctionDecl] = dict([
          ),
          doc='Update entire scene given model state.',
      )),
-    ('mjv_updateSceneFromState',
-     FunctionDecl(
-         name='mjv_updateSceneFromState',
-         return_type=ValueType(name='int'),
-         parameters=(
-             FunctionParameterDecl(
-                 name='scnstate',
-                 type=PointerType(
-                     inner_type=ValueType(name='mjvSceneState', is_const=True),
-                 ),
-             ),
-             FunctionParameterDecl(
-                 name='opt',
-                 type=PointerType(
-                     inner_type=ValueType(name='mjvOption', is_const=True),
-                 ),
-             ),
-             FunctionParameterDecl(
-                 name='pert',
-                 type=PointerType(
-                     inner_type=ValueType(name='mjvPerturb', is_const=True),
-                 ),
-             ),
-             FunctionParameterDecl(
-                 name='cam',
-                 type=PointerType(
-                     inner_type=ValueType(name='mjvCamera'),
-                 ),
-             ),
-             FunctionParameterDecl(
-                 name='catmask',
-                 type=ValueType(name='int'),
-             ),
-             FunctionParameterDecl(
-                 name='scn',
-                 type=PointerType(
-                     inner_type=ValueType(name='mjvScene'),
-                 ),
-             ),
-         ),
-         doc='Update entire scene from a scene state, return the number of new mjWARN_VGEOMFULL warnings.',  # pylint: disable=line-too-long
-     )),
     ('mjv_copyModel',
      FunctionDecl(
          name='mjv_copyModel',
@@ -4593,96 +4503,6 @@ FUNCTIONS: Mapping[str, FunctionDecl] = dict([
              ),
          ),
          doc='Copy mjModel, skip large arrays not required for abstract visualization.',  # pylint: disable=line-too-long
-     )),
-    ('mjv_defaultSceneState',
-     FunctionDecl(
-         name='mjv_defaultSceneState',
-         return_type=ValueType(name='void'),
-         parameters=(
-             FunctionParameterDecl(
-                 name='scnstate',
-                 type=PointerType(
-                     inner_type=ValueType(name='mjvSceneState'),
-                 ),
-             ),
-         ),
-         doc='Set default scene state.',
-     )),
-    ('mjv_makeSceneState',
-     FunctionDecl(
-         name='mjv_makeSceneState',
-         return_type=ValueType(name='void'),
-         parameters=(
-             FunctionParameterDecl(
-                 name='m',
-                 type=PointerType(
-                     inner_type=ValueType(name='mjModel', is_const=True),
-                 ),
-             ),
-             FunctionParameterDecl(
-                 name='d',
-                 type=PointerType(
-                     inner_type=ValueType(name='mjData', is_const=True),
-                 ),
-             ),
-             FunctionParameterDecl(
-                 name='scnstate',
-                 type=PointerType(
-                     inner_type=ValueType(name='mjvSceneState'),
-                 ),
-             ),
-             FunctionParameterDecl(
-                 name='maxgeom',
-                 type=ValueType(name='int'),
-             ),
-         ),
-         doc='Allocate resources and initialize a scene state object.',
-     )),
-    ('mjv_freeSceneState',
-     FunctionDecl(
-         name='mjv_freeSceneState',
-         return_type=ValueType(name='void'),
-         parameters=(
-             FunctionParameterDecl(
-                 name='scnstate',
-                 type=PointerType(
-                     inner_type=ValueType(name='mjvSceneState'),
-                 ),
-             ),
-         ),
-         doc='Free scene state.',
-     )),
-    ('mjv_updateSceneState',
-     FunctionDecl(
-         name='mjv_updateSceneState',
-         return_type=ValueType(name='void'),
-         parameters=(
-             FunctionParameterDecl(
-                 name='m',
-                 type=PointerType(
-                     inner_type=ValueType(name='mjModel', is_const=True),
-                 ),
-             ),
-             FunctionParameterDecl(
-                 name='d',
-                 type=PointerType(
-                     inner_type=ValueType(name='mjData'),
-                 ),
-             ),
-             FunctionParameterDecl(
-                 name='opt',
-                 type=PointerType(
-                     inner_type=ValueType(name='mjvOption', is_const=True),
-                 ),
-             ),
-             FunctionParameterDecl(
-                 name='scnstate',
-                 type=PointerType(
-                     inner_type=ValueType(name='mjvSceneState'),
-                 ),
-             ),
-         ),
-         doc='Update a scene state from model and data.',
      )),
     ('mjv_addGeoms',
      FunctionDecl(
