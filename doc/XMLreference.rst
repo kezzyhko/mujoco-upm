@@ -2918,8 +2918,8 @@ Attributes may be applied or ignored depending on the lighting model being used.
 .. _body-light-directional:
 
 :at:`directional`: :at-val:`[false, true], "false"`
-   This is a deprecated legacy attribute. Please use :ref:`light <light-type>` type instead. If set to "true", and no
-   type is specified, this will change the light type to be directional.
+   This is a deprecated legacy attribute. Please use :ref:`light <body-light-type>` type instead. If set to "true", and
+   no type is specified, this will change the light type to be directional.
 
 .. _body-light-castshadow:
 
@@ -2960,6 +2960,11 @@ Attributes may be applied or ignored depending on the lighting model being used.
 :at:`diffuse`: :at-val:`real(3), "0.7 0.7 0.7"`
    The color of the light. For the Phong (default) lighting model, this defines the diffuse color of
    the light.
+
+.. _body-light-texture:
+
+:at:`texture`: :at-val:`string, optional`
+   The texture to use for image-based lighting. This is unused by the default Phong lighting model.
 
 .. _body-light-intensity:
 

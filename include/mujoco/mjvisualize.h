@@ -226,7 +226,7 @@ typedef struct mjvGLCamera_ mjvGLCamera;
 struct mjvGeom_ {                 // abstract geom
   // type info
   int      type;                  // geom type (mjtGeom)
-  int      dataid;                // mesh, hfield or plane id; -1: none
+  int      dataid;                // mesh, hfield or plane id; -1: none; mesh: 2*id or 2*id+1 (hull)
   int      objtype;               // mujoco object type; mjOBJ_UNKNOWN for decor
   int      objid;                 // mujoco object id; -1 for decor
   int      category;              // visual category
@@ -262,6 +262,7 @@ struct mjvLight_ {                // OpenGL light
   float    pos[3];                // position rel. to body frame
   float    dir[3];                // direction rel. to body frame
   int      type;                  // type (mjtLightType)
+  int      texid;                 // texture id for image lights
   float    attenuation[3];        // OpenGL attenuation (quadratic model)
   float    cutoff;                // OpenGL cutoff
   float    exponent;              // OpenGL exponent

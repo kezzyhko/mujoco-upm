@@ -267,7 +267,7 @@ struct mjData_ {
   int*    moment_colind;     // column indices in sparse Jacobian                (nJmom x 1)
   mjtNum* actuator_moment;   // actuator moments                                 (nJmom x 1)
 
-  // computed by mj_fwdPosition/mj_crb
+  // computed by mj_fwdPosition/mj_makeM
   mjtNum* crb;               // com-based composite inertia and mass             (nbody x 10)
   mjtNum* qM;                // inertia (sparse)                                 (nM x 1)
   mjtNum* M;                 // reduced inertia (compressed sparse row)          (nC x 1)
@@ -1186,6 +1186,7 @@ struct mjModel_ {
   int*      light_bodyid;         // id of light's body                       (nlight x 1)
   int*      light_targetbodyid;   // id of targeted body; -1: none            (nlight x 1)
   int*      light_type;           // spot, directional, etc. (mjtLightType)   (nlight x 1)
+  int*      light_texid;          // texture id for image lights              (nlight x 1)
   mjtByte*  light_castshadow;     // does light cast shadows                  (nlight x 1)
   float*    light_bulbradius;     // light radius for soft shadows            (nlight x 1)
   float*    light_intensity;      // intensity, in candela                    (nlight x 1)
@@ -2043,6 +2044,7 @@ typedef struct mjsLight_ {         // light specification
   // intrinsics
   mjtByte active;                  // is light active
   mjtLightType type;               // type of light
+  mjString* texture;               // texture name for image lights
   mjtByte castshadow;              // does light cast shadows
   float bulbradius;                // bulb radius, for soft shadows
   float intensity;                 // intensity, in candelas
@@ -2815,7 +2817,7 @@ typedef struct mjvGLCamera_ mjvGLCamera;
 struct mjvGeom_ {                 // abstract geom
   // type info
   int      type;                  // geom type (mjtGeom)
-  int      dataid;                // mesh, hfield or plane id; -1: none
+  int      dataid;                // mesh, hfield or plane id; -1: none; mesh: 2*id or 2*id+1 (hull)
   int      objtype;               // mujoco object type; mjOBJ_UNKNOWN for decor
   int      objid;                 // mujoco object id; -1 for decor
   int      category;              // visual category
@@ -2847,6 +2849,7 @@ struct mjvLight_ {                // OpenGL light
   float    pos[3];                // position rel. to body frame
   float    dir[3];                // direction rel. to body frame
   int      type;                  // type (mjtLightType)
+  int      texid;                 // texture id for image lights
   float    attenuation[3];        // OpenGL attenuation (quadratic model)
   float    cutoff;                // OpenGL cutoff
   float    exponent;              // OpenGL exponent
@@ -3068,6 +3071,7 @@ void mj_flex(const mjModel* m, mjData* d);
 void mj_tendon(const mjModel* m, mjData* d);
 void mj_transmission(const mjModel* m, mjData* d);
 void mj_crb(const mjModel* m, mjData* d);
+void mj_makeM(const mjModel* m, mjData* d);
 void mj_factorM(const mjModel* m, mjData* d);
 void mj_solveM(const mjModel* m, mjData* d, mjtNum* x, const mjtNum* y, int n);
 void mj_solveM2(const mjModel* m, mjData* d, mjtNum* x, const mjtNum* y,
