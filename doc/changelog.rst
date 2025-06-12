@@ -2,13 +2,53 @@
 Changelog
 =========
 
+Version 3.3.3 (June 10, 2025)
+-----------------------------
+
+General
+^^^^^^^
+1. Refactored island implementation so that island data is memory-contiguous. This speeds up island processing in the
+   solver and clears the way for the addition of the Newton and PGS solvers (currently only CG is supported).
+2. Removed the :at:`shell` plugin. This is now supported by :ref:`flexcomp<body-flexcomp>` and is active depending on
+   the :ref:`elastic2d<flexcomp-elasticity-elastic2d>` attribute (off by default).
+3. Replaced the :ref:`directional<body-light-directional>` (boolean) field for lights with a
+   :ref:`type<body-light-type>` field (of type :ref:`mjtLightType<mjtLightType>`) to allow for additional lighting
+   types.
+4. Added new sub-component :ref:`mj_makeM` which combines the :ref:`mj_crb` call with additional logic to support the
+   introduction in 3.3.1 of :ref:`tendon armature<tendon-spatial-armature>`. In addition to the traditional
+   ``mjData.qM``, :ref:`mj_makeM` also computes ``mjData.M``, a CSR representation of the same matrix.
+5. Added a new function :ref:`mj_copyBack` to copy real-valued arrays in an mjModel to a compatible mjSpec.
+6. Removed the limitation of :ref:`fusestatic<compiler-fusestatic>` to models which contain no references. The fusestatic
+   flag will now fuse all bodies which are not referenced and ignore bodies which are referenced.
+
+Simulate
+^^^^^^^^
+7. The struct ``mjv_sceneState`` has been removed. This struct was used for partial synchronization of ``mjModel`` and
+   ``mjData`` when the Python viewer is used in passive mode. This functionality is now provided by :ref:`mjv_copyModel`
+   and :ref:`mjv_copyData`, which don't copy arrays which are not required for visualization.
+
+.. image:: images/changelog/procedural_terrain_generation.png
+   :width: 33%
+   :align: right
+
+Python bindings
+^^^^^^^^^^^^^^^
+
+8. Added examples of procedural terrain generation to the Model Editing tutorial: |mjspec_colab|
+
+MJX
+^^^
+9. Added tendon armature.
+
 Version 3.3.2 (April 28, 2025)
-----------------------------------
+------------------------------
 
 MJX
 ^^^
 1. Added inverse dynamics.
 2. Added tendon actuator force sensor.
+3. Fix :github:issue:`2606` such that ``make_data`` copies over ``mocap_pos`` and ``mocap_quat``
+   from ``body_pos`` and ``body_quat``.
 
 Version 3.3.1 (Apr 9, 2025)
 ----------------------------

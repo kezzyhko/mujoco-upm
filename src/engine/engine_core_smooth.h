@@ -54,13 +54,16 @@ MJAPI void mj_crb(const mjModel* m, mjData* d);
 // add tendon armature to qM
 MJAPI void mj_tendonArmature(const mjModel* m, mjData* d);
 
+// make inertia matrix
+MJAPI void mj_makeM(const mjModel* m, mjData* d);
+
 // sparse L'*D*L factorizaton of inertia-like matrix M, assumed spd  (legacy implementation)
 MJAPI void mj_factorI_legacy(const mjModel* m, mjData* d, const mjtNum* M,
                              mjtNum* qLD, mjtNum* qLDiagInv);
 
 // sparse L'*D*L factorizaton of inertia-like matrix
 MJAPI void mj_factorI(mjtNum* mat, mjtNum* diaginv, int nv,
-                      const int* rownnz, const int* rowadr, const int* diagnum, const int* colind);
+                      const int* rownnz, const int* rowadr, const int* colind);
 
 // sparse L'*D*L factorizaton of the inertia matrix M, assumed spd
 MJAPI void mj_factorM(const mjModel* m, mjData* d);
@@ -71,14 +74,11 @@ MJAPI void mj_solveLD_legacy(const mjModel* m, mjtNum* x, int n,
 
 // in-place sparse backsubstitution:  x = inv(L'*D*L)*x
 //  handle n vectors at once
-MJAPI void mj_solveLD(mjtNum* x, const mjtNum* qLDs, const mjtNum* qLDiagInv, int nv, int n,
-                      const int* rownnz, const int* rowadr, const int* diagnum, const int* colind);
+MJAPI void mj_solveLD(mjtNum* x, const mjtNum* qLD, const mjtNum* qLDiagInv, int nv, int n,
+                      const int* rownnz, const int* rowadr, const int* colind);
 
 // sparse backsubstitution:  x = inv(L'*D*L)*y, use factorization in d
 MJAPI void mj_solveM(const mjModel* m, mjData* d, mjtNum* x, const mjtNum* y, int n);
-
-// sparse backsubstitution for one island:  x = inv(L'*D*L)*x, use factorization in d
-MJAPI void mj_solveM_island(const mjModel* m, const mjData* d, mjtNum* x, int island);
 
 // half of sparse backsubstitution:  x = sqrt(inv(D))*inv(L')*y
 MJAPI void mj_solveM2(const mjModel* m, mjData* d, mjtNum* x, const mjtNum* y,

@@ -1622,6 +1622,36 @@ TEST_F(MujocoTest, BodyToFrame) {
   mj_deleteModel(expected);
 }
 
+TEST_F(MujocoTest, BodyToFrameWithInertial) {
+  static constexpr char xml_child[] = R"(
+    <mujoco>
+      <worldbody>
+        <body name="parent">
+          <body name="child">
+            <inertial mass="1" pos="0 0 0" quat="1 0 0 0" diaginertia="1 2 3"/>
+          </body>
+        </body>
+      </worldbody>
+    </mujoco>)";
+
+  std::array<char, 1000> er;
+  mjSpec* spec = mj_parseXMLString(xml_child, 0, er.data(), er.size());
+  EXPECT_THAT(spec, NotNull()) << er.data();
+  mjModel* model = mj_compile(spec, 0);
+  EXPECT_THAT(model, NotNull());
+  mjsBody* parent = mjs_findBody(spec, "parent");
+  EXPECT_THAT(parent, NotNull());
+  mjsBody* child = mjs_findBody(spec, "child");
+  EXPECT_THAT(child, NotNull());
+  mjs_bodyToFrame(&child);
+  EXPECT_THAT(parent->mass, 1);
+  EXPECT_THAT(parent->fullinertia[0], 1);
+  EXPECT_THAT(parent->fullinertia[1], 2);
+  EXPECT_THAT(parent->fullinertia[2], 3);
+  mj_deleteSpec(spec);
+  mj_deleteModel(model);
+}
+
 TEST_F(MujocoTest, AttachSpecToSite) {
   std::array<char, 1000> er;
   mjtNum tol = 0;
@@ -2845,6 +2875,14 @@ TEST_F(MujocoTest, UserValue) {
   EXPECT_STREQ(static_cast<const char*>(payload), data.c_str());
   mjs_deleteUserValue(body->element, "key");
   EXPECT_THAT(mjs_getUserValue(body->element, "key"), IsNull());
+
+  std::string* heap_data = new std::string("heap_data");
+  mjs_setUserValueWithCleanup(
+      body->element, "key", heap_data,
+      [](const void* data) { delete static_cast<const std::string*>(data); });
+  payload = mjs_getUserValue(body->element, "key");
+  EXPECT_STREQ(static_cast<const std::string*>(payload)->c_str(),
+               heap_data->c_str());
   mj_deleteSpec(spec);
 }
 

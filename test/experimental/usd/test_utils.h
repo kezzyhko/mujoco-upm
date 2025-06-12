@@ -18,7 +18,6 @@
 #include <string>
 
 #include <gtest/gtest.h>
-#include "test/fixture.h"
 #include <pxr/usd/sdf/assetPath.h>
 #include <pxr/usd/sdf/declareHandles.h>
 #include <pxr/usd/sdf/fileFormat.h>
@@ -67,14 +66,25 @@
 #define EXPECT_ATTRIBUTE_HAS_NO_VALUE(stage, path) \
   EXPECT_FALSE((stage)->GetAttributeAtPath(SdfPath(path)).HasValue());
 
+#define EXPECT_REL_HAS_TARGET(stage, path, target_path)                 \
+  {                                                                     \
+    pxr::SdfPathVector targets;                                         \
+    (stage)->GetRelationshipAtPath(SdfPath(path)).GetTargets(&targets); \
+    EXPECT_TRUE(std::find(targets.begin(), targets.end(),               \
+                          SdfPath(target_path)) != targets.end());      \
+  }
+
 namespace mujoco {
+namespace usd {
 
 pxr::SdfLayerRefPtr LoadLayer(
     const std::string& xml,
     const pxr::SdfFileFormat::FileFormatArguments& args = {});
 
+pxr::UsdStageRefPtr OpenStageWithPhysics(const std::string& xml);
+
 template <typename T>
-void ExpectAttributeEqual(pxr::UsdStageRefPtr stage, const char* path,
+void ExpectAttributeEqual(pxr::UsdStageRefPtr stage, pxr::SdfPath path,
                           const T& value) {
   auto attr = stage->GetAttributeAtPath(pxr::SdfPath(path));
   EXPECT_TRUE(attr.IsValid()) << "Attribute " << path << " is not valid";
@@ -84,19 +94,27 @@ void ExpectAttributeEqual(pxr::UsdStageRefPtr stage, const char* path,
                                << attr_value << ". Expected: " << value;
 }
 
+template <typename T>
+void ExpectAttributeEqual(pxr::UsdStageRefPtr stage, const char* path,
+                          const T& value) {
+  ExpectAttributeEqual(stage, pxr::SdfPath(path), value);
+}
+
 // Specialization for SdfAssetPath, so that we can compare only the asset path
 // and not care about whatever the resolved path is.
 // Otherwise the default operator== would fail because it tests for equality of
 // the asset path AND the resolved path.
 template <>
 void ExpectAttributeEqual<pxr::SdfAssetPath>(pxr::UsdStageRefPtr stage,
-                                             const char* path,
+                                             pxr::SdfPath,
                                              const pxr::SdfAssetPath& value);
 
 void ExpectAttributeHasConnection(pxr::UsdStageRefPtr stage, const char* path,
                                   const char* connection_path);
 
-using MjcfSdfFileFormatPluginTest = MujocoTest;
-
+// Checks that all authored attributes on the given prim have types that match
+// the schema types.
+void ExpectAllAuthoredAttributesMatchSchemaTypes(const pxr::UsdPrim& prim);
+}  // namespace usd
 }  // namespace mujoco
 #endif  // MUJOCO_TEST_EXPERIMENTAL_USD_PLUGINS_MJCF_FIXTURE_H_

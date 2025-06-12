@@ -107,12 +107,12 @@ static mjtNum wrap_circle(mjtNum pnt[4], const mjtNum end[4], const mjtNum* side
     return -1;
   }
 
+  mjtNum sqrt0 = mju_sqrt(sqlen0 - sqrad);
+  mjtNum sqrt1 = mju_sqrt(sqlen1 - sqrad);
+
   // construct the two solutions, compute goodness
   mjtNum sol[2][2][2], good[2];
   for (int i=0; i < 2; i++) {
-    mjtNum sqrt0 = mju_sqrt(sqlen0 - sqrad);
-    mjtNum sqrt1 = mju_sqrt(sqlen1 - sqrad);
-
     int sgn = (i == 0 ? 1 : -1);
 
     sol[i][0][0] = (end[0]*sqrad + sgn*radius*end[1]*sqrt0)/sqlen0;
@@ -1401,6 +1401,24 @@ void mju_gather(mjtNum* restrict res, const mjtNum* restrict vec, const int* res
 
 // scatter
 void mju_scatter(mjtNum* restrict res, const mjtNum* restrict vec, const int* restrict ind, int n) {
+  for (int i=0; i < n; i++) {
+    res[ind[i]] = vec[i];
+  }
+}
+
+
+
+// gather integers
+void mju_gatherInt(int* restrict res, const int* restrict vec, const int* restrict ind, int n) {
+  for (int i=0; i < n; i++) {
+    res[i] = vec[ind[i]];
+  }
+}
+
+
+
+// scatter integers
+void mju_scatterInt(int* restrict res, const int* restrict vec, const int* restrict ind, int n) {
   for (int i=0; i < n; i++) {
     res[ind[i]] = vec[i];
   }
