@@ -747,6 +747,7 @@ void mjCDef::NameSpace(const mjCModel* m) {
 
 void mjCDef::CopyWithoutChildren(const mjCDef& other) {
   name = other.name;
+  elemtype = other.elemtype;
   parent = nullptr;
   child.clear();
   joint_ = other.joint_;
@@ -780,7 +781,6 @@ void mjCDef::PointToLocal() {
   tendon_.PointToLocal();
   actuator_.PointToLocal();
   spec.element = static_cast<mjsElement*>(this);
-  spec.name = &name;
   spec.joint = &joint_.spec;
   spec.geom = &geom_.spec;
   spec.site = &site_.spec;
@@ -1261,7 +1261,6 @@ void mjCBody::ResetId() {
 
 void mjCBody::PointToLocal() {
   spec.element = static_cast<mjsElement*>(this);
-  spec.name = &name;
   spec.childclass = &classname;
   spec.userdata = &spec_userdata_;
   spec.plugin.plugin_name = &plugin_name;
@@ -1404,7 +1403,6 @@ mjCJoint* mjCBody::AddFreeJoint() {
   model->ResetTreeLists();
   model->MakeTreeLists();
 
-
   // update signature
   model->spec.element->signature = model->Signature();
   return obj;
@@ -1425,7 +1423,6 @@ mjCJoint* mjCBody::AddJoint(mjCDef* _def) {
   // recompute lists
   model->ResetTreeLists();
   model->MakeTreeLists();
-
 
   // update signature
   model->spec.element->signature = model->Signature();
@@ -1448,7 +1445,6 @@ mjCGeom* mjCBody::AddGeom(mjCDef* _def) {
   model->ResetTreeLists();
   model->MakeTreeLists();
 
-
   // update signature
   model->spec.element->signature = model->Signature();
   return obj;
@@ -1469,7 +1465,6 @@ mjCSite* mjCBody::AddSite(mjCDef* _def) {
   // recompute lists
   model->ResetTreeLists();
   model->MakeTreeLists();
-
 
   // update signature
   model->spec.element->signature = model->Signature();
@@ -1492,7 +1487,6 @@ mjCCamera* mjCBody::AddCamera(mjCDef* _def) {
   model->ResetTreeLists();
   model->MakeTreeLists();
 
-
   // update signature
   model->spec.element->signature = model->Signature();
   return obj;
@@ -1513,7 +1507,6 @@ mjCLight* mjCBody::AddLight(mjCDef* _def) {
   // recompute lists
   model->ResetTreeLists();
   model->MakeTreeLists();
-
 
   // update signature
   model->spec.element->signature = model->Signature();
@@ -2310,7 +2303,6 @@ bool mjCFrame::IsAncestor(const mjCFrame* child) const {
 
 void mjCFrame::PointToLocal() {
   spec.element = static_cast<mjsElement*>(this);
-  spec.name = &name;
   spec.childclass = &classname;
   spec.info = &info;
 }
@@ -2461,7 +2453,6 @@ mjtNum* mjCJoint::qvel(const std::string& state_name) {
 
 void mjCJoint::PointToLocal() {
   spec.element = static_cast<mjsElement*>(this);
-  spec.name = &name;
   spec.userdata = &spec_userdata_;
   spec.info = &info;
   userdata = nullptr;
@@ -2659,7 +2650,6 @@ mjCGeom& mjCGeom::operator=(const mjCGeom& other) {
 // to be called after any default copy constructor
 void mjCGeom::PointToLocal(void) {
   spec.element = static_cast<mjsElement*>(this);
-  spec.name = &name;
   spec.info = &info;
   spec.userdata = &spec_userdata_;
   spec.material = &spec_material_;
@@ -3481,7 +3471,6 @@ mjCSite& mjCSite::operator=(const mjCSite& other) {
 
 void mjCSite::PointToLocal() {
   spec.element = static_cast<mjsElement*>(this);
-  spec.name = &name;
   spec.info = &info;
   spec.material = &spec_material_;
   spec.userdata = &spec_userdata_;
@@ -3642,7 +3631,6 @@ mjCCamera& mjCCamera::operator=(const mjCCamera& other) {
 
 void mjCCamera::PointToLocal() {
   spec.element = static_cast<mjsElement*>(this);
-  spec.name = &name;
   spec.userdata = &spec_userdata_;
   spec.targetbody = &spec_targetbody_;
   spec.info = &info;
@@ -3800,7 +3788,6 @@ mjCLight& mjCLight::operator=(const mjCLight& other) {
 
 void mjCLight::PointToLocal() {
   spec.element = static_cast<mjsElement*>(this);
-  spec.name = &name;
   spec.targetbody = &spec_targetbody_;
   spec.texture = &spec_texture_;
   spec.info = &info;
@@ -3920,7 +3907,6 @@ mjCHField& mjCHField::operator=(const mjCHField& other) {
 
 void mjCHField::PointToLocal() {
   spec.element = static_cast<mjsElement*>(this);
-  spec.name = &name;
   spec.file = &spec_file_;
   spec.content_type = &spec_content_type_;
   spec.userdata = &spec_userdata_;
@@ -4185,7 +4171,6 @@ mjCTexture& mjCTexture::operator=(const mjCTexture& other) {
 
 void mjCTexture::PointToLocal() {
   spec.element = static_cast<mjsElement*>(this);
-  spec.name = &name;
   spec.file = &spec_file_;
   spec.data = &data_;
   spec.content_type = &spec_content_type_;
@@ -5054,7 +5039,6 @@ mjCMaterial& mjCMaterial::operator=(const mjCMaterial& other) {
 
 void mjCMaterial::PointToLocal() {
   spec.element = static_cast<mjsElement*>(this);
-  spec.name = &name;
   spec.textures = &spec_textures_;
   spec.info = &info;
   textures = nullptr;
@@ -5144,7 +5128,6 @@ mjCPair& mjCPair::operator=(const mjCPair& other) {
 
 void mjCPair::PointToLocal() {
   spec.element = static_cast<mjsElement*>(this);
-  spec.name = &name;
   spec.geomname1 = &spec_geomname1_;
   spec.geomname2 = &spec_geomname2_;
   geomname1 = nullptr;
@@ -5367,7 +5350,6 @@ mjCBodyPair& mjCBodyPair::operator=(const mjCBodyPair& other) {
 
 void mjCBodyPair::PointToLocal() {
   spec.element = static_cast<mjsElement*>(this);
-  spec.name = &name;
   spec.bodyname1 = &spec_bodyname1_;
   spec.bodyname2 = &spec_bodyname2_;
   spec.info = &info;
@@ -5502,7 +5484,6 @@ mjCEquality& mjCEquality::operator=(const mjCEquality& other) {
 
 void mjCEquality::PointToLocal() {
   spec.element = static_cast<mjsElement*>(this);
-  spec.name = &name;
   spec.name1 = &spec_name1_;
   spec.name2 = &spec_name2_;
   spec.info = &info;
@@ -5679,7 +5660,6 @@ bool mjCTendon::is_actfrclimited() const {
 
 void mjCTendon::PointToLocal() {
   spec.element = static_cast<mjsElement*>(this);
-  spec.name = &name;
   spec.material = &spec_material_;
   spec.userdata = &spec_userdata_;
   spec.info = &info;
@@ -6225,7 +6205,6 @@ mjtNum& mjCActuator::ctrl(const std::string& state_name) {
 
 void mjCActuator::PointToLocal() {
   spec.element = static_cast<mjsElement*>(this);
-  spec.name = &name;
   spec.userdata = &spec_userdata_;
   spec.target = &spec_target_;
   spec.refsite = &spec_refsite_;
@@ -6563,7 +6542,6 @@ mjCSensor& mjCSensor::operator=(const mjCSensor& other) {
 
 void mjCSensor::PointToLocal() {
   spec.element = static_cast<mjsElement*>(this);
-  spec.name = &name;
   spec.userdata = &spec_userdata_;
   spec.objname = &spec_objname_;
   spec.refname = &spec_refname_;
@@ -7103,7 +7081,6 @@ mjCNumeric& mjCNumeric::operator=(const mjCNumeric& other) {
 
 void mjCNumeric::PointToLocal() {
   spec.element = static_cast<mjsElement*>(this);
-  spec.name = &name;
   spec.data = &spec_data_;
   spec.info = &info;
   data = nullptr;
@@ -7193,7 +7170,6 @@ mjCText& mjCText::operator=(const mjCText& other) {
 
 void mjCText::PointToLocal() {
   spec.element = static_cast<mjsElement*>(this);
-  spec.name = &name;
   spec.data = &spec_data_;
   spec.info = &info;
   data = nullptr;
@@ -7274,7 +7250,6 @@ mjCTuple& mjCTuple::operator=(const mjCTuple& other) {
 
 void mjCTuple::PointToLocal() {
   spec.element = static_cast<mjsElement*>(this);
-  spec.name = &name;
   spec.objtype = (mjIntVec*)&spec_objtype_;
   spec.objname = &spec_objname_;
   spec.objprm = &spec_objprm_;
@@ -7410,7 +7385,6 @@ mjCKey& mjCKey::operator=(const mjCKey& other) {
 
 void mjCKey::PointToLocal() {
   spec.element = static_cast<mjsElement*>(this);
-  spec.name = &name;
   spec.qpos = &spec_qpos_;
   spec.qvel = &spec_qvel_;
   spec.act = &spec_act_;
@@ -7556,7 +7530,6 @@ mjCPlugin::mjCPlugin(mjCModel* _model) {
   mjs_defaultPlugin(&spec);
   elemtype = mjOBJ_PLUGIN;
   spec.plugin_name = &plugin_name;
-  spec.name = &name;
   spec.info = &info;
 
   PointToLocal();

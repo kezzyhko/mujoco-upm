@@ -1341,6 +1341,26 @@ mjsPlugin* mjs_asPlugin(mjsElement* element) {
 
 
 
+// set element name
+int mjs_setName(mjsElement* element, const char* name) {
+  if (element->elemtype == mjOBJ_DEFAULT) {
+    mjCDef* def = static_cast<mjCDef*>(element);
+    def->name = std::string(name);
+    return 0;
+  }
+  mjCBase* baseC = static_cast<mjCBase*>(element);
+  baseC->name = std::string(name);
+  try {
+    baseC->model->CheckRepeat(element->elemtype);
+  } catch (mjCError& e) {
+    baseC->model->SetError(e);
+    return -1;
+  }
+  return 0;
+}
+
+
+
 // copy buffer to destination buffer
 void mjs_setBuffer(mjByteVec* dest, const void* array, int size) {
   const std::byte* buffer = static_cast<const std::byte*>(array);
@@ -1426,6 +1446,16 @@ void mjs_setDouble(mjDoubleVec* dest, const double* array, int size) {
   for (int i = 0; i < size; ++i) {
     (*dest)[i] = array[i];
   }
+}
+
+
+
+// get name
+mjString* mjs_getName(mjsElement* element) {
+  if (element->elemtype == mjOBJ_DEFAULT) {
+    return &(static_cast<mjCDef*>(element)->name);
+  }
+  return &(static_cast<mjCBase*>(element)->name);
 }
 
 
