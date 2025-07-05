@@ -18,6 +18,7 @@
 #include <cstddef>
 #include <string>
 #include <unordered_map>
+#include <unordered_set>
 #include <utility>
 #include <vector>
 
@@ -231,6 +232,8 @@ class ModelWriter {
   std::vector<pxr::SdfPath> joint_paths_;
   // Mapping from mesh names to Mesh prim path.
   std::unordered_map<std::string, pxr::SdfPath> mesh_paths_;
+  // Set of body ids that have had the articulation root API applied.
+  std::unordered_set<int> articulation_roots_;
   // Whether to write physics data.
   bool write_physics_ = false;
 
@@ -334,8 +337,8 @@ class ModelWriter {
   }
 
   void WriteMesh(const mjsMesh *mesh, const pxr::SdfPath &parent_path) {
-    auto name = GetAvailablePrimName(*mjs_getName(mesh->element), pxr::UsdGeomTokens->Mesh,
-                                     parent_path);
+    auto name = GetAvailablePrimName(*mjs_getName(mesh->element),
+                                     pxr::UsdGeomTokens->Mesh, parent_path);
     pxr::SdfPath subcomponent_path =
         CreatePrimSpec(data_, parent_path, name, pxr::UsdGeomTokens->Xform);
     pxr::SdfPath mesh_path =
@@ -550,6 +553,16 @@ class ModelWriter {
       default:
         break;
     }
+
+    pxr::GfVec3f gravity(spec_->option.gravity[0], spec_->option.gravity[1],
+                      spec_->option.gravity[2]);
+    // Normalize will normalize gravity in place and return the magnitude before normalization.
+    float gravity_magnitude = gravity.Normalize();
+
+    WriteUniformAttribute(physics_scene_path, pxr::SdfValueTypeNames->Float,
+                          pxr::UsdPhysicsTokens->physicsGravityMagnitude, gravity_magnitude);
+    WriteUniformAttribute(physics_scene_path, pxr::SdfValueTypeNames->Vector3f,
+                          pxr::UsdPhysicsTokens->physicsGravityDirection, gravity);
 
     pxr::GfVec3d wind(spec_->option.wind[0], spec_->option.wind[1],
                       spec_->option.wind[2]);
@@ -964,44 +977,50 @@ class ModelWriter {
       pxr::SdfPath qpos_attr_path =
           CreateAttributeSpec(data_, keyframe_path, MjcPhysicsTokens->mjcQpos,
                               pxr::SdfValueTypeNames->DoubleArray);
-      set_attribute_data(qpos_attr_path,
-                         pxr::VtDoubleArray(keyframe->qpos->begin(),
-                                            keyframe->qpos->end()), keyframe);
+      set_attribute_data(
+          qpos_attr_path,
+          pxr::VtDoubleArray(keyframe->qpos->begin(), keyframe->qpos->end()),
+          keyframe);
 
       pxr::SdfPath qvel_attr_path =
           CreateAttributeSpec(data_, keyframe_path, MjcPhysicsTokens->mjcQvel,
                               pxr::SdfValueTypeNames->DoubleArray);
-      set_attribute_data(qvel_attr_path,
-                         pxr::VtDoubleArray(keyframe->qvel->begin(),
-                                            keyframe->qvel->end()), keyframe);
+      set_attribute_data(
+          qvel_attr_path,
+          pxr::VtDoubleArray(keyframe->qvel->begin(), keyframe->qvel->end()),
+          keyframe);
 
       pxr::SdfPath act_attr_path =
           CreateAttributeSpec(data_, keyframe_path, MjcPhysicsTokens->mjcAct,
                               pxr::SdfValueTypeNames->DoubleArray);
-      set_attribute_data(act_attr_path,
-                         pxr::VtDoubleArray(keyframe->act->begin(),
-                                            keyframe->act->end()), keyframe);
+      set_attribute_data(
+          act_attr_path,
+          pxr::VtDoubleArray(keyframe->act->begin(), keyframe->act->end()),
+          keyframe);
 
       pxr::SdfPath ctrl_attr_path =
           CreateAttributeSpec(data_, keyframe_path, MjcPhysicsTokens->mjcCtrl,
                               pxr::SdfValueTypeNames->DoubleArray);
-      set_attribute_data(ctrl_attr_path,
-                         pxr::VtDoubleArray(keyframe->ctrl->begin(),
-                                            keyframe->ctrl->end()), keyframe);
+      set_attribute_data(
+          ctrl_attr_path,
+          pxr::VtDoubleArray(keyframe->ctrl->begin(), keyframe->ctrl->end()),
+          keyframe);
 
       pxr::SdfPath mpos_attr_path =
           CreateAttributeSpec(data_, keyframe_path, MjcPhysicsTokens->mjcMpos,
                               pxr::SdfValueTypeNames->DoubleArray);
-      set_attribute_data(mpos_attr_path,
-                         pxr::VtDoubleArray(keyframe->mpos->begin(),
-                                            keyframe->mpos->end()), keyframe);
+      set_attribute_data(
+          mpos_attr_path,
+          pxr::VtDoubleArray(keyframe->mpos->begin(), keyframe->mpos->end()),
+          keyframe);
 
       pxr::SdfPath mquat_attr_path =
           CreateAttributeSpec(data_, keyframe_path, MjcPhysicsTokens->mjcMquat,
                               pxr::SdfValueTypeNames->DoubleArray);
-      set_attribute_data(mquat_attr_path,
-                         pxr::VtDoubleArray(keyframe->mquat->begin(),
-                                            keyframe->mquat->end()), keyframe);
+      set_attribute_data(
+          mquat_attr_path,
+          pxr::VtDoubleArray(keyframe->mquat->begin(), keyframe->mquat->end()),
+          keyframe);
     }
   }
 
@@ -1232,23 +1251,22 @@ class ModelWriter {
                         const pxr::SdfPath &body_path) {
     pxr::SdfPath box_path =
         CreatePrimSpec(data_, body_path, name, pxr::UsdGeomTokens->Cube);
-    // MuJoCo uses half sizes.
+    // MuJoCo uses half sizes. Always set size to 2 (and correspondingly extent
+    // from -1 to 1), and let scale determine the actual size.
     pxr::SdfPath size_attr_path =
         CreateAttributeSpec(data_, box_path, pxr::UsdGeomTokens->size,
                             pxr::SdfValueTypeNames->Double);
-    pxr::GfVec3f scale(static_cast<float>(size[0]), static_cast<float>(size[1]),
-                       static_cast<float>(size[2]));
     SetAttributeDefault(data_, size_attr_path, 2.0);
 
     pxr::SdfPath extent_attr_path =
         CreateAttributeSpec(data_, box_path, pxr::UsdGeomTokens->extent,
                             pxr::SdfValueTypeNames->Float3Array);
     SetAttributeDefault(data_, extent_attr_path,
-                        pxr::VtArray<pxr::GfVec3f>({
-                            pxr::GfVec3f(-size[0], -size[1], -size[2]),
-                            pxr::GfVec3f(size[0], size[1], size[2]),
-                        }));
+                        pxr::VtArray<pxr::GfVec3f>(
+                            {pxr::GfVec3f(-1, -1, -1), pxr::GfVec3f(1, 1, 1)}));
 
+    pxr::GfVec3f scale(static_cast<float>(size[0]), static_cast<float>(size[1]),
+                       static_cast<float>(size[2]));
     WriteScaleXformOp(box_path, scale);
     WriteXformOpOrder(box_path,
                       pxr::VtArray<pxr::TfToken>{kTokens->xformOpScale});
@@ -1998,9 +2016,13 @@ class ModelWriter {
     // then we need to apply the articulation root API.
     if (parent_id != kWorldIndex) {
       int parent_parent_id = mjs_getId(mjs_getParent(parent->element)->element);
-      if (parent_parent_id == kWorldIndex) {
+      // We guard against applying the API more than once, which can happen when
+      // there are multiple children.
+      if (parent_parent_id == kWorldIndex &&
+          articulation_roots_.find(parent_id) == articulation_roots_.end()) {
         ApplyApiSchema(data_, parent_path,
                        pxr::UsdPhysicsTokens->PhysicsArticulationRootAPI);
+        articulation_roots_.insert(parent_id);
       }
     }
 

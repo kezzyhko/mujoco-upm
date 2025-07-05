@@ -12,6 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#include <algorithm>
 #include <string>
 #include <vector>
 
@@ -41,6 +42,7 @@
 #include <pxr/usd/sdf/assetPath.h>
 #include <pxr/usd/sdf/declareHandles.h>
 #include <pxr/usd/sdf/fileFormat.h>
+#include <pxr/usd/sdf/listOp.h>
 #include <pxr/usd/sdf/path.h>
 #include <pxr/usd/sdf/schema.h>
 #include <pxr/usd/usd/common.h>
@@ -49,6 +51,7 @@
 #include <pxr/usd/usd/primRange.h>  // IWYU pragma: keep, used for TraverseAll
 #include <pxr/usd/usd/stage.h>
 #include <pxr/usd/usd/timeCode.h>
+#include <pxr/usd/usd/tokens.h>
 #include <pxr/usd/usdGeom/capsule.h>
 #include <pxr/usd/usdGeom/cube.h>
 #include <pxr/usd/usdGeom/cylinder.h>
@@ -616,8 +619,10 @@ TEST_F(MjcfSdfFileFormatPluginTest, TestGeomsPrims) {
   EXPECT_PRIM_VALID(stage, "/test/box_geom");
   EXPECT_PRIM_IS_A(stage, "/test/box_geom", pxr::UsdGeomCube);
   // Box is a special case, it uses a UsdGeomCube and scales it with
-  // xformOp:scale. The radius is always set to 2.
+  // xformOp:scale. The radius is always set to 2 and the extent from -1 to 1.
   ExpectAttributeEqual(stage, "/test/box_geom.size", 2.0);
+  ExpectAttributeEqual(stage, "/test/box_geom.extent",
+                       pxr::VtArray<pxr::GfVec3f>({{-1, -1, -1}, {1, 1, 1}}));
   ExpectAttributeEqual(stage, "/test/box_geom.xformOp:scale",
                        pxr::GfVec3f(10.0, 20.0, 30.0));
   // Sphere
@@ -971,6 +976,38 @@ TEST_F(MjcfSdfFileFormatPluginTest, TestPhysicsScenePrimSDFIterations) {
                        60);
 }
 
+TEST_F(MjcfSdfFileFormatPluginTest, TestPhysicsScenePrimGravity) {
+  auto stage = pxr::UsdStage::Open(LoadLayer(R"(
+    <mujoco model="test">
+      <option gravity="-123 0 0"> </option>
+    </mujoco>
+  )"));
+
+  ExpectAttributeEqual(stage,
+                       kPhysicsScenePrimPath.AppendProperty(
+                           pxr::UsdPhysicsTokens->physicsGravityMagnitude),
+                       123.0f);
+  ExpectAttributeEqual(stage,
+                       kPhysicsScenePrimPath.AppendProperty(
+                           pxr::UsdPhysicsTokens->physicsGravityDirection),
+                       pxr::GfVec3f(-1.0f, 0.0f, 0.0f));
+
+  stage = pxr::UsdStage::Open(LoadLayer(R"(
+    <mujoco model="test">
+      <option gravity="2 3 6"> </option>
+    </mujoco>
+  )"));
+
+  ExpectAttributeEqual(stage,
+                       kPhysicsScenePrimPath.AppendProperty(
+                           pxr::UsdPhysicsTokens->physicsGravityMagnitude),
+                       7.0f);
+  ExpectAttributeEqual(stage,
+                       kPhysicsScenePrimPath.AppendProperty(
+                           pxr::UsdPhysicsTokens->physicsGravityDirection),
+                       pxr::GfVec3f(0.2857143f, 0.42857143f, 0.85714287f));
+}
+
 TEST_F(MjcfSdfFileFormatPluginTest, TestPhysicsScenePrimDisableFlags) {
   auto stage = pxr::UsdStage::Open(LoadLayer(R"(
     <mujoco model="test">
@@ -1129,6 +1166,45 @@ TEST_F(MjcfSdfFileFormatPluginTest, TestPhysicsToggleSdfFormatArg) {
   EXPECT_PRIM_VALID(stage_with_physics, "/mesh_test/test_body");
   EXPECT_PRIM_API_APPLIED(stage_with_physics, "/mesh_test/test_body",
                           pxr::UsdPhysicsRigidBodyAPI);
+}
+
+TEST_F(MjcfSdfFileFormatPluginTest, TestArticulationRootAppliedOnce) {
+  static constexpr char kXml[] = R"(
+    <mujoco model="physics_test">
+      <worldbody>
+        <body name="parent" pos="0 0 0">
+          <geom name="parent_geom" type="sphere" size="1"/>
+          <body name="child_1" pos="1 0 0">
+            <geom name="child_1_geom" type="sphere" size="1"/>
+          </body>
+          <body name="child_2" pos="2 0 0">
+            <geom name="child_2_geom" type="sphere" size="1"/>
+          </body>
+        </body>
+      </worldbody>
+    </mujoco>
+  )";
+
+  pxr::SdfFileFormat::FileFormatArguments args;
+  args["usdMjcfToggleUsdPhysics"] = "true";
+  pxr::SdfLayerRefPtr layer = LoadLayer(kXml, args);
+
+  // This test is particular in the sense that the authoring mistake, which is
+  // made on the SdfLayer level, would disappear when we access the COMPOSED
+  // stage because duplicates are removed. So we need to check the SdfLayer
+  // directly to see the problem.
+  auto primSpec = layer->GetPrimAtPath(pxr::SdfPath("/physics_test/parent"));
+  EXPECT_TRUE(primSpec);
+
+  pxr::VtValue apiSchemasValue = primSpec->GetInfo(pxr::UsdTokens->apiSchemas);
+  const pxr::SdfTokenListOp& listOp =
+      apiSchemasValue.UncheckedGet<pxr::SdfTokenListOp>();
+  const pxr::SdfTokenListOp::ItemVector& prependedItems =
+      listOp.GetPrependedItems();
+
+  int count = std::count(prependedItems.begin(), prependedItems.end(),
+                         pxr::UsdPhysicsTokens->PhysicsArticulationRootAPI);
+  EXPECT_EQ(count, 1);
 }
 
 TEST_F(MjcfSdfFileFormatPluginTest, TestPhysicsRigidBody) {
