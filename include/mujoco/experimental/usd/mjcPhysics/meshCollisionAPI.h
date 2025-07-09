@@ -17,30 +17,30 @@
 
 /// \file mjcPhysics/meshCollisionAPI.h
 
-#include "./api.h"
-#include "./tokens.h"
-#include "pxr/base/gf/matrix4d.h"
-#include "pxr/base/gf/vec3d.h"
-#include "pxr/base/gf/vec3f.h"
-#include "pxr/base/tf/token.h"
-#include "pxr/base/tf/type.h"
-#include "pxr/base/vt/value.h"
-#include "pxr/pxr.h"
-#include "pxr/usd/usd/apiSchemaBase.h"
-#include "pxr/usd/usd/prim.h"
-#include "pxr/usd/usd/stage.h"
+#include <mujoco/experimental/usd/mjcPhysics/api.h>
+#include <mujoco/experimental/usd/mjcPhysics/tokens.h>
+#include <pxr/base/gf/matrix4d.h>
+#include <pxr/base/gf/vec3d.h>
+#include <pxr/base/gf/vec3f.h>
+#include <pxr/base/tf/token.h>
+#include <pxr/base/tf/type.h>
+#include <pxr/base/vt/value.h>
+#include <pxr/pxr.h>
+#include <pxr/usd/usd/apiSchemaBase.h>
+#include <pxr/usd/usd/prim.h>
+#include <pxr/usd/usd/stage.h>
 
 PXR_NAMESPACE_OPEN_SCOPE
 
 class SdfAssetPath;
 
 // -------------------------------------------------------------------------- //
-// MESHCOLLISIONAPI                                                           //
+// MJCMESHCOLLISIONAPI                                                        //
 // -------------------------------------------------------------------------- //
 
 /// \class MjcPhysicsMeshCollisionAPI
 ///
-/// API describing a Mujoco collider.
+/// API describing a Mujoco mesh collider.
 ///
 /// For any described attribute \em Fallback \em Value or \em Allowed \em Values
 /// below that are text/tokens, the actual token is published and defined in
@@ -111,7 +111,7 @@ class MjcPhysicsMeshCollisionAPI : public UsdAPISchemaBase {
   static bool CanApply(const UsdPrim &prim, std::string *whyNot = nullptr);
 
   /// Applies this <b>single-apply</b> API schema to the given \p prim.
-  /// This information is stored by adding "MeshCollisionAPI" to the
+  /// This information is stored by adding "MjcMeshCollisionAPI" to the
   /// token-valued, listOp metadata \em apiSchemas on the prim.
   ///
   /// \return A valid MjcPhysicsMeshCollisionAPI object is returned upon

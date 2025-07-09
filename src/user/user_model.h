@@ -87,6 +87,7 @@ class mjCModel_ : public mjsElement {
   int nbvh;            // number of total boundary volume hierarchies
   int nbvhstatic;      // number of static boundary volume hierarchies
   int nbvhdynamic;     // number of dynamic boundary volume hierarchies
+  int noct;            // number of total octree cells
   int nflexnode;       // number of nodes in all flexes
   int nflexvert;       // number of vertices in all flexes
   int nflexedge;       // number of edges in all flexes
@@ -187,7 +188,7 @@ class mjCModel : public mjCModel_, private mjSpec {
   mjCModel& operator=(const mjCModel& other);     // copy other into this, if they are not the same
   mjCModel& operator+=(const mjCModel& other);    // add other into this, even if they are the same
   mjCModel& operator-=(const mjCBody& subtree);   // remove subtree and all references from model
-  mjCModel_& operator+=(mjCDef& subtree);         // add default tree to this model
+  mjCModel& operator+=(mjCDef& subtree);          // add default tree to this model
   mjCModel& operator-=(const mjCDef& subtree);    // remove default tree from this model
 
   mjSpec spec;
@@ -227,13 +228,10 @@ class mjCModel : public mjCModel_, private mjSpec {
   template <class T> void DeleteAll(std::vector<T*>& elements);
 
   // delete object from the corresponding list
-  void DeleteElement(mjsElement* el);
+  void operator-=(mjsElement* el);
 
   // delete default and all descendants
   void RemoveDefault(mjCDef* def);
-
-  // detach subtree from model
-  void Detach(mjCBody* subtree);
 
   // API for access to model elements (outside tree)
   int NumObjects(mjtObj type);              // number of objects in specified list
@@ -252,6 +250,10 @@ class mjCModel : public mjCModel_, private mjSpec {
   mjSpec* FindSpec(std::string name) const;                         // find spec given name
   mjSpec* FindSpec(const mjsCompiler* compiler_);                   // find spec given mjsCompiler
   void ActivatePlugin(const mjpPlugin* plugin, int slot);           // activate plugin
+
+  // find asset given name checking both name and filename
+  template <class T>
+  mjCBase* FindAsset(std::string_view name, const std::vector<T*>& list) const;
 
   // accessors
   std::string get_meshdir() const { return meshdir_; }
@@ -323,6 +325,9 @@ class mjCModel : public mjCModel_, private mjSpec {
 
   // set attached flag
   void SetAttached(bool deepcopy) { attached_ |= !deepcopy; }
+
+  // check for repeated names in list
+  void CheckRepeat(mjtObj type);
 
  private:
   // settings for each defaults class
@@ -412,6 +417,10 @@ class mjCModel : public mjCModel_, private mjSpec {
   // populate objects ids
   void ProcessLists(bool checkrepeat = true);
 
+  // process list of objects
+  template <class T> void ProcessList_(mjListKeyMap& ids, std::vector<T*>& list,
+                                       mjtObj type, bool checkrepeat = true);
+
   // reset lists of kinematic tree
   void ResetTreeLists();
 
@@ -426,9 +435,6 @@ class mjCModel : public mjCModel_, private mjSpec {
 
   // compute qpos0
   void ComputeReference();
-
-  // return true if all bodies have valid mass and inertia
-  bool CheckBodiesMassInertia(std::vector<mjCBody*> bodies);
 
   // return true if body has valid mass and inertia
   bool CheckBodyMassInertia(mjCBody* body);
@@ -452,11 +458,15 @@ class mjCModel : public mjCModel_, private mjSpec {
   template <class T>
   void ResolveReferences(std::vector<T*>& list, mjCBody* body = nullptr);
 
+  // delete all plugins created by the subtree
+  void DeleteSubtreePlugin(mjCBody* subtree);
+
   mjListKeyMap ids;   // map from object names to ids
   mjCError errInfo;   // last error info
   std::vector<mjKeyInfo> key_pending_;  // attached keyframes
   bool deepcopy_;     // copy objects when attaching
   bool attached_ = false;  // true if model is attached to a parent model
   std::unordered_map<const mjsCompiler*, mjSpec*> compiler2spec_;  // map from compiler to spec
+  std::vector<mjCBase*> detached_;  // list of detached objects
 };
 #endif  // MUJOCO_SRC_USER_USER_MODEL_H_

@@ -231,6 +231,14 @@ generalized velocities to subtree angular momentum. More precisely if :math:`h` 
 body index ``body`` in ``mjData.subtree_angmom`` (reported by the :ref:`subtreeangmom<sensor-subtreeangmom>` sensor)
 and :math:`\dot q` is the generalized velocity ``mjData.qvel``, then :math:`h = H \dot q`.
 
+.. _mj_name2id:
+
+Get id of object with the specified :ref:`mjtObj` type and name, returns -1 if id not found.
+
+.. _mj_id2name:
+
+Get name of object with the specified :ref:`mjtObj` type and id, returns ``NULL`` if name not found.
+
 .. _mj_geomDistance:
 
 Returns the smallest signed distance between two geoms and optionally the segment from ``geom1`` to ``geom2``.
@@ -710,8 +718,3 @@ to the inputs. Below, :math:`\bar q` denotes the pre-modified quaternion:
 
 Note that derivatives depend only on :math:`h` and :math:`v` (in fact, on :math:`s = h v`).
 All outputs are optional.
-
-.. _mjs_delete:
-
-Delete object corresponding to the given element, return 0 on success. This function should only be used for element
-types that cannot have children, i.e. excluding bodies and default classes.

@@ -16,7 +16,7 @@
 #define MUJOCO_MUJOCO_H_
 
 // header version; should match the library version as returned by mj_version()
-#define mjVERSION_HEADER 333
+#define mjVERSION_HEADER 334
 
 // needed to define size_t, fabs and log10
 #include <stdlib.h>
@@ -1411,11 +1411,6 @@ MJAPI void mju_taskJoin(mjTask* task);
 MJAPI mjsElement* mjs_attach(mjsElement* parent, const mjsElement* child,
                              const char* prefix, const char* suffix);
 
-// Delete body and descendants from mjSpec, remove all references, return 0 on success.
-MJAPI int mjs_detachBody(mjSpec* s, mjsBody* b);
-
-// Delete default class and descendants from mjSpec, remove all references, return 0 on success.
-MJAPI int mjs_detachDefault(mjSpec* s, mjsDefault* d);
 
 //---------------------------------- Tree elements -------------------------------------------------
 
@@ -1443,8 +1438,8 @@ MJAPI mjsLight* mjs_addLight(mjsBody* body, const mjsDefault* def);
 // Add frame to body.
 MJAPI mjsFrame* mjs_addFrame(mjsBody* body, mjsFrame* parentframe);
 
-// Delete object corresponding to the given element, return 0 on success.
-MJAPI int mjs_delete(mjsElement* element);
+// Remove object corresponding to the given element, return 0 on success.
+MJAPI int mjs_delete(mjSpec* spec, mjsElement* element);
 
 
 //---------------------------------- Non-tree elements ---------------------------------------------
@@ -1605,6 +1600,9 @@ MJAPI mjsElement* mjs_nextElement(mjSpec* s, mjsElement* element);
 
 //---------------------------------- Attribute setters ---------------------------------------------
 
+// Set element's name, return 0 on success.
+MJAPI int mjs_setName(mjsElement* element, const char* name);
+
 // Copy buffer.
 MJAPI void mjs_setBuffer(mjByteVec* dest, const void* array, int size);
 
@@ -1640,6 +1638,9 @@ MJAPI void mjs_setPluginAttributes(mjsPlugin* plugin, void* attributes);
 
 
 //---------------------------------- Attribute getters ---------------------------------------------
+
+// Get element's name.
+MJAPI mjString* mjs_getName(mjsElement* element);
 
 // Get string contents.
 MJAPI const char* mjs_getString(const mjString* source);

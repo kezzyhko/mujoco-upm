@@ -2,6 +2,36 @@
 Changelog
 =========
 
+Version 3.3.4 (July 8, 2025)
+-----------------------------------
+
+.. admonition:: Breaking API changes
+   :class: attention
+
+   1. The functions ``mjs_detachBody`` and ``mjs_detachDefault`` have been replaced by :ref:`mjs_delete`.
+   2. The Python functions ``element.delete`` have been replaced by ``spec.delete(element)``.
+
+General
+^^^^^^^
+3. Added support for setting the initial camera in the viewer using
+   :ref:`visual/global/cameraid<visual-global-cameraid>`.
+4. Added support to only sync the state in the Python :ref:`passive viewer<PyViewerPassive>`'s ``Sync`` method, this is
+   useful to improve performance. The default behavior is unchanged and copies the entire model and data.
+5. In the mjSpec C API, directly setting an element's name using :ref:`mjs_setString` has been replaced with a new
+   function :ref:`mjs_setName` which allows checking for naming collisions at set-time rather than compile-time, for
+   earlier catching of errors.
+
+Bug fixes
+^^^^^^^^^
+6. Inverse dynamics were not being computed correctly when :ref:`tendon armature<tendon-spatial-armature>` was present,
+   now fixed.
+7. Fix bug in ``mjx.put_data`` where ``actuator_moment`` was not being copied correctly for the C implementation.
+
+Documentation
+^^^^^^^^^^^^^
+8. Added missing item documentation and clarified the nature of breaking changes in the 3.3.3 changelog.
+   See items 3 and 4 below.
+
 Version 3.3.3 (June 10, 2025)
 -----------------------------
 
@@ -11,21 +41,36 @@ General
    solver and clears the way for the addition of the Newton and PGS solvers (currently only CG is supported).
 2. Removed the :at:`shell` plugin. This is now supported by :ref:`flexcomp<body-flexcomp>` and is active depending on
    the :ref:`elastic2d<flexcomp-elasticity-elastic2d>` attribute (off by default).
-3. Replaced the :ref:`directional<body-light-directional>` (boolean) field for lights with a
-   :ref:`type<body-light-type>` field (of type :ref:`mjtLightType<mjtLightType>`) to allow for additional lighting
-   types.
-4. Added new sub-component :ref:`mj_makeM` which combines the :ref:`mj_crb` call with additional logic to support the
+
+.. admonition:: Breaking API changes
+   :class: attention
+
+   3. Replaced the :ref:`directional<body-light-directional>` (boolean) field for lights with a
+      :ref:`type<body-light-type>` field (of type :ref:`mjtLightType<mjtLightType>`) to allow for additional lighting
+      types.
+
+      **Migration:** Replace light/directional="false/true" with light/type="spot/directional", respectively.
+
+   4. Added :ref:`mjtColorSpace` enum and associated :ref:`colorspace<asset-texture-colorspace>` attribute that allows
+      to specify the color space of textures (either linear or `sRGB <https://en.wikipedia.org/wiki/SRGB>`__). Since
+      this property is now read correctly from PNG files, textures files which use sRGB will now be rendered
+      differently.
+
+      **Migration:** Set :ref:`colorspace<asset-texture-colorspace>` to "linear" for all textures that should look like
+      they did before this change.
+
+5. Added new sub-component :ref:`mj_makeM` which combines the :ref:`mj_crb` call with additional logic to support the
    introduction in 3.3.1 of :ref:`tendon armature<tendon-spatial-armature>`. In addition to the traditional
    ``mjData.qM``, :ref:`mj_makeM` also computes ``mjData.M``, a CSR representation of the same matrix.
-5. Added a new function :ref:`mj_copyBack` to copy real-valued arrays in an mjModel to a compatible mjSpec.
-6. Removed the limitation of :ref:`fusestatic<compiler-fusestatic>` to models which contain no references. The fusestatic
-   flag will now fuse all bodies which are not referenced and ignore bodies which are referenced.
+6. Added a new function :ref:`mj_copyBack` to copy real-valued arrays in an mjModel to a compatible mjSpec.
+7. Removed the limitation of :ref:`fusestatic<compiler-fusestatic>` to models which contain no references. The
+   fusestatic flag will now fuse all bodies which are not referenced and ignore bodies which are referenced.
 
 Simulate
 ^^^^^^^^
-7. The struct ``mjv_sceneState`` has been removed. This struct was used for partial synchronization of ``mjModel`` and
-   ``mjData`` when the Python viewer is used in passive mode. This functionality is now provided by :ref:`mjv_copyModel`
-   and :ref:`mjv_copyData`, which don't copy arrays which are not required for visualization.
+8. The struct ``mjv_sceneState`` has been removed. This struct was used for partial synchronization of ``mjModel`` and
+   ``mjData`` when the Python viewer is used in passive mode. This functionality is now provided by
+   :ref:`mjv_copyModel` and :ref:`mjv_copyData`, which don't copy arrays which are not required for visualization.
 
 .. image:: images/changelog/procedural_terrain_generation.png
    :width: 33%
@@ -34,11 +79,11 @@ Simulate
 Python bindings
 ^^^^^^^^^^^^^^^
 
-8. Added examples of procedural terrain generation to the Model Editing tutorial: |mjspec_colab|
+9. Added examples of procedural terrain generation to the Model Editing tutorial: |mjspec_colab|
 
 MJX
 ^^^
-9. Added tendon armature.
+10. Added tendon armature.
 
 Version 3.3.2 (April 28, 2025)
 ------------------------------

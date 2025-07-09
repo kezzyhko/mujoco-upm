@@ -196,7 +196,7 @@ TEST_F(UserCModelTest, NestedZeroMassBodiesFail) {
     <worldbody>
       <body>
         <geom size="1"/>
-        <body>
+        <body name="bad">
           <freejoint/>
           <body>
             <body>
@@ -214,6 +214,7 @@ TEST_F(UserCModelTest, NestedZeroMassBodiesFail) {
       error,
       HasSubstr(
           "mass and inertia of moving bodies must be larger than mjMINVAL"));
+  EXPECT_THAT(error, HasSubstr("Element name 'bad'"));
   mj_deleteModel(model);
 }
 
@@ -708,7 +709,7 @@ TEST_F(MujocoTest, Modeldir) {
   mjsGeom* geom = mjs_addGeom(mjs_findBody(child, "world"), 0);
   mjs_setString(child->meshdir, "meshdir");
   mjs_setString(mesh->file, "cube.obj");
-  mjs_setString(mesh->name, "cube");
+  mjs_setName(mesh->element, "cube");
   mjs_setString(geom->meshname, "cube");
   mjs_setFrame(geom->element, frame);
   geom->type = mjGEOM_MESH;

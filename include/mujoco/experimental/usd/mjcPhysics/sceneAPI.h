@@ -17,25 +17,25 @@
 
 /// \file mjcPhysics/sceneAPI.h
 
-#include "./api.h"
-#include "./tokens.h"
-#include "pxr/base/gf/matrix4d.h"
-#include "pxr/base/gf/vec3d.h"
-#include "pxr/base/gf/vec3f.h"
-#include "pxr/base/tf/token.h"
-#include "pxr/base/tf/type.h"
-#include "pxr/base/vt/value.h"
-#include "pxr/pxr.h"
-#include "pxr/usd/usd/apiSchemaBase.h"
-#include "pxr/usd/usd/prim.h"
-#include "pxr/usd/usd/stage.h"
+#include <mujoco/experimental/usd/mjcPhysics/api.h>
+#include <mujoco/experimental/usd/mjcPhysics/tokens.h>
+#include <pxr/base/gf/matrix4d.h>
+#include <pxr/base/gf/vec3d.h>
+#include <pxr/base/gf/vec3f.h>
+#include <pxr/base/tf/token.h>
+#include <pxr/base/tf/type.h>
+#include <pxr/base/vt/value.h>
+#include <pxr/pxr.h>
+#include <pxr/usd/usd/apiSchemaBase.h>
+#include <pxr/usd/usd/prim.h>
+#include <pxr/usd/usd/stage.h>
 
 PXR_NAMESPACE_OPEN_SCOPE
 
 class SdfAssetPath;
 
 // -------------------------------------------------------------------------- //
-// SCENEAPI                                                                   //
+// MJCSCENEAPI                                                                //
 // -------------------------------------------------------------------------- //
 
 /// \class MjcPhysicsSceneAPI
@@ -110,7 +110,7 @@ class MjcPhysicsSceneAPI : public UsdAPISchemaBase {
   static bool CanApply(const UsdPrim &prim, std::string *whyNot = nullptr);
 
   /// Applies this <b>single-apply</b> API schema to the given \p prim.
-  /// This information is stored by adding "SceneAPI" to the
+  /// This information is stored by adding "MjcSceneAPI" to the
   /// token-valued, listOp metadata \em apiSchemas on the prim.
   ///
   /// \return A valid MjcPhysicsSceneAPI object is returned upon success.

@@ -76,11 +76,6 @@ MJAPI int mj_copyBack(mjSpec* s, const mjModel* m);
 MJAPI mjsElement* mjs_attach(mjsElement* parent, const mjsElement* child,
                              const char* prefix, const char* suffix);
 
-// Detach body from mjSpec, remove all references and delete the body, return 0 on success.
-MJAPI int mjs_detachBody(mjSpec* s, mjsBody* b);
-
-// Detach default from mjSpec, remove all references and delete the default, return 0 on success.
-MJAPI int mjs_detachDefault(mjSpec* s, mjsDefault* d);
 
 //---------------------------------- Add tree elements ---------------------------------------------
 
@@ -108,8 +103,8 @@ MJAPI mjsLight* mjs_addLight(mjsBody* body, const mjsDefault* def);
 // Add frame to body.
 MJAPI mjsFrame* mjs_addFrame(mjsBody* body, mjsFrame* parentframe);
 
-// Delete object corresponding to the given element, return 0 on success.
-MJAPI int mjs_delete(mjsElement* element);
+// Remove object corresponding to the given element, return 0 on success.
+MJAPI int mjs_delete(mjSpec* s, mjsElement* element);
 
 
 //---------------------------------- Add non-tree elements -----------------------------------------
@@ -344,6 +339,9 @@ MJAPI mjsPlugin* mjs_asPlugin(mjsElement* element);
 
 //---------------------------------- Attribute setters ---------------------------------------------
 
+// Set element's name, return 0 on success.
+MJAPI int mjs_setName(mjsElement* element, const char* name);
+
 // Copy buffer.
 MJAPI void mjs_setBuffer(mjByteVec* dest, const void* array, int size);
 
@@ -379,6 +377,9 @@ MJAPI void mjs_setPluginAttributes(mjsPlugin* plugin, void* attributes);
 
 
 //---------------------------------- Attribute getters ---------------------------------------------
+
+// Get element's name.
+MJAPI mjString* mjs_getName(mjsElement* element);
 
 // Get string contents.
 MJAPI const char* mjs_getString(const mjString* source);
