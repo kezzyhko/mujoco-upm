@@ -220,6 +220,7 @@
     X   ( int,     oct_depth,             noct,          1                    ) \
     X   ( int,     oct_child,             noct,          8                    ) \
     X   ( mjtNum,  oct_aabb,              noct,          6                    ) \
+    X   ( mjtNum,  oct_coeff,             noct,          8                    ) \
     X   ( int,     jnt_type,              njnt,          1                    ) \
     X   ( int,     jnt_qposadr,           njnt,          1                    ) \
     X   ( int,     jnt_dofadr,            njnt,          1                    ) \
@@ -540,6 +541,7 @@
     X   ( int,     sensor_objid,          nsensor,       1                    ) \
     X   ( int,     sensor_reftype,        nsensor,       1                    ) \
     X   ( int,     sensor_refid,          nsensor,       1                    ) \
+    X   ( int,     sensor_intprm,         nsensor,       mjNSENS              ) \
     X   ( int,     sensor_dim,            nsensor,       1                    ) \
     X   ( int,     sensor_adr,            nsensor,       1                    ) \
     X   ( mjtNum,  sensor_cutoff,         nsensor,       1                    ) \

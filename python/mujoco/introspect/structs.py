@@ -1590,6 +1590,14 @@ STRUCTS: Mapping[str, StructDecl] = dict([
                  array_extent=('noct', 6),
              ),
              StructFieldDecl(
+                 name='oct_coeff',
+                 type=PointerType(
+                     inner_type=ValueType(name='mjtNum'),
+                 ),
+                 doc='octree interpolation coefficients',
+                 array_extent=('noct', 8),
+             ),
+             StructFieldDecl(
                  name='jnt_type',
                  type=PointerType(
                      inner_type=ValueType(name='int'),
@@ -4148,6 +4156,14 @@ STRUCTS: Mapping[str, StructDecl] = dict([
                  ),
                  doc='id of reference frame; -1: global frame',
                  array_extent=('nsensor',),
+             ),
+             StructFieldDecl(
+                 name='sensor_intprm',
+                 type=PointerType(
+                     inner_type=ValueType(name='int'),
+                 ),
+                 doc='sensor parameters',
+                 array_extent=('nsensor', 'mjNSENS'),
              ),
              StructFieldDecl(
                  name='sensor_dim',
@@ -10387,6 +10403,14 @@ STRUCTS: Mapping[str, StructDecl] = dict([
                      inner_type=ValueType(name='mjString'),
                  ),
                  doc='name of referenced object',
+             ),
+             StructFieldDecl(
+                 name='intprm',
+                 type=ArrayType(
+                     inner_type=ValueType(name='int'),
+                     extents=(2,),
+                 ),
+                 doc='integer parameters',
              ),
              StructFieldDecl(
                  name='datatype',
