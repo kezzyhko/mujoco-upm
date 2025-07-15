@@ -139,6 +139,41 @@ TEST_F(MjcfSdfFileFormatPluginTest, TestBasicMeshSources) {
   EXPECT_PRIM_VALID(stage, "/mesh_test/test_body/tetrahedron/Mesh");
 }
 
+TEST_F(MjcfSdfFileFormatPluginTest, TestPhysicsMaterials) {
+  static constexpr char kXml[] = R"(
+    <mujoco model="physics materials test">
+      <worldbody>
+        <body name="test_body">
+          <geom name="geom_with_friction" type="sphere" size="1" friction="4 5 6"/>
+        </body>
+      </worldbody>
+    </mujoco>
+  )";
+  auto stage = OpenStageWithPhysics(kXml);
+  EXPECT_PRIM_VALID(
+      stage, "/physics_materials_test/PhysicsMaterials/geom_with_friction");
+  EXPECT_REL_HAS_TARGET(
+      stage,
+      "/physics_materials_test/test_body/geom_with_friction.material:binding",
+      "/physics_materials_test/PhysicsMaterials/geom_with_friction");
+  ExpectAttributeEqual(stage,
+                       "/physics_materials_test/PhysicsMaterials/"
+                       "geom_with_friction.physics:staticFriction",
+                       4.0f);
+  ExpectAttributeEqual(stage,
+                       "/physics_materials_test/PhysicsMaterials/"
+                       "geom_with_friction.physics:dynamicFriction",
+                       4.0f);
+  ExpectAttributeEqual(stage,
+                       "/physics_materials_test/PhysicsMaterials/"
+                       "geom_with_friction.mjc:torsionalfriction",
+                       5.0);
+  ExpectAttributeEqual(stage,
+                       "/physics_materials_test/PhysicsMaterials/"
+                       "geom_with_friction.mjc:rollingfriction",
+                       6.0);
+}
+
 TEST_F(MjcfSdfFileFormatPluginTest, TestMaterials) {
   const std::string xml_path = GetTestDataFilePath(kMaterialsPath);
 
@@ -1428,13 +1463,36 @@ TEST_F(MjcfSdfFileFormatPluginTest, TestMjcPhysicsCollisionAPI) {
   <mujoco model="test">
     <worldbody>
       <body name="body">
-        <geom name="box" type="box" size=".05 .05 .05" mass="0.1" shellinertia="true"/>
+        <geom
+          name="box"
+          type="box"
+          size=".05 .05 .05"
+          mass="0.1"
+          group="4"
+          priority="2"
+          condim="4"
+          solmix="0.5"
+          solref="0.1 0.2"
+          solimp="0.3 0.4 0.5 0.6 0.7"
+          margin="0.8"
+          gap="0.9"
+          shellinertia="true"/>
       </body>
     </worldbody>
   </mujoco>
   )";
   auto stage = OpenStageWithPhysics(xml);
 
+  ExpectAttributeEqual(stage, "/test/body/box.mjc:group", 4);
+  ExpectAttributeEqual(stage, "/test/body/box.mjc:priority", 2);
+  ExpectAttributeEqual(stage, "/test/body/box.mjc:condim", 4);
+  ExpectAttributeEqual(stage, "/test/body/box.mjc:solmix", 0.5);
+  ExpectAttributeEqual(stage, "/test/body/box.mjc:solref",
+                       pxr::VtArray<double>({0.1, 0.2}));
+  ExpectAttributeEqual(stage, "/test/body/box.mjc:solimp",
+                       pxr::VtArray<double>({0.3, 0.4, 0.5, 0.6, 0.7}));
+  ExpectAttributeEqual(stage, "/test/body/box.mjc:margin", 0.8);
+  ExpectAttributeEqual(stage, "/test/body/box.mjc:gap", 0.9);
   ExpectAttributeEqual(stage, "/test/body/box.mjc:shellinertia", true);
 }
 

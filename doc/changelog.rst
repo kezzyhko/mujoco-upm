@@ -9,8 +9,17 @@ General
 ^^^^^^^
 - Added the :ref:`insidesite<sensor-insidesite>` sensor, for checking if an object is inside the volume of a site.
   It is useful for triggering events in surrounding environment logic.
+- Added the :ref:`contact<sensor-contact>` sensor, for reporting contact information according to user-defined criteria.
+  The purpose of the :el:`contact` sensor is to report contact-related information in a fixed-size array. This is useful
+  as input to learning-based agents and in environment logic.
 - Removed the SdfLib plugin and the dependency on `SdfLib <https://github.com/UPC-ViRVIG/SdfLib>`__. SDFs are now
   supported natively in mjModel.
+
+Bug fixes
+^^^^^^^^^
+- Fixed a bug that caused object lists in the child to have missing elements after attaching an mjSpec. This was caused
+  by adding to the lists only the objects that belong to the tree of the requested body, but this causes to skip objects
+  that were attached, since they belong to the tree of the parent.
 
 Version 3.3.4 (July 8, 2025)
 ----------------------------
