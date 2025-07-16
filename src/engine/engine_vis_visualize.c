@@ -687,7 +687,7 @@ void mjv_addGeoms(const mjModel* m, mjData* d, const mjvOption* vopt,
   // flex BVH
   category = mjCAT_DECOR;
   objtype = mjOBJ_UNKNOWN;
-  if (vopt->flags[mjVIS_FLEXBVH]) {
+  if (vopt->flags[mjVIS_MESHBVH]) {
     for (int f=0; f < m->nflex; f++) {
       if (m->flex_bvhnum[f] && vopt->flexgroup[mjMAX(0, mjMIN(mjNGROUP-1, m->flex_group[f]))]) {
         for (int i=m->flex_bvhadr[f]; i < m->flex_bvhadr[f]+m->flex_bvhnum[f]; i++) {
@@ -763,7 +763,8 @@ void mjv_addGeoms(const mjModel* m, mjData* d, const mjvOption* vopt,
   if (vopt->flags[mjVIS_MESHBVH]) {
     for (int geomid = 0; geomid < m->ngeom; geomid++) {
       int meshid = m->geom_dataid[geomid];
-      if (m->geom_type[geomid] == mjGEOM_SDF || meshid == -1) {
+      // skip if not a mesh or if there is an octree
+      if (m->geom_type[geomid] == mjGEOM_SDF || meshid == -1 || m->mesh_octadr[meshid] >= 0) {
         continue;
       }
 
@@ -812,7 +813,7 @@ void mjv_addGeoms(const mjModel* m, mjData* d, const mjvOption* vopt,
   if (vopt->flags[mjVIS_MESHBVH]) {
     for (int geomid = 0; geomid < m->ngeom; geomid++) {
       int meshid = m->geom_dataid[geomid];
-      if (m->geom_type[geomid] != mjGEOM_SDF || meshid == -1) {
+      if (meshid == -1 || (m->geom_type[geomid] == mjGEOM_MESH && m->mesh_octadr[meshid] == -1)) {
         continue;
       }
 
