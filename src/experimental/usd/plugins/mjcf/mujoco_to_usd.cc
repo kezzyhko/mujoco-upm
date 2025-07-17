@@ -655,6 +655,72 @@ class ModelWriter {
     for (const auto &[token, flag] : disable_flags) {
       create_flag_attr(token, flag, false);
     }
+
+
+    // Compiler attributes
+    WriteUniformAttribute(physics_scene_path, pxr::SdfValueTypeNames->Bool,
+                          MjcPhysicsTokens->mjcCompilerAutoLimits,
+                          (bool)spec_->compiler.autolimits);
+
+    WriteUniformAttribute(physics_scene_path, pxr::SdfValueTypeNames->Double,
+                          MjcPhysicsTokens->mjcCompilerBoundMass,
+                          spec_->compiler.boundmass);
+
+    WriteUniformAttribute(physics_scene_path, pxr::SdfValueTypeNames->Double,
+                          MjcPhysicsTokens->mjcCompilerBoundInertia,
+                          spec_->compiler.boundinertia);
+
+    WriteUniformAttribute(physics_scene_path, pxr::SdfValueTypeNames->Double,
+                          MjcPhysicsTokens->mjcCompilerSetTotalMass,
+                          spec_->compiler.settotalmass);
+
+    WriteUniformAttribute(physics_scene_path, pxr::SdfValueTypeNames->Bool,
+                          MjcPhysicsTokens->mjcCompilerUseThread,
+                          (bool)spec_->compiler.usethread);
+
+    WriteUniformAttribute(physics_scene_path, pxr::SdfValueTypeNames->Bool,
+                          MjcPhysicsTokens->mjcCompilerBalanceInertia,
+                          (bool)spec_->compiler.balanceinertia);
+
+    WriteUniformAttribute(physics_scene_path, pxr::SdfValueTypeNames->Token,
+                          MjcPhysicsTokens->mjcCompilerAngle,
+                          spec_->compiler.degree ? MjcPhysicsTokens->degree:MjcPhysicsTokens->radian);
+
+    WriteUniformAttribute(physics_scene_path, pxr::SdfValueTypeNames->Bool,
+                          MjcPhysicsTokens->mjcCompilerFitAABB,
+                          (bool)spec_->compiler.fitaabb);
+
+    WriteUniformAttribute(physics_scene_path, pxr::SdfValueTypeNames->Bool,
+                          MjcPhysicsTokens->mjcCompilerFuseStatic,
+                          (bool)spec_->compiler.fusestatic);
+
+    pxr::TfToken inertiafromgeom_token = MjcPhysicsTokens->auto_;
+    if (spec_->compiler.inertiafromgeom ==
+        mjINERTIAFROMGEOM_TRUE) {  // mjINERTIA_TRUE
+      inertiafromgeom_token = MjcPhysicsTokens->true_;
+    } else if (spec_->compiler.inertiafromgeom ==
+               mjINERTIAFROMGEOM_FALSE) {  // mjINERTIA_FALSE
+      inertiafromgeom_token = MjcPhysicsTokens->false_;
+    }
+    WriteUniformAttribute(physics_scene_path, pxr::SdfValueTypeNames->Token,
+                          MjcPhysicsTokens->mjcCompilerInertiaFromGeom,
+                          inertiafromgeom_token);
+
+    WriteUniformAttribute(physics_scene_path, pxr::SdfValueTypeNames->Bool,
+                          MjcPhysicsTokens->mjcCompilerAlignFree,
+                          (bool)spec_->compiler.alignfree);
+
+    WriteUniformAttribute(physics_scene_path, pxr::SdfValueTypeNames->Int,
+                          MjcPhysicsTokens->mjcCompilerInertiaGroupRangeMin,
+                          spec_->compiler.inertiagrouprange[0]);
+
+    WriteUniformAttribute(physics_scene_path, pxr::SdfValueTypeNames->Int,
+                          MjcPhysicsTokens->mjcCompilerInertiaGroupRangeMax,
+                          spec_->compiler.inertiagrouprange[1]);
+
+    WriteUniformAttribute(physics_scene_path, pxr::SdfValueTypeNames->Bool,
+                          MjcPhysicsTokens->mjcCompilerSaveInertial,
+                          (bool)spec_->compiler.saveinertial);
   }
 
   void WriteMeshes() {
@@ -765,9 +831,8 @@ class ModelWriter {
 
     mjsGeom *geom_default = mjs_getDefault(geom->element)->geom;
     if (geom->friction[0] != geom_default->friction[0]) {
-      WriteUniformAttribute(material_path, pxr::SdfValueTypeNames->Float,
-                            pxr::UsdPhysicsTokens->physicsStaticFriction,
-                            (float)geom->friction[0]);
+      // Since MuJoCo has no concept of static friction, only write dynamic
+      // friction to remain truthful to how MuJoCo perceives the data.
       WriteUniformAttribute(material_path, pxr::SdfValueTypeNames->Float,
                             pxr::UsdPhysicsTokens->physicsDynamicFriction,
                             (float)geom->friction[0]);
