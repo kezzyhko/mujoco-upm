@@ -21,6 +21,7 @@
 
 #include <mujoco/experimental/usd/mjcPhysics/actuator.h>
 #include <mujoco/experimental/usd/mjcPhysics/collisionAPI.h>
+#include <mujoco/experimental/usd/mjcPhysics/imageableAPI.h>
 #include <mujoco/experimental/usd/mjcPhysics/jointAPI.h>
 #include <mujoco/experimental/usd/mjcPhysics/keyframe.h>
 #include <mujoco/experimental/usd/mjcPhysics/materialAPI.h>
@@ -32,6 +33,7 @@
 #include <mujoco/experimental/usd/utils.h>
 #include <mujoco/mujoco.h>
 #include "experimental/usd/kinematic_tree.h"
+#include "experimental/usd/material_parsing.h"
 #include <pxr/base/gf/declare.h>
 #include <pxr/base/gf/matrix4d.h>
 #include <pxr/base/gf/rotation.h>
@@ -77,6 +79,7 @@ struct UsdCaches {
   pxr::UsdGeomXformCache xform_cache;
   pxr::UsdShadeMaterialBindingAPI::BindingsCache bindings_cache;
   pxr::UsdShadeMaterialBindingAPI::CollectionQueryCache collection_query_cache;
+  std::map<pxr::SdfPath, mjsMaterial*> parsed_materials;
 };
 
 void SetDoubleArrFromGfVec3d(double* to, const pxr::GfVec3d& from) {
@@ -264,10 +267,13 @@ bool MaybeParseGeomPrimitive(const pxr::UsdPrim& prim, T* element,
   return true;
 }
 
-mjsMesh* ParseUsdMesh(mjSpec* spec, const pxr::UsdPrim& prim, mjsGeom* geom, pxr::UsdGeomXformCache& xform_cache) {
+mjsMesh* ParseUsdMesh(mjSpec* spec, const pxr::UsdPrim& prim, mjsGeom* geom,
+                      pxr::UsdGeomXformCache& xform_cache) {
   if (!prim.IsA<pxr::UsdGeomMesh>()) {
     return nullptr;
   }
+  mjsMesh* mesh = mjs_addMesh(spec, nullptr);
+
   geom->type = mjGEOM_MESH;
   pxr::UsdGeomMesh usd_mesh(prim);
   std::vector<float> uservert;
@@ -276,11 +282,54 @@ mjsMesh* ParseUsdMesh(mjSpec* spec, const pxr::UsdPrim& prim, mjsGeom* geom, pxr
   pxr::VtVec3fArray points;
   usd_mesh.GetPointsAttr().Get(&points);
 
+  pxr::VtVec2fArray uvs;
+  pxr::VtIntArray uv_indices;
+  std::vector<float> texcoord;
+  std::vector<int> userfacetexcoord;
+
+  pxr::UsdGeomPrimvarsAPI primvarsAPI(prim);
+  pxr::UsdGeomPrimvar st_primvar =
+      primvarsAPI.FindPrimvarWithInheritance(pxr::TfToken("st"));
+
   uservert.reserve(points.size() * 3);
   for (const auto& pt : points) {
     uservert.push_back(pt[0]);
     uservert.push_back(pt[1]);
     uservert.push_back(pt[2]);
+  }
+
+  bool has_uvs = st_primvar.HasAuthoredValue();
+  bool face_varying_uvs = has_uvs && st_primvar.GetInterpolation() ==
+                                         pxr::UsdGeomTokens->faceVarying;
+  bool st_indexed = st_primvar.IsIndexed();
+  if (has_uvs) {
+    pxr::VtVec2fArray uvs;
+    st_primvar.Get(&uvs);
+
+    if (st_indexed) {
+      st_primvar.GetIndices(&uv_indices);
+    }
+
+    // If the UVs do not vary per point per face, then we need to compute the
+    // effective uv array taking indexing into account as we do not support UV
+    // indexing in mujoco.
+    if (!face_varying_uvs && st_primvar.IsIndexed()) {
+      texcoord.reserve(uv_indices.size() * 2);
+      for (const auto& idx : uv_indices) {
+        auto uv = uvs[idx];
+        texcoord.push_back(uv[0]);
+        // USD origin is bottom left, MuJoCo is top left.
+        texcoord.push_back(1.0f - uv[1]);
+      }
+    } else {
+      texcoord.reserve(uvs.size() * 2);
+      for (const auto& uv : uvs) {
+        texcoord.push_back(uv[0]);
+        // USD origin is bottom left, MuJoCo is top left.
+        texcoord.push_back(1.0f - uv[1]);
+      }
+    }
+    mjs_setFloat(mesh->usertexcoord, texcoord.data(), texcoord.size());
   }
 
   pxr::VtIntArray indices;
@@ -298,12 +347,21 @@ mjsMesh* ParseUsdMesh(mjSpec* spec, const pxr::UsdPrim& prim, mjsGeom* geom, pxr
       userface.push_back(indices[vtx_idx]);
       userface.push_back(indices[vtx_idx + k]);
       userface.push_back(indices[vtx_idx + k + 1]);
+
+      // If the UVs vary per face, then we need to compute the effective
+      // index array after we've created the triangle fan for non triangular
+      // faces.
+      if (face_varying_uvs) {
+        userfacetexcoord.push_back(st_indexed ? uv_indices[vtx_idx] : vtx_idx);
+        userfacetexcoord.push_back(st_indexed ? uv_indices[vtx_idx + k]
+                                              : vtx_idx + k);
+        userfacetexcoord.push_back(st_indexed ? uv_indices[vtx_idx + k + 1]
+                                              : vtx_idx + k + 1);
+      }
       k++;
     }
     vtx_idx += count;
   }
-
-  mjsMesh* mesh = mjs_addMesh(spec, nullptr);
 
   auto world_xform = xform_cache.GetLocalToWorldTransform(prim);
   auto scale = GetScale(world_xform);
@@ -315,6 +373,11 @@ mjsMesh* ParseUsdMesh(mjSpec* spec, const pxr::UsdPrim& prim, mjsGeom* geom, pxr
   mjs_setName(mesh->element, mesh_name.c_str());
   mjs_setFloat(mesh->uservert, uservert.data(), uservert.size());
   mjs_setInt(mesh->userface, userface.data(), userface.size());
+
+  if (face_varying_uvs) {
+    mjs_setInt(mesh->userfacetexcoord, userfacetexcoord.data(),
+               userfacetexcoord.size());
+  }
 
   mjs_setString(geom->meshname, mesh_name.c_str());
   return mesh;
@@ -1273,6 +1336,30 @@ void ParseUsdGeomGprim(mjSpec* spec, const pxr::UsdPrim& gprim,
   if (!MaybeParseGeomPrimitive(gprim, geom, caches.xform_cache)) {
     ParseUsdMesh(spec, gprim, geom, caches.xform_cache);
   }
+
+  pxr::UsdShadeMaterial bound_material =
+      pxr::UsdShadeMaterialBindingAPI(gprim).ComputeBoundMaterial(
+          &caches.bindings_cache, &caches.collection_query_cache);
+  if (bound_material) {
+    pxr::SdfPath material_path = bound_material.GetPrim().GetPath();
+    mjsMaterial* material = nullptr;
+    if (caches.parsed_materials.find(material_path) !=
+        caches.parsed_materials.end()) {
+      material = caches.parsed_materials[material_path];
+    } else {
+      material = ParseMaterial(spec, bound_material);
+      caches.parsed_materials[material_path] = material;
+    }
+    mjs_setString(geom->material, mjs_getName(material->element)->c_str());
+  }
+
+  if (gprim.HasAPI<pxr::MjcPhysicsImageableAPI>()) {
+    auto imageable_api = pxr::MjcPhysicsImageableAPI(gprim);
+    auto group_attr = imageable_api.GetGroupAttr();
+    if (group_attr.HasAuthoredValue()) {
+      group_attr.Get(&geom->group);
+    }
+  }
 }
 
 void ParseUsdPhysicsCollider(mjSpec* spec,
@@ -1312,9 +1399,10 @@ void ParseUsdPhysicsCollider(mjSpec* spec,
     }
   }
 
-  // Parse the Mass API after the physics material APIs since the density attribute
-  // from the Mass API is supposed to override the Material API density attribute.
-  // See https://openusd.org/dev/api/usd_physics_page_front.html
+  // Parse the Mass API after the physics material APIs since the density
+  // attribute from the Mass API is supposed to override the Material API
+  // density attribute. See
+  // https://openusd.org/dev/api/usd_physics_page_front.html
   if (prim.HasAPI<pxr::UsdPhysicsMassAPI>()) {
     ParseUsdPhysicsMassAPIForGeom(geom, pxr::UsdPhysicsMassAPI(prim));
   }
@@ -1595,8 +1683,9 @@ void PopulateSpecFromTree(pxr::UsdStageRefPtr stage, mjSpec* spec,
           : stage->GetPrimAtPath(current_node->body_path);
 
   for (const auto& gprim_path : current_node->visual_gprims) {
-    ParseUsdGeomGprim(spec, stage->GetPrimAtPath(gprim_path),
-                      body_prim_for_xform, current_mj_body, caches);
+    auto gprim = stage->GetPrimAtPath(gprim_path);
+    ParseUsdGeomGprim(spec, gprim, body_prim_for_xform, current_mj_body,
+                      caches);
   }
 
   for (const auto& collider_path : current_node->colliders) {
