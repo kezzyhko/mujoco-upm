@@ -230,9 +230,9 @@ const char* MJCF[nMJCF][mjXATTRNUM] = {
 
     {"asset", "*", "0"},
     {"<"},
-        {"mesh", "*", "14", "name", "class", "content_type", "file", "vertex", "normal",
+        {"mesh", "*", "16", "name", "class", "content_type", "file", "vertex", "normal",
             "texcoord", "face", "refpos", "refquat", "scale", "smoothnormal",
-            "maxhullvert", "inertia"},
+            "maxhullvert", "inertia", "builtin", "params"},
         {"<"},
           {"plugin", "*", "2", "plugin", "instance"},
           {"<"},
@@ -822,6 +822,20 @@ const mjMap meshinertia_map[4] = {
   {"legacy", mjMESH_INERTIA_LEGACY},
   {"exact", mjMESH_INERTIA_EXACT},
   {"shell", mjMESH_INERTIA_SHELL}
+};
+
+
+// mesh builtin type
+const int meshbuiltin_sz = 8;
+const mjMap meshbuiltin_map[meshbuiltin_sz] = {
+  {"none", mjMESH_BUILTIN_NONE},
+  {"sphere", mjMESH_BUILTIN_SPHERE},
+  {"hemisphere", mjMESH_BUILTIN_HEMISPHERE},
+  {"prism", mjMESH_BUILTIN_PRISM},
+  {"cone", mjMESH_BUILTIN_CONE},
+  {"torus", mjMESH_BUILTIN_TORUS},
+  {"wedge", mjMESH_BUILTIN_WEDGE},
+  {"plate", mjMESH_BUILTIN_PLATE}
 };
 
 
@@ -1536,6 +1550,21 @@ void mjXReader::OneMesh(XMLElement* elem, mjsMesh* mesh, const mjVFS* vfs) {
     auto userface = ReadAttrVec<int>(elem, "face");
     if (userface.has_value()) {
       mjs_setInt(mesh->userface, userface->data(), userface->size());
+    }
+  }
+
+  // read builtin options
+  if (MapValue(elem, "builtin", &n, meshbuiltin_map, meshbuiltin_sz)) {
+    std::vector<double> params;
+    int nparams = ReadVector(elem, "params", params, text, /*required*/ true);
+    if (file) {
+      throw mjXError(elem, "builtin cannot be used with a mesh file");
+    }
+    if (!mesh->uservert->empty()) {
+      throw mjXError(elem, "builtin mesh cannot be used with user vertex data");
+    }
+    if (mjs_makeMesh(mesh, (mjtMeshBuiltin)n, params.data(), nparams)) {
+      throw mjXError(elem, mjs_getError(spec));
     }
   }
 
@@ -4216,18 +4245,17 @@ void mjXReader::Sensor(XMLElement* section) {
       }
       sensor->intprm[0] = dataspec;
 
-      // number of contacts, sensor dim
-      sensor->dim = 1;
-      ReadAttrInt(elem, "num", &sensor->dim);
-      if (sensor->dim <= 0) {
-        throw mjXError(elem, "'num' must be positive in sensor");
-      }
-      sensor->dim *= mju_condataSize(dataspec);
-
       // reduction type (intprm[1])
       sensor->intprm[1] = 0;
       if (MapValue(elem, "reduce", &n, reduce_map, reduce_sz)) {
         sensor->intprm[1] = n;
+      }
+
+      // number of contacts (intprm[2])
+      sensor->intprm[2] = 1;
+      ReadAttrInt(elem, "num", &sensor->intprm[2]);
+      if (sensor->intprm[2] <= 0) {
+        throw mjXError(elem, "'num' must be positive in sensor");
       }
 
       // sensor type

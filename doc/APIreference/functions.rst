@@ -4074,6 +4074,15 @@ Add texture.
 
 Add material.
 
+.. _mjs_makeMesh:
+
+`mjs_makeMesh <#mjs_makeMesh>`__
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+.. mujoco-include:: mjs_makeMesh
+
+Sets the vertices and normals of a mesh.
+
 .. _FindAndGetUtilities:
 
 Find and get utilities
@@ -4452,6 +4461,15 @@ Return user payload or NULL if none found.
 .. mujoco-include:: mjs_deleteUserValue
 
 Delete user payload.
+
+.. _mjs_sensorDim:
+
+`mjs_sensorDim <#mjs_sensorDim>`__
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+.. mujoco-include:: mjs_sensorDim
+
+Return sensor dimension.
 
 .. _ElementInitialization:
 

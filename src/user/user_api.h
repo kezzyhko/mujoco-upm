@@ -209,6 +209,8 @@ MJAPI mjsTexture* mjs_addTexture(mjSpec* s);
 // Add material.
 MJAPI mjsMaterial* mjs_addMaterial(mjSpec* s, const mjsDefault* def);
 
+// Sets the vertices and normals of a mesh.
+MJAPI int mjs_makeMesh(mjsMesh* mesh, mjtMeshBuiltin builtin, double* params, int nparams);
 
 //---------------------------------- Find/get utilities --------------------------------------------
 
@@ -420,6 +422,8 @@ MJAPI const void* mjs_getUserValue(mjsElement* element, const char* key);
 // Delete user payload.
 MJAPI void mjs_deleteUserValue(mjsElement* element, const char* key);
 
+// Return sensor dimension.
+MJAPI int mjs_sensorDim(const mjsSensor* sensor);
 
 //---------------------------------- Initialization  -----------------------------------------------
 

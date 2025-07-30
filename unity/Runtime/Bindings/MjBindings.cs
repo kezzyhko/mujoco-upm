@@ -49,7 +49,7 @@ public const int mjNBIAS = 10;
 public const int mjNFLUID = 12;
 public const int mjNREF = 2;
 public const int mjNIMP = 5;
-public const int mjNSENS = 2;
+public const int mjNSENS = 3;
 public const int mjNSOLVER = 200;
 public const int mjNISLAND = 20;
 public const bool THIRD_PARTY_MUJOCO_INCLUDE_MJPLUGIN_H_ = true;
@@ -495,6 +495,16 @@ public enum mjtMeshInertia : int{
   mjMESH_INERTIA_EXACT = 1,
   mjMESH_INERTIA_LEGACY = 2,
   mjMESH_INERTIA_SHELL = 3,
+}
+public enum mjtMeshBuiltin : int{
+  mjMESH_BUILTIN_NONE = 0,
+  mjMESH_BUILTIN_SPHERE = 1,
+  mjMESH_BUILTIN_HEMISPHERE = 2,
+  mjMESH_BUILTIN_PRISM = 3,
+  mjMESH_BUILTIN_CONE = 4,
+  mjMESH_BUILTIN_TORUS = 5,
+  mjMESH_BUILTIN_WEDGE = 6,
+  mjMESH_BUILTIN_PLATE = 7,
 }
 public enum mjtBuiltin : int{
   mjBUILTIN_NONE = 0,
