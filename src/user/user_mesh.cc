@@ -22,6 +22,7 @@
 #include <cstring>
 #include <functional>
 #include <limits>
+#include <map>
 #include <memory>
 #include <set>
 #include <string>
@@ -183,6 +184,8 @@ template <typename T>
 static void ReadFromBuffer(T* dst, const char* src) {
   std::memcpy(dst, src, sizeof(T));
 }
+
+
 
 //------------------ class mjCMesh implementation --------------------------------------------------
 
@@ -432,6 +435,8 @@ void mjCMesh::LoadSDF() {
   delete[] field;
 }
 
+
+
 void mjCMesh::CacheMesh(mjCCache* cache, const mjResource* resource) {
   if (cache == nullptr) return;
 
@@ -520,6 +525,8 @@ struct VertexKey {
 };
 
 }  // namespace
+
+
 
 // convert vertices to double precision and remove repeated vertices if requested
 void mjCMesh::ProcessVertices(const std::vector<float>& vert, bool remove_repeated) {
@@ -622,6 +629,8 @@ bool mjCMesh::IsMSH() const {
   return content_type_ == "model/vnd.mujoco.msh";
 }
 
+
+
 // load mesh from resource; throw error on failure
 void mjCMesh::LoadFromResource(mjResource* resource, bool remove_repeated) {
   // set content type from resource name
@@ -645,6 +654,8 @@ void mjCMesh::LoadFromResource(mjResource* resource, bool remove_repeated) {
   }
 }
 
+
+
 // compiler wrapper
 void mjCMesh::Compile(const mjVFS* vfs) {
   try {
@@ -657,6 +668,8 @@ void mjCMesh::Compile(const mjVFS* vfs) {
     throw err;
   }
 }
+
+
 
 // compiler
 void mjCMesh::TryCompile(const mjVFS* vfs) {
@@ -1106,6 +1119,8 @@ void mjCMesh::LoadOBJ(mjResource* resource, bool remove_repeated) {
   ProcessVertices(attrib.vertices, remove_repeated);
 }
 
+
+
 // load mesh from cached asset, return true on success
 bool mjCMesh::LoadCachedMesh(mjCCache *cache, const mjResource* resource) {
   auto process_mesh = [&](const void* data) {
@@ -1176,6 +1191,8 @@ bool mjCMesh::LoadCachedMesh(mjCCache *cache, const mjResource* resource) {
   // check that cached asset has all data
   return cache->PopulateData(resource, process_mesh);
 }
+
+
 
 // load STL binary mesh
 void mjCMesh::LoadSTL(mjResource* resource) {
@@ -1339,6 +1356,8 @@ void mjCMesh::LoadMSH(mjResource* resource, bool remove_repeated) {
   ProcessVertices(vert, remove_repeated);
 }
 
+
+
 // compute the volume and center-of-mass of the mesh given the face centroid
 double mjCMesh::ComputeVolume(double CoM[3], const double facecen[3]) const {
   double normal[3], center[3], total_volume = 0;
@@ -1376,6 +1395,8 @@ double mjCMesh::ComputeVolume(double CoM[3], const double facecen[3]) const {
   return total_volume;
 }
 
+
+
 // compute the surface area and center-of-mass of the mesh given the face centroid
 double mjCMesh::ComputeSurfaceArea(double CoM[3], const double facecen[3]) const {
   double surface = 0;
@@ -1401,6 +1422,8 @@ double mjCMesh::ComputeSurfaceArea(double CoM[3], const double facecen[3]) const
   }
   return surface;
 }
+
+
 
 // apply transformations
 void mjCMesh::ApplyTransformations() {
@@ -1470,6 +1493,8 @@ void mjCMesh::ApplyTransformations() {
   }
 }
 
+
+
 // find centroid of faces, return total area
 double mjCMesh::ComputeFaceCentroid(double facecen[3]) const {
   double total_area = 0;
@@ -1495,6 +1520,8 @@ double mjCMesh::ComputeFaceCentroid(double facecen[3]) const {
   }
   return total_area;
 }
+
+
 
 void mjCMesh::Process() {
   // create half-edge structure (if mesh was in XML)
@@ -1737,6 +1764,7 @@ double mjCMesh::ComputeInertia(double inert[6], const double CoM[3]) const {
 }
 
 
+
 void mjCMesh::Rotate(double quat[4]) {
   // rotate vertices and normals of mesh by quaternion
   double neg[4] = {quat[0], -quat[1], -quat[2], -quat[3]};
@@ -1804,15 +1832,18 @@ void mjCMesh::CheckInitialMesh() const {
 
 
 
-// get inertia pointer
+// return inertia pointer
 double* mjCMesh::GetInertiaBoxPtr() {
   return boxsz_;
 }
 
 
+
+// return volume or surface area
 double mjCMesh::GetVolumeRef() const {
   return (inertia == mjMESH_INERTIA_SHELL) ? surface_ : volume_;
 }
+
 
 
 // make graph describing convex hull
@@ -1999,6 +2030,8 @@ void mjCMesh::MakeGraph() {
   }
 }
 
+
+
 // copy graph into face data
 void mjCMesh::CopyGraph() {
   // only if face data is missing
@@ -2021,6 +2054,234 @@ void mjCMesh::CopyGraph() {
     face_[3*i + 2] = graph_[j + 2];
   }
 }
+
+
+
+// make a mesh of a hemisphere
+void mjCMesh::MakeHemisphere(int res, bool make_faces, bool make_cap) {
+  constexpr double kNorthPole[3] = {0, 0, 1};
+  constexpr double kEquator[4][3] = {
+      {1, 0, 0},
+      {0, 1, 0},
+      {-1, 0, 0},
+      {0, -1, 0},
+  };
+
+  // allocate vertices
+  int nvert = 1 + 2 * (res + 1) * (res + 2);
+  nvert += make_cap && make_faces;  // add center vertex for bottom cap faces
+  std::vector<float> vert(3 * nvert);
+
+  // north pole
+  vert[0] = kNorthPole[0];
+  vert[1] = kNorthPole[1];
+  vert[2] = kNorthPole[2];
+
+  // iterate through rows from north pole to equator, compute vertices
+  int v = 1;
+  for (int row = 0; row <= res; row++) {
+    // iterate through the four sides
+    for (int side = 0; side < 4; side++) {
+      double factor = static_cast<double>(row + 1) / (res + 1);
+      double start[3], end[3];
+
+      // start and end points of current arc
+      for (int i = 0; i < 3; i++) {
+        start[i] = kNorthPole[i] + factor * (kEquator[side][i] - kNorthPole[i]);
+        end[i] = kNorthPole[i] + factor * (kEquator[(side + 1) % 4][i] - kNorthPole[i]);
+      }
+
+      // step size for interpolation along the arc
+      double delta[3];
+      for (int i = 0; i < 3; i++) {
+        delta[i] = (end[i] - start[i]) / (row + 1);
+      }
+
+      // interpolate points along the arc
+      for (int i = 0; i < row + 1; i++) {
+        double p[3];
+        for (int j = 0; j < 3; j++) {
+          p[j] = start[j] + i * delta[j];
+        }
+
+        // normalize point to lie on hemisphere surface
+        double norm = std::sqrt(p[0] * p[0] + p[1] * p[1] + p[2] * p[2]);
+        vert[3 * v + 0] = p[0] / norm;
+        vert[3 * v + 1] = p[1] / norm;
+        vert[3 * v + 2] = p[2] / norm;
+        v++;
+      }
+    }
+  }
+
+  // optional center vertex for bottom cap (for symmetry)
+  if (make_faces && make_cap) {
+    vert[3 * (nvert - 1) + 0] = 0;
+    vert[3 * (nvert - 1) + 1] = 0;
+    vert[3 * (nvert - 1) + 2] = 0;
+  }
+
+  // save vertices
+  mjs_setFloat(spec.uservert, vert.data(), 3 * nvert);
+
+  if (make_faces) {
+    // allocate faces
+    int nface = 4 * (res + 1) * (res + 1);
+    nface += make_cap * (4 * (res + 1));  // bottom cap faces
+    std::vector<int> face(3 * nface);
+
+    // faces connected to north pole
+    int f = 0;
+    face[f++] = 0; face[f++] = 1; face[f++] = 2;
+    face[f++] = 0; face[f++] = 2; face[f++] = 3;
+    face[f++] = 0; face[f++] = 3; face[f++] = 4;
+    face[f++] = 0; face[f++] = 4; face[f++] = 1;
+
+    // faces on the hemisphere from north pole to equator
+    for (int row = 0; row < res; row++) {
+      const int start_curr = 2 * row * (row + 1) + 1;
+      const int count_curr = 4 * (row + 1);
+      const int start_next = start_curr + count_curr;
+      const int count_next = 4 * (row + 2);
+
+      for (int side = 0; side < 4; side++) {
+        for (int i = 0; i < row + 2; i++) {
+          const int v_curr = i + (row + 1) * side;
+          const int v_next = i + (row + 2) * side;
+          face[f++] = start_curr + v_curr % count_curr;
+          face[f++] = start_next + v_next % count_next;
+          face[f++] = start_next + (v_next + 1) % count_next;
+
+          if (i < row + 1) {
+            face[f++] = start_curr + v_curr % count_curr;
+            face[f++] = start_next + (v_next + 1) % count_next;
+            face[f++] = start_curr + (v_curr + 1) % count_curr;
+          }
+        }
+      }
+    }
+
+    if (make_cap) {
+      // add faces for the bottom cap
+      const int start = 2 * res * (res + 1) + 1;
+      const int count = 4 * (res + 1);
+      for (int i = 0; i < count; i++) {
+        face[f++] = start + i;
+        face[f++] = nvert - 1;
+        face[f++] = start + (i + 1) % count;
+      }
+    }
+
+    // save faces
+    mjs_setInt(spec.userface, face.data(), 3 * nface);
+  }
+}
+
+
+
+// make a mesh of a sphere using icosaheral subdivision
+void mjCMesh::MakeSphere(int subdiv, bool make_faces) {
+  // make icosahedron
+  const float phi = (1.0 + std::sqrt(5.0)) / 2.0;
+  std::vector<float> vert = {
+      -1.0,  phi, 0.0,
+       1.0,  phi, 0.0,
+      -1.0, -phi, 0.0,
+       1.0, -phi, 0.0,
+
+       0.0, -1.0,  phi,
+       0.0,  1.0,  phi,
+       0.0, -1.0, -phi,
+       0.0,  1.0, -phi,
+
+       phi,  0.0, -1.0,
+       phi,  0.0,  1.0,
+      -phi,  0.0, -1.0,
+      -phi,  0.0,  1.0,
+  };
+
+  // normalize vertices to be on a unit sphere
+  const double norm = std::sqrt(1.0 + phi * phi);
+  for (float& v : vert) {
+    v /= norm;
+  }
+
+  std::vector<int> face = {
+    0,  11, 5,    0,  5,  1,    0,  1,  7,    0,  7,  10,   0,  10, 11,
+    1,  5,  9,    5,  11, 4,    11, 10, 2,    10, 7,  6,    7,  1,  8,
+    3,  9,  4,    3,  4,  2,    3,  2,  6,    3,  6,  8,    3,  8,  9,
+    4,  9,  5,    2,  4,  11,   6,  2,  10,   8,  6,  7,    9,  8,  1
+  };
+
+  // subdivision
+  if (subdiv > 0) {
+    // helper to get or create a midpoint vertex
+    auto get_midpoint = [&vert](
+        int v1_idx, int v2_idx, std::map<std::pair<int, int>, int>& cache) -> int {
+      // key is the pair of vertex indices, sorted
+      std::pair<int, int> key = std::minmax(v1_idx, v2_idx);
+
+      // if midpoint is already in cache, return its index
+      auto it = cache.find(key);
+      if (it != cache.end()) {
+        return it->second;
+      }
+
+      // otherwise, create it
+      const float* v1 = &vert[v1_idx * 3];
+      const float* v2 = &vert[v2_idx * 3];
+
+      float mid_x = (v1[0] + v2[0]) / 2.0f;
+      float mid_y = (v1[1] + v2[1]) / 2.0f;
+      float mid_z = (v1[2] + v2[2]) / 2.0f;
+
+      // normalize the new vertex to put it on the sphere
+      float mid_norm = std::sqrt(mid_x * mid_x + mid_y * mid_y + mid_z * mid_z);
+      mid_x /= mid_norm;
+      mid_y /= mid_norm;
+      mid_z /= mid_norm;
+
+      // add the new vertex to the list
+      int new_idx = vert.size() / 3;
+      vert.push_back(mid_x);
+      vert.push_back(mid_y);
+      vert.push_back(mid_z);
+
+      // add to cache
+      cache[key] = new_idx;
+
+      return new_idx;
+    };
+
+    // subdivision loop
+    for (int i = 0; i < subdiv; ++i) {
+      std::map<std::pair<int, int>, int> midpoint_cache;
+      std::vector<int> new_face;
+      new_face.reserve(face.size() * 4);
+      for (size_t j = 0; j < face.size(); j += 3) {
+        int v1 = face[j];
+        int v2 = face[j+1];
+        int v3 = face[j+2];
+
+        int m12 = get_midpoint(v1, v2, midpoint_cache);
+        int m23 = get_midpoint(v2, v3, midpoint_cache);
+        int m31 = get_midpoint(v3, v1, midpoint_cache);
+
+        new_face.insert(new_face.end(), {v1, m12, m31});
+        new_face.insert(new_face.end(), {v2, m23, m12});
+        new_face.insert(new_face.end(), {v3, m31, m23});
+        new_face.insert(new_face.end(), {m12, m23, m31});
+      }
+      face = std::move(new_face);
+    }
+  }
+
+  // save vertices and maybe faces
+  mjs_setFloat(spec.uservert, vert.data(), vert.size());
+  if (make_faces) mjs_setInt(spec.userface, face.data(), face.size());
+}
+
+
 
 // make a mesh of a spherical wedge
 void mjCMesh::MakeWedge(int resolution[2], double fov[2], double gamma) {
@@ -2046,6 +2307,8 @@ void mjCMesh::MakeWedge(int resolution[2], double fov[2], double gamma) {
   mjs_setFloat(spec.usernormal, usernormal.data(),
                9 * resolution[0] * resolution[1]);
 }
+
+
 
 // make a mesh of a rectangle
 void mjCMesh::MakeRect(int resolution[2]) {
@@ -2089,22 +2352,35 @@ void mjCMesh::MakeRect(int resolution[2]) {
              6 * (resolution[0] - 1) * (resolution[1] - 1));
 }
 
-// make a mesh of a prism
-void mjCMesh::MakePrism(int nedge) {
-  int layer = 2;
-  std::vector<float> uservert(3 * nedge * layer, 0);
 
+
+// make a mesh of a generalized discrete cone
+void mjCMesh::MakeCone(int nedge, double radius) {
+  int n = 3 * (nedge + (radius > 0 ? nedge : 1));
+  std::vector<float> uservert(n, 0);
+
+  // bottom face
   for (int i = 0; i < nedge; i++) {
-    for (int j = 0; j < layer; j++) {
-      int v = i * layer + j;
-      uservert[3 * v + 0] = std::cos(2 * i * mjPI / nedge);
-      uservert[3 * v + 1] = std::sin(2 * i * mjPI / nedge);
-      uservert[3 * v + 2] = -1 + 2 * j / (layer - 1);
-    }
+    uservert[3 * i + 0] = std::cos(2 * i * mjPI / nedge);
+    uservert[3 * i + 1] = std::sin(2 * i * mjPI / nedge);
+    uservert[3 * i + 2] = -1;
   }
 
-  mjs_setFloat(spec.uservert, uservert.data(), 3 * nedge * layer);
+  // top face or single point
+  if (radius > 0) {
+    for (int i = nedge; i < 2 * nedge; i++) {
+      uservert[3 * i + 0] = radius * std::cos(2 * i * mjPI / nedge);
+      uservert[3 * i + 1] = radius * std::sin(2 * i * mjPI / nedge);
+      uservert[3 * i + 2] = 1;
+    }
+  } else {
+    uservert[3 * nedge + 2] = 1;
+  }
+
+  mjs_setFloat(spec.uservert, uservert.data(), n);
 }
+
+
 
 // compute vertex normals
 void mjCMesh::MakeNormal() {
@@ -2435,8 +2711,7 @@ void MeshPolygon::InsertFace(int v1, int v2, int v3) {
 
 
 
-// return the traverse vertices of the polygon; there may be multiple paths if the polygon is
-// not connected
+// return the transverse vertices of the polygon, multiple paths possible if not connected
 std::vector<std::vector<int> > MeshPolygon::Paths() const {
   std::vector<std::vector<int> > paths;
   // shortcut if polygon is just a triangular face
@@ -2548,6 +2823,7 @@ void mjCMesh::MakePolygons() {
     }
   }
 }
+
 
 
 //------------------ class mjCSkin implementation --------------------------------------------------
