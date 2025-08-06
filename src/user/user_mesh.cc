@@ -76,6 +76,9 @@ namespace {
   using mujoco::user::FilePath;
   using std::max;
   using std::min;
+  using std::sin;
+  using std::cos;
+  using std::pow;
 
   // Parametrized linear/quintic interpolated nonlinearity.
   double Fovea(double x, double gamma) {
@@ -84,7 +87,7 @@ namespace {
 
     // Foveal deformation.
     double g = mjMAX(0, mjMIN(1, gamma));
-    return g * std::pow(x, 5) + (1 - g) * x;
+    return g * pow(x, 5) + (1 - g) * x;
   }
 
   // Evenly spaced numbers over a specified interval.
@@ -120,18 +123,16 @@ namespace {
   // Transform spherical (azimuth, elevation, radius) to Cartesian (x,y,z).
   void SphericalToCartesian(const double aer[3], float xyz[3]) {
     double a = aer[0], e = aer[1], r = aer[2];
-    xyz[0] = r * std::cos(e) * std::sin(a);
-    xyz[1] = r * std::sin(e);
-    xyz[2] = -r * std::cos(e) * std::cos(a);
+    xyz[0] = r * cos(e) * sin(a);
+    xyz[1] = r * sin(e);
+    xyz[2] = -r * cos(e) * cos(a);
   }
 
   // Tangent frame in Cartesian coordinates.
   void TangentFrame(const double aer[3], float mat[9]) {
     double a = aer[0], e = aer[1], r = aer[2];
-    double ta[3] = {r * std::cos(e) * std::cos(a), 0,
-                    r * std::cos(e) * std::sin(a)};
-    double te[3] = {-r * std::sin(e) * std::sin(a), r * std::cos(e),
-                    r * std::sin(e) * std::cos(a)};
+    double ta[3] = {r * cos(e) * cos(a), 0, r * cos(e) * sin(a)};
+    double te[3] = {-r * sin(e) * sin(a), r * cos(e), r * sin(e) * cos(a)};
     double n[3];
     mjuu_normvec(ta, 3);
     mjuu_normvec(te, 3);
@@ -139,6 +140,14 @@ namespace {
     mjuu_copyvec(mat + 6, te, 3);
     mjuu_crossvec(n, te, ta);
     mjuu_copyvec(mat, n, 3);
+  }
+
+  // parametric superellipsoid/supertoroid helper functions
+  double aux_c(double omega, double m) {
+    return std::copysign(pow(std::abs(cos(omega)), m), cos(omega));
+  }
+  double aux_s(double omega, double m) {
+    return std::copysign(pow(std::abs(sin(omega)), m), sin(omega));
   }
 }  // namespace
 
@@ -2057,7 +2066,7 @@ void mjCMesh::CopyGraph() {
 
 
 
-// make a mesh of a hemisphere
+// make a mesh of a hemisphere (quad projected)
 void mjCMesh::MakeHemisphere(int res, bool make_faces, bool make_cap) {
   constexpr double kNorthPole[3] = {0, 0, 1};
   constexpr double kEquator[4][3] = {
@@ -2283,6 +2292,174 @@ void mjCMesh::MakeSphere(int subdiv, bool make_faces) {
 
 
 
+// make a mesh of a supersphere
+void mjCMesh::MakeSupersphere(int res, double e, double n) {
+  // allocate vertices and faces
+  int nvert = (res - 1) * res + 2;
+  int nface = 2 * res * (res - 1);
+  std::vector<float> vert;
+  vert.reserve(3 * nvert);
+  std::vector<int> face;
+  face.reserve(3 * nface);
+
+  // south pole
+  vert.insert(vert.end(), {0.0f, 0.0f, -1.0f});
+
+  // rings
+  for (int i = 1; i < res; i++) {
+    double v = -mjPI/2 + i * mjPI / res;
+    for (int j = 0; j < res; j++) {
+      double u = -mjPI + j * 2 * mjPI / res;
+      vert.push_back(aux_c(v, n) * aux_c(u, e));
+      vert.push_back(aux_c(v, n) * aux_s(u, e));
+      vert.push_back(aux_s(v, n));
+    }
+  }
+
+  // north pole
+  vert.insert(vert.end(), {0.0f, 0.0f, 1.0f});
+
+  // south pole faces
+  for (int j = 0; j < res; j++) {
+    int v2 = 1 + j;
+    int v3 = 1 + (j + 1) % res;
+    face.insert(face.end(), {0, v3, v2});
+  }
+
+  // ring faces
+  for (int i = 0; i < res - 2; i++) {
+    for (int j = 0; j < res; j++) {
+      int v1 = 1 + i * res + j;
+      int v2 = 1 + i * res + (j + 1) % res;
+      int v4 = 1 + (i + 1) * res + j;
+      int v3 = 1 + (i + 1) * res + (j + 1) % res;
+      face.insert(face.end(), {v1, v2, v4});
+      face.insert(face.end(), {v2, v3, v4});
+    }
+  }
+
+  // north pole faces
+  int north_pole_idx = nvert - 1;
+  int last_ring_start_idx = 1 + (res - 2) * res;
+  for (int j = 0; j < res; j++) {
+    int v1 = last_ring_start_idx + j;
+    int v2 = last_ring_start_idx + (j + 1) % res;
+    face.insert(face.end(), {v1, v2, north_pole_idx});
+  }
+
+  // save vertices and faces
+  mjs_setFloat(spec.uservert, vert.data(), vert.size());
+  mjs_setInt(spec.userface, face.data(), face.size());
+}
+
+
+
+// make a mesh of a torus (subsumed by supertorus, kept for reference only)
+void mjCMesh::MakeTorus(int res, double radius) {
+  // allocate vertices and faces
+  int nvert = res * res;
+  int nface = res * res * 2;
+  std::vector<float> vert(3 * nvert);
+  std::vector<int> face(3 * nface);
+
+  // generate vertices
+  for (int i = 0; i < res; ++i) {
+    for (int j = 0; j < res; ++j) {
+      double u = 2 * mjPI * i / res;
+      double v = 2 * mjPI * j / res;
+      int vidx = i * res + j;
+      vert[3 * vidx + 0] = (1 + radius * cos(v)) * cos(u);
+      vert[3 * vidx + 1] = (1 + radius * cos(v)) * sin(u);
+      vert[3 * vidx + 2] = radius * sin(v);
+    }
+  }
+
+  // generate faces
+  int fidx = 0;
+  for (int i = 0; i < res; ++i) {
+    for (int j = 0; j < res; ++j) {
+      int i_next = (i + 1) % res;
+      int j_next = (j + 1) % res;
+
+      int v1 = i * res + j;
+      int v2 = i_next * res + j;
+      int v3 = i_next * res + j_next;
+      int v4 = i * res + j_next;
+
+      // first triangle
+      face[3 * fidx + 0] = v1;
+      face[3 * fidx + 1] = v2;
+      face[3 * fidx + 2] = v4;
+      fidx++;
+
+      // second triangle
+      face[3 * fidx + 0] = v2;
+      face[3 * fidx + 1] = v3;
+      face[3 * fidx + 2] = v4;
+      fidx++;
+    }
+  }
+
+  // save vertices and faces
+  mjs_setFloat(spec.uservert, vert.data(), vert.size());
+  mjs_setInt(spec.userface, face.data(), face.size());
+}
+
+
+
+// make a mesh of a supertoroid, see https://en.wikipedia.org/wiki/Supertoroid
+void mjCMesh::MakeSupertorus(int res, double radius, double s, double t) {
+  // allocate vertices and faces
+  int nvert = res * res;
+  int nface = res * res * 2;
+  std::vector<float> vert(3 * nvert);
+  std::vector<int> face(3 * nface);
+
+  // generate vertices
+  for (int i = 0; i < res; ++i) {
+    for (int j = 0; j < res; ++j) {
+      double u = 2 * mjPI * i / res;
+      double v = 2 * mjPI * j / res;
+      int vidx = i * res + j;
+      vert[3 * vidx + 0] = (1 + radius * aux_c(v, s)) * aux_c(u, t);
+      vert[3 * vidx + 1] = (1 + radius * aux_c(v, s)) * aux_s(u, t);
+      vert[3 * vidx + 2] = radius * aux_s(v, s);
+    }
+  }
+
+  // generate faces
+  int fidx = 0;
+  for (int i = 0; i < res; ++i) {
+    for (int j = 0; j < res; ++j) {
+      int i_next = (i + 1) % res;
+      int j_next = (j + 1) % res;
+
+      int v1 = i * res + j;
+      int v2 = i_next * res + j;
+      int v3 = i_next * res + j_next;
+      int v4 = i * res + j_next;
+
+      // first triangle
+      face[3 * fidx + 0] = v1;
+      face[3 * fidx + 1] = v2;
+      face[3 * fidx + 2] = v4;
+      fidx++;
+
+      // second triangle
+      face[3 * fidx + 0] = v2;
+      face[3 * fidx + 1] = v3;
+      face[3 * fidx + 2] = v4;
+      fidx++;
+    }
+  }
+
+  // save vertices and faces
+  mjs_setFloat(spec.uservert, vert.data(), vert.size());
+  mjs_setInt(spec.userface, face.data(), face.size());
+}
+
+
+
 // make a mesh of a spherical wedge
 void mjCMesh::MakeWedge(int resolution[2], double fov[2], double gamma) {
   std::vector<double> x_edges(resolution[0] + 1, 0);
@@ -2361,16 +2538,16 @@ void mjCMesh::MakeCone(int nedge, double radius) {
 
   // bottom face
   for (int i = 0; i < nedge; i++) {
-    uservert[3 * i + 0] = std::cos(2 * i * mjPI / nedge);
-    uservert[3 * i + 1] = std::sin(2 * i * mjPI / nedge);
+    uservert[3 * i + 0] = cos(2 * i * mjPI / nedge);
+    uservert[3 * i + 1] = sin(2 * i * mjPI / nedge);
     uservert[3 * i + 2] = -1;
   }
 
   // top face or single point
   if (radius > 0) {
     for (int i = nedge; i < 2 * nedge; i++) {
-      uservert[3 * i + 0] = radius * std::cos(2 * i * mjPI / nedge);
-      uservert[3 * i + 1] = radius * std::sin(2 * i * mjPI / nedge);
+      uservert[3 * i + 0] = radius * cos(2 * i * mjPI / nedge);
+      uservert[3 * i + 1] = radius * sin(2 * i * mjPI / nedge);
       uservert[3 * i + 2] = 1;
     }
   } else {
@@ -3660,7 +3837,7 @@ void inline ComputeLinearStiffness(std::vector<double>& K,
                                    double E, double nu) {
   // only linear elements are supported for now
   int order = 2;
-  int n = std::pow(order, 3);
+  int n = pow(order, 3);
   int ndof = 3*n;
 
   // compute quadrature points

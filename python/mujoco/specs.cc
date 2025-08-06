@@ -1025,13 +1025,13 @@ PYBIND11_MODULE(_specs, m) {
       py::arg("subdivision"));
   mjsMesh.def(
       "make_hemisphere",
-      [](raw::MjsMesh* self, int subdivision) {
-        double params[1] = {static_cast<double>(subdivision)};
+      [](raw::MjsMesh* self, int resolution) {
+        double params[1] = {static_cast<double>(resolution)};
         if (mjs_makeMesh(self, mjMESH_BUILTIN_HEMISPHERE, params, 1)) {
           throw pybind11::value_error(mjs_getError(mjs_getSpec(self->element)));
         }
       },
-      py::arg("subdivision"));
+      py::arg("resolution"));
   mjsMesh.def(
       "make_cone",
       [](raw::MjsMesh* self, int nedge, double radius) {
@@ -1041,6 +1041,25 @@ PYBIND11_MODULE(_specs, m) {
         }
       },
       py::arg("nedge"), py::arg("radius"));
+  mjsMesh.def(
+      "make_supersphere",
+      [](raw::MjsMesh* self, int resolution, double e, double n) {
+        double params[3] = {static_cast<double>(resolution), e, n};
+        if (mjs_makeMesh(self, mjMESH_BUILTIN_SUPERSPHERE, params, 3)) {
+          throw pybind11::value_error(mjs_getError(mjs_getSpec(self->element)));
+        }
+      },
+      py::arg("resolution"), py::arg("e"), py::arg("n"));
+  mjsMesh.def(
+      "make_supertorus",
+      [](raw::MjsMesh* self, int resolution, double radius, double s,
+         double t) {
+        double params[4] = {static_cast<double>(resolution), radius, s, t};
+        if (mjs_makeMesh(self, mjMESH_BUILTIN_SUPERTORUS, params, 4)) {
+          throw pybind11::value_error(mjs_getError(mjs_getSpec(self->element)));
+        }
+      },
+      py::arg("resolution"), py::arg("radius"), py::arg("s"), py::arg("t"));
   mjsMesh.def(
       "make_plate",
       [](raw::MjsMesh* self, std::array<int, 2>& resolution) {

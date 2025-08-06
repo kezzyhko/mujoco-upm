@@ -1789,7 +1789,8 @@ typedef enum mjtMeshBuiltin_ {      // type of built-in procedural mesh
   mjMESH_BUILTIN_SPHERE,            // sphere
   mjMESH_BUILTIN_HEMISPHERE,        // hemisphere
   mjMESH_BUILTIN_CONE,              // cone
-  mjMESH_BUILTIN_TORUS,             // torus
+  mjMESH_BUILTIN_SUPERSPHERE,       // supersphere
+  mjMESH_BUILTIN_SUPERTORUS,        // supertorus
   mjMESH_BUILTIN_WEDGE,             // wedge
   mjMESH_BUILTIN_PLATE,             // plate
 } mjtMeshBuiltin;
