@@ -22,6 +22,7 @@
 #include <cstring>
 #include <functional>
 #include <limits>
+#include <map>
 #include <memory>
 #include <set>
 #include <string>
@@ -32,6 +33,7 @@
 
 #include <mujoco/mjspec.h>
 #include "user/user_api.h"
+#include <TriangleMeshDistance/include/tmd/TriangleMeshDistance.h>
 
 #ifdef MUJOCO_TINYOBJLOADER_IMPL
 #define TINYOBJLOADER_IMPLEMENTATION
@@ -74,6 +76,79 @@ namespace {
   using mujoco::user::FilePath;
   using std::max;
   using std::min;
+  using std::sin;
+  using std::cos;
+  using std::pow;
+
+  // Parametrized linear/quintic interpolated nonlinearity.
+  double Fovea(double x, double gamma) {
+    // Quick return.
+    if (!gamma) return x;
+
+    // Foveal deformation.
+    double g = mjMAX(0, mjMIN(1, gamma));
+    return g * pow(x, 5) + (1 - g) * x;
+  }
+
+  // Evenly spaced numbers over a specified interval.
+  void LinSpace(double lower, double upper, int n, double array[]) {
+    double increment = n > 1 ? (upper - lower) / (n - 1) : 0;
+    for (int i = 0; i < n; ++i) {
+      *array = lower;
+      ++array;
+      lower += increment;
+    }
+  }
+
+  // Make bin edges.
+  void BinEdges(double* x_edges, double* y_edges, int size[2], double fov[2],
+                double gamma) {
+    // Make unit bin edges.
+    LinSpace(-1, 1, size[0] + 1, x_edges);
+    LinSpace(-1, 1, size[1] + 1, y_edges);
+
+    // Apply foveal deformation.
+    for (int i = 0; i < size[0] + 1; i++) {
+      x_edges[i] = Fovea(x_edges[i], gamma);
+    }
+    for (int i = 0; i < size[1] + 1; i++) {
+      y_edges[i] = Fovea(y_edges[i], gamma);
+    }
+
+    // Scale by field-of-view.
+    mjuu_scalevec(x_edges, x_edges, fov[0] * mjPI / 180, size[0] + 1);
+    mjuu_scalevec(y_edges, y_edges, fov[1] * mjPI / 180, size[1] + 1);
+  }
+
+  // Transform spherical (azimuth, elevation, radius) to Cartesian (x,y,z).
+  void SphericalToCartesian(const double aer[3], float xyz[3]) {
+    double a = aer[0], e = aer[1], r = aer[2];
+    xyz[0] = r * cos(e) * sin(a);
+    xyz[1] = r * sin(e);
+    xyz[2] = -r * cos(e) * cos(a);
+  }
+
+  // Tangent frame in Cartesian coordinates.
+  void TangentFrame(const double aer[3], float mat[9]) {
+    double a = aer[0], e = aer[1], r = aer[2];
+    double ta[3] = {r * cos(e) * cos(a), 0, r * cos(e) * sin(a)};
+    double te[3] = {-r * sin(e) * sin(a), r * cos(e), r * sin(e) * cos(a)};
+    double n[3];
+    mjuu_normvec(ta, 3);
+    mjuu_normvec(te, 3);
+    mjuu_copyvec(mat + 3, ta, 3);
+    mjuu_copyvec(mat + 6, te, 3);
+    mjuu_crossvec(n, te, ta);
+    mjuu_copyvec(mat, n, 3);
+  }
+
+  // parametric superellipsoid/supertoroid helper functions
+  double aux_c(double omega, double m) {
+    return std::copysign(pow(std::abs(cos(omega)), m), cos(omega));
+  }
+  double aux_s(double omega, double m) {
+    return std::copysign(pow(std::abs(sin(omega)), m), sin(omega));
+  }
 }  // namespace
 
 // compute triangle area, surface normal, center
@@ -119,6 +194,8 @@ static void ReadFromBuffer(T* dst, const char* src) {
   std::memcpy(dst, src, sizeof(T));
 }
 
+
+
 //------------------ class mjCMesh implementation --------------------------------------------------
 
 mjCMesh::mjCMesh(mjCModel* _model, mjCDef* _def) {
@@ -139,7 +216,7 @@ mjCMesh::mjCMesh(mjCModel* _model, mjCDef* _def) {
   maxhullvert_ = -1;
   processed_ = false;
   visual_ = true;
-  needoct_ = false;
+  needreorient_ = true;
 
   // reset to default if given
   if (_def) {
@@ -359,11 +436,15 @@ void mjCMesh::LoadSDF() {
     userface.push_back(index);
   }
 
+  needreorient_ = false;
+  needsdf = false;
   normal_ = std::move(usernormal);
   face_ = std::move(userface);
   ProcessVertices(uservert);
   delete[] field;
 }
+
+
 
 void mjCMesh::CacheMesh(mjCCache* cache, const mjResource* resource) {
   if (cache == nullptr) return;
@@ -453,6 +534,8 @@ struct VertexKey {
 };
 
 }  // namespace
+
+
 
 // convert vertices to double precision and remove repeated vertices if requested
 void mjCMesh::ProcessVertices(const std::vector<float>& vert, bool remove_repeated) {
@@ -555,6 +638,8 @@ bool mjCMesh::IsMSH() const {
   return content_type_ == "model/vnd.mujoco.msh";
 }
 
+
+
 // load mesh from resource; throw error on failure
 void mjCMesh::LoadFromResource(mjResource* resource, bool remove_repeated) {
   // set content type from resource name
@@ -578,6 +663,8 @@ void mjCMesh::LoadFromResource(mjResource* resource, bool remove_repeated) {
   }
 }
 
+
+
 // compiler wrapper
 void mjCMesh::Compile(const mjVFS* vfs) {
   try {
@@ -590,6 +677,8 @@ void mjCMesh::Compile(const mjVFS* vfs) {
     throw err;
   }
 }
+
+
 
 // compiler
 void mjCMesh::TryCompile(const mjVFS* vfs) {
@@ -678,18 +767,36 @@ void mjCMesh::TryCompile(const mjVFS* vfs) {
   // compute mesh properties
   if (!fromCache) {
     Process();
-
-    if (!file_.empty()) {
-      CacheMesh(cache, resource_);
-    }
   }
 
   // make octree
-  if (!needoct_) {
-    octree_.Clear();
-  } else if (octree_.Nodes().empty()) {
+  if (!needsdf) {
+    octree_.Clear();  // this occurs when a non-SDF mesh is loaded from a cached SDF mesh
+  } else if (octree_.NumNodes() == 0) {
     octree_.SetFace(vert_, face_);
     octree_.CreateOctree(aamm_);
+
+    // compute sdf coefficients
+    if (!plugin.active) {
+      tmd::TriangleMeshDistance sdf(vert_.data(), nvert(), face_.data(), nface());
+
+      std::vector<double> coeffs(octree_.NumVerts());
+      for (int i = 0; i < octree_.NumVerts(); ++i) {
+        coeffs[i] = sdf.signed_distance(octree_.Vert(i)).distance;
+      }
+
+      // TODO: the value at hanging vertices should be computed from the parent
+      for (int i = 0; i < octree_.NumNodes(); ++i) {
+        for (int j = 0; j < 8; j++) {
+            octree_.AddCoeff(i, j, coeffs[octree_.VertId(i, j)]);
+        }
+      }
+    }
+  }
+
+  // cache mesh
+  if (!fromCache && !file_.empty()) {
+    CacheMesh(cache, resource_);
   }
 
   // close resource
@@ -1020,6 +1127,8 @@ void mjCMesh::LoadOBJ(mjResource* resource, bool remove_repeated) {
   ProcessVertices(attrib.vertices, remove_repeated);
 }
 
+
+
 // load mesh from cached asset, return true on success
 bool mjCMesh::LoadCachedMesh(mjCCache *cache, const mjResource* resource) {
   auto process_mesh = [&](const void* data) {
@@ -1090,6 +1199,8 @@ bool mjCMesh::LoadCachedMesh(mjCCache *cache, const mjResource* resource) {
   // check that cached asset has all data
   return cache->PopulateData(resource, process_mesh);
 }
+
+
 
 // load STL binary mesh
 void mjCMesh::LoadSTL(mjResource* resource) {
@@ -1253,6 +1364,8 @@ void mjCMesh::LoadMSH(mjResource* resource, bool remove_repeated) {
   ProcessVertices(vert, remove_repeated);
 }
 
+
+
 // compute the volume and center-of-mass of the mesh given the face centroid
 double mjCMesh::ComputeVolume(double CoM[3], const double facecen[3]) const {
   double normal[3], center[3], total_volume = 0;
@@ -1290,6 +1403,8 @@ double mjCMesh::ComputeVolume(double CoM[3], const double facecen[3]) const {
   return total_volume;
 }
 
+
+
 // compute the surface area and center-of-mass of the mesh given the face centroid
 double mjCMesh::ComputeSurfaceArea(double CoM[3], const double facecen[3]) const {
   double surface = 0;
@@ -1315,6 +1430,8 @@ double mjCMesh::ComputeSurfaceArea(double CoM[3], const double facecen[3]) const
   }
   return surface;
 }
+
+
 
 // apply transformations
 void mjCMesh::ApplyTransformations() {
@@ -1384,6 +1501,8 @@ void mjCMesh::ApplyTransformations() {
   }
 }
 
+
+
 // find centroid of faces, return total area
 double mjCMesh::ComputeFaceCentroid(double facecen[3]) const {
   double total_area = 0;
@@ -1409,6 +1528,8 @@ double mjCMesh::ComputeFaceCentroid(double facecen[3]) const {
   }
   return total_area;
 }
+
+
 
 void mjCMesh::Process() {
   // create half-edge structure (if mesh was in XML)
@@ -1466,7 +1587,11 @@ void mjCMesh::Process() {
 
   // facenormal might not exist if usernormal was specified
   if (facenormal_.empty()) {
-    facenormal_ = face_;
+    int normal_per_vertex = normal_.size() / vert_.size();
+    facenormal_.assign(face_.size(), 0);
+    for (int i = 0; i < face_.size(); i++) {
+      facenormal_[i] = normal_per_vertex * face_[i];
+    }
   }
 
   MakePolygons();
@@ -1538,6 +1663,12 @@ void mjCMesh::Process() {
   boxsz_[0] = 0.5 * std::sqrt(6*(eigval[1] + eigval[2] - eigval[0])/volume);
   boxsz_[1] = 0.5 * std::sqrt(6*(eigval[0] + eigval[2] - eigval[1])/volume);
   boxsz_[2] = 0.5 * std::sqrt(6*(eigval[0] + eigval[1] - eigval[2])/volume);
+
+  // prevent reorientation if the mesh was autogenerated using marching cubes
+  if (!needreorient_) {
+    mjuu_setvec(CoM, 0, 0, 0);
+    mjuu_setvec(quattmp, 1, 0, 0, 0);
+  }
 
   // transform CoM to origin
   for (int i=0; i < nvert(); i++) {
@@ -1641,6 +1772,7 @@ double mjCMesh::ComputeInertia(double inert[6], const double CoM[3]) const {
 }
 
 
+
 void mjCMesh::Rotate(double quat[4]) {
   // rotate vertices and normals of mesh by quaternion
   double neg[4] = {quat[0], -quat[1], -quat[2], -quat[3]};
@@ -1708,15 +1840,18 @@ void mjCMesh::CheckInitialMesh() const {
 
 
 
-// get inertia pointer
+// return inertia pointer
 double* mjCMesh::GetInertiaBoxPtr() {
   return boxsz_;
 }
 
 
+
+// return volume or surface area
 double mjCMesh::GetVolumeRef() const {
   return (inertia == mjMESH_INERTIA_SHELL) ? surface_ : volume_;
 }
+
 
 
 // make graph describing convex hull
@@ -1903,6 +2038,8 @@ void mjCMesh::MakeGraph() {
   }
 }
 
+
+
 // copy graph into face data
 void mjCMesh::CopyGraph() {
   // only if face data is missing
@@ -1924,6 +2061,499 @@ void mjCMesh::CopyGraph() {
     face_[3*i + 1] = graph_[j + 1];
     face_[3*i + 2] = graph_[j + 2];
   }
+}
+
+
+
+// make a mesh of a hemisphere (quad projected)
+void mjCMesh::MakeHemisphere(int res, bool make_faces, bool make_cap) {
+  constexpr double kNorthPole[3] = {0, 0, 1};
+  constexpr double kEquator[4][3] = {
+      {1, 0, 0},
+      {0, 1, 0},
+      {-1, 0, 0},
+      {0, -1, 0},
+  };
+
+  // allocate vertices
+  int nvert = 1 + 2 * (res + 1) * (res + 2);
+  nvert += make_cap && make_faces;  // add center vertex for bottom cap faces
+  std::vector<float> vert(3 * nvert);
+
+  // north pole
+  vert[0] = kNorthPole[0];
+  vert[1] = kNorthPole[1];
+  vert[2] = kNorthPole[2];
+
+  // iterate through rows from north pole to equator, compute vertices
+  int v = 1;
+  for (int row = 0; row <= res; row++) {
+    // iterate through the four sides
+    for (int side = 0; side < 4; side++) {
+      double factor = static_cast<double>(row + 1) / (res + 1);
+      double start[3], end[3];
+
+      // start and end points of current arc
+      for (int i = 0; i < 3; i++) {
+        start[i] = kNorthPole[i] + factor * (kEquator[side][i] - kNorthPole[i]);
+        end[i] = kNorthPole[i] + factor * (kEquator[(side + 1) % 4][i] - kNorthPole[i]);
+      }
+
+      // step size for interpolation along the arc
+      double delta[3];
+      for (int i = 0; i < 3; i++) {
+        delta[i] = (end[i] - start[i]) / (row + 1);
+      }
+
+      // interpolate points along the arc
+      for (int i = 0; i < row + 1; i++) {
+        double p[3];
+        for (int j = 0; j < 3; j++) {
+          p[j] = start[j] + i * delta[j];
+        }
+
+        // normalize point to lie on hemisphere surface
+        double norm = std::sqrt(p[0] * p[0] + p[1] * p[1] + p[2] * p[2]);
+        vert[3 * v + 0] = p[0] / norm;
+        vert[3 * v + 1] = p[1] / norm;
+        vert[3 * v + 2] = p[2] / norm;
+        v++;
+      }
+    }
+  }
+
+  // optional center vertex for bottom cap (for symmetry)
+  if (make_faces && make_cap) {
+    vert[3 * (nvert - 1) + 0] = 0;
+    vert[3 * (nvert - 1) + 1] = 0;
+    vert[3 * (nvert - 1) + 2] = 0;
+  }
+
+  // save vertices
+  mjs_setFloat(spec.uservert, vert.data(), 3 * nvert);
+
+  if (make_faces) {
+    // allocate faces
+    int nface = 4 * (res + 1) * (res + 1);
+    nface += make_cap * (4 * (res + 1));  // bottom cap faces
+    std::vector<int> face(3 * nface);
+
+    // faces connected to north pole
+    int f = 0;
+    face[f++] = 0; face[f++] = 1; face[f++] = 2;
+    face[f++] = 0; face[f++] = 2; face[f++] = 3;
+    face[f++] = 0; face[f++] = 3; face[f++] = 4;
+    face[f++] = 0; face[f++] = 4; face[f++] = 1;
+
+    // faces on the hemisphere from north pole to equator
+    for (int row = 0; row < res; row++) {
+      const int start_curr = 2 * row * (row + 1) + 1;
+      const int count_curr = 4 * (row + 1);
+      const int start_next = start_curr + count_curr;
+      const int count_next = 4 * (row + 2);
+
+      for (int side = 0; side < 4; side++) {
+        for (int i = 0; i < row + 2; i++) {
+          const int v_curr = i + (row + 1) * side;
+          const int v_next = i + (row + 2) * side;
+          face[f++] = start_curr + v_curr % count_curr;
+          face[f++] = start_next + v_next % count_next;
+          face[f++] = start_next + (v_next + 1) % count_next;
+
+          if (i < row + 1) {
+            face[f++] = start_curr + v_curr % count_curr;
+            face[f++] = start_next + (v_next + 1) % count_next;
+            face[f++] = start_curr + (v_curr + 1) % count_curr;
+          }
+        }
+      }
+    }
+
+    if (make_cap) {
+      // add faces for the bottom cap
+      const int start = 2 * res * (res + 1) + 1;
+      const int count = 4 * (res + 1);
+      for (int i = 0; i < count; i++) {
+        face[f++] = start + i;
+        face[f++] = nvert - 1;
+        face[f++] = start + (i + 1) % count;
+      }
+    }
+
+    // save faces
+    mjs_setInt(spec.userface, face.data(), 3 * nface);
+  }
+}
+
+
+
+// make a mesh of a sphere using icosaheral subdivision
+void mjCMesh::MakeSphere(int subdiv, bool make_faces) {
+  // make icosahedron
+  const float phi = (1.0 + std::sqrt(5.0)) / 2.0;
+  std::vector<float> vert = {
+      -1.0,  phi, 0.0,
+       1.0,  phi, 0.0,
+      -1.0, -phi, 0.0,
+       1.0, -phi, 0.0,
+
+       0.0, -1.0,  phi,
+       0.0,  1.0,  phi,
+       0.0, -1.0, -phi,
+       0.0,  1.0, -phi,
+
+       phi,  0.0, -1.0,
+       phi,  0.0,  1.0,
+      -phi,  0.0, -1.0,
+      -phi,  0.0,  1.0,
+  };
+
+  // normalize vertices to be on a unit sphere
+  const double norm = std::sqrt(1.0 + phi * phi);
+  for (float& v : vert) {
+    v /= norm;
+  }
+
+  std::vector<int> face = {
+    0,  11, 5,    0,  5,  1,    0,  1,  7,    0,  7,  10,   0,  10, 11,
+    1,  5,  9,    5,  11, 4,    11, 10, 2,    10, 7,  6,    7,  1,  8,
+    3,  9,  4,    3,  4,  2,    3,  2,  6,    3,  6,  8,    3,  8,  9,
+    4,  9,  5,    2,  4,  11,   6,  2,  10,   8,  6,  7,    9,  8,  1
+  };
+
+  // subdivision
+  if (subdiv > 0) {
+    // helper to get or create a midpoint vertex
+    auto get_midpoint = [&vert](
+        int v1_idx, int v2_idx, std::map<std::pair<int, int>, int>& cache) -> int {
+      // key is the pair of vertex indices, sorted
+      std::pair<int, int> key = std::minmax(v1_idx, v2_idx);
+
+      // if midpoint is already in cache, return its index
+      auto it = cache.find(key);
+      if (it != cache.end()) {
+        return it->second;
+      }
+
+      // otherwise, create it
+      const float* v1 = &vert[v1_idx * 3];
+      const float* v2 = &vert[v2_idx * 3];
+
+      float mid_x = (v1[0] + v2[0]) / 2.0f;
+      float mid_y = (v1[1] + v2[1]) / 2.0f;
+      float mid_z = (v1[2] + v2[2]) / 2.0f;
+
+      // normalize the new vertex to put it on the sphere
+      float mid_norm = std::sqrt(mid_x * mid_x + mid_y * mid_y + mid_z * mid_z);
+      mid_x /= mid_norm;
+      mid_y /= mid_norm;
+      mid_z /= mid_norm;
+
+      // add the new vertex to the list
+      int new_idx = vert.size() / 3;
+      vert.push_back(mid_x);
+      vert.push_back(mid_y);
+      vert.push_back(mid_z);
+
+      // add to cache
+      cache[key] = new_idx;
+
+      return new_idx;
+    };
+
+    // subdivision loop
+    for (int i = 0; i < subdiv; ++i) {
+      std::map<std::pair<int, int>, int> midpoint_cache;
+      std::vector<int> new_face;
+      new_face.reserve(face.size() * 4);
+      for (size_t j = 0; j < face.size(); j += 3) {
+        int v1 = face[j];
+        int v2 = face[j+1];
+        int v3 = face[j+2];
+
+        int m12 = get_midpoint(v1, v2, midpoint_cache);
+        int m23 = get_midpoint(v2, v3, midpoint_cache);
+        int m31 = get_midpoint(v3, v1, midpoint_cache);
+
+        new_face.insert(new_face.end(), {v1, m12, m31});
+        new_face.insert(new_face.end(), {v2, m23, m12});
+        new_face.insert(new_face.end(), {v3, m31, m23});
+        new_face.insert(new_face.end(), {m12, m23, m31});
+      }
+      face = std::move(new_face);
+    }
+  }
+
+  // save vertices and maybe faces
+  mjs_setFloat(spec.uservert, vert.data(), vert.size());
+  if (make_faces) mjs_setInt(spec.userface, face.data(), face.size());
+}
+
+
+
+// make a mesh of a supersphere
+void mjCMesh::MakeSupersphere(int res, double e, double n) {
+  // allocate vertices and faces
+  int nvert = (res - 1) * res + 2;
+  int nface = 2 * res * (res - 1);
+  std::vector<float> vert;
+  vert.reserve(3 * nvert);
+  std::vector<int> face;
+  face.reserve(3 * nface);
+
+  // south pole
+  vert.insert(vert.end(), {0.0f, 0.0f, -1.0f});
+
+  // rings
+  for (int i = 1; i < res; i++) {
+    double v = -mjPI/2 + i * mjPI / res;
+    for (int j = 0; j < res; j++) {
+      double u = -mjPI + j * 2 * mjPI / res;
+      vert.push_back(aux_c(v, n) * aux_c(u, e));
+      vert.push_back(aux_c(v, n) * aux_s(u, e));
+      vert.push_back(aux_s(v, n));
+    }
+  }
+
+  // north pole
+  vert.insert(vert.end(), {0.0f, 0.0f, 1.0f});
+
+  // south pole faces
+  for (int j = 0; j < res; j++) {
+    int v2 = 1 + j;
+    int v3 = 1 + (j + 1) % res;
+    face.insert(face.end(), {0, v3, v2});
+  }
+
+  // ring faces
+  for (int i = 0; i < res - 2; i++) {
+    for (int j = 0; j < res; j++) {
+      int v1 = 1 + i * res + j;
+      int v2 = 1 + i * res + (j + 1) % res;
+      int v4 = 1 + (i + 1) * res + j;
+      int v3 = 1 + (i + 1) * res + (j + 1) % res;
+      face.insert(face.end(), {v1, v2, v4});
+      face.insert(face.end(), {v2, v3, v4});
+    }
+  }
+
+  // north pole faces
+  int north_pole_idx = nvert - 1;
+  int last_ring_start_idx = 1 + (res - 2) * res;
+  for (int j = 0; j < res; j++) {
+    int v1 = last_ring_start_idx + j;
+    int v2 = last_ring_start_idx + (j + 1) % res;
+    face.insert(face.end(), {v1, v2, north_pole_idx});
+  }
+
+  // save vertices and faces
+  mjs_setFloat(spec.uservert, vert.data(), vert.size());
+  mjs_setInt(spec.userface, face.data(), face.size());
+}
+
+
+
+// make a mesh of a torus (subsumed by supertorus, kept for reference only)
+void mjCMesh::MakeTorus(int res, double radius) {
+  // allocate vertices and faces
+  int nvert = res * res;
+  int nface = res * res * 2;
+  std::vector<float> vert(3 * nvert);
+  std::vector<int> face(3 * nface);
+
+  // generate vertices
+  for (int i = 0; i < res; ++i) {
+    for (int j = 0; j < res; ++j) {
+      double u = 2 * mjPI * i / res;
+      double v = 2 * mjPI * j / res;
+      int vidx = i * res + j;
+      vert[3 * vidx + 0] = (1 + radius * cos(v)) * cos(u);
+      vert[3 * vidx + 1] = (1 + radius * cos(v)) * sin(u);
+      vert[3 * vidx + 2] = radius * sin(v);
+    }
+  }
+
+  // generate faces
+  int fidx = 0;
+  for (int i = 0; i < res; ++i) {
+    for (int j = 0; j < res; ++j) {
+      int i_next = (i + 1) % res;
+      int j_next = (j + 1) % res;
+
+      int v1 = i * res + j;
+      int v2 = i_next * res + j;
+      int v3 = i_next * res + j_next;
+      int v4 = i * res + j_next;
+
+      // first triangle
+      face[3 * fidx + 0] = v1;
+      face[3 * fidx + 1] = v2;
+      face[3 * fidx + 2] = v4;
+      fidx++;
+
+      // second triangle
+      face[3 * fidx + 0] = v2;
+      face[3 * fidx + 1] = v3;
+      face[3 * fidx + 2] = v4;
+      fidx++;
+    }
+  }
+
+  // save vertices and faces
+  mjs_setFloat(spec.uservert, vert.data(), vert.size());
+  mjs_setInt(spec.userface, face.data(), face.size());
+}
+
+
+
+// make a mesh of a supertoroid, see https://en.wikipedia.org/wiki/Supertoroid
+void mjCMesh::MakeSupertorus(int res, double radius, double s, double t) {
+  // allocate vertices and faces
+  int nvert = res * res;
+  int nface = res * res * 2;
+  std::vector<float> vert(3 * nvert);
+  std::vector<int> face(3 * nface);
+
+  // generate vertices
+  for (int i = 0; i < res; ++i) {
+    for (int j = 0; j < res; ++j) {
+      double u = 2 * mjPI * i / res;
+      double v = 2 * mjPI * j / res;
+      int vidx = i * res + j;
+      vert[3 * vidx + 0] = (1 + radius * aux_c(v, s)) * aux_c(u, t);
+      vert[3 * vidx + 1] = (1 + radius * aux_c(v, s)) * aux_s(u, t);
+      vert[3 * vidx + 2] = radius * aux_s(v, s);
+    }
+  }
+
+  // generate faces
+  int fidx = 0;
+  for (int i = 0; i < res; ++i) {
+    for (int j = 0; j < res; ++j) {
+      int i_next = (i + 1) % res;
+      int j_next = (j + 1) % res;
+
+      int v1 = i * res + j;
+      int v2 = i_next * res + j;
+      int v3 = i_next * res + j_next;
+      int v4 = i * res + j_next;
+
+      // first triangle
+      face[3 * fidx + 0] = v1;
+      face[3 * fidx + 1] = v2;
+      face[3 * fidx + 2] = v4;
+      fidx++;
+
+      // second triangle
+      face[3 * fidx + 0] = v2;
+      face[3 * fidx + 1] = v3;
+      face[3 * fidx + 2] = v4;
+      fidx++;
+    }
+  }
+
+  // save vertices and faces
+  mjs_setFloat(spec.uservert, vert.data(), vert.size());
+  mjs_setInt(spec.userface, face.data(), face.size());
+}
+
+
+
+// make a mesh of a spherical wedge
+void mjCMesh::MakeWedge(int resolution[2], double fov[2], double gamma) {
+  std::vector<double> x_edges(resolution[0] + 1, 0);
+  std::vector<double> y_edges(resolution[1] + 1, 0);
+  BinEdges(x_edges.data(), y_edges.data(), resolution, fov, gamma);
+  std::vector<float> uservert(3 * resolution[0] * resolution[1], 0);
+  std::vector<float> usernormal(9 * resolution[0] * resolution[1], 0);
+
+  for (int i = 0; i < resolution[0]; i++) {
+    for (int j = 0; j < resolution[1]; j++) {
+      double aer[3];
+      aer[0] = 0.5 * (x_edges[i + 1] + x_edges[i]);
+      aer[1] = 0.5 * (y_edges[j + 1] + y_edges[j]);
+      aer[2] = 1;
+      SphericalToCartesian(aer, uservert.data() + 3 * (i * resolution[1] + j));
+      TangentFrame(aer, usernormal.data() + 9 * (i * resolution[1] + j));
+    }
+  }
+
+  mjs_setFloat(spec.uservert, uservert.data(),
+               3 * resolution[0] * resolution[1]);
+  mjs_setFloat(spec.usernormal, usernormal.data(),
+               9 * resolution[0] * resolution[1]);
+}
+
+
+
+// make a mesh of a rectangle
+void mjCMesh::MakeRect(int resolution[2]) {
+  std::vector<double> x_edges(resolution[0] + 1, 0);
+  std::vector<double> y_edges(resolution[1] + 1, 0);
+  LinSpace(-1, 1, resolution[0] + 1, x_edges.data());
+  LinSpace(-1, 1, resolution[1] + 1, y_edges.data());
+  std::vector<float> uservert(3 * resolution[0] * resolution[1], 0);
+  std::vector<float> usernormal(9 * resolution[0] * resolution[1], 0);
+  std::vector<int> userface(6 * (resolution[0] - 1) * (resolution[1] - 1), 0);
+  spec.inertia = mjMESH_INERTIA_SHELL;
+
+  for (int i = 0; i < resolution[0]; i++) {
+    for (int j = 0; j < resolution[1]; j++) {
+      int vert = i * resolution[1] + j;
+      mjtNum dx = 2. / resolution[0];
+      mjtNum dy = 2. / resolution[1];
+      uservert[3 * vert + 0] = -1 + (i + 0.5) * dx;
+      uservert[3 * vert + 1] = -1 + (j + 0.5) * dy;
+      uservert[3 * vert + 2] = -1;
+      usernormal[9 * vert + 0] = 1;
+      usernormal[9 * vert + 4] = 1;
+      usernormal[9 * vert + 8] = 1;
+      if (i > 0 && j > 0) {
+        int cell = (i - 1) * (resolution[1] - 1) + j - 1;
+        userface[6 * cell + 0] = (i - 1) * resolution[1] + j - 1;
+        userface[6 * cell + 1] = (i - 0) * resolution[1] + j - 1;
+        userface[6 * cell + 2] = (i - 1) * resolution[1] + j - 0;
+        userface[6 * cell + 3] = (i - 0) * resolution[1] + j - 0;
+        userface[6 * cell + 4] = (i - 1) * resolution[1] + j - 0;
+        userface[6 * cell + 5] = (i - 0) * resolution[1] + j - 1;
+      }
+    }
+  }
+
+  mjs_setFloat(spec.uservert, uservert.data(),
+               3 * resolution[0] * resolution[1]);
+  mjs_setFloat(spec.usernormal, usernormal.data(),
+               9 * resolution[0] * resolution[1]);
+  mjs_setInt(spec.userface, userface.data(),
+             6 * (resolution[0] - 1) * (resolution[1] - 1));
+}
+
+
+
+// make a mesh of a generalized discrete cone
+void mjCMesh::MakeCone(int nedge, double radius) {
+  int n = 3 * (nedge + (radius > 0 ? nedge : 1));
+  std::vector<float> uservert(n, 0);
+
+  // bottom face
+  for (int i = 0; i < nedge; i++) {
+    uservert[3 * i + 0] = cos(2 * i * mjPI / nedge);
+    uservert[3 * i + 1] = sin(2 * i * mjPI / nedge);
+    uservert[3 * i + 2] = -1;
+  }
+
+  // top face or single point
+  if (radius > 0) {
+    for (int i = nedge; i < 2 * nedge; i++) {
+      uservert[3 * i + 0] = radius * cos(2 * i * mjPI / nedge);
+      uservert[3 * i + 1] = radius * sin(2 * i * mjPI / nedge);
+      uservert[3 * i + 2] = 1;
+    }
+  } else {
+    uservert[3 * nedge + 2] = 1;
+  }
+
+  mjs_setFloat(spec.uservert, uservert.data(), n);
 }
 
 
@@ -2257,8 +2887,7 @@ void MeshPolygon::InsertFace(int v1, int v2, int v3) {
 
 
 
-// return the traverse vertices of the polygon; there may be multiple paths if the polygon is
-// not connected
+// return the transverse vertices of the polygon, multiple paths possible if not connected
 std::vector<std::vector<int> > MeshPolygon::Paths() const {
   std::vector<std::vector<int> > paths;
   // shortcut if polygon is just a triangular face
@@ -2370,6 +2999,7 @@ void mjCMesh::MakePolygons() {
     }
   }
 }
+
 
 
 //------------------ class mjCSkin implementation --------------------------------------------------
@@ -3206,7 +3836,7 @@ void inline ComputeLinearStiffness(std::vector<double>& K,
                                    double E, double nu) {
   // only linear elements are supported for now
   int order = 2;
-  int n = std::pow(order, 3);
+  int n = pow(order, 3);
   int ndof = 3*n;
 
   // compute quadrature points

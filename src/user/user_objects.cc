@@ -23,7 +23,6 @@
 #include <cstring>
 #include <functional>
 #include <limits>
-#include <map>
 #include <memory>
 #include <new>
 #include <optional>
@@ -31,12 +30,14 @@
 #include <sstream>
 #include <string>
 #include <string_view>
+#include <unordered_map>
 #include <utility>
 #include <vector>
 
 #include "lodepng.h"
 #include "cc/array_safety.h"
 #include "engine/engine_passive.h"
+#include "engine/engine_support.h"
 #include <mujoco/mjspec.h>
 #include <mujoco/mujoco.h>
 #include "user/user_api.h"
@@ -556,6 +557,36 @@ int mjCBoundingVolumeHierarchy::MakeBVH(
 
 //------------------------- class mjCOctree implementation --------------------------------------------
 
+void mjCOctree::CopyLevel(int* level) const {
+  for (int i = 0; i < node_.size(); ++i) {
+    level[i] = node_[i].level;
+  }
+}
+
+void mjCOctree::CopyChild(int* child) const {
+  for (int i = 0; i < node_.size(); ++i) {
+    for (int j = 0; j < 8; ++j) {
+      child[i * 8 + j] = node_[i].child[j];
+    }
+  }
+}
+
+void mjCOctree::CopyAabb(mjtNum* aabb) const {
+  for (int i = 0; i < node_.size(); ++i) {
+    for (int j = 0; j < 6; ++j) {
+      aabb[i * 6 + j] = node_[i].aabb[j];
+    }
+  }
+}
+
+void mjCOctree::CopyCoeff(mjtNum* coeff) const {
+  for (int i = 0; i < node_.size(); ++i) {
+    for (int j = 0; j < 8; ++j) {
+      coeff[i * 8 + j] = node_[i].coeff[j];
+    }
+  }
+}
+
 void mjCOctree::SetFace(const std::vector<double>& vert, const std::vector<int>& face) {
   for (int i = 0; i < face.size(); i += 3) {
     std::array<double, 3> v0 = {vert[3*face[i+0]], vert[3*face[i+0]+1], vert[3*face[i+0]+2]};
@@ -583,42 +614,103 @@ void mjCOctree::Make(std::vector<Triangle>& elements) {
 
 
 void mjCOctree::CreateOctree(const double aamm[6]) {
+  double aabb[6] = {(aamm[0] + aamm[3]) / 2, (aamm[1] + aamm[4]) / 2, (aamm[2] + aamm[5]) / 2,
+                    (aamm[3] - aamm[0]) / 2, (aamm[4] - aamm[1]) / 2, (aamm[5] - aamm[2]) / 2};
+  double box[6] = {aabb[0] - 1.1 * aabb[3], aabb[1] - 1.1 * aabb[4], aabb[2] - 1.1 * aabb[5],
+                   aabb[0] + 1.1 * aabb[3], aabb[1] + 1.1 * aabb[4], aabb[2] + 1.1 * aabb[5]};
   std::vector<Triangle> elements;
   Make(elements);
   std::vector<Triangle*> elements_ptrs(elements.size());
   std::transform(elements.begin(), elements.end(), elements_ptrs.begin(),
                  [](Triangle& triangle) { return &triangle; });
-  MakeOctree(elements_ptrs, aamm);
+  std::unordered_map<Point, int> vert_map;
+  MakeOctree(elements_ptrs, box, 0, vert_map);
 }
 
 
-static bool boxTriangle(const Triangle& element, const double aamm[6]) {
+static double dot2(const double* a, const double* b) {
+  return a[0] * b[0] + a[1] * b[1];
+}
+
+
+// From M. Schwarz and H.-P. Seidel, "Fast Parallel Surface and Solid Voxelization on GPUs".
+static bool boxTriangle(const Triangle& v, const double aamm[6]) {
+  // bounding box tests
   for (int i = 0; i < 3; i++) {
-    if (element[0][i] < aamm[i] && element[1][i] < aamm[i] && element[2][i] < aamm[i]) {
+    if (v[0][i] < aamm[i] && v[1][i] < aamm[i] && v[2][i] < aamm[i]) {
       return false;
     }
     int j = i + 3;
-    if (element[0][i] > aamm[j] && element[1][i] > aamm[j] && element[2][i] > aamm[j]) {
+    if (v[0][i] > aamm[j] && v[1][i] > aamm[j] && v[2][i] > aamm[j]) {
       return false;
     }
   }
-  // TODO: add additionally separating axis tests
+
+  // test for triangle plane and box overlap
+  double n[3];
+  double e[3][3];
+  for (int i = 0; i < 3; i++) {
+    for (int j = 0; j < 3; j++) {
+      e[i][j] = v[(i+1)%3][j] - v[i][j];
+    }
+  }
+
+  mjuu_crossvec(n, e[0], e[1]);
+  double size[3] = {aamm[3] - aamm[0], aamm[4] - aamm[1], aamm[5] - aamm[2]};
+  double c[3] = {n[0] > 0 ? size[0] : 0, n[1] > 0 ? size[1] : 0, n[2] > 0 ? size[2] : 0};
+  double c1[3] = {c[0] - v[0][0], c[1] - v[0][1], c[2] - v[0][2]};
+  double c2[3] = {size[0] - c[0] - v[0][0], size[1] - c[1] - v[0][1], size[2] - c[2] - v[0][2]};
+
+  if ((mjuu_dot3(n, aamm) + mjuu_dot3(n, c1)) * (mjuu_dot3(n, aamm) + mjuu_dot3(n, c2)) > 0) {
+    return false;
+  }
+
+  // test projection overlap
+  for (int a = 0; a < 3; a++) {
+    int b = (a + 1) % 3;
+    int c = (a + 2) % 3;
+    for (int i = 0; i < 3; i++) {
+      double sign = n[a] >= 0 ? 1 : -1;
+      double ne[2] = {-e[i][c] * sign, e[i][b] * sign};
+      double vi[2] = {v[i][b], v[i][c]};
+      double d = -dot2(ne, vi) + mju_max(0, size[b]*ne[0]) + mju_max(0, size[c]*ne[1]);
+      double p[2] = {aamm[b], aamm[c]};
+      if (dot2(ne, p) + d < 0) {
+        return false;
+      }
+    }
+  }
+
   return true;
 }
 
 
-int mjCOctree::MakeOctree(const std::vector<Triangle*>& elements, const double aamm[6], int lev) {
-  level_.push_back(lev);
+int mjCOctree::MakeOctree(const std::vector<Triangle*>& elements, const double aamm[6], int lev,
+                          std::unordered_map<Point, int>& vert_map) {
+  node_.push_back(OctNode());
+  OctNode& node = node_.back();
+  node.level = lev;
 
   // create a new node
   int index = nnode_++;
-  double aabb[6] = {(aamm[0] + aamm[3]) / 2, (aamm[1] + aamm[4]) / 2, (aamm[2] + aamm[5]) / 2,
-                    (aamm[3] - aamm[0]) / 2, (aamm[4] - aamm[1]) / 2, (aamm[5] - aamm[2]) / 2};
-  for (int i = 0; i < 6; i++) {
-    node_.push_back(aabb[i]);
-  }
+  std::array<double, 6> aabb = {
+      (aamm[0] + aamm[3]) / 2, (aamm[1] + aamm[4]) / 2,
+      (aamm[2] + aamm[5]) / 2, (aamm[3] - aamm[0]) / 2,
+      (aamm[4] - aamm[1]) / 2, (aamm[5] - aamm[2]) / 2};
+  node.aabb = aabb;
   for (int i = 0; i < 8; i++) {
-    child_.push_back(-1);
+    Point v = {{(i & 1) ? aamm[3] : aamm[0],
+                (i & 2) ? aamm[4] : aamm[1],
+                (i & 4) ? aamm[5] : aamm[2]}};
+    auto it = vert_map.find(v);
+    if (it != vert_map.end()) {
+      node.vertid[i] = it->second;
+    } else {
+      node.vertid[i] = nvert_;
+      vert_map[v] = nvert_++;
+      vert_.push_back(v);
+    }
+    node.child[i] = -1;
   }
 
   // find all triangles that intersect the current box
@@ -647,7 +739,7 @@ int mjCOctree::MakeOctree(const std::vector<Triangle*>& elements, const double a
 
   // recursive calls to create sub-boxes
   for (int i = 0; i < 8; i++) {
-    child_[8*index + i] = MakeOctree(colliding, new_aamm[i], lev + 1);
+    node_[index].child[i] = MakeOctree(colliding, new_aamm[i], lev + 1, vert_map);
   }
 
   return index;
@@ -1656,45 +1748,101 @@ mjCBase* mjCBody::FindObject(mjtObj type, std::string _name, bool recursive) {
 
 
 
-// return true if child is descendant of this body
-bool mjCBody::IsAncestor(const mjCBody* child) const {
-  if (!child) {
-    return false;
-  }
+// get list of a given type
+template<>
+const std::vector<mjCBody*>& mjCBody::GetList<mjCBody>() const {
+  return bodies;
+}
 
-  if (child == this) {
-    return true;
-  }
+template<>
+const std::vector<mjCJoint*>& mjCBody::GetList<mjCJoint>() const {
+  return joints;
+}
 
-  return IsAncestor(child->parent);
+template<>
+const std::vector<mjCGeom*>& mjCBody::GetList<mjCGeom>() const {
+  return geoms;
+}
+
+template<>
+const std::vector<mjCSite*>& mjCBody::GetList<mjCSite>() const {
+  return sites;
+}
+
+template<>
+const std::vector<mjCCamera*>& mjCBody::GetList<mjCCamera>() const {
+  return cameras;
+}
+
+template<>
+const std::vector<mjCLight*>& mjCBody::GetList<mjCLight>() const {
+  return lights;
+}
+
+template<>
+const std::vector<mjCFrame*>& mjCBody::GetList<mjCFrame>() const {
+  return frames;
 }
 
 
 
+// gets next child of the same type, recursively depth first if requested
 template <class T>
-mjsElement* mjCBody::GetNext(const std::vector<T*>& list, const mjsElement* child) {
-  if (list.empty()) {
-    // no children
+static mjsElement* GetNext(const mjCBody* body, const mjsElement* child,
+                           bool* found, bool recursive) {
+  std::vector<T*> list = body->GetList<T>();
+
+  for (unsigned int i = 0; i < list.size(); i++) {
+    if (*found) {
+      return list[i]->spec.element;
+    }
+
+    if (list[i]->spec.element == child) {
+      *found = true;
+    }
+  }
+
+  if (!recursive) {
     return nullptr;
   }
 
-  for (unsigned int i = 0; i < list.size() - (child ? 1 : 0); i++) {
-    if (!IsAncestor(list[i]->GetParent())) {
-      continue;  // TODO: this recursion is wasteful
-    }
-
-    // first child in this body
-    if (!child) {
-      return list[i]->spec.element;
-
-    // next child is in this body
-    } else if (list[i]->spec.element == child && IsAncestor(list[i+1]->GetParent())) {
-      return list[i+1]->spec.element;
+  for (auto& other : body->Bodies()) {
+    mjsElement* candidate = GetNext<T>(other, child, found, true);
+    if (candidate) {
+      return candidate;
     }
   }
 
   return nullptr;
 }
+
+
+
+// get next body depth first
+static mjsElement* GetNextBody(const mjCBody* body, const mjsElement* child,
+                              bool* found, bool recursive) {
+  for (auto& other : body->Bodies()) {
+    if (*found) {
+      return other->spec.element;
+    }
+
+    if (other->spec.element == child) {
+      *found = true;
+    }
+
+    if (!recursive) {
+      continue;
+    }
+
+    mjsElement* candidate = GetNextBody(other, child, found, true);
+    if (candidate) {
+      return candidate;
+    }
+  }
+
+  return nullptr;
+}
+
 
 
 
@@ -1710,30 +1858,30 @@ mjsElement* mjCBody::NextChild(const mjsElement* child, mjtObj type, bool recurs
     throw mjCError(this, "child element is not of requested type");
   }
 
-
   mjsElement* candidate = nullptr;
+  bool found = child == nullptr;
   switch (type) {
     case mjOBJ_BODY:
     case mjOBJ_XBODY:
-      candidate = GetNext(recursive ? model->bodies_ : bodies, child);
+      candidate = GetNextBody(this, child, &found, recursive);
       break;
     case mjOBJ_JOINT:
-      candidate = GetNext(recursive ? model->joints_ : joints, child);
+      candidate = GetNext<mjCJoint>(this, child, &found, recursive);
       break;
     case mjOBJ_GEOM:
-      candidate = GetNext(recursive ? model->geoms_ : geoms, child);
+      candidate = GetNext<mjCGeom>(this, child, &found, recursive);
       break;
     case mjOBJ_SITE:
-      candidate = GetNext(recursive ? model->sites_ : sites, child);
+      candidate = GetNext<mjCSite>(this, child, &found, recursive);
       break;
     case mjOBJ_CAMERA:
-      candidate = GetNext(recursive ? model->cameras_ : cameras, child);
+      candidate = GetNext<mjCCamera>(this, child, &found, recursive);
       break;
     case mjOBJ_LIGHT:
-      candidate = GetNext(recursive ? model->lights_ : lights, child);
+      candidate = GetNext<mjCLight>(this, child, &found, recursive);
       break;
     case mjOBJ_FRAME:
-      candidate = GetNext(recursive ? model->frames_ : frames, child);
+      candidate = GetNext<mjCFrame>(this, child, &found, recursive);
       break;
     default:
       throw mjCError(this,
@@ -3532,11 +3680,7 @@ void mjCSite::Compile(void) {
     }
 
     // size[1] = length (for capsule and cylinder)
-    double vec[3] = {
-      fromto[0]-fromto[3],
-      fromto[1]-fromto[4],
-      fromto[2]-fromto[5]
-    };
+    double vec[3] = {fromto[0]-fromto[3], fromto[1]-fromto[4], fromto[2]-fromto[5]};
     size[1] = mjuu_normvec(vec, 3)/2;
     if (size[1] < mjEPS) {
       throw mjCError(this, "fromto points too close in geom");
@@ -6621,15 +6765,19 @@ void mjCSensor::ResolveReferences(const mjCModel* m) {
       throw mjCError(this, "unrecognized name '%s' of sensorized object", objname_.c_str());
     }
 
-    // if geom mark it as non visual
+    // if geom or mesh, mark it as non visual
     if (objtype == mjOBJ_GEOM) {
-      ((mjCGeom*)obj)->SetNotVisual();
+      static_cast<mjCGeom*>(obj)->SetNotVisual();
+    }
+    if (objtype == mjOBJ_MESH) {
+      static_cast<mjCMesh*>(obj)->SetNotVisual();
     }
 
   } else if (type != mjSENS_E_POTENTIAL &&
              type != mjSENS_E_KINETIC   &&
              type != mjSENS_CLOCK       &&
              type != mjSENS_PLUGIN      &&
+             type != mjSENS_CONTACT     &&
              type != mjSENS_USER) {
     throw mjCError(this, "invalid type in sensor");
   }
@@ -6646,6 +6794,14 @@ void mjCSensor::ResolveReferences(const mjCModel* m) {
       throw mjCError(this, "unrecognized name '%s' of object", refname_.c_str());
     }
 
+    // if geom or mesh, mark it as non visual
+    if (reftype == mjOBJ_GEOM) {
+      static_cast<mjCGeom*>(ref)->SetNotVisual();
+    }
+    if (reftype == mjOBJ_MESH) {
+      static_cast<mjCMesh*>(ref)->SetNotVisual();
+    }
+
     // must be attached to object with spatial frame
     if (reftype != mjOBJ_BODY && reftype != mjOBJ_XBODY &&
         reftype != mjOBJ_GEOM && reftype != mjOBJ_SITE && reftype != mjOBJ_CAMERA) {
@@ -6660,7 +6816,131 @@ void mjCSensor::ResolveReferences(const mjCModel* m) {
   suffix.clear();
 }
 
+// return sensor datatype
+mjtDataType sensorDatatype(mjtSensor type) {
+  switch (type) {
+  case mjSENS_TOUCH:
+  case mjSENS_RANGEFINDER:
+  case mjSENS_INSIDESITE:
+    return mjDATATYPE_POSITIVE;
 
+  case mjSENS_FRAMEXAXIS:
+  case mjSENS_FRAMEYAXIS:
+  case mjSENS_FRAMEZAXIS:
+  case mjSENS_GEOMNORMAL:
+    return mjDATATYPE_AXIS;
+
+  case mjSENS_BALLQUAT:
+  case mjSENS_FRAMEQUAT:
+    return mjDATATYPE_QUATERNION;
+
+  case mjSENS_ACCELEROMETER:
+  case mjSENS_VELOCIMETER:
+  case mjSENS_GYRO:
+  case mjSENS_FORCE:
+  case mjSENS_TORQUE:
+  case mjSENS_MAGNETOMETER:
+  case mjSENS_CAMPROJECTION:
+  case mjSENS_JOINTPOS:
+  case mjSENS_JOINTVEL:
+  case mjSENS_TENDONPOS:
+  case mjSENS_TENDONVEL:
+  case mjSENS_ACTUATORPOS:
+  case mjSENS_ACTUATORVEL:
+  case mjSENS_ACTUATORFRC:
+  case mjSENS_JOINTACTFRC:
+  case mjSENS_TENDONACTFRC:
+  case mjSENS_BALLANGVEL:
+  case mjSENS_JOINTLIMITPOS:
+  case mjSENS_JOINTLIMITVEL:
+  case mjSENS_JOINTLIMITFRC:
+  case mjSENS_TENDONLIMITPOS:
+  case mjSENS_TENDONLIMITVEL:
+  case mjSENS_TENDONLIMITFRC:
+  case mjSENS_FRAMEPOS:
+  case mjSENS_FRAMELINVEL:
+  case mjSENS_FRAMEANGVEL:
+  case mjSENS_FRAMELINACC:
+  case mjSENS_FRAMEANGACC:
+  case mjSENS_SUBTREECOM:
+  case mjSENS_SUBTREELINVEL:
+  case mjSENS_SUBTREEANGMOM:
+  case mjSENS_GEOMDIST:
+  case mjSENS_GEOMFROMTO:
+  case mjSENS_CONTACT:
+  case mjSENS_TACTILE:
+  case mjSENS_E_POTENTIAL:
+  case mjSENS_E_KINETIC:
+  case mjSENS_CLOCK:
+  case mjSENS_PLUGIN:
+  case mjSENS_USER:
+    return mjDATATYPE_REAL;
+  }
+
+  return mjDATATYPE_REAL;  // all cases are covered but GCC is extra persnickety
+}
+
+// return sensor needstage
+mjtStage sensorNeedstage(mjtSensor type) {
+  switch (type) {
+  case mjSENS_TOUCH:
+  case mjSENS_ACCELEROMETER:
+  case mjSENS_FORCE:
+  case mjSENS_TORQUE:
+  case mjSENS_ACTUATORFRC:
+  case mjSENS_JOINTACTFRC:
+  case mjSENS_TENDONACTFRC:
+  case mjSENS_JOINTLIMITFRC:
+  case mjSENS_TENDONLIMITFRC:
+  case mjSENS_FRAMELINACC:
+  case mjSENS_FRAMEANGACC:
+  case mjSENS_CONTACT:
+  case mjSENS_TACTILE:
+    return mjSTAGE_ACC;
+
+  case mjSENS_VELOCIMETER:
+  case mjSENS_GYRO:
+  case mjSENS_JOINTVEL:
+  case mjSENS_TENDONVEL:
+  case mjSENS_ACTUATORVEL:
+  case mjSENS_BALLANGVEL:
+  case mjSENS_JOINTLIMITVEL:
+  case mjSENS_TENDONLIMITVEL:
+  case mjSENS_FRAMELINVEL:
+  case mjSENS_FRAMEANGVEL:
+  case mjSENS_SUBTREELINVEL:
+  case mjSENS_SUBTREEANGMOM:
+    return mjSTAGE_VEL;
+
+  case mjSENS_MAGNETOMETER:
+  case mjSENS_RANGEFINDER:
+  case mjSENS_CAMPROJECTION:
+  case mjSENS_JOINTPOS:
+  case mjSENS_TENDONPOS:
+  case mjSENS_ACTUATORPOS:
+  case mjSENS_BALLQUAT:
+  case mjSENS_JOINTLIMITPOS:
+  case mjSENS_TENDONLIMITPOS:
+  case mjSENS_FRAMEPOS:
+  case mjSENS_FRAMEQUAT:
+  case mjSENS_FRAMEXAXIS:
+  case mjSENS_FRAMEYAXIS:
+  case mjSENS_FRAMEZAXIS:
+  case mjSENS_SUBTREECOM:
+  case mjSENS_INSIDESITE:
+  case mjSENS_GEOMDIST:
+  case mjSENS_GEOMNORMAL:
+  case mjSENS_GEOMFROMTO:
+  case mjSENS_E_POTENTIAL:
+  case mjSENS_E_KINETIC:
+  case mjSENS_CLOCK:
+  case mjSENS_PLUGIN:
+  case mjSENS_USER:
+    return mjSTAGE_POS;
+  }
+
+  return mjSTAGE_POS;  // all cases are covered but GCC is extra persnickety
+}
 
 // compiler
 void mjCSensor::Compile(void) {
@@ -6685,6 +6965,16 @@ void mjCSensor::Compile(void) {
   // Find referenced object
   ResolveReferences(model);
 
+  // set datatype for non-user sensors
+  if (type != mjSENS_USER) {
+    datatype = sensorDatatype(type);
+  }
+
+  // set needstage for non-user and non-plugin sensors
+  if (type != mjSENS_USER && type != mjSENS_PLUGIN) {
+    needstage = sensorNeedstage(type);
+  }
+
   // process according to sensor type
   switch (type) {
     case mjSENS_TOUCH:
@@ -6699,27 +6989,6 @@ void mjCSensor::Compile(void) {
       // must be attached to site
       if (objtype != mjOBJ_SITE) {
         throw mjCError(this, "sensor must be attached to site");
-      }
-
-      // set dim and datatype
-      if (type == mjSENS_TOUCH || type == mjSENS_RANGEFINDER) {
-        dim = 1;
-        datatype = mjDATATYPE_POSITIVE;
-      } else if (type == mjSENS_CAMPROJECTION) {
-        dim = 2;
-        datatype = mjDATATYPE_REAL;
-      } else {
-        dim = 3;
-        datatype = mjDATATYPE_REAL;
-      }
-
-      // set stage
-      if (type == mjSENS_MAGNETOMETER || type == mjSENS_RANGEFINDER || type == mjSENS_CAMPROJECTION) {
-        needstage = mjSTAGE_POS;
-      } else if (type == mjSENS_GYRO || type == mjSENS_VELOCIMETER) {
-        needstage = mjSTAGE_VEL;
-      } else {
-        needstage = mjSTAGE_ACC;
       }
 
       // check for camera resolution for camera projection sensor
@@ -6743,17 +7012,6 @@ void mjCSensor::Compile(void) {
       if (((mjCJoint*)obj)->type != mjJNT_SLIDE && ((mjCJoint*)obj)->type != mjJNT_HINGE) {
         throw mjCError(this, "joint must be slide or hinge in sensor");
       }
-
-      // set
-      dim = 1;
-      datatype = mjDATATYPE_REAL;
-      if (type == mjSENS_JOINTPOS) {
-        needstage = mjSTAGE_POS;
-      } else if (type == mjSENS_JOINTVEL) {
-        needstage = mjSTAGE_VEL;
-      } else if (type == mjSENS_JOINTACTFRC) {
-        needstage = mjSTAGE_ACC;
-      }
       break;
 
   case mjSENS_TENDONACTFRC:
@@ -6761,11 +7019,6 @@ void mjCSensor::Compile(void) {
     if (objtype != mjOBJ_TENDON) {
       throw mjCError(this, "sensor must be attached to tendon");
     }
-
-    // set
-    dim = 1;
-    datatype = mjDATATYPE_REAL;
-    needstage = mjSTAGE_ACC;
     break;
 
     case mjSENS_TENDONPOS:
@@ -6773,15 +7026,6 @@ void mjCSensor::Compile(void) {
       // must be attached to tendon
       if (objtype != mjOBJ_TENDON) {
         throw mjCError(this, "sensor must be attached to tendon");
-      }
-
-      // set
-      dim = 1;
-      datatype = mjDATATYPE_REAL;
-      if (type == mjSENS_TENDONPOS) {
-        needstage = mjSTAGE_POS;
-      } else {
-        needstage = mjSTAGE_VEL;
       }
       break;
 
@@ -6791,17 +7035,6 @@ void mjCSensor::Compile(void) {
       // must be attached to actuator
       if (objtype != mjOBJ_ACTUATOR) {
         throw mjCError(this, "sensor must be attached to actuator");
-      }
-
-      // set
-      dim = 1;
-      datatype = mjDATATYPE_REAL;
-      if (type == mjSENS_ACTUATORPOS) {
-        needstage = mjSTAGE_POS;
-      } else if (type == mjSENS_ACTUATORVEL) {
-        needstage = mjSTAGE_VEL;
-      } else {
-        needstage = mjSTAGE_ACC;
       }
       break;
 
@@ -6815,17 +7048,6 @@ void mjCSensor::Compile(void) {
       // make sure joint is ball
       if (((mjCJoint*)obj)->type != mjJNT_BALL) {
         throw mjCError(this, "joint must be ball in sensor");
-      }
-
-      // set
-      if (type == mjSENS_BALLQUAT) {
-        dim = 4;
-        datatype = mjDATATYPE_QUATERNION;
-        needstage = mjSTAGE_POS;
-      } else {
-        dim = 3;
-        datatype = mjDATATYPE_REAL;
-        needstage = mjSTAGE_VEL;
       }
       break;
 
@@ -6841,17 +7063,6 @@ void mjCSensor::Compile(void) {
       if (!((mjCJoint*)obj)->is_limited()) {
         throw mjCError(this, "joint must be limited in sensor");
       }
-
-      // set
-      dim = 1;
-      datatype = mjDATATYPE_REAL;
-      if (type == mjSENS_JOINTLIMITPOS) {
-        needstage = mjSTAGE_POS;
-      } else if (type == mjSENS_JOINTLIMITVEL) {
-        needstage = mjSTAGE_VEL;
-      } else {
-        needstage = mjSTAGE_ACC;
-      }
       break;
 
     case mjSENS_TENDONLIMITPOS:
@@ -6865,17 +7076,6 @@ void mjCSensor::Compile(void) {
       // make sure tendon has limit
       if (!((mjCTendon*)obj)->is_limited()) {
         throw mjCError(this, "tendon must be limited in sensor");
-      }
-
-      // set
-      dim = 1;
-      datatype = mjDATATYPE_REAL;
-      if (type == mjSENS_TENDONLIMITPOS) {
-        needstage = mjSTAGE_POS;
-      } else if (type == mjSENS_TENDONLIMITVEL) {
-        needstage = mjSTAGE_VEL;
-      } else {
-        needstage = mjSTAGE_ACC;
       }
       break;
 
@@ -6893,33 +7093,6 @@ void mjCSensor::Compile(void) {
           objtype != mjOBJ_GEOM && objtype != mjOBJ_SITE && objtype != mjOBJ_CAMERA) {
         throw mjCError(this, "sensor must be attached to (x)body, geom, site or camera");
       }
-
-      // set dim
-      if (type == mjSENS_FRAMEQUAT) {
-        dim = 4;
-      } else {
-        dim = 3;
-      }
-
-      // set datatype
-      if (type == mjSENS_FRAMEQUAT) {
-        datatype = mjDATATYPE_QUATERNION;
-      } else if (type == mjSENS_FRAMEXAXIS ||
-                 type == mjSENS_FRAMEYAXIS ||
-                 type == mjSENS_FRAMEZAXIS) {
-        datatype = mjDATATYPE_AXIS;
-      } else {
-        datatype = mjDATATYPE_REAL;
-      }
-
-      // set needstage
-      if (type == mjSENS_FRAMELINACC || type == mjSENS_FRAMEANGACC) {
-        needstage = mjSTAGE_ACC;
-      } else if (type == mjSENS_FRAMELINVEL || type == mjSENS_FRAMEANGVEL) {
-        needstage = mjSTAGE_VEL;
-      } else {
-        needstage = mjSTAGE_POS;
-      }
       break;
 
     case mjSENS_SUBTREECOM:
@@ -6929,14 +7102,15 @@ void mjCSensor::Compile(void) {
       if (objtype != mjOBJ_BODY) {
         throw mjCError(this, "sensor must be attached to body");
       }
+      break;
 
-      // set
-      dim = 3;
-      datatype = mjDATATYPE_REAL;
-      if (type == mjSENS_SUBTREECOM) {
-        needstage = mjSTAGE_POS;
-      } else {
-        needstage = mjSTAGE_VEL;
+    case mjSENS_INSIDESITE:
+      if (objtype != mjOBJ_BODY && objtype != mjOBJ_XBODY &&
+          objtype != mjOBJ_GEOM && objtype != mjOBJ_SITE && objtype != mjOBJ_CAMERA) {
+        throw mjCError(this, "sensor must be attached to (x)body, geom, site or camera");
+      }
+      if (reftype != mjOBJ_SITE) {
+        throw mjCError(this, "sensor must be associated with a site");
       }
       break;
 
@@ -6959,49 +7133,96 @@ void mjCSensor::Compile(void) {
           (reftype == mjOBJ_GEOM && static_cast<mjCGeom*>(ref)->Type() == mjGEOM_HFIELD)) {
         throw mjCError(this, "height fields are not supported in geom distance sensors");
       }
+      break;
 
-      // set
-      needstage = mjSTAGE_POS;
-      if (type == mjSENS_GEOMDIST) {
-        dim = 1;
-        datatype = mjDATATYPE_POSITIVE;
-      } else if (type == mjSENS_GEOMNORMAL) {
-        dim = 3;
-        datatype = mjDATATYPE_AXIS;
-      } else {
-        dim = 6;
-        datatype = mjDATATYPE_REAL;
+    case mjSENS_CONTACT:
+      {
+        // check first matching criterion
+        if (objtype != mjOBJ_SITE &&
+            objtype != mjOBJ_BODY &&
+            objtype != mjOBJ_XBODY &&
+            objtype != mjOBJ_GEOM &&
+            objtype != mjOBJ_UNKNOWN) {
+          throw mjCError(this, "first matching criterion: if set, must be (x)body, geom or site");
+        }
+
+        // check that subtree1 is a full tree
+        if (objtype == mjOBJ_XBODY && static_cast<mjCBody*>(obj)->GetParent()->id != 0) {
+          throw mjCError(this, "subtree1 must be a child of the world");
+        }
+
+        // check second matching criterion
+        if (reftype != mjOBJ_BODY &&
+            reftype != mjOBJ_XBODY &&
+            reftype != mjOBJ_GEOM &&
+            reftype != mjOBJ_UNKNOWN) {
+          throw mjCError(this, "second matching criterion: if set, must be (x)body or geom");
+        }
+
+        // check that subtree2 is a full tree
+        if (reftype == mjOBJ_XBODY && static_cast<mjCBody*>(ref)->GetParent()->id != 0) {
+          throw mjCError(this, "subtree2 must be a child of the world");
+        }
+
+        // check for dataspec correctness
+        int dataspec = intprm[0];
+        if (dataspec <= 0) {
+          throw mjCError(this, "data spec (intprm[0]) must be positive, got %d", nullptr, dataspec);
+        }
+        int mask = (1 << mjNCONDATA) - 1;
+        if (!(dataspec & mask)) {
+          throw mjCError(this, "data spec intprm[0]=%d must have at least one bit set of the first "
+                         "mjNCONDATA bits", nullptr, dataspec);
+        }
+        if (dataspec & ~mask) {
+          throw mjCError(this, "data spec intprm[0]=%d has bits set beyond the first "
+                         "mjNCONDATA bits", nullptr, dataspec);
+        }
+
+        // check for reduce correctness
+        int reduce = intprm[1];
+        if (reduce < 0 || reduce > 3) {
+          throw mjCError(this, "unknown reduction criterion. got %d, "
+                         "expected one of {0, 1, 2, 3}", nullptr, reduce);
+        }
+
+        // check for non-positive num
+        if (intprm[2] <= 0) {
+          throw mjCError(this, "num (intprm[2]) must be positive in sensor, got %d", nullptr, dim);
+        }
       }
       break;
 
     case mjSENS_E_POTENTIAL:
     case mjSENS_E_KINETIC:
     case mjSENS_CLOCK:
-      dim = 1;
-      needstage = mjSTAGE_POS;
-      datatype = mjDATATYPE_REAL;
       break;
 
     case mjSENS_USER:
       // check for negative dim
       if (dim < 0) {
-        throw mjCError(this, "sensor dim must be positive in sensor");
+        throw mjCError(this, "sensor dim must be non-negative in sensor");
       }
 
       // make sure dim is consistent with datatype
       if (datatype == mjDATATYPE_AXIS && dim != 3) {
-        throw mjCError(this,
-                       "datatype AXIS requires dim=3 in sensor");
+        throw mjCError(this, "datatype AXIS requires dim=3 in sensor");
       }
       if (datatype == mjDATATYPE_QUATERNION && dim != 4) {
         throw mjCError(this, "datatype QUATERNION requires dim=4 in sensor");
       }
       break;
 
-    case mjSENS_PLUGIN:
-      dim = 0; // to be filled in by the plugin later
-      datatype = mjDATATYPE_REAL; // no noise added to plugin sensors, this attribute is unused
+    case mjSENS_TACTILE:
+      if (objtype != mjOBJ_MESH) {
+        throw mjCError(this, "sensor must be associated with a mesh");
+      }
+      if (reftype != mjOBJ_GEOM) {
+        throw mjCError(this, "sensor must be associated with a geom");
+      }
+      break;
 
+    case mjSENS_PLUGIN:
       if (plugin_name.empty() && plugin_instance_name.empty()) {
         throw mjCError(this, "neither 'plugin' nor 'instance' is specified for sensor");
       }
@@ -7023,6 +7244,8 @@ void mjCSensor::Compile(void) {
     default:
       throw mjCError(this, "invalid type in sensor '%s' (id = %d)", name.c_str(), id);
   }
+
+  dim = mjs_sensorDim(this);
 
   // check cutoff for incompatible data types
   if (cutoff > 0 && (datatype == mjDATATYPE_QUATERNION ||

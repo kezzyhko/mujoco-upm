@@ -34,6 +34,174 @@
 #define MAXMESHPNT 500
 
 
+//---------------------------- interpolated sdf -------------------------------------------
+
+mjtNum boxProjection(mjtNum point[3], const mjtNum box[6]) {
+  mjtNum r[3] = {point[0] - box[0], point[1] - box[1], point[2] - box[2]};
+  mjtNum q[3] = {mju_abs(r[0]) - box[3], mju_abs(r[1]) - box[4],
+                 mju_abs(r[2]) - box[5]};
+  mjtNum dist_sqr = 0;
+  mjtNum eps = 1e-6;
+
+  // skip the projection if inside
+  if (q[0] <= 0 && q[1] <= 0 && q[2] <= 0) {
+    return mju_max(q[0], mju_max(q[1], q[2]));
+  }
+
+  // in-place projection inside the box if outside
+  if ( q[0] >= 0 ) {
+    dist_sqr += q[0] * q[0];
+    point[0] -= r[0] > 0 ? (q[0]+eps) : -(q[0]+eps);
+  }
+  if ( q[1] >= 0 ) {
+    dist_sqr += q[1] * q[1];
+    point[1] -= r[1] > 0 ? (q[1]+eps) : -(q[1]+eps);
+  }
+  if ( q[2] >= 0 ) {
+    dist_sqr += q[2] * q[2];
+    point[2] -= r[2] > 0 ? (q[2]+eps) : -(q[2]+eps);
+  }
+
+  return mju_sqrt(dist_sqr);
+}
+
+// find the octree leaf containing the point p, return the index of the leaf and
+// populate the weights of the interpolated function (if w is not null) and of
+// its gradient (if dw is not null) using the vertices as degrees of freedom for
+// trilinear interpolation.
+static int findOct(mjtNum w[8], mjtNum dw[8][3], const mjtNum* oct_aabb,
+                   const int* oct_child, const mjtNum p[3]) {
+  int stack = 0;
+  mjtNum eps = 1e-8;
+  int niter = 100;
+
+  while (niter-- > 0) {
+    int node = stack;
+    mjtNum vmin[3], vmax[3];
+
+    if (node == -1) {  // SHOULD NOT OCCUR
+      mju_error("Invalid node number");
+      return -1;
+    }
+
+    for (int j = 0; j < 3; j++) {
+      vmin[j] = oct_aabb[6*node+j] - oct_aabb[6*node+3+j];
+      vmax[j] = oct_aabb[6*node+j] + oct_aabb[6*node+3+j];
+    }
+
+    // check if the point is inside the aabb of the octree node
+    if (p[0] + eps < vmin[0] || p[0] - eps > vmax[0] ||
+        p[1] + eps < vmin[1] || p[1] - eps > vmax[1] ||
+        p[2] + eps < vmin[2] || p[2] - eps > vmax[2]) {
+      continue;
+    }
+
+    mjtNum coord[3] = {(p[0] - vmin[0]) / (vmax[0] - vmin[0]),
+                       (p[1] - vmin[1]) / (vmax[1] - vmin[1]),
+                       (p[2] - vmin[2]) / (vmax[2] - vmin[2])};
+
+    // check if the node is a leaf
+    if (oct_child[8*node+0] == -1 && oct_child[8*node+1] == -1 &&
+        oct_child[8*node+2] == -1 && oct_child[8*node+3] == -1 &&
+        oct_child[8*node+4] == -1 && oct_child[8*node+5] == -1 &&
+        oct_child[8*node+6] == -1 && oct_child[8*node+7] == -1) {
+      for (int j = 0; j < 8; j++) {
+        if (w) {
+          w[j] = (j & 1 ? coord[0] : 1 - coord[0]) *
+                 (j & 2 ? coord[1] : 1 - coord[1]) *
+                 (j & 4 ? coord[2] : 1 - coord[2]);
+        }
+        if (dw) {
+          dw[j][0] = (j & 1 ? 1 : -1) *
+                     (j & 2 ? coord[1] : 1 - coord[1]) *
+                     (j & 4 ? coord[2] : 1 - coord[2]);
+          dw[j][1] = (j & 1 ? coord[0] : 1 - coord[0]) *
+                     (j & 2 ? 1 : -1) *
+                     (j & 4 ? coord[2] : 1 - coord[2]);
+          dw[j][2] = (j & 1 ? coord[0] : 1 - coord[0]) *
+                     (j & 2 ? coord[1] : 1 - coord[1]) *
+                     (j & 4 ? 1 : -1);
+        }
+      }
+      return node;
+    }
+
+    // compute which of 8 children to visit next
+    int x = coord[0] < .5 ? 1 : 0;
+    int y = coord[1] < .5 ? 1 : 0;
+    int z = coord[2] < .5 ? 1 : 0;
+    stack = oct_child[8 * node + 4*z + 2*y + x];
+  }
+
+  mju_error("Node not found");  // SHOULD NOT OCCUR
+  return -1;
+}
+
+// sdf
+mjtNum oct_distance(const mjModel* m, const mjtNum p[3], int meshid) {
+  int octadr = m->mesh_octadr[meshid];
+  int* oct_child = m->oct_child + 8*octadr;
+  mjtNum* oct_aabb = m->oct_aabb + 6*octadr;
+  mjtNum* oct_coeff = m->oct_coeff + 8*octadr;
+
+  if (octadr == -1) {
+    mjERROR("Octree not found in mesh %d", meshid);
+    return 0;
+  }
+
+  mjtNum w[8];
+  mjtNum sdf = 0;
+  mjtNum point[3] = {p[0], p[1], p[2]};
+  mjtNum boxDist = boxProjection(point, oct_aabb);
+  int node = findOct(w, NULL, oct_aabb, oct_child, point);
+  for (int i = 0; i < 8; ++i) {
+    sdf += w[i] * oct_coeff[8*node + i];
+  }
+  return sdf + boxDist > 0 ? sdf + boxDist : sdf;
+}
+
+// gradient of sdf
+void oct_gradient(const mjModel* m, mjtNum grad[3], const mjtNum point[3], int meshid) {
+  mju_zero3(grad);
+  mjtNum p[3] = {point[0], point[1], point[2]};
+
+  int octadr = m->mesh_octadr[meshid];
+  int* oct_child = m->oct_child + 8*octadr;
+  mjtNum* oct_aabb = m->oct_aabb + 6*octadr;
+  mjtNum* oct_coeff = m->oct_coeff + 8*octadr;
+
+  if (octadr == -1) {
+    mjERROR("Octree not found in mesh %d", meshid);
+  }
+
+  // analytic in the interior
+  if (boxProjection(p, oct_aabb) <= 0) {
+    mjtNum dw[8][3];
+    int node = findOct(NULL, dw, oct_aabb, oct_child, p);
+    for (int i = 0; i < 8; ++i) {
+      grad[0] += dw[i][0] * oct_coeff[8*node + i];
+      grad[1] += dw[i][1] * oct_coeff[8*node + i];
+      grad[2] += dw[i][2] * oct_coeff[8*node + i];
+    }
+    return;
+  }
+
+  // finite difference in the exterior
+  mjtNum eps = 1e-8;
+  mjtNum dist0 = oct_distance(m, point, meshid);
+  mjtNum pointX[3] = {point[0]+eps, point[1], point[2]};
+  mjtNum distX = oct_distance(m, pointX, meshid);
+  mjtNum pointY[3] = {point[0], point[1]+eps, point[2]};
+  mjtNum distY = oct_distance(m, pointY, meshid);
+  mjtNum pointZ[3] = {point[0], point[1], point[2]+eps};
+  mjtNum distZ = oct_distance(m, pointZ, meshid);
+
+  grad[0] = (distX - dist0) / eps;
+  grad[1] = (distY - dist0) / eps;
+  grad[2] = (distZ - dist0) / eps;
+}
+
+
 //---------------------------- primitives sdf ---------------------------------------------
 
 static void radialField3d(mjtNum field[3], const mjtNum a[3], const mjtNum x[3],
@@ -100,7 +268,13 @@ static mjtNum geomDistance(const mjModel* m, const mjData* d, const mjpPlugin* p
     b[1] = mju_max(a[1], 0);
     return mju_min(mju_max(a[0], a[1]), 0) + mju_norm(b, 2);
   case mjGEOM_SDF:
-    return p->sdf_distance(x, d, i);
+    if (p) {
+      return p->sdf_distance(x, d, i);
+    } else {
+      return oct_distance(m, x, i);
+    }
+  case mjGEOM_MESH:
+    return oct_distance(m, x, i);
   default:
     mjERROR("sdf collisions not available for geom type %d", type);
     return 0;
@@ -199,7 +373,14 @@ static void geomGradient(mjtNum gradient[3], const mjModel* m, const mjData* d,
     }
     break;
   case mjGEOM_SDF:
-    p->sdf_gradient(gradient, x, d, i);
+    if (p) {
+      p->sdf_gradient(gradient, x, d, i);
+    } else {
+      oct_gradient(m, gradient, x, i);
+    }
+    break;
+  case mjGEOM_MESH:
+    oct_gradient(m, gradient, x, i);
     break;
   default:
     mjERROR("sdf collisions not available for geom type %d", type);
@@ -308,24 +489,6 @@ static void mapPose(const mjtNum xpos1[3], const mjtNum xquat1[4],
   mju_negPose(negpos, negquat, xpos2, xquat2);
   mju_mulPose(pos12, quat12, negpos, negquat, xpos1, xquat1);
   mju_quat2Mat(mat12, quat12);
-}
-
-// subtract mesh position from sdf transformation
-static void undoTransformation(const mjModel* m, const mjData* d, int g,
-                               mjtNum sdf_xpos[3], mjtNum sdf_quat[4]) {
-  mjtNum* xpos = d->geom_xpos + 3 * g;
-  mjtNum* xmat = d->geom_xmat + 9 * g;
-  if (m->geom_type[g] == mjGEOM_MESH || m->geom_type[g] == mjGEOM_SDF) {
-    mjtNum negpos[3], negquat[4], xquat[4];
-    mjtNum* pos = m->mesh_pos + 3 * m->geom_dataid[g];
-    mjtNum* quat = m->mesh_quat + 4 * m->geom_dataid[g];
-    mju_mat2Quat(xquat, xmat);
-    mju_negPose(negpos, negquat, pos, quat);
-    mju_mulPose(sdf_xpos, sdf_quat, xpos, xquat, negpos, negquat);
-  } else {
-    mju_copy3(sdf_xpos, xpos);
-    mju_mat2Quat(sdf_quat, xmat);
-  }
 }
 
 //---------------------------- narrow phase -----------------------------------------------
@@ -597,8 +760,7 @@ int mjc_HFieldSDF(const mjModel* m, const mjData* d, mjContact* con, int g1, int
 
 // collision between a mesh and a signed distance field
 int mjc_MeshSDF(const mjModel* m, const mjData* d, mjContact* con, int g1, int g2, mjtNum margin) {
-  mjtNum* pos1 = d->geom_xpos + 3 * g1;
-  mjtNum* mat1 = d->geom_xmat + 9 * g1;
+  mjGETINFO;
 
   mjtNum offset[3], rotation[9], corners[9], x[3], depth;
   mjtNum points[3*MAXSDFFACE], dist[MAXMESHPNT], candidate[3*MAXMESHPNT];
@@ -608,7 +770,8 @@ int mjc_MeshSDF(const mjModel* m, const mjData* d, mjContact* con, int g1, int g
 
   // get sdf plugin
   int instance = m->geom_plugin[g2];
-  const mjpPlugin* sdf_ptr = mjc_getSDF(m, g2);
+  const mjpPlugin* sdf_ptr = instance == -1 ? NULL : mjc_getSDF(m, g2);
+  instance = instance == -1 ? m->geom_dataid[g2] : instance;
   mjtGeom geomtype = mjGEOM_SDF;
 
   // copy into data
@@ -619,10 +782,10 @@ int mjc_MeshSDF(const mjModel* m, const mjData* d, mjContact* con, int g1, int g
   sdf.geomtype = &geomtype;
 
   // compute transformation from g1 to g2
-  mjtNum pos2true[3], sdf_quat[4], quat1[4];
+  mjtNum sdf_quat[4], quat1[4];
   mju_mat2Quat(quat1, mat1);
-  undoTransformation(m, d, g2, pos2true, sdf_quat);
-  mapPose(pos1, quat1, pos2true, sdf_quat, offset, rotation);
+  mju_mat2Quat(sdf_quat, mat2);
+  mapPose(pos1, quat1, pos2, sdf_quat, offset, rotation);
 
   // binary tree search
   collideBVH(m, (mjData*)d, g1, offset, rotation, faces, &npoints, &n0, &sdf);
@@ -674,7 +837,7 @@ int mjc_MeshSDF(const mjModel* m, const mjData* d, mjContact* con, int g1, int g
 
   // add only the first mjMAXCONPAIR pairs
   for (int i=0; i < mju_min(ncandidate, mjMAXCONPAIR); i++) {
-    cnt = addContact(points, con, candidate + 3*index[i], pos2true, sdf_quat,
+    cnt = addContact(points, con, candidate + 3*index[i], pos2, sdf_quat,
                      dist[index[i]], cnt, m, &sdf, (mjData*)d);
   }
 
@@ -700,17 +863,13 @@ int mjc_SDF(const mjModel* m, const mjData* d, mjContact* con, int g1, int g2, m
 
   // compute transformations from/to g1 to/from g2
   mjtNum quat1[4], quat2[4];
-  mjtNum pos1true[3], offset21[3], rotation21[9], rotation12[9];
-  mjtNum pos2true[3], offset1[3], rotation1[9], offset12[3];
-  mjtNum offset2[3], rotation2[9], squat1[4], squat2[4];
-  undoTransformation(m, d, g1, pos1true, squat1);
-  undoTransformation(m, d, g2, pos2true, squat2);
+  mjtNum offset21[3], rotation21[9], rotation12[9];
+  mjtNum offset12[3], offset2[3], rotation2[9];
   mju_mat2Quat(quat1, mat1);
   mju_mat2Quat(quat2, mat2);
-  mapPose(pos2, quat2, pos1, quat1, offset1, rotation1);
-  mapPose(pos1, quat1, pos1true, squat1, offset2, rotation2);
-  mapPose(pos2true, squat2, pos1true, squat1, offset21, rotation21);
-  mapPose(pos1true, squat1, pos2true, squat2, offset12, rotation12);
+  mapPose(pos1, quat1, pos1, quat1, offset2, rotation2);
+  mapPose(pos2, quat2, pos1, quat1, offset21, rotation21);
+  mapPose(pos1, quat1, pos2, quat2, offset12, rotation12);
 
   // axis-aligned bounding boxes in g1 frame
   for (int i=0; i < 8; i++) {
@@ -722,8 +881,8 @@ int mjc_SDF(const mjModel* m, const mjData* d, mjContact* con, int g1, int g2, m
     vec2[1] = (i&2 ? size2[1]+size2[4] : size2[1]-size2[4]);
     vec2[2] = (i&4 ? size2[2]+size2[5] : size2[2]-size2[5]);
 
-    mju_mulMatVec3(vec2, rotation1, vec2);
-    mju_addTo3(vec2, offset1);
+    mju_mulMatVec3(vec2, rotation21, vec2);
+    mju_addTo3(vec2, offset21);
 
     for (int k=0; k < 3; k++) {
       aabb1[0+k] = mju_min(aabb1[0+k], vec1[k]);
@@ -750,22 +909,26 @@ int mjc_SDF(const mjModel* m, const mjData* d, mjContact* con, int g1, int g2, m
   mjtGeom geomtypes[2] = {m->geom_type[g2], m->geom_type[g1]};
 
   instance[0] = m->geom_plugin[g2];
-  sdf_ptr[0] = mjc_getSDF(m, g2);
+  sdf_ptr[0] = instance[0] == -1 ? NULL : mjc_getSDF(m, g2);
 
   // get sdf plugins
   if (m->geom_type[g1] == mjGEOM_SDF) {
     instance[1] = m->geom_plugin[g1];
-    sdf_ptr[1] = mjc_getSDF(m, g1);
+    sdf_ptr[1] = instance[1] == -1 ? NULL : mjc_getSDF(m, g1);
   } else {
     instance[1] = g1;
     sdf_ptr[1] = NULL;
   }
 
   // reset visualization count
-  sdf_ptr[0]->reset(m, NULL, (void*)(d->plugin_data[instance[0]]), instance[0]);
+  if (sdf_ptr[0]) {
+    sdf_ptr[0]->reset(m, NULL, (void*)(d->plugin_data[instance[0]]), instance[0]);
+  }
 
   // copy into sdf
   mjSDF sdf;
+  instance[0] = instance[0] == -1 ? m->geom_dataid[g2] : instance[0];
+  instance[1] = instance[1] == -1 ? m->geom_dataid[g1] : instance[1];
   sdf.id = instance;
   sdf.relpos = offset21;
   sdf.relmat = rotation21;
@@ -794,7 +957,9 @@ int mjc_SDF(const mjModel* m, const mjData* d, mjContact* con, int g1, int g2, m
     i++;
 
     // start counters
-    sdf_ptr[0]->compute(m, (mjData*)d, instance[0], mjPLUGIN_SDF);
+    if (sdf_ptr[0]) {
+      sdf_ptr[0]->compute(m, (mjData*)d, instance[0], mjPLUGIN_SDF);
+    }
 
     // gradient descent - we use a special function of the two SDF as objective
     sdf.type = mjSDFTYPE_COLLISION;
@@ -806,7 +971,7 @@ int mjc_SDF(const mjModel* m, const mjData* d, mjContact* con, int g1, int g2, m
 
     // contact point and normal - we use the midsurface where SDF1=SDF2 as zero level set
     sdf.type = mjSDFTYPE_MIDSURFACE;
-    cnt = addContact(contacts, con, x, pos2true, squat2, dist, cnt, m, &sdf, (mjData*)d);
+    cnt = addContact(contacts, con, x, pos2, quat2, dist, cnt, m, &sdf, (mjData*)d);
 
     // SHOULD NOT OCCUR
     if (cnt > mjMAXCONPAIR) {

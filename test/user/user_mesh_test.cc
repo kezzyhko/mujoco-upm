@@ -14,7 +14,9 @@
 
 // Tests for user/user_objects.cc.
 
+#include <algorithm>
 #include <array>
+#include <cmath>
 #include <cstddef>
 #include <limits>
 #include <memory>
@@ -732,7 +734,6 @@ TEST_F(MjCMeshTest, VolumeTooSmall) {
   EXPECT_THAT(model, testing::IsNull());
   EXPECT_THAT(error.data(), HasSubstr("mesh volume is too small"));
   mj_deleteModel(model);
-
 }
 
 TEST_F(MjCMeshTest, VisualVolumeTooSmall) {
@@ -760,7 +761,6 @@ TEST_F(MjCMeshTest, VisualVolumeTooSmall) {
   EXPECT_THAT(model, testing::IsNull());
   EXPECT_THAT(error.data(), HasSubstr("mesh volume is too small"));
   mj_deleteModel(model);
-
 }
 
 TEST_F(MjCMeshTest, VisualVolumeSmallAllowedShell) {
@@ -1288,6 +1288,96 @@ TEST_F(MjCMeshTest, OctreeNotComputedForNonSDF) {
   mj_deleteModel(model);
 }
 
+double CubeSDF(double p[3], double b[3]) {
+  double q[3] = {std::abs(p[0]) - b[0],
+                 std::abs(p[1]) - b[1],
+                 std::abs(p[2]) - b[2]};
+  return std::sqrt(std::pow(std::max(q[0], 0.0), 2) +
+                   std::pow(std::max(q[1], 0.0), 2) +
+                   std::pow(std::max(q[2], 0.0), 2)) +
+         std::min(std::max(q[0], std::max(q[1], q[2])), 0.0);
+}
+
+TEST_F(MjCMeshTest, OctreeCube) {
+  static constexpr char xml[] = R"(
+  <mujoco>
+    <asset>
+      <mesh name="mesh" vertex="-1 -1 -1  1 -1 -1  -1 1 -1  1 1 -1
+                                -1 -1  1  1 -1  1  -1 1  1  1 1  1"/>
+    </asset>
+    <worldbody>
+      <geom mesh="mesh" type="sdf"/>
+    </worldbody>
+  </mujoco>
+  )";
+  std::array<char, 1024> error;
+  mjModel* m = LoadModelFromString(xml, error.data(), error.size());
+  ASSERT_THAT(m, NotNull()) << error.data();
+  EXPECT_EQ(m->noct, 54089);
+  mjData* d = mj_makeData(m);
+  ASSERT_THAT(d, NotNull());
+  mj_forward(m, d);
+  mjSDF sdf;
+  int instance = 0;
+  mjtGeom geomtype = mjGEOM_SDF;
+  const mjpPlugin* sdf_ptr = NULL;
+  sdf.id = &instance;
+  sdf.type = mjSDFTYPE_SINGLE;
+  sdf.plugin = &sdf_ptr;
+  sdf.geomtype = &geomtype;
+  mjtNum pnt[3][3] = {{1, 1, 1}, {.5, .5, .5}, {.5, 0, 0}};
+  mjtNum size[3] = {1, 1, 1};
+  for (int i = 0; i < 3; ++i) {
+    EXPECT_NEAR(mjc_distance(m, d, &sdf, pnt[i]), CubeSDF(pnt[i], size), 1e-1)
+        << "i = " << i;
+  }
+  mj_deleteModel(m);
+  mj_deleteData(d);
+}
+
+TEST_F(MjCMeshTest, HemisphereSizes) {
+  static constexpr char xml[] = R"(
+  <mujoco model="makemesh">
+    <asset>
+      <mesh name="h0" builtin="hemisphere" params="0"/>
+      <mesh name="h1" builtin="hemisphere" params="1"/>
+      <mesh name="h2" builtin="hemisphere" params="2"/>
+    </asset>
+  </mujoco>
+  )";
+  std::array<char, 1024> error;
+  mjModel* model = LoadModelFromString(xml, error.data(), error.size());
+  ASSERT_THAT(model, NotNull()) << error.data();
+  EXPECT_EQ(model->mesh_vertnum[0], 2 * (0 + 1) * (0 + 2) + 2);
+  EXPECT_EQ(model->mesh_vertnum[1], 2 * (1 + 1) * (1 + 2) + 2);
+  EXPECT_EQ(model->mesh_vertnum[2], 2 * (2 + 1) * (2 + 2) + 2);
+  EXPECT_EQ(model->mesh_facenum[0], 4 * (0 + 1) * (0 + 2));
+  EXPECT_EQ(model->mesh_facenum[1], 4 * (1 + 1) * (1 + 2));
+  EXPECT_EQ(model->mesh_facenum[2], 4 * (2 + 1) * (2 + 2));
+  mj_deleteModel(model);
+}
+
+TEST_F(MjCMeshTest, SphereSizes) {
+  static constexpr char xml[] = R"(
+  <mujoco model="makemesh">
+    <asset>
+      <mesh name="h0" builtin="sphere" params="0"/>
+      <mesh name="h1" builtin="sphere" params="1"/>
+      <mesh name="h2" builtin="sphere" params="2"/>
+    </asset>
+  </mujoco>
+  )";
+  std::array<char, 1024> error;
+  mjModel* model = LoadModelFromString(xml, error.data(), error.size());
+  ASSERT_THAT(model, NotNull()) << error.data();
+  EXPECT_EQ(model->mesh_vertnum[0], 2 + 10 * std::pow(4, 0));
+  EXPECT_EQ(model->mesh_vertnum[1], 2 + 10 * std::pow(4, 1));
+  EXPECT_EQ(model->mesh_vertnum[2], 2 + 10 * std::pow(4, 2));
+  EXPECT_EQ(model->mesh_facenum[0], 20 * std::pow(4, 0));
+  EXPECT_EQ(model->mesh_facenum[1], 20 * std::pow(4, 1));
+  EXPECT_EQ(model->mesh_facenum[2], 20 * std::pow(4, 2));
+  mj_deleteModel(model);
+}
 
 }  // namespace
 }  // namespace mujoco

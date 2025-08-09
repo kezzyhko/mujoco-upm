@@ -75,6 +75,17 @@ const TfType &MjcPhysicsCollisionAPI::_GetTfType() const {
   return _GetStaticTfType();
 }
 
+UsdAttribute MjcPhysicsCollisionAPI::GetGroupAttr() const {
+  return GetPrim().GetAttribute(MjcPhysicsTokens->mjcGroup);
+}
+
+UsdAttribute MjcPhysicsCollisionAPI::CreateGroupAttr(
+    VtValue const &defaultValue, bool writeSparsely) const {
+  return UsdSchemaBase::_CreateAttr(
+      MjcPhysicsTokens->mjcGroup, SdfValueTypeNames->Int,
+      /* custom = */ false, SdfVariabilityUniform, defaultValue, writeSparsely);
+}
+
 UsdAttribute MjcPhysicsCollisionAPI::GetShellInertiaAttr() const {
   return GetPrim().GetAttribute(MjcPhysicsTokens->mjcShellinertia);
 }
@@ -83,6 +94,83 @@ UsdAttribute MjcPhysicsCollisionAPI::CreateShellInertiaAttr(
     VtValue const &defaultValue, bool writeSparsely) const {
   return UsdSchemaBase::_CreateAttr(
       MjcPhysicsTokens->mjcShellinertia, SdfValueTypeNames->Bool,
+      /* custom = */ false, SdfVariabilityUniform, defaultValue, writeSparsely);
+}
+
+UsdAttribute MjcPhysicsCollisionAPI::GetPriorityAttr() const {
+  return GetPrim().GetAttribute(MjcPhysicsTokens->mjcPriority);
+}
+
+UsdAttribute MjcPhysicsCollisionAPI::CreatePriorityAttr(
+    VtValue const &defaultValue, bool writeSparsely) const {
+  return UsdSchemaBase::_CreateAttr(
+      MjcPhysicsTokens->mjcPriority, SdfValueTypeNames->Int,
+      /* custom = */ false, SdfVariabilityUniform, defaultValue, writeSparsely);
+}
+
+UsdAttribute MjcPhysicsCollisionAPI::GetConDimAttr() const {
+  return GetPrim().GetAttribute(MjcPhysicsTokens->mjcCondim);
+}
+
+UsdAttribute MjcPhysicsCollisionAPI::CreateConDimAttr(
+    VtValue const &defaultValue, bool writeSparsely) const {
+  return UsdSchemaBase::_CreateAttr(
+      MjcPhysicsTokens->mjcCondim, SdfValueTypeNames->Int,
+      /* custom = */ false, SdfVariabilityUniform, defaultValue, writeSparsely);
+}
+
+UsdAttribute MjcPhysicsCollisionAPI::GetSolMixAttr() const {
+  return GetPrim().GetAttribute(MjcPhysicsTokens->mjcSolmix);
+}
+
+UsdAttribute MjcPhysicsCollisionAPI::CreateSolMixAttr(
+    VtValue const &defaultValue, bool writeSparsely) const {
+  return UsdSchemaBase::_CreateAttr(
+      MjcPhysicsTokens->mjcSolmix, SdfValueTypeNames->Double,
+      /* custom = */ false, SdfVariabilityUniform, defaultValue, writeSparsely);
+}
+
+UsdAttribute MjcPhysicsCollisionAPI::GetSolRefAttr() const {
+  return GetPrim().GetAttribute(MjcPhysicsTokens->mjcSolref);
+}
+
+UsdAttribute MjcPhysicsCollisionAPI::CreateSolRefAttr(
+    VtValue const &defaultValue, bool writeSparsely) const {
+  return UsdSchemaBase::_CreateAttr(
+      MjcPhysicsTokens->mjcSolref, SdfValueTypeNames->DoubleArray,
+      /* custom = */ false, SdfVariabilityUniform, defaultValue, writeSparsely);
+}
+
+UsdAttribute MjcPhysicsCollisionAPI::GetSolImpAttr() const {
+  return GetPrim().GetAttribute(MjcPhysicsTokens->mjcSolimp);
+}
+
+UsdAttribute MjcPhysicsCollisionAPI::CreateSolImpAttr(
+    VtValue const &defaultValue, bool writeSparsely) const {
+  return UsdSchemaBase::_CreateAttr(
+      MjcPhysicsTokens->mjcSolimp, SdfValueTypeNames->DoubleArray,
+      /* custom = */ false, SdfVariabilityUniform, defaultValue, writeSparsely);
+}
+
+UsdAttribute MjcPhysicsCollisionAPI::GetMarginAttr() const {
+  return GetPrim().GetAttribute(MjcPhysicsTokens->mjcMargin);
+}
+
+UsdAttribute MjcPhysicsCollisionAPI::CreateMarginAttr(
+    VtValue const &defaultValue, bool writeSparsely) const {
+  return UsdSchemaBase::_CreateAttr(
+      MjcPhysicsTokens->mjcMargin, SdfValueTypeNames->Double,
+      /* custom = */ false, SdfVariabilityUniform, defaultValue, writeSparsely);
+}
+
+UsdAttribute MjcPhysicsCollisionAPI::GetGapAttr() const {
+  return GetPrim().GetAttribute(MjcPhysicsTokens->mjcGap);
+}
+
+UsdAttribute MjcPhysicsCollisionAPI::CreateGapAttr(VtValue const &defaultValue,
+                                                   bool writeSparsely) const {
+  return UsdSchemaBase::_CreateAttr(
+      MjcPhysicsTokens->mjcGap, SdfValueTypeNames->Double,
       /* custom = */ false, SdfVariabilityUniform, defaultValue, writeSparsely);
 }
 
@@ -101,7 +189,11 @@ static inline TfTokenVector _ConcatenateAttributeNames(
 const TfTokenVector &MjcPhysicsCollisionAPI::GetSchemaAttributeNames(
     bool includeInherited) {
   static TfTokenVector localNames = {
-      MjcPhysicsTokens->mjcShellinertia,
+      MjcPhysicsTokens->mjcGroup,    MjcPhysicsTokens->mjcShellinertia,
+      MjcPhysicsTokens->mjcPriority, MjcPhysicsTokens->mjcCondim,
+      MjcPhysicsTokens->mjcSolmix,   MjcPhysicsTokens->mjcSolref,
+      MjcPhysicsTokens->mjcSolimp,   MjcPhysicsTokens->mjcMargin,
+      MjcPhysicsTokens->mjcGap,
   };
   static TfTokenVector allNames = _ConcatenateAttributeNames(
       UsdAPISchemaBase::GetSchemaAttributeNames(true), localNames);

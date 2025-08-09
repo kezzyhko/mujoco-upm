@@ -394,6 +394,14 @@ void mjCModel::CopyPlugin(const std::vector<mjCPlugin*>& source,
       delete candidate;
     }
   }
+
+  // update other elements in the list in case of multiple references
+  for (auto& element : list) {
+    if (!element->plugin_instance_name.empty()) {
+      element->spec.plugin.element =
+          instances.at(element->plugin_instance_name)->spec.plugin.element;
+    }
+  }
 }
 
 
@@ -1689,7 +1697,7 @@ void mjCModel::IndexAssets(bool discard) {
           ((mjCMesh*)mesh)->SetNotVisual();  // reset to true by mesh->Compile()
         }
         geom->mesh = (discard && geom->visual_) ? nullptr : (mjCMesh*)mesh;
-        static_cast<mjCMesh*>(mesh)->needoct_ |= geom->spec.type == mjGEOM_SDF;
+        static_cast<mjCMesh*>(mesh)->spec.needsdf |= geom->spec.type == mjGEOM_SDF;
       } else {
         throw mjCError(geom, "mesh '%s' not found in geom %d", geom->get_meshname().c_str(), i);
       }
@@ -2993,10 +3001,10 @@ void mjCModel::CopyObjects(mjModel* m) {
 
     // copy octree data
     if (pme->octree().NumNodes()) {
-      int n_oct = pme->octree().NumNodes();
-      memcpy(m->oct_aabb + 6*oct_adr, pme->octree().Nodes().data(), 6*n_oct*sizeof(mjtNum));
-      memcpy(m->oct_child + 8*oct_adr, pme->octree().Child().data(), 8*n_oct*sizeof(int));
-      memcpy(m->oct_depth + oct_adr, pme->octree().Level().data(), n_oct*sizeof(int));
+      pme->octree().CopyAabb(m->oct_aabb + 6*oct_adr);
+      pme->octree().CopyChild(m->oct_child + 8*oct_adr);
+      pme->octree().CopyLevel(m->oct_depth + oct_adr);
+      pme->octree().CopyCoeff(m->oct_coeff + 8*oct_adr);
     }
 
     // advance counters
@@ -3454,6 +3462,7 @@ void mjCModel::CopyObjects(mjModel* m) {
     m->sensor_objid[i] = psen->obj ? psen->obj->id : -1;
     m->sensor_reftype[i] = psen->reftype;
     m->sensor_refid[i] = psen->ref ? psen->ref->id : -1;
+    mjuu_copyvec(m->sensor_intprm+i*mjNSENS, psen->intprm, mjNSENS);
     m->sensor_dim[i] = psen->dim;
     m->sensor_cutoff[i] = (mjtNum)psen->cutoff;
     m->sensor_noise[i] = (mjtNum)psen->noise;
@@ -4467,11 +4476,25 @@ void mjCModel::TryCompile(mjModel*& m, mjData*& d, const mjVFS* vfs) {
   // map names to asset references
   IndexAssets(/*discard=*/false);
 
+  // compile pairs for convex hull check
+  // TODO(quaglino): Consolidate the two calls to pair->Compile() in TryCompile.
+  for (auto pair : pairs_) pair->Compile();
+
   // mark meshes that need convex hull
   for (int i=0; i < geoms_.size(); i++) {
+    bool is_in_pair = false;
+    for (const mjCPair* pair : pairs_) {
+      if ((pair->geom1 && pair->geom1->id == geoms_[i]->id) ||
+          (pair->geom2 && pair->geom2->id == geoms_[i]->id)) {
+        is_in_pair = true;
+        break;
+      }
+    }
+
     if (geoms_[i]->mesh &&
-        (geoms_[i]->spec.type == mjGEOM_MESH || geoms_[i]->spec.type == mjGEOM_SDF) &&
-        (geoms_[i]->spec.contype || geoms_[i]->spec.conaffinity ||
+        (geoms_[i]->spec.type == mjGEOM_MESH ||
+         geoms_[i]->spec.type == mjGEOM_SDF) &&
+        (geoms_[i]->spec.contype || geoms_[i]->spec.conaffinity || is_in_pair ||
          geoms_[i]->mesh->spec.inertia == mjMESH_INERTIA_CONVEX)) {
       geoms_[i]->mesh->SetNeedHull(true);
     }

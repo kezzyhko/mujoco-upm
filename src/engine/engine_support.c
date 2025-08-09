@@ -41,8 +41,8 @@
 
 //-------------------------- Constants -------------------------------------------------------------
 
- #define mjVERSION 334
-#define mjVERSIONSTRING "3.3.4"
+ #define mjVERSION 335
+#define mjVERSIONSTRING "3.3.5"
 
 // names of disable flags
 const char* mjDISABLESTRING[mjNDISABLE] = {
@@ -96,6 +96,17 @@ const char* mjTIMERSTRING[mjNTIMER]= {
   "col_narrowphase"
 };
 
+
+// size of contact data fields
+const int mjCONDATA_SIZE[mjNCONDATA] = {
+  1,  // mjCONDATA_FOUND
+  3,  // mjCONDATA_FORCE
+  3,  // mjCONDATA_TORQUE
+  1,  // mjCONDATA_DIST
+  3,  // mjCONDATA_POS
+  3,  // mjCONDATA_NORMAL
+  3   // mjCONDATA_TANGENT
+};
 
 
 //-------------------------- get/set state ---------------------------------------------------------
@@ -1292,12 +1303,14 @@ static mjtNum mj_geomDistanceCCD(const mjModel* m, const mjData* d, int g1, int 
 
   mjtNum dist = mjc_ccd(&config, &status, &obj1, &obj2);
 
+  // witness points are only computed if dist <= distmax
   if (fromto && status.nx > 0) {
     mju_copy3(fromto, status.x1);
     mju_copy3(fromto+3, status.x2);
   }
 
-  return dist;
+  // clamp dist to distmax as mjc_ccd returns DBL_MAX if dist > distmax
+  return dist < distmax ? dist : distmax;
 }
 
 
@@ -1575,4 +1588,17 @@ int mj_version(void) {
 const char* mj_versionString(void) {
   static const char versionstring[] = mjVERSIONSTRING;
   return versionstring;
+}
+
+
+
+// return total size of data in a contact sensor bitfield specification
+int mju_condataSize(int dataspec) {
+  int size = 0;
+  for (int i=0; i < mjNCONDATA; i++) {
+    if (dataspec & (1 << i)) {
+      size += mjCONDATA_SIZE[i];
+    }
+  }
+  return size;
 }

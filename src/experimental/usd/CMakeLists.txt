@@ -172,10 +172,12 @@ target_include_directories(${MJCF_PLUGIN_TARGET_NAME} PRIVATE
 
 add_library(${MJC_PHYSICS_PLUGIN_TARGET_NAME} SHARED)
 target_sources(${MJC_PHYSICS_PLUGIN_TARGET_NAME} PRIVATE
-  mjcPhysics/actuatorAPI.cpp
+  mjcPhysics/actuator.cpp
   mjcPhysics/collisionAPI.cpp
+  mjcPhysics/imageableAPI.cpp
   mjcPhysics/jointAPI.cpp
   mjcPhysics/keyframe.cpp
+  mjcPhysics/materialAPI.cpp
   mjcPhysics/meshCollisionAPI.cpp
   mjcPhysics/sceneAPI.cpp
   mjcPhysics/siteAPI.cpp
@@ -195,14 +197,19 @@ target_sources(mujoco PRIVATE
   kinematic_tree.cc
   kinematic_tree.h
   layer_sink.cc
+  material_parsing.cc
+  material_parsing.h
   usd_to_mjspec.cc
   utils.cc
   writer.cc
 )
-target_include_directories(${MJ_USD_TARGET_NAME} PUBLIC
-  "${CMAKE_CURRENT_SOURCE_DIR}/../../"
-)
 
+# pxr/usd/tf/hashset.h might include deprecated headers so disable this check
+# when compiling with USD enabled.
+target_compile_options(
+     mujoco
+     PRIVATE -Wno-deprecated
+)
 
 if (USD_DIR)
   find_package(pxr REQUIRED)

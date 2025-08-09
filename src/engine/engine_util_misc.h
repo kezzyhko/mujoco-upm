@@ -53,6 +53,10 @@ MJAPI mjtNum mju_muscleDynamics(mjtNum ctrl, mjtNum act, const mjtNum prm[3]);
 // all 3 semi-axes of a geom
 MJAPI void mju_geomSemiAxes(mjtNum semiaxes[3], const mjtNum size[3], mjtGeom type);
 
+// return 1 if point is inside a primitive geom, 0 otherwise
+int mju_insideGeom(const mjtNum pos[3], const mjtNum mat[9], const mjtNum size[3], mjtGeom type,
+                   const mjtNum point[3]);
+
 // ----------------------------- Flex interpolation ------------------------------------------------
 
 // evaluate the deformation gradient at p using the nodal dof values
@@ -134,6 +138,9 @@ MJAPI int mju_isZero(mjtNum* vec, int n);
 
 // set integer vector to 0
 MJAPI void mju_zeroInt(int* res, int n);
+
+// set mjtSize vector to 0
+MJAPI void mju_zeroSize(mjtSize* res, size_t n);
 
 // set size_t vector to 0
 MJAPI void mju_zeroSizeT(size_t* res, size_t n);

@@ -220,6 +220,7 @@
     X   ( int,     oct_depth,             noct,          1                    ) \
     X   ( int,     oct_child,             noct,          8                    ) \
     X   ( mjtNum,  oct_aabb,              noct,          6                    ) \
+    X   ( mjtNum,  oct_coeff,             noct,          8                    ) \
     X   ( int,     jnt_type,              njnt,          1                    ) \
     X   ( int,     jnt_qposadr,           njnt,          1                    ) \
     X   ( int,     jnt_dofadr,            njnt,          1                    ) \
@@ -540,6 +541,7 @@
     X   ( int,     sensor_objid,          nsensor,       1                    ) \
     X   ( int,     sensor_reftype,        nsensor,       1                    ) \
     X   ( int,     sensor_refid,          nsensor,       1                    ) \
+    X   ( int,     sensor_intprm,         nsensor,       mjNSENS              ) \
     X   ( int,     sensor_dim,            nsensor,       1                    ) \
     X   ( int,     sensor_adr,            nsensor,       1                    ) \
     X   ( mjtNum,  sensor_cutoff,         nsensor,       1                    ) \
@@ -649,6 +651,7 @@
     X   ( int,       flexedge_J_colind, nflexedge,   MJ_M(nv)    ) \
     X   ( mjtNum,    flexedge_J,        nflexedge,   MJ_M(nv)    ) \
     X   ( mjtNum,    flexedge_length,   nflexedge,   1           ) \
+    X   ( mjtNum,    bvh_aabb_dyn,      nbvhdynamic, 6           ) \
     X   ( int,       ten_wrapadr,       ntendon,     1           ) \
     X   ( int,       ten_wrapnum,       ntendon,     1           ) \
     X   ( int,       ten_J_rownnz,      ntendon,     1           ) \
@@ -668,7 +671,6 @@
     XNV ( mjtNum,    M,                 nC,          1           ) \
     XNV ( mjtNum,    qLD,               nC,          1           ) \
     X   ( mjtNum,    qLDiagInv,         nv,          1           ) \
-    X   ( mjtNum,    bvh_aabb_dyn,      nbvhdynamic, 6           ) \
     X   ( mjtByte,   bvh_active,        nbvh,        1           ) \
     X   ( mjtNum,    flexedge_velocity, nflexedge,   1           ) \
     X   ( mjtNum,    ten_velocity,      ntendon,     1           ) \
