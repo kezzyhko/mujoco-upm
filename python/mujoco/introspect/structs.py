@@ -884,6 +884,26 @@ STRUCTS: Mapping[str, StructDecl] = dict([
                  doc='number of joints',
              ),
              StructFieldDecl(
+                 name='nM',
+                 type=ValueType(name='int'),
+                 doc='number of non-zeros in sparse inertia matrix',
+             ),
+             StructFieldDecl(
+                 name='nB',
+                 type=ValueType(name='int'),
+                 doc='number of non-zeros in sparse body-dof matrix',
+             ),
+             StructFieldDecl(
+                 name='nC',
+                 type=ValueType(name='int'),
+                 doc='number of non-zeros in sparse reduced dof-dof matrix',
+             ),
+             StructFieldDecl(
+                 name='nD',
+                 type=ValueType(name='int'),
+                 doc='number of non-zeros in sparse dof-dof matrix',
+             ),
+             StructFieldDecl(
                  name='ngeom',
                  type=ValueType(name='int'),
                  doc='number of geoms',
@@ -1187,26 +1207,6 @@ STRUCTS: Mapping[str, StructDecl] = dict([
                  name='nnames_map',
                  type=ValueType(name='int'),
                  doc='number of slots in the names hash map',
-             ),
-             StructFieldDecl(
-                 name='nM',
-                 type=ValueType(name='int'),
-                 doc='number of non-zeros in sparse inertia matrix',
-             ),
-             StructFieldDecl(
-                 name='nB',
-                 type=ValueType(name='int'),
-                 doc='number of non-zeros in sparse body-dof matrix',
-             ),
-             StructFieldDecl(
-                 name='nC',
-                 type=ValueType(name='int'),
-                 doc='number of non-zeros in sparse reduced dof-dof matrix',
-             ),
-             StructFieldDecl(
-                 name='nD',
-                 type=ValueType(name='int'),
-                 doc='number of non-zeros in sparse dof-dof matrix',
              ),
              StructFieldDecl(
                  name='nJmom',
@@ -4606,6 +4606,110 @@ STRUCTS: Mapping[str, StructDecl] = dict([
                  array_extent=('npaths',),
              ),
              StructFieldDecl(
+                 name='B_rownnz',
+                 type=PointerType(
+                     inner_type=ValueType(name='int'),
+                 ),
+                 doc='body-dof: non-zeros in each row',
+                 array_extent=('nbody',),
+             ),
+             StructFieldDecl(
+                 name='B_rowadr',
+                 type=PointerType(
+                     inner_type=ValueType(name='int'),
+                 ),
+                 doc='body-dof: row addresses',
+                 array_extent=('nbody',),
+             ),
+             StructFieldDecl(
+                 name='B_colind',
+                 type=PointerType(
+                     inner_type=ValueType(name='int'),
+                 ),
+                 doc='body-dof: column indices',
+                 array_extent=('nB',),
+             ),
+             StructFieldDecl(
+                 name='M_rownnz',
+                 type=PointerType(
+                     inner_type=ValueType(name='int'),
+                 ),
+                 doc='reduced inertia: non-zeros in each row',
+                 array_extent=('nv',),
+             ),
+             StructFieldDecl(
+                 name='M_rowadr',
+                 type=PointerType(
+                     inner_type=ValueType(name='int'),
+                 ),
+                 doc='reduced inertia: row addresses',
+                 array_extent=('nv',),
+             ),
+             StructFieldDecl(
+                 name='M_colind',
+                 type=PointerType(
+                     inner_type=ValueType(name='int'),
+                 ),
+                 doc='reduced inertia: column indices',
+                 array_extent=('nC',),
+             ),
+             StructFieldDecl(
+                 name='mapM2M',
+                 type=PointerType(
+                     inner_type=ValueType(name='int'),
+                 ),
+                 doc='index mapping from qM to M',
+                 array_extent=('nC',),
+             ),
+             StructFieldDecl(
+                 name='D_rownnz',
+                 type=PointerType(
+                     inner_type=ValueType(name='int'),
+                 ),
+                 doc='full inertia: non-zeros in each row',
+                 array_extent=('nv',),
+             ),
+             StructFieldDecl(
+                 name='D_rowadr',
+                 type=PointerType(
+                     inner_type=ValueType(name='int'),
+                 ),
+                 doc='full inertia: row addresses',
+                 array_extent=('nv',),
+             ),
+             StructFieldDecl(
+                 name='D_diag',
+                 type=PointerType(
+                     inner_type=ValueType(name='int'),
+                 ),
+                 doc='full inertia: index of diagonal element',
+                 array_extent=('nv',),
+             ),
+             StructFieldDecl(
+                 name='D_colind',
+                 type=PointerType(
+                     inner_type=ValueType(name='int'),
+                 ),
+                 doc='full inertia: column indices',
+                 array_extent=('nD',),
+             ),
+             StructFieldDecl(
+                 name='mapM2D',
+                 type=PointerType(
+                     inner_type=ValueType(name='int'),
+                 ),
+                 doc='index mapping from qM to D',
+                 array_extent=('nD',),
+             ),
+             StructFieldDecl(
+                 name='mapD2M',
+                 type=PointerType(
+                     inner_type=ValueType(name='int'),
+                 ),
+                 doc='index mapping from D to qM',
+                 array_extent=('nM',),
+             ),
+             StructFieldDecl(
                  name='signature',
                  type=ValueType(name='uint64_t'),
                  doc='also held by the mjSpec that compiled this model',
@@ -5665,110 +5769,6 @@ STRUCTS: Mapping[str, StructDecl] = dict([
                  ),
                  doc='1/diag(D) of modified M',
                  array_extent=('nv',),
-             ),
-             StructFieldDecl(
-                 name='B_rownnz',
-                 type=PointerType(
-                     inner_type=ValueType(name='int'),
-                 ),
-                 doc='body-dof: non-zeros in each row',
-                 array_extent=('nbody',),
-             ),
-             StructFieldDecl(
-                 name='B_rowadr',
-                 type=PointerType(
-                     inner_type=ValueType(name='int'),
-                 ),
-                 doc='body-dof: address of each row in B_colind',
-                 array_extent=('nbody',),
-             ),
-             StructFieldDecl(
-                 name='B_colind',
-                 type=PointerType(
-                     inner_type=ValueType(name='int'),
-                 ),
-                 doc='body-dof: column indices of non-zeros',
-                 array_extent=('nB',),
-             ),
-             StructFieldDecl(
-                 name='M_rownnz',
-                 type=PointerType(
-                     inner_type=ValueType(name='int'),
-                 ),
-                 doc='reduced inertia: non-zeros in each row',
-                 array_extent=('nv',),
-             ),
-             StructFieldDecl(
-                 name='M_rowadr',
-                 type=PointerType(
-                     inner_type=ValueType(name='int'),
-                 ),
-                 doc='reduced inertia: address of each row in M_colind',
-                 array_extent=('nv',),
-             ),
-             StructFieldDecl(
-                 name='M_colind',
-                 type=PointerType(
-                     inner_type=ValueType(name='int'),
-                 ),
-                 doc='reduced inertia: column indices of non-zeros',
-                 array_extent=('nC',),
-             ),
-             StructFieldDecl(
-                 name='mapM2M',
-                 type=PointerType(
-                     inner_type=ValueType(name='int'),
-                 ),
-                 doc='index mapping from qM to M',
-                 array_extent=('nC',),
-             ),
-             StructFieldDecl(
-                 name='D_rownnz',
-                 type=PointerType(
-                     inner_type=ValueType(name='int'),
-                 ),
-                 doc='full inertia: non-zeros in each row',
-                 array_extent=('nv',),
-             ),
-             StructFieldDecl(
-                 name='D_rowadr',
-                 type=PointerType(
-                     inner_type=ValueType(name='int'),
-                 ),
-                 doc='full inertia: address of each row in D_colind',
-                 array_extent=('nv',),
-             ),
-             StructFieldDecl(
-                 name='D_diag',
-                 type=PointerType(
-                     inner_type=ValueType(name='int'),
-                 ),
-                 doc='full inertia: index of diagonal element',
-                 array_extent=('nv',),
-             ),
-             StructFieldDecl(
-                 name='D_colind',
-                 type=PointerType(
-                     inner_type=ValueType(name='int'),
-                 ),
-                 doc='full inertia: column indices of non-zeros',
-                 array_extent=('nD',),
-             ),
-             StructFieldDecl(
-                 name='mapM2D',
-                 type=PointerType(
-                     inner_type=ValueType(name='int'),
-                 ),
-                 doc='index mapping from qM to D',
-                 array_extent=('nD',),
-             ),
-             StructFieldDecl(
-                 name='mapD2M',
-                 type=PointerType(
-                     inner_type=ValueType(name='int'),
-                 ),
-                 doc='index mapping from D to qM',
-                 array_extent=('nM',),
              ),
              StructFieldDecl(
                  name='qDeriv',
