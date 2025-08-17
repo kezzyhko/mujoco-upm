@@ -2088,12 +2088,33 @@ void mjCModel::SetSizes() {
   ntuple = (int)tuples_.size();
   nkey = (int)keys_.size();
   nplugin = (int)plugins_.size();
-  nq = nv = nu = na = nmocap = 0;
+  nq = nv = ntree = nu = na = nmocap = 0;
 
-  // nq, nv
+  // nq, nv, ntree
   for (int i=0; i < njnt; i++) {
     nq += joints_[i]->nq();
     nv += joints_[i]->nv();
+
+    // increment ntree if this is the first joint in a moving body with static ancestry
+    mjCBody* parent = joints_[i]->GetParent();
+    bool is_first_joint = joints_[i] == parent->joints[0];
+    if (is_first_joint) {
+      // check if all ancestors are static
+      bool static_ancestry = true;
+      mjCBody* ancestor = parent;
+      while (ancestor != bodies_[0]) {
+        ancestor = ancestor->GetParent();
+        if (!ancestor->joints.empty()) {
+          static_ancestry = false;
+          break;
+        }
+      }
+
+      // if all ancestors are static, this joint starts a new kinematic tree
+      if (static_ancestry) {
+        ntree++;
+      }
+    }
   }
 
   // nu, na
@@ -2899,7 +2920,12 @@ void mjCModel::CopyTree(mjModel* m) {
     }
     m->dof_treeid[i] = ntree - 1;
   }
-  m->ntree = ntree;
+
+  // check number of trees constructed, SHOULD NOT OCCUR
+  if (ntree != m->ntree) {
+    throw mjCError(0, "unexpected number of TREEs. Counted %d, expected %d",
+                   nullptr, ntree, m->ntree);
+  }
 
   // compute body_treeid
   for (int i=0; i < nbody; i++) {
@@ -4770,8 +4796,8 @@ void mjCModel::TryCompile(mjModel*& m, mjData*& d, const mjVFS* vfs) {
 
   // create low-level model
   mj_makeModel(&m,
-               nq, nv, nu, na, nbody, nbvh, nbvhstatic, nbvhdynamic, noct, njnt, nM, nB, nC, nD,
-               ngeom, nsite, ncam, nlight, nflex, nflexnode, nflexvert, nflexedge, nflexelem,
+               nq, nv, nu, na, nbody, nbvh, nbvhstatic, nbvhdynamic, noct, njnt, ntree, nM, nB, nC,
+               nD, ngeom, nsite, ncam, nlight, nflex, nflexnode, nflexvert, nflexedge, nflexelem,
                nflexelemdata, nflexelemedge, nflexshelldata, nflexevpair, nflextexcoord,
                nmesh, nmeshvert, nmeshnormal, nmeshtexcoord, nmeshface, nmeshgraph, nmeshpoly,
                nmeshpolyvert, nmeshpolymap, nskin, nskinvert, nskintexvert, nskinface, nskinbone,
@@ -4850,29 +4876,30 @@ void mjCModel::TryCompile(mjModel*& m, mjData*& d, const mjVFS* vfs) {
 
   // sparsity structures
   {
-    std::vector<int> remaining(m->nv);
+    std::vector<int> scratch(m->nv);
     std::vector<int> count(m->nbody);
     std::vector<int> M(m->nM);
-    std::vector<int> D(m->nD);
 
     // make D
     mj_makeDofDofSparse(m->nv, m->nC, m->nD, m->nM, m->dof_parentid, m->dof_simplenum,
                         m->D_rownnz, m->D_rowadr, m->D_diag, m->D_colind,
-                        /*reduced=*/0, /*upper=*/1, remaining.data());
+                        /*reduced=*/0, /*upper=*/1, scratch.data());
 
     // make B
     mj_makeBSparse(m->nv, m->nbody, m->nB, m->body_dofnum, m->body_parentid,
                   m->body_dofadr, m->B_rownnz, m->B_rowadr, m->B_colind, count.data());
 
-    // make C
+    // make M
     mj_makeDofDofSparse(m->nv, m->nC, m->nD, m->nM, m->dof_parentid, m->dof_simplenum,
                         m->M_rownnz, m->M_rowadr, NULL, m->M_colind,
-                        /*reduced=*/1, /*upper=*/0, remaining.data());
+                        /*reduced=*/1, /*upper=*/0, scratch.data());
 
     // make index mappings: mapM2D, mapD2M, mapM2M
-    mj_makeDofDofMaps(m->nv, m->nM, m->nC, m->nD, m->dof_Madr, m->dof_simplenum, m->dof_parentid,
-                      m->D_rownnz, m->D_rowadr, m->D_colind, m->M_rownnz, m->M_rowadr,
-                      m->mapM2D, m->mapD2M, m->mapM2M, remaining.data(), M.data(), D.data());
+    mj_makeDofDofMaps(m->nv, m->nM, m->nC, m->nD,
+                      m->dof_Madr, m->dof_simplenum, m->dof_parentid,
+                      m->D_rownnz, m->D_rowadr, m->D_colind,
+                      m->M_rownnz, m->M_rowadr, m->M_colind,
+                      m->mapM2D, m->mapD2M, m->mapM2M, M.data(), scratch.data());
   }
 
   // create data

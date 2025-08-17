@@ -77,6 +77,7 @@
     X( nbvhdynamic )        \
     X( noct )               \
     X( njnt )               \
+    X( ntree )              \
     X( nM )                 \
     X( nB )                 \
     X( nC )                 \
@@ -143,7 +144,6 @@
     X( npaths )             \
     X( nnames_map )         \
     X( nJmom )              \
-    X( ntree )              \
     X( ngravcomp )          \
     X( nemax )              \
     X( njmax )              \
@@ -609,7 +609,7 @@
     X   ( int,     D_diag,                nv,            1                    ) \
     X   ( int,     D_colind,              nD,            1                    ) \
     X   ( int,     mapM2D,                nD,            1                    ) \
-    X   ( int,     mapD2M,                nM,            1                    )
+    X   ( int,     mapD2M,                nC,            1                    )
 
 //-------------------------------- mjData ----------------------------------------------------------
 

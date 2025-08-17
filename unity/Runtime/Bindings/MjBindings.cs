@@ -5254,6 +5254,7 @@ public unsafe struct mjModel_ {
   public int nbvhdynamic;
   public int noct;
   public int njnt;
+  public int ntree;
   public int nM;
   public int nB;
   public int nC;
@@ -5320,7 +5321,6 @@ public unsafe struct mjModel_ {
   public int npaths;
   public int nnames_map;
   public int nJmom;
-  public int ntree;
   public int ngravcomp;
   public int nemax;
   public int njmax;
@@ -6591,13 +6591,13 @@ public static unsafe extern void mj_referenceConstraint(mjModel_* m, mjData_* d)
 public static unsafe extern void mj_constraintUpdate(mjModel_* m, mjData_* d, double* jar, double* cost, int flg_coneHessian);
 
 [DllImport("mujoco", CallingConvention = CallingConvention.Cdecl)]
-public static unsafe extern int mj_stateSize(mjModel_* m, uint spec);
+public static unsafe extern int mj_stateSize(mjModel_* m, uint sig);
 
 [DllImport("mujoco", CallingConvention = CallingConvention.Cdecl)]
-public static unsafe extern void mj_getState(mjModel_* m, mjData_* d, double* state, uint spec);
+public static unsafe extern void mj_getState(mjModel_* m, mjData_* d, double* state, uint sig);
 
 [DllImport("mujoco", CallingConvention = CallingConvention.Cdecl)]
-public static unsafe extern void mj_setState(mjModel_* m, mjData_* d, double* state, uint spec);
+public static unsafe extern void mj_setState(mjModel_* m, mjData_* d, double* state, uint sig);
 
 [DllImport("mujoco", CallingConvention = CallingConvention.Cdecl)]
 public static unsafe extern void mj_setKeyframe(mjModel_* m, mjData_* d, int k);

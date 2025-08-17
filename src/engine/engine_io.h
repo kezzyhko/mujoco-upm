@@ -53,8 +53,8 @@ void mj_defaultStatistic(mjStatistic* stat);
 // allocate mjModel
 void mj_makeModel(mjModel** dest,
     int nq, int nv, int nu, int na, int nbody, int nbvh, int nbvhstatic, int nbvhdynamic, int noct,
-    int njnt, int nM, int nB, int nC, int nD, int ngeom, int nsite, int ncam, int nlight, int nflex,
-    int nflexnode, int nflexvert, int nflexedge, int nflexelem, int nflexelemdata,
+    int njnt, int ntree, int nM, int nB, int nC, int nD, int ngeom, int nsite, int ncam, int nlight,
+    int nflex, int nflexnode, int nflexvert, int nflexedge, int nflexelem, int nflexelemdata,
     int nflexelemedge, int nflexshelldata, int nflexevpair, int nflextexcoord, int nmesh,
     int nmeshvert, int nmeshnormal, int nmeshtexcoord, int nmeshface, int nmeshgraph, int nmeshpoly,
     int nmeshpolyvert, int nmeshpolymap, int nskin, int nskinvert, int nskintexvert, int nskinface,
@@ -101,9 +101,9 @@ MJAPI void mj_makeBSparse(int nv, int nbody, int nB,
 MJAPI void mj_makeDofDofMaps(int nv, int nM, int nC, int nD,
                              const int* dof_Madr, const int* dof_simplenum, const int* dof_parentid,
                              const int* D_rownnz, const int* D_rowadr, const int* D_colind,
-                             const int* M_rownnz, const int* M_rowadr,
+                             const int* M_rownnz, const int* M_rowadr, const int* M_colind,
                              int* mapM2D, int* mapD2M, int* mapM2M,
-                             int* remaining, int* M, int* D);
+                             int* M, int* scratch);
 
 //------------------------------- mjData -----------------------------------------------------------
 
