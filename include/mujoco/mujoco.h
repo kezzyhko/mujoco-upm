@@ -16,7 +16,7 @@
 #define MUJOCO_MUJOCO_H_
 
 // header version; should match the library version as returned by mj_version()
-#define mjVERSION_HEADER 335
+#define mjVERSION_HEADER 336
 
 // needed to define size_t, fabs and log10
 #include <stdlib.h>
@@ -90,6 +90,22 @@ MJAPI int mj_deleteFileVFS(mjVFS* vfs, const char* filename);
 // Delete all files from VFS and deallocates VFS internal memory.
 MJAPI void mj_deleteVFS(mjVFS* vfs);
 
+//------------------------------------ Asset cache -------------------------------------------------
+
+// Get the current size of the asset cache in bytes.
+MJAPI size_t mj_getCacheSize(const mjCache* cache);
+
+// Get the capacity of the asset cache in bytes.
+MJAPI size_t mj_getCacheCapacity(const mjCache* cache);
+
+// Set the capacity of the asset cache in bytes (0 to disable); returns the new capacity.
+MJAPI size_t mj_setCacheCapacity(mjCache* cache, size_t size);
+
+// Get the internal asset cache used by the compiler.
+MJAPI mjCache* mj_getCache(void);
+
+// Clear the asset cache.
+MJAPI void mj_clearCache(mjCache* cache);
 
 //---------------------------------- Parse and compile ---------------------------------------------
 
@@ -166,6 +182,7 @@ MJAPI void mj_inverseSkip(const mjModel* m, mjData* d, int skipstage, int skipse
 MJAPI void mj_defaultLROpt(mjLROpt* opt);
 
 // Set solver parameters to default values.
+// Nullable: solref, solimp
 MJAPI void mj_defaultSolRefImp(mjtNum* solref, mjtNum* solimp);
 
 // Set physics options to default values.
@@ -175,6 +192,7 @@ MJAPI void mj_defaultOption(mjOption* opt);
 MJAPI void mj_defaultVisual(mjVisual* vis);
 
 // Copy mjModel, allocate new if dest is NULL.
+// Nullable: dest
 MJAPI mjModel* mj_copyModel(mjModel* dest, const mjModel* src);
 
 // Save model to binary MJB file or memory buffer; buffer has precedence when given.
@@ -430,14 +448,14 @@ MJAPI void mj_constraintUpdate(const mjModel* m, mjData* d, const mjtNum* jar,
 
 //---------------------------------- Support -------------------------------------------------------
 
-// Return size of state specification.
-MJAPI int mj_stateSize(const mjModel* m, unsigned int spec);
+// Return size of state signature.
+MJAPI int mj_stateSize(const mjModel* m, unsigned int sig);
 
 // Get state.
-MJAPI void mj_getState(const mjModel* m, const mjData* d, mjtNum* state, unsigned int spec);
+MJAPI void mj_getState(const mjModel* m, const mjData* d, mjtNum* state, unsigned int sig);
 
 // Set state.
-MJAPI void mj_setState(const mjModel* m, mjData* d, const mjtNum* state, unsigned int spec);
+MJAPI void mj_setState(const mjModel* m, mjData* d, const mjtNum* state, unsigned int sig);
 
 // Copy current state to the k-th model keyframe.
 MJAPI void mj_setKeyframe(mjModel* m, const mjData* d, int k);
@@ -512,7 +530,7 @@ MJAPI void mj_mulM(const mjModel* m, const mjData* d, mjtNum* res, const mjtNum*
 // Multiply vector by (inertia matrix)^(1/2).
 MJAPI void mj_mulM2(const mjModel* m, const mjData* d, mjtNum* res, const mjtNum* vec);
 
-// Add inertia matrix to destination matrix.
+// Add inertia matrix to destination matrix (lower triangle only).
 // Destination can be sparse or dense when all int* are NULL.
 // Nullable: rownnz, rowadr, colind
 MJAPI void mj_addM(const mjModel* m, mjData* d, mjtNum* dst, int* rownnz, int* rowadr, int* colind);

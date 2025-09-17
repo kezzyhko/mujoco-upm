@@ -23,7 +23,8 @@
 #include <mujoco/mjsan.h>  // IWYU pragma: keep
 #include <mujoco/mjvisualize.h>
 #include "engine/engine_array_safety.h"
-#include "engine/engine_io.h"
+#include "engine/engine_core_util.h"
+#include "engine/engine_memory.h"
 #include "engine/engine_name.h"
 #include "engine/engine_plugin.h"
 #include "engine/engine_support.h"
@@ -89,13 +90,54 @@ static void makeLabel(const mjModel* m, mjtObj type, int id, char* label) {
 // advance counter
 #define FINISH { scn->ngeom++; }
 
+
+// convert HSV to RGB
+static void hsv2rgb(float *RGB, float H, float S, float V) {
+  float R, G, B;
+
+  if (S <= 0) {
+    R = G = B = V;
+  } else {
+    float hh = H * 6;
+    int i = (int)hh;
+    float ff = hh - i;
+    float p = V * (1 - S);
+    float q = V * (1 - (S * ff));
+    float t = V * (1 - (S * (1 - ff)));
+    if (i == 0) {
+      R=V;  G=t;  B=p;
+    } else if (i == 1) {
+      R=q;  G=V;  B=p;
+    } else if (i == 2) {
+      R=p;  G=V;  B=t;
+    } else if (i == 3) {
+      R=p;  G=q;  B=V;
+    } else if (i == 4) {
+      R=t;  G=p;  B=V;
+    } else {
+      R=V;  G=p;  B=q;
+    }
+  }
+
+  RGB[0] = R;
+  RGB[1] = G;
+  RGB[2] = B;
+}
+
+
+
+static const float kIslandSaturation  = 0.8;
+static const float kIslandValue       = 0.7;
+
 // assign pseudo-random rgba to constraint island using Halton sequence
-static void islandColor(float rgba[4], int islanddofadr) {
-  rgba[0] = 0.1f + 0.9f*mju_Halton(islanddofadr + 1, 2);
-  rgba[1] = 0.1f + 0.9f*mju_Halton(islanddofadr + 1, 3);
-  rgba[2] = 0.1f + 0.9f*mju_Halton(islanddofadr + 1, 5);
+static void islandColor(float rgba[4], int h) {
+  float hue = mju_Halton(h + 1, 2);
+  float saturation =  h >= 0 ? kIslandSaturation : 0;
+  hsv2rgb(rgba, hue, saturation, kIslandValue);
   rgba[3] = 1;
 }
+
+
 
 // make a triangle in thisgeom at coordinates v0, v1, v2 with a given color
 static void makeTriangle(mjvGeom* thisgeom, const mjtNum v0[3], const mjtNum v1[3],
@@ -110,6 +152,8 @@ static void makeTriangle(mjvGeom* thisgeom, const mjtNum v0[3], const mjtNum v1[
                     e1[2], e2[2], normal[2]};
   mjv_initGeom(thisgeom, mjGEOM_TRIANGLE, lengths, v0, xmat, rgba);
 }
+
+
 
 // add contact-related geoms in mjvObject
 static void addContactGeom(const mjModel* m, mjData* d, const mjtByte* flags,
@@ -150,9 +194,10 @@ static void addContactGeom(const mjModel* m, mjData* d, const mjtByte* flags,
       int efc_adr = d->contact[i].efc_address;
 
       // override standard colors if visualizing islands
-      if (vopt->flags[mjVIS_ISLAND] && d->nisland && efc_adr >= 0) {
-        // set color using island's first dof
-        islandColor(thisgeom->rgba, d->island_dofadr[d->efc_island[efc_adr]]);
+      if (vopt->flags[mjVIS_ISLAND] && efc_adr >= 0) {
+        // set hue using island's first dof
+        int h = d->nisland > 0 ? d->island_dofadr[d->efc_island[efc_adr]] : -1;
+        islandColor(thisgeom->rgba, h);
       }
 
       // otherwise regular colors (different for included and excluded contacts)
@@ -513,10 +558,138 @@ static int bodycategory(const mjModel* m, int bodyid) {
 // computes the camera frustum
 static void getFrustum(float zver[2], float zhor[2], float znear,
                        const float intrinsic[4], const float sensorsize[2]) {
-  zhor[0] = znear / intrinsic[0] * (sensorsize[0]/2.f - intrinsic[2]);
-  zhor[1] = znear / intrinsic[0] * (sensorsize[0]/2.f + intrinsic[2]);
-  zver[0] = znear / intrinsic[1] * (sensorsize[1]/2.f - intrinsic[3]);
-  zver[1] = znear / intrinsic[1] * (sensorsize[1]/2.f + intrinsic[3]);
+  if (zhor) {
+    zhor[0] = znear / intrinsic[0] * (sensorsize[0]/2.f - intrinsic[2]);
+    zhor[1] = znear / intrinsic[0] * (sensorsize[0]/2.f + intrinsic[2]);
+  }
+  if (zver) {
+    zver[0] = znear / intrinsic[1] * (sensorsize[1]/2.f - intrinsic[3]);
+    zver[1] = znear / intrinsic[1] * (sensorsize[1]/2.f + intrinsic[3]);
+  }
+}
+
+
+
+void mjv_cameraFrame(mjtNum headpos[3], mjtNum forward[3], mjtNum up[3], mjtNum right[3],
+                     const mjData* d, const mjvCamera* cam) {
+  switch (cam->type) {
+    case mjCAMERA_FREE:
+    case mjCAMERA_TRACKING: {
+      const mjtNum ca = mju_cos(cam->azimuth/180.0*mjPI);
+      const mjtNum sa = mju_sin(cam->azimuth/180.0*mjPI);
+      const mjtNum ce = mju_cos(cam->elevation/180.0*mjPI);
+      const mjtNum se = mju_sin(cam->elevation/180.0*mjPI);
+      if (forward) {
+        forward[0] = ce*ca;
+        forward[1] = ce*sa;
+        forward[2] = se;
+      }
+      if (up) {
+        up[0] = -se*ca;
+        up[1] = -se*sa;
+        up[2] = ce;
+      }
+      if (right) {
+        right[0] = sa;
+        right[1] = -ca;
+        right[2] = 0;
+      }
+      if (headpos) {
+        mju_addScl3(headpos, cam->lookat, forward, -cam->distance);
+      }
+      break;
+    }
+
+    case mjCAMERA_FIXED: {
+      const int cid = cam->fixedcamid;
+      const mjtNum* mat = d->cam_xmat + 9*cid;
+      if (forward) {
+        forward[0] = -mat[2];
+        forward[1] = -mat[5];
+        forward[2] = -mat[8];
+      }
+      if (up) {
+        up[0] = mat[1];
+        up[1] = mat[4];
+        up[2] = mat[7];
+      }
+      if (right) {
+        right[0] = mat[0];
+        right[1] = mat[3];
+        right[2] = mat[6];
+      }
+      if (headpos) {
+        mju_copy3(headpos, d->cam_xpos + 3*cid);
+      }
+      break;
+    }
+
+    default: {
+      mjERROR("unknown camera type");
+    }
+  }
+}
+
+
+void mjv_cameraFrustum(float zver[2], float zhor[2], float zclip[2], const mjModel* m,
+                       const mjvCamera* cam) {
+  mjtNum fovy;
+  int orthographic = 0, cid = 0;
+  float* intrinsic = NULL;
+  float* sensorsize = NULL;
+
+  // get ipd, fovy, orthographic, intrinsic
+  switch (cam->type) {
+  case mjCAMERA_FREE:
+  case mjCAMERA_TRACKING:
+    orthographic = m->vis.global.orthographic;
+    fovy = m->vis.global.fovy;
+    break;
+
+  case mjCAMERA_FIXED:
+    // get id, check range
+    cid = cam->fixedcamid;
+    if (cid < 0 || cid >= m->ncam) {
+      mjERROR("fixed camera id is outside valid range");
+    }
+    orthographic = m->cam_orthographic[cid];
+    fovy = m->cam_fovy[cid];
+
+    // if positive sensorsize, get sensorsize and intrinsic
+    if (m->cam_sensorsize[2*cid+1]) {
+      sensorsize = m->cam_sensorsize + 2*cid;
+      intrinsic = m->cam_intrinsic + 4*cid;
+    }
+    break;
+
+  default:
+    mjERROR("unknown camera type");
+  }
+
+  const float znear = m->vis.map.znear * m->stat.extent;
+
+  if (orthographic) {
+    if (zver) {
+      zver[0] = zver[1] = fovy / 2;
+    }
+    if (zhor) {
+      zhor[0] = zhor[1] = 0.0f;
+    }
+  } else if (intrinsic) {
+    getFrustum(zver, zhor, znear, intrinsic, sensorsize);
+  } else {
+    if (zver) {
+      zver[0] = zver[1] = znear * mju_tan(fovy * mjPI/360.0);
+    }
+    if (zhor) {
+      zhor[0] = zhor[1] = 0.0f;
+    }
+  }
+
+  if (zclip) {
+    zclip[0] = znear;
+    zclip[1] = m->vis.map.zfar * m->stat.extent;
+  }
 }
 
 
@@ -568,8 +741,7 @@ void mjv_addGeoms(const mjModel* m, mjData* d, const mjvOption* vopt,
         // set texcoord
         if (m->flex_texcoordadr[i] >= 0) {
           thisgeom->texcoord = 1;
-        }
-        else {
+        } else {
           thisgeom->matid = -1;
         }
 
@@ -1452,23 +1624,24 @@ void mjv_addGeoms(const mjModel* m, mjData* d, const mjvOption* vopt,
       // copy rbound from model
       thisgeom->modelrbound = (float)m->geom_rbound[i];
 
-      // set material properties, override if visualizing islands
+      // set material properties
       float* rgba = m->geom_rgba+4*i;
-      float rgba_island[4] = {.5, .5, .5, 1};
       int geom_matid = m->geom_matid[i];
-      if (vopt->flags[mjVIS_ISLAND] && d->nisland) {
-        geom_matid = -1;
-        rgba = rgba_island;
+      setMaterial(m, thisgeom, geom_matid, rgba, vopt->flags);
+
+      // override if visualizing islands
+      if (vopt->flags[mjVIS_ISLAND]) {
         int weld_id = m->body_weldid[m->geom_bodyid[i]];
         if (m->body_dofnum[weld_id]) {
-          int island = d->dof_island[m->body_dofadr[weld_id]];
-          if (island > -1) {
-            // color using island's first dof
-            islandColor(rgba_island, d->island_dofadr[island]);
-          }
+          // strip materials off moving geom
+          thisgeom->matid = -1;
+
+          // set hue using first island dof, -1 if no island
+          int island = d->nisland ? d->dof_island[m->body_dofadr[weld_id]] : -1;
+          int h = island >= 0 ? d->island_dofadr[island] : -1;
+          islandColor(thisgeom->rgba, h);
         }
       }
-      setMaterial(m, thisgeom, geom_matid, rgba, vopt->flags);
 
       // set texcoord
       if ((m->geom_type[i] == mjGEOM_MESH || m->geom_type[i] == mjGEOM_SDF) &&
@@ -1945,20 +2118,23 @@ void mjv_addGeoms(const mjModel* m, mjData* d, const mjvOption* vopt,
               // construct geom
               mjv_connector(thisgeom, mjGEOM_CAPSULE, sz[0], d->wrap_xpos+3*j, d->wrap_xpos+3*j+3);
 
-              // set material properties, override if visualizing islands
+              // set material properties
               float* rgba = m->tendon_rgba+4*i;
-              float rgba_island[4] = {.5, .5, .5, 1};
               int tendon_matid = m->tendon_matid[i];
-              if (vopt->flags[mjVIS_ISLAND] && d->nisland) {
-                tendon_matid = -1;
-                rgba = rgba_island;
-                if (d->tendon_efcadr[i] != -1) {
-                  // set color using island's first dof
-                  int island = d->efc_island[d->tendon_efcadr[i]];
-                  islandColor(rgba_island, d->island_dofadr[island]);
-                }
-              }
               setMaterial(m, thisgeom, tendon_matid, rgba, vopt->flags);
+
+              // override if visualizing islands
+              if (vopt->flags[mjVIS_ISLAND]) {
+                // strip material
+                thisgeom->matid = -1;
+
+                // set hue with first island dof, if constrained
+                int h = -1;
+                if (d->nisland && d->tendon_efcadr[i] >= 0) {
+                  h = d->island_dofadr[d->efc_island[d->tendon_efcadr[i]]];
+                }
+                islandColor(thisgeom->rgba, h);
+              }
 
               // vopt->label: only the first segment
               if (vopt->label == mjLABEL_TENDON && j == d->ten_wrapadr[i]) {
@@ -2262,6 +2438,7 @@ void mjv_makeLights(const mjModel* m, const mjData* d, mjvScene* scn) {
 
     // set default properties
     memset(thislight, 0, sizeof(mjvLight));
+    thislight->id = -1;
     thislight->headlight = 1;
     thislight->texid = -1;
     thislight->type = mjLIGHT_DIRECTIONAL;
@@ -2293,6 +2470,7 @@ void mjv_makeLights(const mjModel* m, const mjData* d, mjvScene* scn) {
 
       // copy properties
       memset(thislight, 0, sizeof(mjvLight));
+      thislight->id = i;
       thislight->type = m->light_type[i];
       thislight->texid = m->light_texid[i];
       thislight->castshadow = m->light_castshadow[i];
@@ -2329,108 +2507,50 @@ void mjv_updateCamera(const mjModel* m, const mjData* d, mjvCamera* cam, mjvScen
     return;
   }
 
-  // define extrinsics
-  mjtNum move[3];
+  // move lookat for tracking
+  if (cam->type == mjCAMERA_TRACKING) {
+    // get id and check
+    int bid = cam->trackbodyid;
+    if (bid < 0 || bid >= m->nbody) {
+      mjERROR("track body id is outside valid range");
+    }
+
+    // smooth tracking of subtree com
+    mjtNum move[3];
+    mju_sub3(move, d->subtree_com + 3*cam->trackbodyid, cam->lookat);
+    mju_addToScl3(cam->lookat, move, 0.2);  // constant ???
+  }
+
+  // get camera frame
   mjtNum headpos[3], forward[3], up[3], right[3];
+  mjv_cameraFrame(headpos, forward, up, right, d, cam);
 
-  // define intrinsics
+  // get camera frustum
+  float zver[2], zhor[2], zclip[2] = {0, 0};
+  mjv_cameraFrustum(zver, zhor, zclip, m, cam);
+
+  // get ipd, orthographic
   int cid, orthographic = 0;
-  mjtNum fovy, ipd;
-  float* intrinsic = NULL;
-  float* sensorsize = NULL;
+  mjtNum ipd;
 
-  // get headpos, forward, up, right, ipd, fovy, orthographic, intrinsic
   switch (cam->type) {
   case mjCAMERA_FREE:
   case mjCAMERA_TRACKING:
-    // get global ipd
     ipd = m->vis.global.ipd;
-
-    // get orthographic, fovy
     orthographic = m->vis.global.orthographic;
-    fovy = m->vis.global.fovy;
-
-    // move lookat for tracking
-    if (cam->type == mjCAMERA_TRACKING) {
-      // get id and check
-      int bid = cam->trackbodyid;
-      if (bid < 0 || bid >= m->nbody) {
-        mjERROR("track body id is outside valid range");
-      }
-
-      // smooth tracking of subtree com
-      mju_sub3(move, d->subtree_com + 3*cam->trackbodyid, cam->lookat);
-      mju_addToScl3(cam->lookat, move, 0.2);  // constant ???
-    }
-
-    // compute frame
-    mjtNum ca = mju_cos(cam->azimuth/180.0*mjPI);
-    mjtNum sa = mju_sin(cam->azimuth/180.0*mjPI);
-    mjtNum ce = mju_cos(cam->elevation/180.0*mjPI);
-    mjtNum se = mju_sin(cam->elevation/180.0*mjPI);
-    forward[0] = ce*ca;
-    forward[1] = ce*sa;
-    forward[2] = se;
-    up[0] = -se*ca;
-    up[1] = -se*sa;
-    up[2] = ce;
-    right[0] = sa;
-    right[1] = -ca;
-    right[2] = 0;
-    mju_addScl3(headpos, cam->lookat, forward, -cam->distance);
     break;
-
   case mjCAMERA_FIXED:
     // get id, check range
     cid = cam->fixedcamid;
     if (cid < 0 || cid >= m->ncam) {
       mjERROR("fixed camera id is outside valid range");
     }
-
-    // get camera-specific ipd, orthographic, fovy
     ipd = m->cam_ipd[cid];
-
     orthographic = m->cam_orthographic[cid];
-    fovy = m->cam_fovy[cid];
-
-    // if positive sensorsize, get sensorsize and intrinsic
-    if (m->cam_sensorsize[2*cid+1]) {
-      sensorsize = m->cam_sensorsize + 2*cid;
-      intrinsic = m->cam_intrinsic + 4*cid;
-    }
-
-    // get pointer to camera orientation matrix
-    mjtNum* mat = d->cam_xmat + 9*cid;
-
-    // get frame
-    forward[0] = -mat[2];
-    forward[1] = -mat[5];
-    forward[2] = -mat[8];
-    up[0] = mat[1];
-    up[1] = mat[4];
-    up[2] = mat[7];
-    right[0] = mat[0];
-    right[1] = mat[3];
-    right[2] = mat[6];
-    mju_copy3(headpos, d->cam_xpos + 3*cid);
     break;
 
   default:
     mjERROR("unknown camera type");
-  }
-
-  // convert intrinsics to frustum parameters
-  float znear = m->vis.map.znear * m->stat.extent;
-  float zfar = m->vis.map.zfar * m->stat.extent;
-  float zver[2], zhor[2] = {0, 0};
-  if (orthographic){
-    zver[0] = zver[1] = fovy / 2;
-  } else {
-    if (!intrinsic) {
-      zver[0] = zver[1] = znear * mju_tan(fovy * mjPI/360.0);
-    } else {
-      getFrustum(zver, zhor, znear, intrinsic, sensorsize);
-    }
   }
 
   // compute GL cameras
@@ -2450,8 +2570,8 @@ void mjv_updateCamera(const mjModel* m, const mjData* d, mjvCamera* cam, mjvScen
     scn->camera[view].frustum_bottom = -zver[0];
     scn->camera[view].frustum_center = (zhor[1] - zhor[0]) / 2;
     scn->camera[view].frustum_width = (zhor[1] + zhor[0]) / 2;
-    scn->camera[view].frustum_near = znear;
-    scn->camera[view].frustum_far = zfar;
+    scn->camera[view].frustum_near = zclip[0];
+    scn->camera[view].frustum_far = zclip[1];
   }
 
   // disable model transformation (do not clear float data; user may need it later)
