@@ -4886,7 +4886,9 @@ length X, as in the clip on the right of `this example model
 
 :at:`rgba`: :at-val:`real(4), "0.5 0.5 0.5 1"`
    Color and transparency of the tendon. When this value is different from the internal default, it overrides the
-   corresponding material properties.
+   corresponding material properties. If a :at:`material` is unspecified and :at:`rgba` has the default value, limited
+   tendons whose length exceeds the limit are recolored using the value of the :ref:`constraint impedance<soParameters>`
+   :math:`d` to mix the default color and :ref:`rgba/constraint<visual-rgba-constraint>`.
 
 .. _tendon-spatial-springlength:
 
@@ -7492,8 +7494,8 @@ Matching
   bodies, while setting only :ref:`geom1<sensor-contact-geom1>` will match any contacts involving that geom. Setting
   :ref:`site<sensor-contact-site>` will match contacts that are inside the volume defined by the site; this matching
   criterion can be used with {geom2, body2, subtree2}. The subtree attributes take a body name and match all contacts
-  involving the subtree where that body is located. Setting :ref:`subtree1<sensor-contact-subtree1>` and
-  :ref:`subtree2<sensor-contact-subtree2>` to the same body or to two bodies in the same subtree will match
+  involving the body's subtree i.e., the body and all of its descendants. Setting
+  :ref:`subtree1<sensor-contact-subtree1>` and :ref:`subtree2<sensor-contact-subtree2>` to the same body will match
   self-collisions in the subtree. Specifying no matching criterion will match all contacts.
 
 Reduction
@@ -8292,7 +8294,9 @@ disables the rendering of the corresponding object.
 .. _visual-rgba-joint:
 
 :at:`joint`: :at-val:`real(4), "0.2 0.6 0.8 1"`
-   Color of the arrows used to render joint axes.
+   Color of the arrows used to render joint axes. If a joint is limited and the joint value exceeds the limit, the
+   value of the :ref:`constraint impedance<soParameters>` :math:`d` is used to mix this color and
+   :ref:`rgba/constraint<visual-rgba-constraint>`.
 
 .. _visual-rgba-actuator:
 
@@ -8368,7 +8372,7 @@ disables the rendering of the corresponding object.
 .. _visual-rgba-constraint:
 
 :at:`constraint`: :at-val:`real(4), "0.9 0 0 1"`
-   Color of the capsules corresponding to spatial constraint violations.
+   Color corresponding to spatial constraint violations -- equality constraints, joint limits, and tendon limits.
 
 .. _visual-rgba-slidercrank:
 
