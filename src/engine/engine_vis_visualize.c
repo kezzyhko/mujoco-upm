@@ -72,37 +72,6 @@ static void makeLabel(const mjModel* m, mjtObj type, int id, char* label) {
 
 
 
-// acquires and initializes the next available geom in the scene
-mjvGeom* acquireGeom(mjvScene* scn, int objid, int category, int objtype) {
-  // check for overflow, SHOULD NOT OCCUR
-  if (scn->ngeom >= scn->maxgeom) {
-    scn->status = 1;
-    return NULL;
-  }
-
-  mjvGeom* thisgeom = scn->geoms + scn->ngeom;
-  memset(thisgeom, 0, sizeof(mjvGeom));
-  mjv_initGeom(thisgeom, mjGEOM_NONE, NULL, NULL, NULL, NULL);
-  thisgeom->objtype = objtype;
-  thisgeom->objid = objid;
-  thisgeom->category = category;
-  thisgeom->segid = scn->ngeom;
-  return thisgeom;
-}
-
-
-// mark geom as used, set its pointer to NULL, increment scn->ngeom
-void releaseGeom(mjvGeom** geom, mjvScene* scn) {
-  // check geom being released was most recently acquired, SHOULD NOT OCCUR
-  if (*geom != scn->geoms + scn->ngeom) {
-    mju_error("Unexpected geom pointer; did you call acquireGeom?");
-  }
-
-  scn->ngeom++;
-  *geom = NULL;
-}
-
-
 // convert HSV to RGB
 static void hsv2rgb(float *RGB, float H, float S, float V) {
   float R, G, B;
@@ -150,6 +119,67 @@ static void islandColor(float rgba[4], int h) {
 }
 
 
+// mix colors for perturbation object
+static void mixcolor(float rgba[4], const float ref[4], int flg1, int flg2) {
+  rgba[0] = flg1 ? ref[0] : 0;
+  if (flg2) {
+    rgba[0] = mjMAX(rgba[0], ref[1]);
+  }
+
+  rgba[1] = flg1 ? ref[1] : 0;
+  if (flg2) {
+    rgba[1] = mjMAX(rgba[1], ref[0]);
+  }
+
+  rgba[2] = ref[2];
+  rgba[3] = ref[3];
+}
+
+
+
+// a body is static if it is welded to the world and is not a mocap body
+static int bodycategory(const mjModel* m, int bodyid) {
+  if (m->body_weldid[bodyid] == 0 && m->body_mocapid[bodyid] == -1) {
+    return mjCAT_STATIC;
+  } else {
+    return mjCAT_DYNAMIC;
+  }
+}
+
+
+//----------------------------- geom functions -----------------------------------------------------
+
+// acquires and initializes the next available geom in the scene
+mjvGeom* acquireGeom(mjvScene* scn, int objid, int category, int objtype) {
+  // check for overflow, SHOULD NOT OCCUR
+  if (scn->ngeom >= scn->maxgeom) {
+    scn->status = 1;
+    return NULL;
+  }
+
+  mjvGeom* thisgeom = scn->geoms + scn->ngeom;
+  memset(thisgeom, 0, sizeof(mjvGeom));
+  mjv_initGeom(thisgeom, mjGEOM_NONE, NULL, NULL, NULL, NULL);
+  thisgeom->objtype = objtype;
+  thisgeom->objid = objid;
+  thisgeom->category = category;
+  thisgeom->segid = scn->ngeom;
+  return thisgeom;
+}
+
+
+// mark geom as used, set its pointer to NULL, increment scn->ngeom
+void releaseGeom(mjvGeom** geom, mjvScene* scn) {
+  // check geom being released was most recently acquired, SHOULD NOT OCCUR
+  if (*geom != scn->geoms + scn->ngeom) {
+    mju_error("Unexpected geom pointer; did you call acquireGeom?");
+  }
+
+  scn->ngeom++;
+  *geom = NULL;
+}
+
+
 
 // make a triangle in thisgeom at coordinates v0, v1, v2 with a given color
 static void makeTriangle(mjvGeom* thisgeom, const mjtNum v0[3], const mjtNum v1[3],
@@ -163,221 +193,6 @@ static void makeTriangle(mjvGeom* thisgeom, const mjtNum v0[3], const mjtNum v1[
                     e1[1], e2[1], normal[1],
                     e1[2], e2[2], normal[2]};
   mjv_initGeom(thisgeom, mjGEOM_TRIANGLE, lengths, v0, xmat, rgba);
-}
-
-
-
-// add contact-related geoms in mjvObject
-static void addContactGeom(const mjModel* m, mjData* d, const mjtByte* flags,
-                           const mjvOption* vopt, mjvScene* scn) {
-  int objtype = mjOBJ_UNKNOWN, category = mjCAT_DECOR;
-  mjtNum mat[9], tmp[9], vec[3], frc[3], confrc[6], axis[3];
-  mjtNum framewidth, framelength, scl = m->stat.meansize;
-  mjContact* con;
-  mjvGeom* thisgeom;
-  mjtByte split;
-
-  // fast return if all relevant features are disabled
-  if (!flags[mjVIS_CONTACTPOINT] && !flags[mjVIS_CONTACTFORCE] && vopt->frame != mjFRAME_CONTACT) {
-    return;
-  }
-
-  // loop over contacts
-  for (int i=0; i < d->ncon; i++) {
-    // get pointer
-    con = d->contact + i;
-
-    // mat = contact rotation matrix (normal along z)
-    mju_copy(tmp, con->frame+3, 6);
-    mju_copy(tmp+6, con->frame, 3);
-    mju_transpose(mat, tmp, 3, 3);
-
-    // contact point
-    if (flags[mjVIS_CONTACTPOINT]) {
-      thisgeom = acquireGeom(scn, i, category, objtype);
-      if (!thisgeom) {
-        return;
-      }
-
-      thisgeom->type = mjGEOM_CYLINDER;
-      thisgeom->size[0] = thisgeom->size[1] = m->vis.scale.contactwidth * scl;
-      float halfheight = m->vis.scale.contactheight * scl;
-      float halfdepth = -con->dist / 2;
-      thisgeom->size[2] = mjMAX(halfheight, halfdepth);
-      mju_n2f(thisgeom->pos, con->pos, 3);
-      mju_n2f(thisgeom->mat, mat, 9);
-
-      int efc_adr = d->contact[i].efc_address;
-
-      // override standard colors if visualizing islands
-      if (vopt->flags[mjVIS_ISLAND] && efc_adr >= 0) {
-        // set hue using island's first dof
-        int h = d->nisland > 0 ? d->island_dofadr[d->efc_island[efc_adr]] : -1;
-        islandColor(thisgeom->rgba, h);
-      }
-
-      // otherwise regular colors (different for included and excluded contacts)
-      else {
-        if (efc_adr >= 0) {
-          f2f(thisgeom->rgba, m->vis.rgba.contactpoint, 4);
-        } else {
-          f2f(thisgeom->rgba, m->vis.rgba.contactgap, 4);
-        }
-      }
-
-      // label contacting geom names or ids
-      if (vopt->label == mjLABEL_CONTACTPOINT) {
-        char contactlabel[2][48];
-        for (int k=0; k < 2; k++) {
-          // make geom label
-          if (con->geom[k] >= 0) {
-            const char* geomname = mj_id2name(m, mjOBJ_GEOM, con->geom[k]);
-            if (geomname) {
-              mjSNPRINTF(contactlabel[k], "%s", geomname);
-            }
-            else {
-              mjSNPRINTF(contactlabel[k], "g%d", con->geom[k]);
-            }
-          }
-
-          // make flex elem or vert label
-          else {
-            const char* flexname = mj_id2name(m, mjOBJ_FLEX, con->flex[k]);
-            if (flexname) {
-              if (con->elem[k] >= 0) {
-                mjSNPRINTF(contactlabel[k], "%s.e%d", flexname, con->elem[k]);
-              }
-              else {
-                mjSNPRINTF(contactlabel[k], "%s.v%d", flexname, con->vert[k]);
-              }
-            }
-            else {
-              if (con->elem[k] >= 0) {
-                mjSNPRINTF(contactlabel[k], "f%d.e%d", con->flex[k], con->elem[k]);
-              }
-              else {
-                mjSNPRINTF(contactlabel[k], "f%d.v%d", con->flex[k], con->vert[k]);
-              }
-            }
-          }
-        }
-
-        mjSNPRINTF(thisgeom->label, "%s | %s", contactlabel[0], contactlabel[1]);
-      }
-
-      releaseGeom(&thisgeom, scn);
-    }
-
-    // mat = contact frame rotation matrix (normal along x)
-    mju_transpose(mat, con->frame, 3, 3);
-
-    // contact frame
-    if (vopt->frame == mjFRAME_CONTACT) {
-      // set length and width of axis cylinders using half regular frame scaling
-      framelength = m->vis.scale.framelength * scl / 2;
-      framewidth = m->vis.scale.framewidth * scl / 2;
-
-      // draw the three axes (separate geoms)
-      for (int j=0; j < 3; j++) {
-        thisgeom = acquireGeom(scn, i, category, objtype);
-        if (!thisgeom) {
-          return;
-        }
-
-        // prepare axis
-        for (int k=0; k < 3; k++) {
-          axis[k] = (j == k ? framelength : 0);
-        }
-        mju_mulMatVec(vec, mat, axis, 3, 3);
-
-        // create a cylinder
-        mjtNum* from = con->pos;
-        mjtNum to[3];
-        mju_add3(to, from, vec);
-        mjv_connector(thisgeom, mjGEOM_CYLINDER, framewidth, from, to);
-
-        // set color: R, G or B depending on axis
-        for (int k=0; k < 3; k++) {
-          thisgeom->rgba[k] = (j == k ? 0.9 : 0);
-        }
-        thisgeom->rgba[3] = 1;
-
-        releaseGeom(&thisgeom, scn);
-      }
-    }
-
-    // nothing else to do for excluded contacts
-    if (d->contact[i].efc_address < 0) {
-      continue;
-    }
-
-    // get contact force:torque in contact frame
-    mj_contactForce(m, d, i, confrc);
-
-    // contact force
-    if (flags[mjVIS_CONTACTFORCE]) {
-      // get force, fill zeros if only normal
-      mju_zero3(frc);
-      mju_copy(frc, confrc, mjMIN(3, con->dim));
-      if (mju_norm3(frc) < mjMINVAL) {
-        continue;
-      }
-
-      // render combined or split
-      split = (flags[mjVIS_CONTACTSPLIT] && con->dim > 1);
-      for (int j = (split ? 1 : 0); j < (split ? 3 : 1); j++) {
-        // set vec to combined, normal or friction force, in world frame
-        switch (j) {
-        case 0:             // combined
-          mju_mulMatVec(vec, mat, frc, 3, 3);
-          break;
-        case 1:             // normal
-          vec[0] = mat[0]*frc[0];
-          vec[1] = mat[3]*frc[0];
-          vec[2] = mat[6]*frc[0];
-          break;
-        case 2:             // friction
-          vec[0] = mat[1]*frc[1] + mat[2]*frc[2];
-          vec[1] = mat[4]*frc[1] + mat[5]*frc[2];
-          vec[2] = mat[7]*frc[1] + mat[8]*frc[2];
-          break;
-        }
-
-        // scale vector
-        mju_scl3(vec, vec, m->vis.map.force/m->stat.meanmass);
-
-        // get bodyflex ids
-        int bf[2];
-        for (int k=0; k < 2; k++) {
-          bf[k] = (con->geom[k] >= 0) ? m->geom_bodyid[con->geom[k]] :
-                                        m->nbody + con->flex[k];
-        }
-
-        // make sure arrow points towards bodyflex with higher id
-        if (bf[0] > bf[1]) {
-          mju_scl3(vec, vec, -1);
-        }
-
-        // one-directional arrow for friction and world, symmetric otherwise
-        thisgeom = acquireGeom(scn, i, category, objtype);
-        if (!thisgeom) {
-          return;
-        }
-
-        mjtNum* from = con->pos;
-        mjtNum to[3];
-        mju_add3(to, from, vec);
-        mjv_connector(thisgeom,
-                      bf[0] > 0 && bf[1] > 0 && !split ? mjGEOM_ARROW2 : mjGEOM_ARROW,
-                      m->vis.scale.forcewidth * scl, from, to);
-        f2f(thisgeom->rgba, j == 2 ? m->vis.rgba.contactfriction : m->vis.rgba.contactforce, 4);
-        if (vopt->label == mjLABEL_CONTACTFORCE && j == (split ? 1 : 0)) {
-          mjSNPRINTF(thisgeom->label, "%-.3g", mju_norm3(frc));
-        }
-        releaseGeom(&thisgeom, scn);
-      }
-    }
-  }
 }
 
 
@@ -411,8 +226,6 @@ static void setMaterial(const mjModel* m, mjvGeom* geom, int matid, const float*
 }
 
 
-
-//----------------------------- main API functions -------------------------------------------------
 
 // set (type, size, pos, mat) connector-type geom between given points
 //  assume that mjv_initGeom was already called to set all other properties
@@ -549,34 +362,39 @@ static void markselected(const mjVisual* vis, mjvGeom* geom) {
 
 
 
-// mix colors for perturbation object
-static void mixcolor(float rgba[4], const float ref[4], int flg1, int flg2) {
-  rgba[0] = flg1 ? ref[0] : 0;
-  if (flg2) {
-    rgba[0] = mjMAX(rgba[0], ref[1]);
-  }
+// draw 3 cylinders representing a "frame" decor element
+void addFrameGeoms(mjvScene* scn, int i, mjtNum* pos, mjtNum* rot, float length, float width) {
+  // draw separate geoms for each axis
+  for (int j=0; j < 3; j++) {
+    mjtNum axis[3];
+    for (int k=0; k < 3; k++) {
+      axis[k] = (j == k ? length : 0);
+    }
 
-  rgba[1] = flg1 ? ref[1] : 0;
-  if (flg2) {
-    rgba[1] = mjMAX(rgba[1], ref[0]);
-  }
+    mjtNum vec[3];
+    mju_mulMatVec(vec, rot, axis, 3, 3);
 
-  rgba[2] = ref[2];
-  rgba[3] = ref[3];
+    // create a cylinder
+    mjtNum to[3];
+    mju_add3(to, pos, vec);
+
+    mjvGeom* thisgeom = acquireGeom(scn, i, mjCAT_DECOR, mjOBJ_UNKNOWN);
+    if (!thisgeom) {
+      return;
+    }
+
+    mjv_connector(thisgeom, mjGEOM_CYLINDER, width, pos, to);
+    for (int k=0; k < 3; k++) {
+      thisgeom->rgba[k] = (j == k ? 0.9 : 0);
+    }
+    thisgeom->rgba[3] = 1;
+    releaseGeom(&thisgeom, scn);
+  }
 }
 
 
 
-// a body is static if it is welded to the world and is not a mocap body
-static int bodycategory(const mjModel* m, int bodyid) {
-  if (m->body_weldid[bodyid] == 0 && m->body_mocapid[bodyid] == -1) {
-    return mjCAT_STATIC;
-  } else {
-    return mjCAT_DYNAMIC;
-  }
-}
-
-
+//----------------------------- camera functions --------------------------------------------------
 
 // computes the camera frustum
 static void getFrustum(float zver[2], float zhor[2], float znear,
@@ -715,6 +533,195 @@ void mjv_cameraFrustum(float zver[2], float zhor[2], float zclip[2], const mjMod
   }
 }
 
+
+
+//----------------------------- main API functions -------------------------------------------------
+
+// add contact-related geoms in mjvObject
+static void addContactGeom(const mjModel* m, mjData* d, const mjtByte* flags,
+                           const mjvOption* vopt, mjvScene* scn) {
+  int objtype = mjOBJ_UNKNOWN, category = mjCAT_DECOR;
+  mjtNum mat[9], tmp[9], vec[3], frc[3], confrc[6];
+  mjtNum framewidth, framelength, scl = m->stat.meansize;
+  mjContact* con;
+  mjvGeom* thisgeom;
+  mjtByte split;
+
+  // fast return if all relevant features are disabled
+  if (!flags[mjVIS_CONTACTPOINT] && !flags[mjVIS_CONTACTFORCE] && vopt->frame != mjFRAME_CONTACT) {
+    return;
+  }
+
+  // loop over contacts
+  for (int i=0; i < d->ncon; i++) {
+    // get pointer
+    con = d->contact + i;
+
+    // mat = contact rotation matrix (normal along z)
+    mju_copy(tmp, con->frame+3, 6);
+    mju_copy(tmp+6, con->frame, 3);
+    mju_transpose(mat, tmp, 3, 3);
+
+    // contact point
+    if (flags[mjVIS_CONTACTPOINT]) {
+      thisgeom = acquireGeom(scn, i, category, objtype);
+      if (!thisgeom) {
+        return;
+      }
+
+      thisgeom->type = mjGEOM_CYLINDER;
+      thisgeom->size[0] = thisgeom->size[1] = m->vis.scale.contactwidth * scl;
+      float halfheight = m->vis.scale.contactheight * scl;
+      float halfdepth = -con->dist / 2;
+      thisgeom->size[2] = mjMAX(halfheight, halfdepth);
+      mju_n2f(thisgeom->pos, con->pos, 3);
+      mju_n2f(thisgeom->mat, mat, 9);
+
+      int efc_adr = d->contact[i].efc_address;
+
+      // override standard colors if visualizing islands
+      if (vopt->flags[mjVIS_ISLAND] && efc_adr >= 0) {
+        // set hue using island's first dof
+        int h = d->nisland > 0 ? d->island_dofadr[d->efc_island[efc_adr]] : -1;
+        islandColor(thisgeom->rgba, h);
+      }
+
+      // otherwise regular colors (different for included and excluded contacts)
+      else {
+        if (efc_adr >= 0) {
+          f2f(thisgeom->rgba, m->vis.rgba.contactpoint, 4);
+        } else {
+          f2f(thisgeom->rgba, m->vis.rgba.contactgap, 4);
+        }
+      }
+
+      // label contacting geom names or ids
+      if (vopt->label == mjLABEL_CONTACTPOINT) {
+        char contactlabel[2][48];
+        for (int k=0; k < 2; k++) {
+          // make geom label
+          if (con->geom[k] >= 0) {
+            const char* geomname = mj_id2name(m, mjOBJ_GEOM, con->geom[k]);
+            if (geomname) {
+              mjSNPRINTF(contactlabel[k], "%s", geomname);
+            }
+            else {
+              mjSNPRINTF(contactlabel[k], "g%d", con->geom[k]);
+            }
+          }
+
+          // make flex elem or vert label
+          else {
+            const char* flexname = mj_id2name(m, mjOBJ_FLEX, con->flex[k]);
+            if (flexname) {
+              if (con->elem[k] >= 0) {
+                mjSNPRINTF(contactlabel[k], "%s.e%d", flexname, con->elem[k]);
+              }
+              else {
+                mjSNPRINTF(contactlabel[k], "%s.v%d", flexname, con->vert[k]);
+              }
+            }
+            else {
+              if (con->elem[k] >= 0) {
+                mjSNPRINTF(contactlabel[k], "f%d.e%d", con->flex[k], con->elem[k]);
+              }
+              else {
+                mjSNPRINTF(contactlabel[k], "f%d.v%d", con->flex[k], con->vert[k]);
+              }
+            }
+          }
+        }
+
+        mjSNPRINTF(thisgeom->label, "%s | %s", contactlabel[0], contactlabel[1]);
+      }
+
+      releaseGeom(&thisgeom, scn);
+    }
+
+    // mat = contact frame rotation matrix (normal along x)
+    mju_transpose(mat, con->frame, 3, 3);
+
+    // contact frame
+    if (vopt->frame == mjFRAME_CONTACT) {
+      // set length and width of axis cylinders using half regular frame scaling
+      framelength = m->vis.scale.framelength * scl / 2;
+      framewidth = m->vis.scale.framewidth * scl / 2;
+      addFrameGeoms(scn, i, con->pos, mat, framelength, framewidth);
+    }
+
+    // nothing else to do for excluded contacts
+    if (d->contact[i].efc_address < 0) {
+      continue;
+    }
+
+    // get contact force:torque in contact frame
+    mj_contactForce(m, d, i, confrc);
+
+    // contact force
+    if (flags[mjVIS_CONTACTFORCE]) {
+      // get force, fill zeros if only normal
+      mju_zero3(frc);
+      mju_copy(frc, confrc, mjMIN(3, con->dim));
+      if (mju_norm3(frc) < mjMINVAL) {
+        continue;
+      }
+
+      // render combined or split
+      split = (flags[mjVIS_CONTACTSPLIT] && con->dim > 1);
+      for (int j = (split ? 1 : 0); j < (split ? 3 : 1); j++) {
+        // set vec to combined, normal or friction force, in world frame
+        switch (j) {
+        case 0:             // combined
+          mju_mulMatVec(vec, mat, frc, 3, 3);
+          break;
+        case 1:             // normal
+          vec[0] = mat[0]*frc[0];
+          vec[1] = mat[3]*frc[0];
+          vec[2] = mat[6]*frc[0];
+          break;
+        case 2:             // friction
+          vec[0] = mat[1]*frc[1] + mat[2]*frc[2];
+          vec[1] = mat[4]*frc[1] + mat[5]*frc[2];
+          vec[2] = mat[7]*frc[1] + mat[8]*frc[2];
+          break;
+        }
+
+        // scale vector
+        mju_scl3(vec, vec, m->vis.map.force/m->stat.meanmass);
+
+        // get bodyflex ids
+        int bf[2];
+        for (int k=0; k < 2; k++) {
+          bf[k] = (con->geom[k] >= 0) ? m->geom_bodyid[con->geom[k]] :
+                                        m->nbody + con->flex[k];
+        }
+
+        // make sure arrow points towards bodyflex with higher id
+        if (bf[0] > bf[1]) {
+          mju_scl3(vec, vec, -1);
+        }
+
+        // one-directional arrow for friction and world, symmetric otherwise
+        thisgeom = acquireGeom(scn, i, category, objtype);
+        if (!thisgeom) {
+          return;
+        }
+
+        mjtNum* from = con->pos;
+        mjtNum to[3];
+        mju_add3(to, from, vec);
+        mjv_connector(thisgeom,
+                      bf[0] > 0 && bf[1] > 0 && !split ? mjGEOM_ARROW2 : mjGEOM_ARROW,
+                      m->vis.scale.forcewidth * scl, from, to);
+        f2f(thisgeom->rgba, j == 2 ? m->vis.rgba.contactfriction : m->vis.rgba.contactforce, 4);
+        if (vopt->label == mjLABEL_CONTACTFORCE && j == (split ? 1 : 0)) {
+          mjSNPRINTF(thisgeom->label, "%-.3g", mju_norm3(frc));
+        }
+        releaseGeom(&thisgeom, scn);
+      }
+    }
+  }
+}
 
 
 // add abstract geoms
@@ -1300,34 +1307,7 @@ void mjv_addGeoms(const mjModel* m, mjData* d, const mjvOption* vopt,
 
       mjtNum* xmat = vopt->flags[mjVIS_INERTIA] ? d->ximat+9*i : d->xmat+9*i;
       mjtNum* xpos = vopt->flags[mjVIS_INERTIA] ? d->xipos+3*i : d->xpos+3*i;
-
-      // draw the three axes (separate geoms)
-      for (int j=0; j < 3; j++) {
-        thisgeom = acquireGeom(scn, i, category, objtype);
-        if (!thisgeom) {
-          return;
-        }
-
-        // prepare axis
-        for (int k=0; k < 3; k++) {
-          axis[k] = (j == k ? sz[1] : 0);
-        }
-        mju_mulMatVec(vec, xmat, axis, 3, 3);
-
-        // create a cylinder
-        mjtNum* from = xpos;
-        mjtNum to[3];
-        mju_add3(to, from, vec);
-        mjv_connector(thisgeom, mjGEOM_CYLINDER, sz[0], from, to);
-
-        // set color: R, G or B depending on axis
-        for (int k=0; k < 3; k++) {
-          thisgeom->rgba[k] = (j == k ? 0.9 : 0);
-        }
-        thisgeom->rgba[3] = 1;
-
-        releaseGeom(&thisgeom, scn);
-      }
+      addFrameGeoms(scn, i, xpos, xmat, sz[1], sz[0]);
     }
   }
 
@@ -1837,32 +1817,7 @@ void mjv_addGeoms(const mjModel* m, mjData* d, const mjvOption* vopt,
       objtype = mjOBJ_UNKNOWN;
       sz[0] = m->vis.scale.framewidth * scl;
       sz[1] = m->vis.scale.framelength * scl;
-      for (int j=0; j < 3; j++) {
-        thisgeom = acquireGeom(scn, i, category, objtype);
-        if (!thisgeom) {
-          return;
-        }
-
-        // prepare axis
-        for (int k=0; k < 3; k++) {
-          axis[k] = (j == k ? sz[1] : 0);
-        }
-        mju_mulMatVec(vec, d->geom_xmat+9*i, axis, 3, 3);
-
-        // create a cylinder
-        mjtNum* from = d->geom_xpos+3*i;
-        mjtNum to[3];
-        mju_add3(to, from, vec);
-        mjv_connector(thisgeom, mjGEOM_CYLINDER, sz[0], from, to);
-
-        // set color: R, G or B depending on axis
-        for (int k=0; k < 3; k++) {
-          thisgeom->rgba[k] = (j == k ? 0.9 : 0);
-        }
-        thisgeom->rgba[3] = 1;
-
-        releaseGeom(&thisgeom, scn);
-      }
+      addFrameGeoms(scn, i, d->geom_xpos+3*i, d->geom_xmat+9*i, sz[1], sz[0]);
     }
   }
 
@@ -1918,32 +1873,7 @@ void mjv_addGeoms(const mjModel* m, mjData* d, const mjvOption* vopt,
       objtype = mjOBJ_UNKNOWN;
       sz[0] = m->vis.scale.framewidth * scl;
       sz[1] = m->vis.scale.framelength * scl;
-      for (int j=0; j < 3; j++) {
-        thisgeom = acquireGeom(scn, i, category, objtype);
-        if (!thisgeom) {
-          return;
-        }
-
-        // prepare axis
-        for (int k=0; k < 3; k++) {
-          axis[k] = (j == k ? sz[1] : 0);
-        }
-        mju_mulMatVec(vec, d->site_xmat+9*i, axis, 3, 3);
-
-        // create a cylinder
-        mjtNum* from = d->site_xpos+3*i;
-        mjtNum to[3];
-        mju_add3(to, from, vec);
-        mjv_connector(thisgeom, mjGEOM_CYLINDER, sz[0], from, to);
-
-        // set color: R, G or B depending on axis
-        for (int k=0; k < 3; k++) {
-          thisgeom->rgba[k] = (j == k ? 0.9 : 0);
-        }
-        thisgeom->rgba[3] = 1;
-
-        releaseGeom(&thisgeom, scn);
-      }
+      addFrameGeoms(scn, i, d->site_xpos+3*i, d->site_xmat+9*i, sz[1], sz[0]);
     }
   }
 
@@ -2103,32 +2033,7 @@ void mjv_addGeoms(const mjModel* m, mjData* d, const mjvOption* vopt,
       objtype = mjOBJ_UNKNOWN;
       sz[0] = m->vis.scale.framewidth * scl;
       sz[1] = m->vis.scale.framelength * scl;
-      for (int j=0; j < 3; j++) {
-        thisgeom = acquireGeom(scn, i, category, objtype);
-        if (!thisgeom) {
-          return;
-        }
-
-        // prepare axis
-        for (int k=0; k < 3; k++) {
-          axis[k] = (j == k ? sz[1] : 0);
-        }
-        mju_mulMatVec(vec, d->cam_xmat+9*i, axis, 3, 3);
-
-        // create a cylinder
-        mjtNum* from = d->cam_xpos+3*i;
-        mjtNum to[3];
-        mju_add3(to, from, vec);
-        mjv_connector(thisgeom, mjGEOM_CYLINDER, sz[0], from, to);
-
-        // set color: R, G or B depending on axis
-        for (int k=0; k < 3; k++) {
-          thisgeom->rgba[k] = (j == k ? 0.9 : 0);
-        }
-        thisgeom->rgba[3] = 1;
-
-        releaseGeom(&thisgeom, scn);
-      }
+      addFrameGeoms(scn, i, d->cam_xpos+3*i, d->cam_xmat+9*i, sz[1], sz[0]);
     }
   }
 
@@ -2176,32 +2081,7 @@ void mjv_addGeoms(const mjModel* m, mjData* d, const mjvOption* vopt,
       objtype = mjOBJ_UNKNOWN;
       sz[0] = m->vis.scale.framewidth * scl;
       sz[1] = m->vis.scale.framelength * scl;
-      for (int j=0; j < 3; j++) {
-        thisgeom = acquireGeom(scn, i, category, objtype);
-        if (!thisgeom) {
-          return;
-        }
-
-        // prepare axis
-        for (int k=0; k < 3; k++) {
-          axis[k] = (j == k ? sz[1] : 0);
-        }
-        mju_mulMatVec(vec, mat, axis, 3, 3);
-
-        // create a cylinder
-        mjtNum* from = d->light_xpos+3*i;
-        mjtNum to[3];
-        mju_add3(to, from, vec);
-        mjv_connector(thisgeom, mjGEOM_CYLINDER, sz[0], from, to);
-
-        // set color: R, G or B depending on axis
-        for (int k=0; k < 3; k++) {
-          thisgeom->rgba[k] = (j == k ? 0.9 : 0);
-        }
-        thisgeom->rgba[3] = 1;
-
-        releaseGeom(&thisgeom, scn);
-      }
+      addFrameGeoms(scn, i, d->light_xpos+3*i, mat, sz[1], sz[0]);
     }
   }
 
