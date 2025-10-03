@@ -2149,6 +2149,7 @@ typedef struct mjsMesh_ {          // mesh specification
   mjFloatVec* usernormal;          // user normal data
   mjFloatVec* usertexcoord;        // user texcoord data
   mjIntVec* userface;              // user vertex indices
+  mjIntVec* userfacenormal;        // user face normal indices
   mjIntVec* userfacetexcoord;      // user texcoord indices
   mjsPlugin plugin;                // sdf plugin
   mjString* material;              // name of material
@@ -3181,6 +3182,7 @@ mjtNum mju_rayFlex(const mjModel* m, const mjData* d, int flex_layer, mjtByte fl
                    const mjtNum* pnt, const mjtNum* vec, int vertid[1]);
 mjtNum mju_raySkin(int nface, int nvert, const int* face, const float* vert,
                    const mjtNum pnt[3], const mjtNum vec[3], int vertid[1]);
+void mju_getXMLDependencies(const char* filename, mjStringVec* dependencies);
 void mjv_defaultCamera(mjvCamera* cam);
 void mjv_defaultFreeCamera(const mjModel* m, mjvCamera* cam);
 void mjv_defaultPerturb(mjvPerturb* pert);
