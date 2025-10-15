@@ -481,6 +481,26 @@ FUNCTIONS: Mapping[str, FunctionDecl] = dict([
          ),
          doc='Save spec to XML file, return 0 on success, -1 otherwise.',
      )),
+    ('mju_getXMLDependencies',
+     FunctionDecl(
+         name='mju_getXMLDependencies',
+         return_type=ValueType(name='void'),
+         parameters=(
+             FunctionParameterDecl(
+                 name='filename',
+                 type=PointerType(
+                     inner_type=ValueType(name='char', is_const=True),
+                 ),
+             ),
+             FunctionParameterDecl(
+                 name='dependencies',
+                 type=PointerType(
+                     inner_type=ValueType(name='mjStringVec'),
+                 ),
+             ),
+         ),
+         doc='Given MJCF filename, fills dependencies with a list of all other asset files it depends on. The search is recursive, and the list includes the filename itself.',  # pylint: disable=line-too-long
+     )),
     ('mj_step',
      FunctionDecl(
          name='mj_step',
@@ -1274,7 +1294,7 @@ FUNCTIONS: Mapping[str, FunctionDecl] = dict([
                  ),
              ),
          ),
-         doc='Print mjData to text file, specifying format. float_format must be a valid printf-style format string for a single float value',  # pylint: disable=line-too-long
+         doc='Print mjData to text file, specifying format. float_format must be a valid printf-style format string for a single float value.',  # pylint: disable=line-too-long
      )),
     ('mj_printData',
      FunctionDecl(
@@ -1391,6 +1411,52 @@ FUNCTIONS: Mapping[str, FunctionDecl] = dict([
              ),
          ),
          doc='Print internal XML schema as plain text or HTML, with style-padding or &nbsp;.',  # pylint: disable=line-too-long
+     )),
+    ('mj_printScene',
+     FunctionDecl(
+         name='mj_printScene',
+         return_type=ValueType(name='void'),
+         parameters=(
+             FunctionParameterDecl(
+                 name='s',
+                 type=PointerType(
+                     inner_type=ValueType(name='mjvScene', is_const=True),
+                 ),
+             ),
+             FunctionParameterDecl(
+                 name='filename',
+                 type=PointerType(
+                     inner_type=ValueType(name='char', is_const=True),
+                 ),
+             ),
+         ),
+         doc='Print scene to text file.',
+     )),
+    ('mj_printFormattedScene',
+     FunctionDecl(
+         name='mj_printFormattedScene',
+         return_type=ValueType(name='void'),
+         parameters=(
+             FunctionParameterDecl(
+                 name='s',
+                 type=PointerType(
+                     inner_type=ValueType(name='mjvScene', is_const=True),
+                 ),
+             ),
+             FunctionParameterDecl(
+                 name='filename',
+                 type=PointerType(
+                     inner_type=ValueType(name='char', is_const=True),
+                 ),
+             ),
+             FunctionParameterDecl(
+                 name='float_format',
+                 type=PointerType(
+                     inner_type=ValueType(name='char', is_const=True),
+                 ),
+             ),
+         ),
+         doc='Print scene to text file, specifying format. float_format must be a valid printf-style format string for a single float value.',  # pylint: disable=line-too-long
      )),
     ('mj_fwdPosition',
      FunctionDecl(
@@ -8343,7 +8409,7 @@ FUNCTIONS: Mapping[str, FunctionDecl] = dict([
              FunctionParameterDecl(
                  name='vec',
                  type=PointerType(
-                     inner_type=ValueType(name='mjtNum'),
+                     inner_type=ValueType(name='mjtNum', is_const=True),
                  ),
              ),
              FunctionParameterDecl(

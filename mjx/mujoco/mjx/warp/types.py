@@ -88,8 +88,9 @@ class OptionWarp(PyTreeNode):
   """Derived fields from Option."""
   broadphase: int
   broadphase_filter: int
-  epa_iterations: int
-  gjk_iterations: int
+  ccd_iterations: int
+  ccd_tolerance: jax.Array
+  contact_sensor_maxmatch: int
   graph_conditional: bool
   has_fluid: bool
   is_sparse: bool
@@ -105,12 +106,13 @@ class ModelWarp(PyTreeNode):
   M_colind: np.ndarray
   M_rowadr: np.ndarray
   M_rownnz: np.ndarray
-  actuator_affine_bias_gain: bool
   actuator_moment_tiles_nu: Tuple[TileSet, ...]
   actuator_moment_tiles_nv: Tuple[TileSet, ...]
   actuator_trntype_body_adr: np.ndarray
   block_dim: BlockDim
+  body_fluid_ellipsoid: np.ndarray
   body_tree: Tuple[np.ndarray, ...]
+  collision_sensor_adr: np.ndarray
   condim_max: int
   dof_tri_col: np.ndarray
   dof_tri_row: np.ndarray
@@ -134,7 +136,6 @@ class ModelWarp(PyTreeNode):
   flexedge_length0: np.ndarray
   geom_pair_type_count: Tuple[int, ...]
   geom_plugin_index: np.ndarray
-  geompair2hfgeompair: np.ndarray
   has_sdf_geom: bool
   jnt_limited_ball_adr: np.ndarray
   jnt_limited_slide_hinge_adr: np.ndarray
@@ -159,14 +160,14 @@ class ModelWarp(PyTreeNode):
   nflexelemdata: int
   nflexvert: int
   nlsp: int
-  nmeshpoly: int
-  nmeshpolymap: int
-  nmeshpolyvert: int
   nsensortaxel: int
   nxn_geom_pair: np.ndarray
   nxn_geom_pair_filtered: np.ndarray
   nxn_pairid: np.ndarray
   nxn_pairid_filtered: np.ndarray
+  oct_aabb: np.ndarray
+  oct_child: np.ndarray
+  oct_coeff: np.ndarray
   plugin: np.ndarray
   plugin_attr: np.ndarray
   qLD_updates: Tuple[np.ndarray, ...]
@@ -223,7 +224,6 @@ class DataWarp(PyTreeNode):
   cfrc_ext: jax.Array
   cfrc_int: jax.Array
   cinert: jax.Array
-  collision_hftri_index: jax.Array
   collision_pair: jax.Array
   collision_pairid: jax.Array
   collision_worldid: jax.Array
@@ -295,11 +295,20 @@ class DataWarp(PyTreeNode):
   inverse_mul_m_skip: jax.Array
   light_xdir: jax.Array
   light_xpos: jax.Array
+  multiccd_clipped: jax.Array
+  multiccd_endvert: jax.Array
+  multiccd_face1: jax.Array
+  multiccd_face2: jax.Array
+  multiccd_idx1: jax.Array
+  multiccd_idx2: jax.Array
+  multiccd_n1: jax.Array
+  multiccd_n2: jax.Array
+  multiccd_pdist: jax.Array
+  multiccd_pnormal: jax.Array
+  multiccd_polygon: jax.Array
+  nacon: jax.Array
+  naconmax: int
   ncollision: jax.Array
-  ncon: jax.Array
-  ncon_hfield: jax.Array
-  ncon_world: jax.Array
-  nconmax: int
   ne: jax.Array
   ne_connect: jax.Array
   ne_jnt: jax.Array
@@ -359,7 +368,6 @@ class DataWarp(PyTreeNode):
   wrap_xpos: jax.Array
   shape = property(lambda self: self.cacc.shape)
 DATA_NON_VMAP = {
-    'collision_hftri_index',
     'collision_pair',
     'collision_pairid',
     'collision_worldid',
@@ -387,9 +395,20 @@ DATA_NON_VMAP = {
     'epa_vert_index1',
     'epa_vert_index2',
     'geom_skip',
+    'multiccd_clipped',
+    'multiccd_endvert',
+    'multiccd_face1',
+    'multiccd_face2',
+    'multiccd_idx1',
+    'multiccd_idx2',
+    'multiccd_n1',
+    'multiccd_n2',
+    'multiccd_pdist',
+    'multiccd_pnormal',
+    'multiccd_polygon',
+    'nacon',
+    'naconmax',
     'ncollision',
-    'ncon',
-    'nconmax',
     'njmax',
     'nsolving',
     'nworld',
@@ -440,7 +459,6 @@ _NDIM = {
         'cfrc_ext': 3,
         'cfrc_int': 3,
         'cinert': 3,
-        'collision_hftri_index': 1,
         'collision_pair': 2,
         'collision_pairid': 1,
         'collision_worldid': 1,
@@ -519,11 +537,20 @@ _NDIM = {
         'light_xpos': 3,
         'mocap_pos': 3,
         'mocap_quat': 3,
+        'multiccd_clipped': 3,
+        'multiccd_endvert': 3,
+        'multiccd_face1': 3,
+        'multiccd_face2': 3,
+        'multiccd_idx1': 2,
+        'multiccd_idx2': 2,
+        'multiccd_n1': 3,
+        'multiccd_n2': 3,
+        'multiccd_pdist': 2,
+        'multiccd_pnormal': 3,
+        'multiccd_polygon': 3,
+        'nacon': 1,
+        'naconmax': 0,
         'ncollision': 1,
-        'ncon': 1,
-        'ncon_hfield': 2,
-        'ncon_world': 1,
-        'nconmax': 0,
         'ne': 1,
         'ne_connect': 1,
         'ne_jnt': 1,
@@ -620,7 +647,6 @@ _NDIM = {
         'actuator_actlimited': 1,
         'actuator_actnum': 1,
         'actuator_actrange': 3,
-        'actuator_affine_bias_gain': 0,
         'actuator_biasprm': 3,
         'actuator_biastype': 1,
         'actuator_cranklength': 1,
@@ -657,6 +683,7 @@ _NDIM = {
         'body_contype': 1,
         'body_dofadr': 1,
         'body_dofnum': 1,
+        'body_fluid_ellipsoid': 1,
         'body_geomadr': 1,
         'body_geomnum': 1,
         'body_gravcomp': 2,
@@ -687,6 +714,7 @@ _NDIM = {
         'cam_resolution': 2,
         'cam_sensorsize': 2,
         'cam_targetbodyid': 1,
+        'collision_sensor_adr': 1,
         'condim_max': 0,
         'dof_Madr': 1,
         'dof_armature': 2,
@@ -733,6 +761,7 @@ _NDIM = {
         'geom_condim': 1,
         'geom_contype': 1,
         'geom_dataid': 1,
+        'geom_fluid': 2,
         'geom_friction': 3,
         'geom_gap': 2,
         'geom_group': 1,
@@ -750,7 +779,6 @@ _NDIM = {
         'geom_solmix': 2,
         'geom_solref': 3,
         'geom_type': 1,
-        'geompair2hfgeompair': 1,
         'has_sdf_geom': 0,
         'hfield_adr': 1,
         'hfield_data': 1,
@@ -850,14 +878,18 @@ _NDIM = {
         'nxn_geom_pair_filtered': 2,
         'nxn_pairid': 1,
         'nxn_pairid_filtered': 1,
+        'oct_aabb': 3,
+        'oct_child': 2,
+        'oct_coeff': 2,
         'opt__broadphase': 0,
         'opt__broadphase_filter': 0,
+        'opt__ccd_iterations': 0,
+        'opt__ccd_tolerance': 1,
         'opt__cone': 0,
+        'opt__contact_sensor_maxmatch': 0,
         'opt__density': 1,
         'opt__disableflags': 0,
         'opt__enableflags': 0,
-        'opt__epa_iterations': 0,
-        'opt__gjk_iterations': 0,
         'opt__graph_conditional': 0,
         'opt__gravity': 2,
         'opt__has_fluid': 0,
@@ -971,12 +1003,13 @@ _NDIM = {
     'Option': {
         'broadphase': 0,
         'broadphase_filter': 0,
+        'ccd_iterations': 0,
+        'ccd_tolerance': 1,
         'cone': 0,
+        'contact_sensor_maxmatch': 0,
         'density': 1,
         'disableflags': 0,
         'enableflags': 0,
-        'epa_iterations': 0,
-        'gjk_iterations': 0,
         'graph_conditional': 0,
         'gravity': 2,
         'has_fluid': 0,
@@ -1021,7 +1054,6 @@ _BATCH_DIM = {
         'cfrc_ext': True,
         'cfrc_int': True,
         'cinert': True,
-        'collision_hftri_index': False,
         'collision_pair': False,
         'collision_pairid': False,
         'collision_worldid': False,
@@ -1100,11 +1132,20 @@ _BATCH_DIM = {
         'light_xpos': True,
         'mocap_pos': True,
         'mocap_quat': True,
+        'multiccd_clipped': False,
+        'multiccd_endvert': False,
+        'multiccd_face1': False,
+        'multiccd_face2': False,
+        'multiccd_idx1': False,
+        'multiccd_idx2': False,
+        'multiccd_n1': False,
+        'multiccd_n2': False,
+        'multiccd_pdist': False,
+        'multiccd_pnormal': False,
+        'multiccd_polygon': False,
+        'nacon': False,
+        'naconmax': False,
         'ncollision': False,
-        'ncon': False,
-        'ncon_hfield': True,
-        'ncon_world': True,
-        'nconmax': False,
         'ne': True,
         'ne_connect': True,
         'ne_jnt': True,
@@ -1201,7 +1242,6 @@ _BATCH_DIM = {
         'actuator_actlimited': False,
         'actuator_actnum': False,
         'actuator_actrange': True,
-        'actuator_affine_bias_gain': False,
         'actuator_biasprm': True,
         'actuator_biastype': False,
         'actuator_cranklength': False,
@@ -1238,6 +1278,7 @@ _BATCH_DIM = {
         'body_contype': False,
         'body_dofadr': False,
         'body_dofnum': False,
+        'body_fluid_ellipsoid': False,
         'body_geomadr': False,
         'body_geomnum': False,
         'body_gravcomp': True,
@@ -1268,6 +1309,7 @@ _BATCH_DIM = {
         'cam_resolution': False,
         'cam_sensorsize': False,
         'cam_targetbodyid': False,
+        'collision_sensor_adr': False,
         'condim_max': False,
         'dof_Madr': False,
         'dof_armature': True,
@@ -1314,6 +1356,7 @@ _BATCH_DIM = {
         'geom_condim': False,
         'geom_contype': False,
         'geom_dataid': False,
+        'geom_fluid': False,
         'geom_friction': True,
         'geom_gap': True,
         'geom_group': False,
@@ -1331,7 +1374,6 @@ _BATCH_DIM = {
         'geom_solmix': True,
         'geom_solref': True,
         'geom_type': False,
-        'geompair2hfgeompair': False,
         'has_sdf_geom': False,
         'hfield_adr': False,
         'hfield_data': False,
@@ -1431,14 +1473,18 @@ _BATCH_DIM = {
         'nxn_geom_pair_filtered': False,
         'nxn_pairid': False,
         'nxn_pairid_filtered': False,
+        'oct_aabb': False,
+        'oct_child': False,
+        'oct_coeff': False,
         'opt__broadphase': False,
         'opt__broadphase_filter': False,
+        'opt__ccd_iterations': False,
+        'opt__ccd_tolerance': True,
         'opt__cone': False,
+        'opt__contact_sensor_maxmatch': False,
         'opt__density': True,
         'opt__disableflags': False,
         'opt__enableflags': False,
-        'opt__epa_iterations': False,
-        'opt__gjk_iterations': False,
         'opt__graph_conditional': False,
         'opt__gravity': True,
         'opt__has_fluid': False,
@@ -1552,12 +1598,13 @@ _BATCH_DIM = {
     'Option': {
         'broadphase': False,
         'broadphase_filter': False,
+        'ccd_iterations': False,
+        'ccd_tolerance': True,
         'cone': False,
+        'contact_sensor_maxmatch': False,
         'density': True,
         'disableflags': False,
         'enableflags': False,
-        'epa_iterations': False,
-        'gjk_iterations': False,
         'graph_conditional': False,
         'gravity': True,
         'has_fluid': False,

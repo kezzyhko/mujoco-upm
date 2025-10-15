@@ -22,7 +22,6 @@
 #include <mujoco/mjsan.h>  // IWYU pragma: keep
 #include <mujoco/mjtnum.h>
 #include "engine/engine_collision_primitive.h"
-#include "engine/engine_io.h"
 #include "engine/engine_plugin.h"
 #include "engine/engine_ray.h"
 #include "engine/engine_util_blas.h"
@@ -600,7 +599,6 @@ static mjtNum stepGradient(mjtNum x[3], const mjModel* m, const mjSDF* s,
   // the distance will be used for the contact creation
   return dist;
 }
-
 
 
 //------------------------------ collision functions -----------------------------------------------

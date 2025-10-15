@@ -14,7 +14,7 @@
 
 #include "engine/engine_memory.h"
 
-#include <inttypes.h>  // NOLINT required for PRIu64, PRIuPTR
+#include <inttypes.h>  // IWYU pragma: keep
 #include <limits.h>
 #include <stddef.h>
 #include <stdint.h>
@@ -23,16 +23,9 @@
 #include <string.h>
 
 #include <mujoco/mjmacro.h>
-#include <mujoco/mjmodel.h>
-#include <mujoco/mjplugin.h>
 #include <mujoco/mjsan.h>  // IWYU pragma: keep
-#include <mujoco/mjxmacro.h>
 #include "engine/engine_crossplatform.h"
-#include "engine/engine_macro.h"
-#include "engine/engine_plugin.h"
-#include "engine/engine_util_blas.h"
 #include "engine/engine_util_errmem.h"
-#include "engine/engine_util_misc.h"
 #include "thread/thread_pool.h"
 
 #ifdef ADDRESS_SANITIZER
@@ -81,7 +74,6 @@ static void maybe_unlock_alloc_mutex(mjData* d) {
     mju_threadPoolUnlockAllocMutex((mjThreadPool*)d->threadpool);
   }
 }
-
 
 
 static inline mjStackInfo get_stack_info_from_data(const mjData* d) {
@@ -232,7 +224,6 @@ static inline void* stackallocinternal(mjData* d, mjStackInfo* stack_info, size_
 }
 
 
-
 // internal: allocate size bytes in mjData
 // declared inline so that modular arithmetic with specific alignments can be optimized out
 static inline void* stackalloc(mjData* d, size_t size, size_t alignment,
@@ -252,7 +243,6 @@ static inline void* stackalloc(mjData* d, size_t size, size_t alignment,
 }
 
 
-
 // mjStackInfo mark stack frame, inline so ASAN errors point to correct code unit
 #ifdef ADDRESS_SANITIZER
 __attribute__((always_inline))
@@ -269,7 +259,6 @@ static inline void markstackinternal(mjData* d, mjStackInfo* stack_info) {
 #endif
   stack_info->stack_base = (uintptr_t) s;
 }
-
 
 
 // mjData mark stack frame
@@ -291,7 +280,6 @@ void mj__markStack(mjData* d)
   mjStackInfo* stack_info = mju_getStackInfoForThread(d, thread_id);
   markstackinternal(d, stack_info);
 }
-
 
 
 #ifdef ADDRESS_SANITIZER
@@ -323,7 +311,6 @@ static inline void freestackinternal(mjStackInfo* stack_info) {
 }
 
 
-
 // mjData free stack frame
 #ifndef ADDRESS_SANITIZER
 void mj_freeStack(mjData* d)
@@ -345,7 +332,6 @@ void mj__freeStack(mjData* d)
 }
 
 
-
 // returns the number of bytes available on the stack
 size_t mj_stackBytesAvailable(mjData* d) {
   if (!d->threadpool) {
@@ -359,12 +345,10 @@ size_t mj_stackBytesAvailable(mjData* d) {
 }
 
 
-
 // allocate bytes on the stack
 void* mj_stackAllocByte(mjData* d, size_t bytes, size_t alignment) {
   return stackalloc(d, bytes, alignment, NULL, 0);
 }
-
 
 
 // allocate bytes on the stack, with caller information
@@ -374,7 +358,6 @@ void* mj_stackAllocInfo(mjData* d, size_t bytes, size_t alignment,
 }
 
 
-
 // allocate mjtNums on the stack
 mjtNum* mj_stackAllocNum(mjData* d, size_t size) {
   if (mjUNLIKELY(size >= SIZE_MAX / sizeof(mjtNum))) {
@@ -382,7 +365,6 @@ mjtNum* mj_stackAllocNum(mjData* d, size_t size) {
   }
   return (mjtNum*) stackalloc(d, size * sizeof(mjtNum), _Alignof(mjtNum), NULL, 0);
 }
-
 
 
 // allocate ints on the stack

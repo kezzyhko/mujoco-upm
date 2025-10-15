@@ -308,13 +308,6 @@ adjust it properly through the XML.
    optimization-related applications, real-time is no longer good enough and instead it is desirable to run the
    simulation as fast as possible. In that case the time step should be made as large as possible.
 
-.. _option-apirate:
-
-:at:`apirate`: :at-val:`real, "100"`
-   This parameter determines the rate (in Hz) at which an external API allows the update function to be executed. This
-   mechanism is used to simulate devices with limited communication bandwidth. It only affects the socket API and not
-   the physics simulation.
-
 .. _option-impratio:
 
 :at:`impratio`: :at-val:`real, "1"`
@@ -742,12 +735,12 @@ has any effect. The settings here are global and apply to the entire model.
 
 :at:`fitaabb`: :at-val:`[false, true], "false"`
    The compiler is able to replace a mesh with a geometric primitive fitted to that mesh; see :ref:`geom <body-geom>`
-   below. If this attribute is "true", the fitting procedure uses the axis-aligned bounding box (aabb) of the mesh.
-   Otherwise it uses the equivalent-inertia box of the mesh. The type of geometric primitive used for fitting is
-   specified separately for each geom. The models used to generate the image on the right can be found
-   `here <https://github.com/google-deepmind/mujoco/blob/main/test/user/testdata/fitmesh_inertiabox.xml>`__ (fit inertia
-   box) and `here <https://github.com/google-deepmind/mujoco/blob/main/test/user/testdata/fitmesh_aabb.xml>`__ (fit
-   aabb).
+   below. If this attribute is "true", the fitting procedure uses the axis-aligned bounding box (AABB) of the mesh,
+   choosing the smallest primitive whose AABB contains the mesh AABB. Otherwise it uses the equivalent-inertia box of
+   the mesh. The type of geometric primitive used for fitting is specified separately for each geom. The models used to
+   generate the image on the right can be found `here
+   <https://github.com/google-deepmind/mujoco/blob/main/test/user/testdata/fitmesh_inertiabox.xml>`__ (fit inertia box)
+   and `here <https://github.com/google-deepmind/mujoco/blob/main/test/user/testdata/fitmesh_aabb.xml>`__ (fit aabb).
 
 .. _compiler-eulerseq:
 
@@ -2464,11 +2457,7 @@ helps clarify the role of bodies and geoms in MuJoCo.
    fromto attribute below.
 
    The **box** type defines a box. Three size parameters are required, corresponding to the half-sizes of the box along
-   the X, Y and Z axes of the geom's frame. Note that box-box collisions are the only pair-wise collision type that can
-   generate a large number of contact points, up to 8 depending on the configuration. The contact generation itself is
-   fast but this can slow down the constraint solver. As an alternative, we provide the boxconvex attribute in
-   :ref:`flag <option-flag>` which causes the general-purpose convex collider to be used instead, yielding at most one
-   contact point per geom pair.
+   the X, Y and Z axes of the geom's frame. Note that box-box collisions can generate up to 8 contact points.
 
    The **mesh** type defines a mesh. The geom must reference the desired mesh asset with the mesh attribute. Note that
    mesh assets can also be referenced from other geom types, causing primitive shapes to be fitted; see below. The size
@@ -4886,7 +4875,9 @@ length X, as in the clip on the right of `this example model
 
 :at:`rgba`: :at-val:`real(4), "0.5 0.5 0.5 1"`
    Color and transparency of the tendon. When this value is different from the internal default, it overrides the
-   corresponding material properties.
+   corresponding material properties. If a :at:`material` is unspecified and :at:`rgba` has the default value, limited
+   tendons whose length exceeds the limit are recolored using the value of the :ref:`constraint impedance<soParameters>`
+   :math:`d` to mix the default color and :ref:`rgba/constraint<visual-rgba-constraint>`.
 
 .. _tendon-spatial-springlength:
 
@@ -7492,8 +7483,8 @@ Matching
   bodies, while setting only :ref:`geom1<sensor-contact-geom1>` will match any contacts involving that geom. Setting
   :ref:`site<sensor-contact-site>` will match contacts that are inside the volume defined by the site; this matching
   criterion can be used with {geom2, body2, subtree2}. The subtree attributes take a body name and match all contacts
-  involving the subtree where that body is located. Setting :ref:`subtree1<sensor-contact-subtree1>` and
-  :ref:`subtree2<sensor-contact-subtree2>` to the same body or to two bodies in the same subtree will match
+  involving the body's subtree i.e., the body and all of its descendants. Setting
+  :ref:`subtree1<sensor-contact-subtree1>` and :ref:`subtree2<sensor-contact-subtree2>` to the same body will match
   self-collisions in the subtree. Specifying no matching criterion will match all contacts.
 
 Reduction
@@ -8292,7 +8283,9 @@ disables the rendering of the corresponding object.
 .. _visual-rgba-joint:
 
 :at:`joint`: :at-val:`real(4), "0.2 0.6 0.8 1"`
-   Color of the arrows used to render joint axes.
+   Color of the arrows used to render joint axes. If a joint is limited and the joint value exceeds the limit, the
+   value of the :ref:`constraint impedance<soParameters>` :math:`d` is used to mix this color and
+   :ref:`rgba/constraint<visual-rgba-constraint>`.
 
 .. _visual-rgba-actuator:
 
@@ -8368,7 +8361,7 @@ disables the rendering of the corresponding object.
 .. _visual-rgba-constraint:
 
 :at:`constraint`: :at-val:`real(4), "0.9 0 0 1"`
-   Color of the capsules corresponding to spatial constraint violations.
+   Color corresponding to spatial constraint violations -- equality constraints, joint limits, and tendon limits.
 
 .. _visual-rgba-slidercrank:
 

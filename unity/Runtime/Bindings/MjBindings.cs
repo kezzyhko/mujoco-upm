@@ -111,7 +111,7 @@ public const int mjMAXLINEPNT = 1001;
 public const int mjMAXPLANEGRID = 200;
 public const bool THIRD_PARTY_MUJOCO_MJXMACRO_H_ = true;
 public const bool THIRD_PARTY_MUJOCO_MUJOCO_H_ = true;
-public const int mjVERSION_HEADER = 336;
+public const int mjVERSION_HEADER = 337;
 
 
 // ------------------------------------Enums------------------------------------
@@ -5089,7 +5089,6 @@ public unsafe struct _mjVFS
 [StructLayout(LayoutKind.Sequential)]
 public unsafe struct mjOption_ {
   public double timestep;
-  public double apirate;
   public double impratio;
   public double tolerance;
   public double ls_tolerance;
@@ -5854,6 +5853,8 @@ public unsafe struct mjsCompiler_ {
   public byte saveinertial;
   public int alignfree;
   public mjLROpt_ LRopt;
+  public void* meshdir;
+  public void* texturedir;
 }
 
 [StructLayout(LayoutKind.Sequential)]
@@ -6284,6 +6285,7 @@ public unsafe struct mjvScene_ {
   public fixed byte flags[10];
   public int framewidth;
   public fixed float framergb[3];
+  public int status;
 }
 
 [StructLayout(LayoutKind.Sequential)]
@@ -6363,6 +6365,9 @@ public static unsafe extern int mj_saveLastXML([MarshalAs(UnmanagedType.LPStr)]s
 
 [DllImport("mujoco", CallingConvention = CallingConvention.Cdecl)]
 public static unsafe extern void mj_freeLastXML();
+
+[DllImport("mujoco", CallingConvention = CallingConvention.Cdecl)]
+public static unsafe extern void mju_getXMLDependencies([MarshalAs(UnmanagedType.LPStr)]string filename, void* dependencies);
 
 [DllImport("mujoco", CallingConvention = CallingConvention.Cdecl)]
 public static unsafe extern void mj_step(mjModel_* m, mjData_* d);
@@ -6477,6 +6482,12 @@ public static unsafe extern void mju_printMatSparse(double* mat, int nr, int* ro
 
 [DllImport("mujoco", CallingConvention = CallingConvention.Cdecl)]
 public static unsafe extern int mj_printSchema([MarshalAs(UnmanagedType.LPStr)]string filename, StringBuilder buffer, int buffer_sz, int flg_html, int flg_pad);
+
+[DllImport("mujoco", CallingConvention = CallingConvention.Cdecl)]
+public static unsafe extern void mj_printScene(mjvScene_* s, [MarshalAs(UnmanagedType.LPStr)]string filename);
+
+[DllImport("mujoco", CallingConvention = CallingConvention.Cdecl)]
+public static unsafe extern void mj_printFormattedScene(mjvScene_* s, [MarshalAs(UnmanagedType.LPStr)]string filename, [MarshalAs(UnmanagedType.LPStr)]string float_format);
 
 [DllImport("mujoco", CallingConvention = CallingConvention.Cdecl)]
 public static unsafe extern void mj_fwdPosition(mjModel_* m, mjData_* d);

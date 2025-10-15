@@ -21,7 +21,6 @@
 // scalar fields of mjOption
 #define MJOPTION_FLOATS             \
     X( mjtNum,  timestep         )  \
-    X( mjtNum,  apirate          )  \
     X( mjtNum,  impratio         )  \
     X( mjtNum,  tolerance        )  \
     X( mjtNum,  ls_tolerance     )  \
@@ -29,7 +28,7 @@
     X( mjtNum,  ccd_tolerance    )  \
     X( mjtNum,  density          )  \
     X( mjtNum,  viscosity        )  \
-    X( mjtNum,  o_margin         )  \
+    X( mjtNum,  o_margin         )
 
 
 #define MJOPTION_INTS               \

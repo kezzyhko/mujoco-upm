@@ -156,14 +156,14 @@ struct mjData_ {
   int     nplugin;           // number of plugin instances
 
   // stack pointer
-  size_t  pstack;            // first available byte in stack
-  size_t  pbase;             // value of pstack when mj_markStack was last called
+  size_t  pstack;            // first available byte in stack (mutable)
+  size_t  pbase;             // value of pstack when mj_markStack was last called (mutable)
 
   // arena pointer
   size_t  parena;            // first available byte in arena
 
   // memory utilization statistics
-  mjtSize maxuse_stack;                       // maximum stack allocation in bytes
+  mjtSize maxuse_stack;                       // maximum stack allocation in bytes (mutable)
   mjtSize maxuse_threadstack[mjMAXTHREAD];    // maximum stack allocation per thread in bytes
   mjtSize maxuse_arena;                       // maximum arena allocation in bytes
   int     maxuse_con;                         // maximum number of contacts
@@ -176,7 +176,7 @@ struct mjData_ {
   mjtNum        solver_fwdinv[2];             // forward-inverse comparison: qfrc, efc
 
   // diagnostics
-  mjWarningStat warning[mjNWARNING];          // warning statistics
+  mjWarningStat warning[mjNWARNING];          // warning statistics (mutable)
   mjTimerStat   timer[mjNTIMER];              // timer statistics
 
   // variable sizes
@@ -800,7 +800,6 @@ typedef struct mjVFS_ mjVFS;
 struct mjOption_ {                // physics options
   // timing parameters
   mjtNum timestep;                // timestep
-  mjtNum apirate;                 // update rate for remote API (Hz)
 
   // solver parameters
   mjtNum impratio;                // ratio of friction-to-normal contact impedance
@@ -1845,6 +1844,8 @@ typedef struct mjsCompiler_ {      // compiler options
   mjtByte saveinertial;            // save explicit inertial clause for all bodies to XML
   int alignfree;                   // align free joints with inertial frame
   mjLROpt LRopt;                   // options for lengthrange computation
+  mjString* meshdir;               // mesh and hfield directory
+  mjString* texturedir;            // texture directory
 } mjsCompiler;
 typedef struct mjSpec_ {           // model specification
   mjsElement* element;             // element type
@@ -1853,8 +1854,6 @@ typedef struct mjSpec_ {           // model specification
   // compiler data
   mjsCompiler compiler;            // compiler options
   mjtByte strippath;               // automatically strip paths from mesh files
-  mjString* meshdir;               // mesh and hfield directory
-  mjString* texturedir;            // texture directory
 
   // engine data
   mjOption option;                 // physics options
@@ -2149,6 +2148,7 @@ typedef struct mjsMesh_ {          // mesh specification
   mjFloatVec* usernormal;          // user normal data
   mjFloatVec* usertexcoord;        // user texcoord data
   mjIntVec* userface;              // user vertex indices
+  mjIntVec* userfacenormal;        // user face normal indices
   mjIntVec* userfacetexcoord;      // user texcoord indices
   mjsPlugin plugin;                // sdf plugin
   mjString* material;              // name of material
@@ -2948,6 +2948,7 @@ struct mjvScene_ {                // abstract scene passed to OpenGL renderer
   // framing
   int      framewidth;            // frame pixel width; 0: disable framing
   float    framergb[3];           // frame color
+  int      status;                // status; 0: ok, 1: geoms exhausted
 };
 typedef struct mjvScene_ mjvScene;
 struct mjvFigure_ {               // abstract 2D figure passed to OpenGL renderer
@@ -3019,6 +3020,7 @@ int mj_saveLastXML(const char* filename, const mjModel* m, char* error, int erro
 void mj_freeLastXML(void);
 int mj_saveXMLString(const mjSpec* s, char* xml, int xml_sz, char* error, int error_sz);
 int mj_saveXML(const mjSpec* s, const char* filename, char* error, int error_sz);
+void mju_getXMLDependencies(const char* filename, mjStringVec* dependencies);
 void mj_step(const mjModel* m, mjData* d);
 void mj_step1(const mjModel* m, mjData* d);
 void mj_step2(const mjModel* m, mjData* d);
@@ -3066,6 +3068,9 @@ void mju_printMatSparse(const mjtNum* mat, int nr,
                         const int* rownnz, const int* rowadr, const int* colind);
 int mj_printSchema(const char* filename, char* buffer, int buffer_sz,
                    int flg_html, int flg_pad);
+void mj_printScene(const mjvScene* s, const char* filename);
+void mj_printFormattedScene(const mjvScene* s, const char* filename,
+                            const char* float_format);
 void mj_fwdPosition(const mjModel* m, mjData* d);
 void mj_fwdVelocity(const mjModel* m, mjData* d);
 void mj_fwdActuation(const mjModel* m, mjData* d);
@@ -3389,7 +3394,7 @@ int mju_str2Type(const char* str);
 const char* mju_writeNumBytes(size_t nbytes);
 const char* mju_warningText(int warning, size_t info);
 int mju_isBad(mjtNum x);
-int mju_isZero(mjtNum* vec, int n);
+int mju_isZero(const mjtNum* vec, int n);
 mjtNum mju_standardNormal(mjtNum* num2);
 void mju_f2n(mjtNum* res, const float* vec, int n);
 void mju_n2f(float* res, const mjtNum* vec, int n);

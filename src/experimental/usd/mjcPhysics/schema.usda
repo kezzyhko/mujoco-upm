@@ -111,15 +111,6 @@ class "MjcSceneAPI"
         doc = """Controls the timestep in seconds used by MuJoCo."""
     )
 
-    uniform double mjc:option:apirate = 100 (
-        customData = {
-            string apiName = "ApiRate"
-        }
-        displayName = "ApiRate"
-        doc = """Determines the rate (in Hz) at which an external API allows
-        the update function to be executed."""
-    )
-
     uniform double mjc:option:impratio = 1.0 (
         customData = {
             string apiName = "ImpRatio"
@@ -283,7 +274,7 @@ class "MjcSceneAPI"
         doc = """Tolerance threshold used for early termination of the Noslip solver."""
     )
 
-    uniform int mjc:option:ccd_iterations = 50 (
+    uniform int mjc:option:ccd_iterations = 35 (
         customData = {
             string apiName = "CCDIterations"
         }

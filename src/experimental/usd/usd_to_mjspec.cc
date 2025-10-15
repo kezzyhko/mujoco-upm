@@ -16,6 +16,7 @@
 #include <cstddef>
 #include <map>
 #include <memory>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -51,6 +52,7 @@
 #include <pxr/usd/usdGeom/cylinder.h>
 #include <pxr/usd/usdGeom/gprim.h>
 #include <pxr/usd/usdGeom/mesh.h>
+#include <pxr/usd/usdGeom/metrics.h>
 #include <pxr/usd/usdGeom/plane.h>
 #include <pxr/usd/usdGeom/primvar.h>
 #include <pxr/usd/usdGeom/primvarsAPI.h>
@@ -383,20 +385,55 @@ mjsMesh* ParseUsdMesh(mjSpec* spec, const pxr::UsdPrim& prim, mjsGeom* geom,
   return mesh;
 }
 
+void SetGravityAttributes(
+    mjSpec* spec, const pxr::UsdStageRefPtr stage,
+    std::optional<pxr::GfVec3f> gravity_direction = std::nullopt,
+    std::optional<float> gravity_magnitude = std::nullopt) {
+  // Parse gravity and gravity direction.
+  if (!gravity_direction.has_value()) {
+    TfToken up_axis = pxr::UsdGeomGetStageUpAxis(stage);
+    if (up_axis == pxr::UsdGeomTokens->y) {
+      gravity_direction = pxr::GfVec3f(0, -1, 0);
+    } else if (up_axis == pxr::UsdGeomTokens->z) {
+      gravity_direction = pxr::GfVec3f(0, 0, -1);
+    } else {
+      mju_error("Invalid stage up axis token %s", up_axis.GetString().c_str());
+    }
+  }
+
+  if (!gravity_magnitude.has_value()) {
+    gravity_magnitude = 9.81f / pxr::UsdGeomGetStageMetersPerUnit(stage);
+  }
+
+  pxr::GfVec3f gravity = gravity_direction.value() * gravity_magnitude.value();
+
+  spec->option.gravity[0] = gravity[0];
+  spec->option.gravity[1] = gravity[1];
+  spec->option.gravity[2] = gravity[2];
+}
+
 void ParseUsdPhysicsScene(mjSpec* spec,
                           const pxr::UsdPhysicsScene& physics_scene) {
+  std::optional<pxr::GfVec3f> gravity_direction = std::nullopt;
+  std::optional<float> gravity_magnitude = std::nullopt;
+  auto stage = physics_scene.GetPrim().GetStage();
+
   // Parse gravity and gravity direction.
-  pxr::GfVec3f gravity_direction;
-  physics_scene.GetGravityDirectionAttr().Get(&gravity_direction);
+  auto gravity_direction_attr = physics_scene.GetGravityDirectionAttr();
+  if (gravity_direction_attr.HasAuthoredValue()) {
+    pxr::GfVec3f authored_gravity_dir;
+    gravity_direction_attr.Get(&authored_gravity_dir);
+    gravity_direction = authored_gravity_dir;
+  }
 
-  float gravity_magnitude;
-  physics_scene.GetGravityMagnitudeAttr().Get(&gravity_magnitude);
+  auto gravity_magnitude_attr = physics_scene.GetGravityMagnitudeAttr();
+  if (gravity_magnitude_attr.HasAuthoredValue()) {
+    float authored_gravity_magnitude;
+    gravity_magnitude_attr.Get(&authored_gravity_magnitude);
+    gravity_magnitude = authored_gravity_magnitude;
+  }
 
-  gravity_direction *= gravity_magnitude;
-
-  spec->option.gravity[0] = gravity_direction[0];
-  spec->option.gravity[1] = gravity_direction[1];
-  spec->option.gravity[2] = gravity_direction[2];
+  SetGravityAttributes(spec, stage, gravity_direction, gravity_magnitude);
 
   // Early exit if theres no MjcPhysicsSceneAPI applied.
   if (!physics_scene.GetPrim().HasAPI<pxr::MjcPhysicsSceneAPI>()) {
@@ -407,10 +444,6 @@ void ParseUsdPhysicsScene(mjSpec* spec,
   double timestep;
   mjc_physics_scene.GetTimestepAttr().Get(&timestep);
   spec->option.timestep = timestep;
-
-  double apirate;
-  mjc_physics_scene.GetApiRateAttr().Get(&apirate);
-  spec->option.apirate = apirate;
 
   double impratio;
   mjc_physics_scene.GetImpRatioAttr().Get(&impratio);
@@ -1347,14 +1380,19 @@ void ParseUsdGeomGprim(mjSpec* spec, const pxr::UsdPrim& gprim,
   if (bound_material) {
     pxr::SdfPath material_path = bound_material.GetPrim().GetPath();
     mjsMaterial* material = nullptr;
-    if (caches.parsed_materials.find(material_path) !=
-        caches.parsed_materials.end()) {
-      material = caches.parsed_materials[material_path];
+    if (auto iter = caches.parsed_materials.find(material_path);
+        iter != caches.parsed_materials.end()) {
+      material = iter->second;
     } else {
       material = ParseMaterial(spec, bound_material);
-      caches.parsed_materials[material_path] = material;
+      // ParseMaterial may return a nullptr if the material is not supported.
+      if (material) {
+        caches.parsed_materials[material_path] = material;
+      }
     }
-    mjs_setString(geom->material, mjs_getName(material->element)->c_str());
+    if (material) {
+      mjs_setString(geom->material, mjs_getName(material->element)->c_str());
+    }
   }
 
   if (gprim.HasAPI<pxr::MjcPhysicsImageableAPI>()) {
@@ -1400,6 +1438,21 @@ void ParseUsdPhysicsCollider(mjSpec* spec,
           geom, pxr::UsdPhysicsMaterialAPI(bound_material_prim));
       ParseMjcPhysicsMaterialAPI(
           geom, pxr::MjcPhysicsMaterialAPI(bound_material_prim));
+    }
+    pxr::SdfPath material_path = bound_material_prim.GetPath();
+    mjsMaterial* material = nullptr;
+    if (auto iter = caches.parsed_materials.find(material_path);
+        iter != caches.parsed_materials.end()) {
+      material = iter->second;
+    } else {
+      material = ParseMaterial(spec, bound_material);
+      // ParseMaterial may return a nullptr if the material is not supported.
+      if (material) {
+        caches.parsed_materials[material_path] = material;
+      }
+    }
+    if (material) {
+      mjs_setString(geom->material, mjs_getName(material->element)->c_str());
     }
   }
 
@@ -1724,6 +1777,10 @@ mjSpec* mj_parseUSDStage(const pxr::UsdStageRefPtr stage) {
   if (!root->physics_scene.IsEmpty()) {
     mujoco::usd::ParseUsdPhysicsScene(
         spec, pxr::UsdPhysicsScene::Get(stage, root->physics_scene));
+  } else {
+    // If there is no physics scene we still need to infer the gravity vector
+    // from the stage up axis and units per meter metadata.
+    mujoco::usd::SetGravityAttributes(spec, stage);
   }
 
   if (!root->keyframes.empty()) {
@@ -1754,4 +1811,3 @@ MJAPI mjSpec* mj_parseUSD(const char* identifier, const mjVFS* vfs, char* error,
   auto stage = pxr::UsdStage::Open(identifier);
   return mj_parseUSDStage(stage);
 }
-

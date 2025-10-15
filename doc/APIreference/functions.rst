@@ -127,6 +127,17 @@ the required size. XML saving automatically compiles the spec before saving.
 
 Save spec to XML file, return 0 on success, -1 otherwise. XML saving requires that the spec first be compiled.
 
+.. _mju_getXMLDependencies:
+
+`mju_getXMLDependencies <#mju_getXMLDependencies>`__
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+.. mujoco-include:: mju_getXMLDependencies
+
+Given MJCF filename, fills dependencies with a list of all other asset files it depends on.
+
+The search is recursive, and the list includes the filename itself.
+
 .. _Mainsimulation:
 
 Main simulation
@@ -1215,7 +1226,7 @@ Print model to text file.
 .. mujoco-include:: mj_printFormattedData
 
 Print mjData to text file, specifying format.
-float_format must be a valid printf-style format string for a single float value
+float_format must be a valid printf-style format string for a single float value.
 
 .. _mj_printData:
 
@@ -1252,6 +1263,25 @@ Print sparse matrix to screen.
 .. mujoco-include:: mj_printSchema
 
 Print internal XML schema as plain text or HTML, with style-padding or ``&nbsp;``.
+
+.. _mj_printScene:
+
+`mj_printScene <#mj_printScene>`__
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+.. mujoco-include:: mj_printScene
+
+Print scene to text file.
+
+.. _mj_printFormattedScene:
+
+`mj_printFormattedScene <#mj_printFormattedScene>`__
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+.. mujoco-include:: mj_printFormattedScene
+
+Print scene to text file, specifying format.
+float_format must be a valid printf-style format string for a single float value.
 
 .. _Virtualfilesystem:
 

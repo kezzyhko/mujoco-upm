@@ -21,7 +21,6 @@
 #include <mujoco/mjmacro.h>
 #include <mujoco/mjmodel.h>
 #include <mujoco/mjsan.h>  // IWYU pragma: keep
-#include "engine/engine_core_constraint.h"
 #include "engine/engine_core_smooth.h"
 #include "engine/engine_core_util.h"
 #include "engine/engine_forward.h"
@@ -58,7 +57,6 @@ static void mj_setM0(mjModel* m, mjData* d) {
     m->dof_M0[i] = m->dof_armature[i] + mju_dot(d->cdof+6*i, buf, 6);
   }
 }
-
 
 
 // set quantities that depend on qpos0
@@ -416,7 +414,6 @@ static void set0(mjModel* m, mjData* d) {
 }
 
 
-
 // accumulate bounding box
 static void updateBox(mjtNum* xmin, mjtNum* xmax, mjtNum* pos, mjtNum radius) {
   for (int i=0; i < 3; i++) {
@@ -556,7 +553,6 @@ static void setStat(mjModel* m, mjData* d) {
 }
 
 
-
 // set quantities that depend on qpos_spring
 static void setSpring(mjModel* m, mjData* d) {
   // run computations in qpos_spring
@@ -576,7 +572,6 @@ static void setSpring(mjModel* m, mjData* d) {
 }
 
 
-
 // entry point: set all constant fields of mjModel, except for lengthrange
 void mj_setConst(mjModel* m, mjData* d) {
   // compute subtreemass
@@ -592,7 +587,6 @@ void mj_setConst(mjModel* m, mjData* d) {
   setStat(m, d);
   setSpring(m, d);
 }
-
 
 
 //----------------------------- actuator length range computation ----------------------------------
@@ -633,7 +627,6 @@ static mjtNum evalAct(const mjModel* m, mjData* d, int index, int side,
   // return actuator length
   return d->actuator_length[index];
 }
-
 
 
 // Set length range for specified actuator, return 1 if ok, 0 if error.

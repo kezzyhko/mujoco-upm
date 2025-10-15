@@ -20,6 +20,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <deque>
 #include <functional>
@@ -59,8 +60,9 @@ class PNGImage {
   int Height() const { return height_; }
   bool IsSRGB() const { return is_srgb_; }
 
-  uint8_t operator[] (int i) const { return data_[i]; }
-  std::vector<unsigned char>& MoveData() { return data_; }
+  std::byte operator[] (int i) const { return data_[i]; }
+
+  mjByteVec&& MoveData() && { return std::move(data_); }
 
  private:
   std::size_t Size() const {
@@ -71,29 +73,13 @@ class PNGImage {
   int height_;
   bool is_srgb_;
   LodePNGColorType color_type_;
-  std::vector<uint8_t> data_;
+  mjByteVec data_;
 };
 
 PNGImage PNGImage::Load(const mjCBase* obj, mjResource* resource,
                         LodePNGColorType color_type) {
   PNGImage image;
   image.color_type_ = color_type;
-  mjCCache *cache = reinterpret_cast<mjCCache*>(mj_getCache()->impl_);
-
-  // cache callback
-  auto callback = [&image](const void* data) {
-    const PNGImage *cached_image = static_cast<const PNGImage*>(data);
-    if (cached_image->color_type_ == image.color_type_) {
-      image = *cached_image;
-      return true;
-    }
-    return false;
-  };
-
-  // try loading from cache
-  if (cache && cache->PopulateData(resource, callback)) {
-      return image;
-  }
 
   // open PNG resource
   const unsigned char* buffer;
@@ -113,13 +99,25 @@ PNGImage PNGImage::Load(const mjCBase* obj, mjResource* resource,
   lodepng::State state;
   state.info_raw.colortype = image.color_type_;
   state.info_raw.bitdepth = 8;
-  unsigned err = lodepng::decode(image.data_, w, h, state, buffer, nbuffer);
+  unsigned char* data_ptr = nullptr;
+  unsigned err = lodepng_decode(&data_ptr, &w, &h, &state, buffer, nbuffer);
+  struct free_delete {
+    void operator()(unsigned char* ptr) const { std::free(ptr); }
+  };
+  std::unique_ptr<unsigned char, free_delete> data{data_ptr};
 
   // check for errors
   if (err) {
     std::stringstream ss;
     ss << "error decoding PNG file '" << resource->name << "': " << lodepng_error_text(err);
     throw mjCError(obj, "%s", ss.str().c_str());
+  }
+
+  if (data) {
+    size_t buffersize = lodepng_get_raw_size(w, h, &state.info_raw);
+    image.data_.insert(image.data_.end(),
+                       reinterpret_cast<std::byte*>(data.get()),
+                       reinterpret_cast<std::byte*>(&data.get()[buffersize]));
   }
 
   image.width_ = w;
@@ -130,16 +128,6 @@ PNGImage PNGImage::Load(const mjCBase* obj, mjResource* resource,
     std::stringstream ss;
     ss << "error decoding PNG file '" << resource->name << "': " << "dimensions are invalid";
     throw mjCError(obj, "%s", ss.str().c_str());
-  }
-
-  // insert raw image data into cache
-  if (cache) {
-    PNGImage *cached_image = new PNGImage(image);;
-    std::size_t size = image.Size();
-    std::shared_ptr<const void> cached_data(cached_image, +[] (const void* data) {
-        delete static_cast<const PNGImage*>(data);
-      });
-    cache->Insert("", resource, cached_data, size);
   }
 
   return image;
@@ -629,6 +617,7 @@ void mjCOctree::CreateOctree(const double aamm[6]) {
                  [](Triangle& triangle) { return &triangle; });
   std::unordered_map<Point, int> vert_map;
   MakeOctree(elements_ptrs, box, vert_map);
+  MarkHangingNodes();
 }
 
 
@@ -864,6 +853,101 @@ void mjCOctree::BalanceOctree(std::unordered_map<Point, int>& vert_map) {
           task.node_index = node_idx;
           task.lev = node_[node_idx].level;
           Subdivide(task, vert_map);
+        }
+      }
+    }
+  }
+}
+
+
+// mark all hanging vertices in the octree
+void mjCOctree::MarkHangingNodes() {
+  hang_.assign(nvert_, std::vector<int>());
+
+  std::vector<int> leaves;
+  for (int i = 0; i < nnode_; ++i) {
+    if (node_[i].child[0] == -1) {
+      leaves.push_back(i);
+    }
+  }
+
+  for (int leaf_idx : leaves) {
+    for (int dir = 0; dir < 6; ++dir) {
+      int neighbor_idx = FindNeighbor(leaf_idx, dir);
+      if (neighbor_idx == -1 ||
+          node_[neighbor_idx].level >= node_[leaf_idx].level) {
+        continue;
+      }
+
+      // coarser neighbor found, this leaf's face has hanging nodes
+      int dim = dir / 2;
+      int side = dir % 2;
+
+      // iterate over the 4 vertices of the leaf's face
+      for (int i = 0; i < 4; ++i) {
+        // construct vertex index on the face
+        int v_idx = side << dim;
+        int d1 = (dim + 1) % 3;
+        int d2 = (dim + 2) % 3;
+        v_idx |= (i & 1) << d1;
+        v_idx |= ((i >> 1) & 1) << d2;
+
+        int hv_id = node_[leaf_idx].vertid[v_idx];
+        if (!hang_[hv_id].empty()) {
+          continue;  // already processed
+        }
+
+        const double* hv_pos = vert_[hv_id].p.data();
+        const auto& neighbor_aamm = node_[neighbor_idx].aamm;
+
+        bool is_min[3], is_max[3];
+        int on_boundary_planes = 0;
+        for (int d = 0; d < 3; ++d) {
+          is_min[d] = std::abs(hv_pos[d] - neighbor_aamm[d]) < 1e-9;
+          is_max[d] = std::abs(hv_pos[d] - neighbor_aamm[d + 3]) < 1e-9;
+          if (is_min[d] || is_max[d]) {
+            on_boundary_planes++;
+          }
+        }
+
+        if (on_boundary_planes == 2) {  // edge hanging
+          int d_mid = -1;
+          for (int d = 0; d < 3; ++d) {
+            if (!is_min[d] && !is_max[d]) {
+              d_mid = d;
+              break;
+            }
+          }
+
+          int bits[3];
+          bits[d_mid] = 0;  // this will be toggled
+          bits[(d_mid + 1) % 3] = is_max[(d_mid + 1) % 3];
+          bits[(d_mid + 2) % 3] = is_max[(d_mid + 2) % 3];
+
+          int nv_idx1 = (bits[2] << 2) | (bits[1] << 1) | bits[0];
+          bits[d_mid] = 1;
+          int nv_idx2 = (bits[2] << 2) | (bits[1] << 1) | bits[0];
+
+          hang_[hv_id].push_back(node_[neighbor_idx].vertid[nv_idx1]);
+          hang_[hv_id].push_back(node_[neighbor_idx].vertid[nv_idx2]);
+        } else if (on_boundary_planes == 1) {  // face hanging
+          int d_face = -1;
+          for (int d = 0; d < 3; ++d) {
+            if (is_min[d] || is_max[d]) {
+              d_face = d;
+              break;
+            }
+          }
+
+          int bits[3];
+          bits[d_face] = is_max[d_face];
+
+          for (int j = 0; j < 4; ++j) {
+            bits[(d_face + 1) % 3] = j & 1;
+            bits[(d_face + 2) % 3] = (j >> 1) & 1;
+            int nv_idx = (bits[2] << 2) | (bits[1] << 1) | bits[0];
+            hang_[hv_id].push_back(node_[neighbor_idx].vertid[nv_idx]);
+          }
         }
       }
     }
@@ -1114,6 +1198,13 @@ void mjCBase::NameSpace(const mjCModel* m) {
 
 
 
+mjsCompiler* mjCBase::FindCompiler(const mjsCompiler* compiler) const {
+  mjSpec* origin = model->FindSpec(compiler);
+  return origin ? &origin->compiler : &model->spec.compiler;
+}
+
+
+
 // load resource if found (fallback to OS filesystem)
 mjResource* mjCBase::LoadResource(const std::string& modelfiledir,
                                   const std::string& filename,
@@ -1217,8 +1308,7 @@ mjCBody::mjCBody(mjCModel* _model) {
 
 mjCBody::mjCBody(const mjCBody& other, mjCModel* _model) {
   model = _model;
-  mjSpec* origin = model->FindSpec(other.compiler);
-  compiler = origin ? &origin->compiler : &model->spec.compiler;
+  compiler = FindCompiler(other.compiler);
   *this = other;
   CopyPlugin();
 }
@@ -1293,7 +1383,8 @@ mjCBody& mjCBody::operator+=(const mjCBody& other) {
 mjCBody& mjCBody::operator+=(const mjCFrame& other) {
   // append a copy of the attached spec
   if (other.model != model && !model->FindSpec(&other.model->spec.compiler)) {
-    model->AppendSpec(mj_copySpec(&other.model->spec), &other.model->spec.compiler);
+    model->AppendSpec(&other.model->spec, &other.model->spec.compiler);
+    static_cast<mjCModel*>(other.model->spec.element)->AddRef();
   }
 
   // create a copy of the subtree that contains the frame
@@ -2548,7 +2639,8 @@ mjCFrame& mjCFrame::operator=(const mjCFrame& other) {
 mjCFrame& mjCFrame::operator+=(const mjCBody& other) {
   // append a copy of the attached spec
   if (other.model != model && !model->FindSpec(&other.model->spec.compiler)) {
-    model->AppendSpec(mj_copySpec(&other.model->spec), &other.model->spec.compiler);
+    model->AppendSpec(&other.model->spec, &other.model->spec.compiler);
+    static_cast<mjCModel*>(other.model->spec.element)->AddRef();
   }
 
   // apply namespace and store keyframes in the source model
@@ -3640,22 +3732,26 @@ void mjCGeom::Compile(void) {
 
     // save reference in case this is not an mjGEOM_MESH
     mjCMesh* pmesh = mesh;
+    double center[3] = {0, 0, 0};
 
     // fit geom if type is not mjGEOM_MESH
     if (type != mjGEOM_MESH && type != mjGEOM_SDF) {
-      double meshpos[3];
-      mesh->FitGeom(this, meshpos);
+      mesh->FitGeom(this, center);
 
       // remove reference to mesh
       meshname_.clear();
       mesh = nullptr;
-      mjuu_copyvec(pmesh->GetPosPtr(), meshpos, 3);
     } else if (typeinertia == mjINERTIA_SHELL) {
       throw mjCError(this, "for mesh geoms, inertia should be specified in the mesh asset");
     }
 
-    // apply geom pos/quat as offset
-    mjuu_frameaccum(pos, quat, pmesh->GetPosPtr(), pmesh->GetQuatPtr());
+    // rotate center to geom frame and add it to mesh frame
+    double meshpos[3];
+    mjuu_rotVecQuat(meshpos, center, pmesh->GetQuatPtr());
+    mjuu_addtovec(meshpos, pmesh->GetPosPtr(), 3);
+
+    // accumulate mesh frame into geom frame
+    mjuu_frameaccum(pos, quat, meshpos, pmesh->GetQuatPtr());
   }
 
   // check size parameters
@@ -4267,9 +4363,6 @@ void mjCHField::NameSpace(const mjCModel* m) {
   if (modelfiledir_.empty()) {
     modelfiledir_ = FilePath(m->spec_modelfiledir_);
   }
-  if (meshdir_.empty()) {
-    meshdir_ = FilePath(m->spec_meshdir_);
-  }
 }
 
 
@@ -4281,6 +4374,12 @@ mjCHField::~mjCHField() {
   spec_userdata_.clear();
 }
 
+
+std::string mjCHField::GetCacheId(const mjResource* resource, const std::string& asset_type) {
+  std::stringstream ss;
+  ss << "mjCHField:" << resource->name << ";ARGS:content_type=" << asset_type;
+  return ss.str();
+}
 
 
 // load elevation data from custom format
@@ -4378,6 +4477,8 @@ void mjCHField::Compile(const mjVFS* vfs) {
       throw mjCError(this, "hfield specified from file and manually");
     }
 
+    mjCCache* cache = reinterpret_cast<mjCCache*>(mj_getCache()->impl_);
+
     std::string asset_type = GetAssetContentType(file_, content_type_);
 
     // fallback to custom
@@ -4393,23 +4494,52 @@ void mjCHField::Compile(const mjVFS* vfs) {
     if (modelfiledir_.empty()) {
       modelfiledir_ = FilePath(model->modelfiledir_);
     }
-    if (meshdir_.empty()) {
-      meshdir_ = FilePath(model->meshdir_);
-    }
+    mujoco::user::FilePath meshdir_;
+    meshdir_ = FilePath(mjs_getString(compiler->meshdir));
 
     FilePath filename = meshdir_ + FilePath(file_);
     mjResource* resource = LoadResource(modelfiledir_.Str(), filename.Str(), vfs);
 
-    try {
-      if (asset_type == "image/png") {
-        LoadPNG(resource);
-      } else {
-        LoadCustom(resource);
+    struct CachedHField {
+      int nrow, ncol;
+      std::vector<float> data;
+    };
+
+    // cache callback
+    auto callback = [&](const void* cached_data) {
+      const CachedHField* cached_hfield =
+          static_cast<const CachedHField*>(cached_data);
+      nrow = cached_hfield->nrow;
+      ncol = cached_hfield->ncol;
+      this->data = cached_hfield->data;
+      return true;
+    };
+
+    // try loading from cache
+    if (cache && cache->PopulateData(GetCacheId(resource, asset_type), resource, callback)) {
+      mju_closeResource(resource);
+    } else {
+      try {
+        if (asset_type == "image/png") {
+          LoadPNG(resource);
+        } else {
+          LoadCustom(resource);
+        }
+      } catch(mjCError err) {
+        mju_closeResource(resource);
+        throw err;
+      }
+
+      if (cache) {
+        CachedHField* cached_hfield = new CachedHField;
+        cached_hfield->nrow = nrow;
+        cached_hfield->ncol = ncol;
+        cached_hfield->data = this->data;
+        std::size_t size = sizeof(CachedHField) + this->data.size() * sizeof(float);
+        std::shared_ptr<CachedHField> cached_data{cached_hfield};
+        cache->Insert("", GetCacheId(resource, asset_type), resource, cached_data, size);
       }
       mju_closeResource(resource);
-    } catch(mjCError err) {
-      mju_closeResource(resource);
-      throw err;
     }
   }
 
@@ -4529,9 +4659,6 @@ void mjCTexture::NameSpace(const mjCModel* m) {
   mjCBase::NameSpace(m);
   if (modelfiledir_.empty()) {
     modelfiledir_ = FilePath(m->spec_modelfiledir_);
-  }
-  if (texturedir_.empty()) {
-    texturedir_ = FilePath(m->spec_texturedir_);
   }
 }
 
@@ -4793,7 +4920,7 @@ void mjCTexture::BuiltinCube(void) {
 
 // load PNG file
 void mjCTexture::LoadPNG(mjResource* resource,
-                         std::vector<unsigned char>& image,
+                         std::vector<std::byte>& image,
                          unsigned int& w, unsigned int& h, bool& is_srgb) {
   LodePNGColorType color_type;
   if (nchannel == 4) {
@@ -4810,13 +4937,14 @@ void mjCTexture::LoadPNG(mjResource* resource,
   w = png_image.Width();
   h = png_image.Height();
   is_srgb = png_image.IsSRGB();
-  image = png_image.MoveData();
+
+  // Move data into image.
+  image = std::move(png_image).MoveData();
 }
 
 // load KTX file
-void mjCTexture::LoadKTX(mjResource* resource,
-                         std::vector<unsigned char>& image, unsigned int& w,
-                        unsigned int& h, bool& is_srgb) {
+void mjCTexture::LoadKTX(mjResource* resource, std::vector<std::byte>& image,
+                         unsigned int& w, unsigned int& h, bool& is_srgb) {
   const void* buffer = 0;
   int buffer_sz = mju_readResource(resource, &buffer);
 
@@ -4836,8 +4964,7 @@ void mjCTexture::LoadKTX(mjResource* resource,
 }
 
 // load custom file
-void mjCTexture::LoadCustom(mjResource* resource,
-                            std::vector<unsigned char>& image,
+void mjCTexture::LoadCustom(mjResource* resource, std::vector<std::byte>& image,
                             unsigned int& w, unsigned int& h, bool& is_srgb) {
   const void* buffer = 0;
   int buffer_sz = mju_readResource(resource, &buffer);
@@ -4875,12 +5002,71 @@ void mjCTexture::LoadCustom(mjResource* resource,
   memcpy(image.data(), (void*)(pint+2), w*h*3*sizeof(char));
 }
 
+void mjCTexture::FlipIfNeeded(std::vector<std::byte>& image, unsigned int w,
+                              unsigned int h) {
+  // horizontal flip
+  if (hflip) {
+    for (int r = 0; r < h; r++) {
+      for (int c = 0; c < w / 2; c++) {
+        int c1 = w - 1 - c;
+        auto val1 = nchannel * (r * w + c);
+        auto val2 = nchannel * (r * w + c1);
+        for (int ch = 0; ch < nchannel; ch++) {
+          auto tmp = image[val1 + ch];
+          image[val1 + ch] = image[val2 + ch];
+          image[val2 + ch] = tmp;
+        }
+      }
+    }
+  }
 
+  // vertical flip
+  if (vflip) {
+    for (int r = 0; r < h / 2; r++) {
+      for (int c = 0; c < w; c++) {
+        int r1 = h - 1 - r;
+        auto val1 = nchannel * (r * w + c);
+        auto val2 = nchannel * (r1 * w + c);
+        for (int ch = 0; ch < nchannel; ch++) {
+          auto tmp = image[val1 + ch];
+          image[val1 + ch] = image[val2 + ch];
+          image[val2 + ch] = tmp;
+        }
+      }
+    }
+  }
+}
+
+std::string mjCTexture::GetCacheId(const mjResource* resource, const std::string& asset_type) {
+  std::stringstream ss;
+  ss << resource->name << ";ARGS:content_type=" << asset_type << ",nchannel=" << nchannel
+     << ",hflip=" << hflip << ",vflip=" << vflip << ";";
+  return ss.str();
+}
 
 // load from PNG or custom file, flip if specified
 void mjCTexture::LoadFlip(std::string filename, const mjVFS* vfs,
-                          std::vector<unsigned char>& image,
+                          std::vector<std::byte>& image,
                           unsigned int& w, unsigned int& h, bool& is_srgb) {
+  mjCCache* cache = reinterpret_cast<mjCCache*>(mj_getCache()->impl_);
+
+  struct CachedImage {
+    unsigned int w, h, n_ch;
+    bool is_srgb;
+    std::vector<std::byte> image;
+  };
+
+  // cache callback
+  auto callback = [&](const void* data) {
+    const CachedImage* cached_image =
+        static_cast<const CachedImage*>(data);
+    w = cached_image->w;
+    h = cached_image->h;
+    is_srgb = cached_image->is_srgb;
+    image = cached_image->image;
+    return true;
+  };
+
   std::string asset_type = GetAssetContentType(filename, content_type_);
 
   // fallback to custom
@@ -4892,7 +5078,12 @@ void mjCTexture::LoadFlip(std::string filename, const mjVFS* vfs,
     throw mjCError(this, "unsupported content type: '%s'", asset_type.c_str());
   }
 
+  // try loading from cache
   mjResource* resource = LoadResource(modelfiledir_.Str(), filename, vfs);
+  if (cache && cache->PopulateData(GetCacheId(resource, asset_type), resource, callback)) {
+    mju_closeResource(resource);
+    return;
+  }
 
   try {
     if (asset_type == "image/png") {
@@ -4905,74 +5096,32 @@ void mjCTexture::LoadFlip(std::string filename, const mjVFS* vfs,
     } else {
       LoadCustom(resource, image, w, h, is_srgb);
     }
-    mju_closeResource(resource);
   } catch(mjCError err) {
     mju_closeResource(resource);
     throw err;
   }
 
-  // horizontal flip
-  if (hflip) {
-    if (nchannel != 3) {
-      throw mjCError(
-              this, "currently only 3-channel textures support horizontal flip");
-    }
-    for (int r=0; r < h; r++) {
-      for (int c=0; c < w/2; c++) {
-        int c1 = w-1-c;
-        unsigned char tmp[3] = {
-          image[3*(r*w+c)],
-          image[3*(r*w+c)+1],
-          image[3*(r*w+c)+2]
-        };
-
-        image[3*(r*w+c)]   = image[3*(r*w+c1)];
-        image[3*(r*w+c)+1] = image[3*(r*w+c1)+1];
-        image[3*(r*w+c)+2] = image[3*(r*w+c1)+2];
-
-        image[3*(r*w+c1)]   = tmp[0];
-        image[3*(r*w+c1)+1] = tmp[1];
-        image[3*(r*w+c1)+2] = tmp[2];
-      }
-    }
+  FlipIfNeeded(image, w, h);
+  if (cache) {
+    CachedImage* cached_texture = new CachedImage;
+    cached_texture->w = w;
+    cached_texture->h = h;
+    cached_texture->is_srgb = is_srgb;
+    cached_texture->image = image;
+    std::size_t size = sizeof(CachedImage) + image.size();
+    std::shared_ptr<CachedImage> cached_data{cached_texture};
+    cache->Insert("", GetCacheId(resource, asset_type), resource, cached_data, size);
   }
-
-  // vertical flip
-  if (vflip) {
-    if (nchannel != 3) {
-      throw mjCError(
-              this, "currently only 3-channel textures support vertical flip");
-    }
-    for (int r=0; r < h/2; r++) {
-      for (int c=0; c < w; c++) {
-        int r1 = h-1-r;
-        unsigned char tmp[3] = {
-          image[3*(r*w+c)],
-          image[3*(r*w+c)+1],
-          image[3*(r*w+c)+2]
-        };
-
-        image[3*(r*w+c)]   = image[3*(r1*w+c)];
-        image[3*(r*w+c)+1] = image[3*(r1*w+c)+1];
-        image[3*(r*w+c)+2] = image[3*(r1*w+c)+2];
-
-        image[3*(r1*w+c)]   = tmp[0];
-        image[3*(r1*w+c)+1] = tmp[1];
-        image[3*(r1*w+c)+2] = tmp[2];
-      }
-    }
-  }
+  mju_closeResource(resource);
 }
-
-
 
 // load 2D
 void mjCTexture::Load2D(std::string filename, const mjVFS* vfs) {
   // load PNG or custom
   unsigned int w, h;
   bool is_srgb;
-  std::vector<unsigned char> image;
-  LoadFlip(filename, vfs, image, w, h, is_srgb);
+
+  LoadFlip(filename, vfs, data_, w, h, is_srgb);
 
   // assign size
   width = w;
@@ -4980,23 +5129,7 @@ void mjCTexture::Load2D(std::string filename, const mjVFS* vfs) {
   if (colorspace == mjCOLORSPACE_AUTO) {
     colorspace = is_srgb ? mjCOLORSPACE_SRGB : mjCOLORSPACE_LINEAR;
   }
-
-  // allocate and copy data
-  std::int64_t size = static_cast<std::int64_t>(width)*height;
-  if (size >= std::numeric_limits<int>::max() / nchannel || size <= 0) {
-    throw mjCError(this, "Texture too large");
-  }
-  try {
-    data_.assign(nchannel*size, std::byte(0));
-  } catch (const std::bad_alloc& e) {
-    throw mjCError(this, "Could not allocate memory for texture '%s' (id %d)",
-                   (const char*)file_.c_str(), id);
-  }
-  memcpy(data_.data(), image.data(), nchannel*size);
-  image.clear();
 }
-
-
 
 // load cube or skybox from single file (repeated or grid)
 void mjCTexture::LoadCubeSingle(std::string filename, const mjVFS* vfs) {
@@ -5008,7 +5141,7 @@ void mjCTexture::LoadCubeSingle(std::string filename, const mjVFS* vfs) {
   // load PNG or custom
   unsigned int w, h;
   bool is_srgb;
-  std::vector<unsigned char> image;
+  std::vector<std::byte> image;
   LoadFlip(filename, vfs, image, w, h, is_srgb);
 
   if (colorspace == mjCOLORSPACE_AUTO) {
@@ -5122,12 +5255,14 @@ void mjCTexture::LoadCubeSeparate(const mjVFS* vfs) {
       }
 
       // make filename
+      mujoco::user::FilePath texturedir_;
+      texturedir_ = FilePath(mjs_getString(compiler->texturedir));
       FilePath filename = texturedir_ + FilePath(cubefiles_[i]);
 
       // load PNG or custom
       unsigned int w, h;
       bool is_srgb;
-      std::vector<unsigned char> image;
+      std::vector<std::byte> image;
       LoadFlip(filename.Str(), vfs, image, w, h, is_srgb);
 
       // assume all faces have the same colorspace
@@ -5200,9 +5335,8 @@ void mjCTexture::Compile(const mjVFS* vfs) {
   if (modelfiledir_.empty()) {
     modelfiledir_ = FilePath(model->modelfiledir_);
   }
-  if (texturedir_.empty()) {
-    texturedir_ = FilePath(model->texturedir_);
-  }
+  mujoco::user::FilePath texturedir_;
+  texturedir_ = FilePath(mjs_getString(compiler->texturedir));
 
   // buffer from user
   if (!data_.empty()) {
@@ -5210,6 +5344,9 @@ void mjCTexture::Compile(const mjVFS* vfs) {
       throw mjCError(this, "Texture buffer has incorrect size, given %d expected %d", nullptr,
                      data_.size(), nchannel * width * height);
     }
+
+    // Flip if specified.
+    FlipIfNeeded(data_, width, height);
     return;
   }
 

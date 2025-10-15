@@ -270,8 +270,9 @@ struct mjCOctree_ {
   int nnode_ = 0;
   int nvert_ = 0;
   std::vector<OctNode> node_;
-  std::vector<Triangle> face_;       // mesh faces                (nmeshface x 3)
-  std::vector<Point> vert_;          // octree vertices           (nvert x 3)
+  std::vector<Triangle> face_;          // mesh faces                (nmeshface x 3)
+  std::vector<Point> vert_;             // octree vertices           (nvert x 3)
+  std::vector<std::vector<int>> hang_;  // hanging nodes status      (nvert x 1)
   double ipos_[3] = {0, 0, 0};
   double iquat_[4] = {1, 0, 0, 0};
 };
@@ -287,7 +288,9 @@ class mjCOctree : public mjCOctree_ {
   void CopyAabb(mjtNum* aabb) const;
   void CopyCoeff(mjtNum* coeff) const;
   const double* Vert(int i) const { return vert_[i].p.data(); }
+  const std::vector<int>& Hang(int i) const { return hang_[i]; }
   int VertId(int n, int v) const { return node_[n].vertid[v]; }
+  const std::array<int, 8>& Children(int i) const { return node_[i].child; }
   void SetFace(const std::vector<double>& vert, const std::vector<int>& face);
   int Size() const {
     return sizeof(OctNode) * node_.size() + sizeof(Triangle) * face_.size() +
@@ -310,6 +313,7 @@ class mjCOctree : public mjCOctree_ {
   int FindNeighbor(int node_idx, int dir);
   int FindCoarseNeighbor(int node_idx, int dir);
   void BalanceOctree(std::unordered_map<Point, int>& vert_map);
+  void MarkHangingNodes();
 };
 
 
@@ -356,6 +360,9 @@ class mjCBase : public mjCBase_ {
 
   // Returns parent of this object
   virtual mjCBase* GetParent() const { return nullptr; }
+
+  // Returns the model of this object
+  mjsCompiler* FindCompiler(const mjsCompiler* compiler) const;
 
   // Copy assignment
   mjCBase& operator=(const mjCBase& other);
@@ -1090,7 +1097,6 @@ class mjCMesh_ : public mjCBase {
 
   // paths stored during model attachment
   mujoco::user::FilePath modelfiledir_;
-  mujoco::user::FilePath meshdir_;
 };
 
 class mjCMesh: public mjCMesh_, private mjsMesh {
@@ -1180,7 +1186,7 @@ class mjCMesh: public mjCMesh_, private mjsMesh {
   double* GetQuatPtr();                             // get orientation
   double* GetInertiaBoxPtr();                       // get inertia box
   double GetVolumeRef() const;                      // get volume
-  void FitGeom(mjCGeom* geom, double* meshpos);     // approximate mesh with simple geom
+  void FitGeom(mjCGeom* geom, double center[3]);    // approximate mesh with simple geom
   bool HasTexcoord() const;                         // texcoord not null
   void DelTexcoord();                               // delete texcoord
   bool IsVisual(void) const { return visual_; }     // is geom visual
@@ -1306,7 +1312,6 @@ class mjCSkin_ : public mjCBase {
 
   // paths stored during model attachment
   mujoco::user::FilePath modelfiledir_;
-  mujoco::user::FilePath meshdir_;
 };
 
 class mjCSkin: public mjCSkin_, private mjsSkin {
@@ -1362,7 +1367,6 @@ class mjCHField_ : public mjCBase {
 
   // paths stored during model attachment
   mujoco::user::FilePath modelfiledir_;
-  mujoco::user::FilePath meshdir_;
 };
 
 class mjCHField : public mjCHField_, private mjsHField {
@@ -1391,6 +1395,7 @@ class mjCHField : public mjCHField_, private mjsHField {
  private:
   void Compile(const mjVFS* vfs);         // compiler
 
+  std::string GetCacheId(const mjResource* resource, const std::string& asset_type);
   void LoadCustom(mjResource* resource);  // load from custom format
   void LoadPNG(mjResource* resource);     // load from PNG format
 };
@@ -1413,7 +1418,6 @@ class mjCTexture_ : public mjCBase {
 
   // paths stored during model attachment
   mujoco::user::FilePath modelfiledir_;
-  mujoco::user::FilePath texturedir_;
 };
 
 class mjCTexture : public mjCTexture_, private mjsTexture {
@@ -1441,24 +1445,26 @@ class mjCTexture : public mjCTexture_, private mjsTexture {
  private:
   void Compile(const mjVFS* vfs);         // compiler
 
-  void Builtin2D(void);                   // make builtin 2D
-  void BuiltinCube(void);                 // make builtin cube
-  void Load2D(std::string filename, const mjVFS* vfs);          // load 2D from file
-  void LoadCubeSingle(std::string filename, const mjVFS* vfs);  // load cube from single file
-  void LoadCubeSeparate(const mjVFS* vfs);                      // load cube from separate files
+  // store texture into asset cache
+  std::string GetCacheId(const mjResource* resource, const std::string& asset_type);
+  void Builtin2D(void);                                 // make builtin 2D
+  void BuiltinCube(void);                               // make builtin cube
+  void Load2D(std::string filename, const mjVFS* vfs);  // load 2D from file
+  void LoadCubeSingle(std::string filename,
+                      const mjVFS* vfs);    // load cube from single file
+  void LoadCubeSeparate(const mjVFS* vfs);  // load cube from separate files
 
-  void LoadFlip(std::string filename, const mjVFS* vfs,         // load and flip
-                std::vector<unsigned char>& image,
-                unsigned int& w, unsigned int& h, bool& is_srgb);
+  void FlipIfNeeded(std::vector<std::byte>& image, unsigned int w, unsigned int h);
 
-  void LoadPNG(mjResource* resource,
-               std::vector<unsigned char>& image,
+  void LoadFlip(std::string filename, const mjVFS* vfs,  // load and flip
+                std::vector<std::byte>& image, unsigned int& w, unsigned int& h,
+                bool& is_srgb);
+
+  void LoadPNG(mjResource* resource, std::vector<std::byte>& image,
                unsigned int& w, unsigned int& h, bool& is_srgb);
-  void LoadKTX(mjResource* resource,
-               std::vector<unsigned char>& image,
+  void LoadKTX(mjResource* resource, std::vector<std::byte>& image,
                unsigned int& w, unsigned int& h, bool& is_srgb);
-  void LoadCustom(mjResource* resource,
-                  std::vector<unsigned char>& image,
+  void LoadCustom(mjResource* resource, std::vector<std::byte>& image,
                   unsigned int& w, unsigned int& h, bool& is_srgb);
 
   bool clear_data_;  // if true, data_ is empty and should be filled by Compile

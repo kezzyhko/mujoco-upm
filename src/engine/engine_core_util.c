@@ -18,7 +18,6 @@
 
 #include <mujoco/mjdata.h>
 #include <mujoco/mjmodel.h>
-#include "engine/engine_crossplatform.h"
 #include "engine/engine_memory.h"
 #include "engine/engine_util_blas.h"
 #include "engine/engine_util_errmem.h"
@@ -47,7 +46,6 @@ int mj_isPyramidal(const mjModel* m) {
     return 0;
   }
 }
-
 
 
 //-------------------------- sparse chains ---------------------------------------------------------
@@ -96,7 +94,6 @@ int mj_mergeChain(const mjModel* m, int* chain, int b1, int b2) {
 }
 
 
-
 // merge dof chains for two simple bodies
 int mj_mergeChainSimple(const mjModel* m, int* chain, int b1, int b2) {
   // swap bodies if wrong order
@@ -126,7 +123,6 @@ int mj_mergeChainSimple(const mjModel* m, int* chain, int b1, int b2) {
 
   return (n1+n2);
 }
-
 
 
 // get body chain
@@ -172,7 +168,6 @@ int mj_bodyChain(const mjModel* m, int body, int* chain) {
     return NV;
   }
 }
-
 
 
 //-------------------------- Jacobians -------------------------------------------------------------
@@ -231,19 +226,16 @@ void mj_jac(const mjModel* m, const mjData* d,
 }
 
 
-
 // compute body Jacobian
 void mj_jacBody(const mjModel* m, const mjData* d, mjtNum* jacp, mjtNum* jacr, int body) {
   mj_jac(m, d, jacp, jacr, d->xpos+3*body, body);
 }
 
 
-
 // compute body-com Jacobian
 void mj_jacBodyCom(const mjModel* m, const mjData* d, mjtNum* jacp, mjtNum* jacr, int body) {
   mj_jac(m, d, jacp, jacr, d->xipos+3*body, body);
 }
-
 
 
 // compute subtree-com Jacobian
@@ -274,19 +266,16 @@ void mj_jacSubtreeCom(const mjModel* m, mjData* d, mjtNum* jacp, int body) {
 }
 
 
-
 // compute geom Jacobian
 void mj_jacGeom(const mjModel* m, const mjData* d, mjtNum* jacp, mjtNum* jacr, int geom) {
   mj_jac(m, d, jacp, jacr, d->geom_xpos + 3*geom, m->geom_bodyid[geom]);
 }
 
 
-
 // compute site Jacobian
 void mj_jacSite(const mjModel* m, const mjData* d, mjtNum* jacp, mjtNum* jacr, int site) {
   mj_jac(m, d, jacp, jacr, d->site_xpos + 3*site, m->site_bodyid[site]);
 }
-
 
 
 // compute translation Jacobian of point, and rotation Jacobian of axis
@@ -311,7 +300,6 @@ void mj_jacPointAxis(const mjModel* m, mjData* d, mjtNum* jacPoint, mjtNum* jacA
 
   mj_freeStack(d);
 }
-
 
 
 // compute 3/6-by-nv sparse Jacobian of global point attached to given body
@@ -383,7 +371,6 @@ void mj_jacSparse(const mjModel* m, const mjData* d,
 }
 
 
-
 // sparse Jacobian difference for simple body contacts
 void mj_jacSparseSimple(const mjModel* m, const mjData* d,
                         mjtNum* jacdifp, mjtNum* jacdifr, const mjtNum* point,
@@ -444,7 +431,6 @@ void mj_jacSparseSimple(const mjModel* m, const mjData* d,
     ci++;
   }
 }
-
 
 
 // dense or sparse Jacobian difference for two body points: pos2 - pos1, global
@@ -523,7 +509,6 @@ int mj_jacDifPair(const mjModel* m, const mjData* d, int* chain,
 }
 
 
-
 // dense or sparse weighted sum of multiple body Jacobians at same point
 int mj_jacSum(const mjModel* m, mjData* d, int* chain,
               int n, const int* body, const mjtNum* weight,
@@ -595,7 +580,6 @@ int mj_jacSum(const mjModel* m, mjData* d, int* chain,
 
   return NV;
 }
-
 
 
 // compute 3/6-by-nv Jacobian time derivative of global point attached to given body
@@ -673,7 +657,6 @@ void mj_jacDot(const mjModel* m, const mjData* d,
 }
 
 
-
 // compute subtree angular momentum matrix
 void mj_angmomMat(const mjModel* m, mjData* d, mjtNum* mat, int body) {
   int nv = m->nv;
@@ -743,30 +726,6 @@ void mj_angmomMat(const mjModel* m, mjData* d, mjtNum* mat, int body) {
 }
 
 
-
-// count warnings, print only the first time
-void mj_warning(mjData* d, int warning, int info) {
-  // check type
-  if (warning < 0 || warning >= mjNWARNING) {
-    mjERROR("invalid warning type %d", warning);
-  }
-
-  // save info (override previous)
-  d->warning[warning].lastinfo = info;
-
-  // print message only the first time this warning is encountered
-  if (!d->warning[warning].number) {
-    mju_warning("%s Time = %.4f.", mju_warningText(warning, info), d->time);
-  }
-
-  // increase counter
-  d->warning[warning].number++;
-}
-
-
-
-
-
 // compute object 6D velocity in object-centered frame, world/local orientation
 void mj_objectVelocity(const mjModel* m, const mjData* d,
                        int objtype, int objid, mjtNum res[6], int flg_local) {
@@ -813,10 +772,15 @@ void mj_objectVelocity(const mjModel* m, const mjData* d,
     mjERROR("invalid object type %d", objtype);
   }
 
+  // static body: quick return
+  if (m->body_weldid[bodyid] == 0) {
+    mju_zero(res, 6);
+    return;
+  }
+
   // transform velocity
   mju_transformSpatial(res, d->cvel+6*bodyid, 0, pos, d->subtree_com+3*m->body_rootid[bodyid], rot);
 }
-
 
 
 // compute object 6D acceleration in object-centered frame, world/local orientation
@@ -824,7 +788,6 @@ void mj_objectAcceleration(const mjModel* m, const mjData* d,
                            int objtype, int objid, mjtNum res[6], int flg_local) {
   int bodyid = 0;
   const mjtNum *pos = 0, *rot = 0;
-  mjtNum correction[3], vel[6];
 
   // body-inertial
   if (objtype == mjOBJ_BODY) {
@@ -866,36 +829,23 @@ void mj_objectAcceleration(const mjModel* m, const mjData* d,
     mjERROR("invalid object type %d", objtype);
   }
 
-  // transform com-based velocity to local frame
-  mju_transformSpatial(vel, d->cvel+6*bodyid, 0, pos, d->subtree_com+3*m->body_rootid[bodyid], rot);
+  // static body: quick return
+  if (m->body_weldid[bodyid] == 0) {
+    mju_zero(res, 6);
+    return;
+  }
 
   // transform com-based acceleration to local frame
   mju_transformSpatial(res, d->cacc+6*bodyid, 0, pos, d->subtree_com+3*m->body_rootid[bodyid], rot);
 
-  // acc_tran += vel_rot x vel_tran
+  // transform com-based velocity to local frame
+  mjtNum vel[6];
+  mju_transformSpatial(vel, d->cvel+6*bodyid, 0, pos, d->subtree_com+3*m->body_rootid[bodyid], rot);
+
+  // add Coriolis correction due to rotating frame:  acc_tran += vel_rot x vel_tran
+  mjtNum correction[3];
   mju_cross(correction, vel, vel+3);
   mju_addTo3(res+3, correction);
-}
-
-
-// extract 6D force:torque for one contact, in contact frame
-void mj_contactForce(const mjModel* m, const mjData* d, int id, mjtNum result[6]) {
-  mjContact* con;
-
-  // clear result
-  mju_zero(result, 6);
-
-  // make sure contact is valid
-  if (id >= 0 && id < d->ncon && d->contact[id].efc_address >= 0) {
-    // get contact pointer
-    con = d->contact + id;
-
-    if (mj_isPyramidal(m)) {
-      mju_decodePyramid(result, d->efc_force + con->efc_address, con->friction, con->dim);
-    } else {
-      mju_copy(result, d->efc_force + con->efc_address, con->dim);
-    }
-  }
 }
 
 
@@ -944,18 +894,43 @@ void mj_local2Global(mjData* d, mjtNum xpos[3], mjtNum xmat[9],
 }
 
 
-// set default solver parameters
-void mj_defaultSolRefImp(mjtNum* solref, mjtNum* solimp) {
-  if (solref) {
-    solref[0] = 0.02;       // timeconst
-    solref[1] = 1;          // dampratio
-  }
+// extract 6D force:torque for one contact, in contact frame
+void mj_contactForce(const mjModel* m, const mjData* d, int id, mjtNum result[6]) {
+  mjContact* con;
 
-  if (solimp) {
-    solimp[0] = 0.9;        // dmin
-    solimp[1] = 0.95;       // dmax
-    solimp[2] = 0.001;      // width
-    solimp[3] = 0.5;        // midpoint
-    solimp[4] = 2;          // power
+  // clear result
+  mju_zero(result, 6);
+
+  // make sure contact is valid
+  if (id >= 0 && id < d->ncon && d->contact[id].efc_address >= 0) {
+    // get contact pointer
+    con = d->contact + id;
+
+    if (mj_isPyramidal(m)) {
+      mju_decodePyramid(result, d->efc_force + con->efc_address, con->friction, con->dim);
+    } else {
+      mju_copy(result, d->efc_force + con->efc_address, con->dim);
+    }
   }
 }
+
+
+// count warnings, print only the first time
+void mj_warning(mjData* d, int warning, int info) {
+  // check type
+  if (warning < 0 || warning >= mjNWARNING) {
+    mjERROR("invalid warning type %d", warning);
+  }
+
+  // save info (override previous)
+  d->warning[warning].lastinfo = info;
+
+  // print message only the first time this warning is encountered
+  if (!d->warning[warning].number) {
+    mju_warning("%s Time = %.4f.", mju_warningText(warning, info), d->time);
+  }
+
+  // increase counter
+  d->warning[warning].number++;
+}
+

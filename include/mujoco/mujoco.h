@@ -16,7 +16,7 @@
 #define MUJOCO_MUJOCO_H_
 
 // header version; should match the library version as returned by mj_version()
-#define mjVERSION_HEADER 336
+#define mjVERSION_HEADER 337
 
 // needed to define size_t, fabs and log10
 #include <stdlib.h>
@@ -151,6 +151,9 @@ MJAPI int mj_saveXMLString(const mjSpec* s, char* xml, int xml_sz, char* error, 
 // Nullable: error
 MJAPI int mj_saveXML(const mjSpec* s, const char* filename, char* error, int error_sz);
 
+// Given MJCF filename, fills dependencies with a list of all other asset files it depends on.
+// The search is recursive, and the list includes the filename itself.
+MJAPI void mju_getXMLDependencies(const char* filename, mjStringVec* dependencies);
 
 //---------------------------------- Main simulation -----------------------------------------------
 
@@ -291,7 +294,7 @@ MJAPI void mj_printFormattedModel(const mjModel* m, const char* filename, const 
 MJAPI void mj_printModel(const mjModel* m, const char* filename);
 
 // Print mjData to text file, specifying format.
-// float_format must be a valid printf-style format string for a single float value
+// float_format must be a valid printf-style format string for a single float value.
 MJAPI void mj_printFormattedData(const mjModel* m, const mjData* d, const char* filename,
                                  const char* float_format);
 
@@ -308,6 +311,14 @@ MJAPI void mju_printMatSparse(const mjtNum* mat, int nr,
 // Print internal XML schema as plain text or HTML, with style-padding or &nbsp;.
 MJAPI int mj_printSchema(const char* filename, char* buffer, int buffer_sz,
                          int flg_html, int flg_pad);
+
+// Print scene to text file.
+MJAPI void mj_printScene(const mjvScene* s, const char* filename);
+
+// Print scene to text file, specifying format.
+// float_format must be a valid printf-style format string for a single float value.
+MJAPI void mj_printFormattedScene(const mjvScene* s, const char* filename,
+                                  const char* float_format);
 
 
 //---------------------------------- Components ----------------------------------------------------
@@ -635,7 +646,6 @@ MJAPI mjtNum mju_rayFlex(const mjModel* m, const mjData* d, int flex_layer, mjtB
 // Nullable: vertid
 MJAPI mjtNum mju_raySkin(int nface, int nvert, const int* face, const float* vert,
                          const mjtNum pnt[3], const mjtNum vec[3], int vertid[1]);
-
 
 //---------------------------------- Interaction ---------------------------------------------------
 
@@ -1303,7 +1313,7 @@ MJAPI const char* mju_warningText(int warning, size_t info);
 MJAPI int mju_isBad(mjtNum x);
 
 // Return 1 if all elements are 0.
-MJAPI int mju_isZero(mjtNum* vec, int n);
+MJAPI int mju_isZero(const mjtNum* vec, int n);
 
 // Standard normal random number generator (optional second number).
 MJAPI mjtNum mju_standardNormal(mjtNum* num2);

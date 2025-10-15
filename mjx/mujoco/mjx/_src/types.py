@@ -497,13 +497,11 @@ class OptionC(PyTreeNode):
   disableactuator: int
   sdf_initpoints: int
   has_fluid_params: bool
-  apirate: jax.Array
   noslip_tolerance: jax.Array
   ccd_tolerance: jax.Array
   noslip_iterations: int
   ccd_iterations: int
   sdf_iterations: int
-  sdf_initpoints: int
 
 
 class Option(PyTreeNode):
@@ -615,6 +613,15 @@ class ModelC(PyTreeNode):
   D_colind: jax.Array  # pylint:disable=invalid-name
   mapM2D: jax.Array  # pylint:disable=invalid-name
   mapD2M: jax.Array  # pylint:disable=invalid-name
+  mesh_polynum: jax.Array
+  mesh_polyadr: jax.Array
+  mesh_polynormal: jax.Array
+  mesh_polyvertadr: jax.Array
+  mesh_polyvertnum: jax.Array
+  mesh_polyvert: jax.Array
+  mesh_polymapadr: jax.Array
+  mesh_polymapnum: jax.Array
+  mesh_polymap: jax.Array
 
 
 class ModelJAX(PyTreeNode):
@@ -649,6 +656,9 @@ class Model(PyTreeNode):
   nmeshtexcoord: int
   nmeshface: int
   nmeshgraph: int
+  nmeshpoly: int
+  nmeshpolyvert: int
+  nmeshpolymap: int
   nhfield: int
   nhfielddata: int
   ntex: int
