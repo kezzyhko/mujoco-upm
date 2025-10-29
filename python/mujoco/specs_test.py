@@ -1266,6 +1266,8 @@ class SpecsTest(absltest.TestCase):
     np.testing.assert_array_equal(mj_model.bind(joints).qposadr, [7, 8])
     np.testing.assert_array_equal(mj_data.bind([]).qpos, [])
     np.testing.assert_array_equal(mj_model.bind([]).qposadr, [])
+    mj_data.bind(joints).qpos = np.array([1, 2])
+    np.testing.assert_array_equal(mj_data.bind(joints).qpos, [1, 2])
     with self.assertRaisesRegex(
         AttributeError, "object has no attribute 'invalid'"
     ):
@@ -1612,6 +1614,26 @@ class SpecsTest(absltest.TestCase):
     self.assertEqual(wrap_joint1.coef, 1.0)
     self.assertEqual(wrap_joint2.type, mujoco.mjtWrap.mjWRAP_JOINT)
     self.assertEqual(wrap_joint2.coef, 2.0)
+
+  def test_from_zip(self):
+    """Tests that the assets are correctly parsed from a zip file."""
+    model_path_root = (
+        epath.resource_path("mujoco") / "testdata" / "MJCF_Root.zip"
+    )
+    model_path_no_root = (
+        epath.resource_path("mujoco") / "testdata" / "MJCF_NoRoot.zip"
+    )
+    filenames = [model_path_root.as_posix(), model_path_no_root.as_posix()]
+
+    for filename in filenames:
+      with self.subTest(filename):
+        spec = mujoco.MjSpec.from_zip(filename)
+        spec.compile()
+        assets = spec.assets
+        xml_string = spec.to_xml()
+        string_spec = mujoco.MjSpec.from_string(xml_string, assets=assets)
+        string_spec.compile()
+        self.assertEqual(spec.to_xml(), string_spec.to_xml())
 
 if __name__ == '__main__':
   absltest.main()
