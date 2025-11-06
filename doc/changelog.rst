@@ -24,6 +24,19 @@ General
   - ``coef -> real``
   - ``divisor -> real``
 
+MJX
+^^^
+
+- ``warp-lang`` optional dependency is updated to 1.10.0. ``pmap`` now works with MuJoCo Warp from MJX.
+
+.. admonition:: Breaking ABI changes
+   :class: attention
+
+   - ``mjx.Model.tex_data`` is now a numpy ndarray instead of a jax.Array, to avoid vmapping over this potentially
+     large array. This may break certain use-cases with Madrona MJX, but we are no longer supporting this codepath.
+     We will be migrating users to a Warp-based batch renderer.
+
+
 Version 3.3.7 (October 13, 2025)
 -----------------------------------
 
@@ -111,7 +124,7 @@ General
       compensation, fluid forces, forces computed by the :ref:`mjcb_passive` callback, and forces computed by
       :ref:`plugins <exPlugin>` when passed the :ref:`mjPLUGIN_PASSIVE<mjtPluginCapabilityBit>` capability flag.
 
-     **Migration:** Set both flags to recover the behavior of the previous flag.
+      **Migration:** Set both flags to recover the behavior of the previous flag.
 
 
 .. admonition:: Breaking ABI changes

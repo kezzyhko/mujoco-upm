@@ -27,8 +27,6 @@ from wasm.codegen.helpers import common
 from wasm.codegen.helpers import constants
 
 
-debug_print = common.debug_print
-
 introspect_structs = structs.STRUCTS
 
 
@@ -37,22 +35,22 @@ class WrappedFieldData:
   """Data class for struct field definition and binding."""
 
   # Line for struct field binding
-  binding: str
+  binding: str = ""
 
   # Line for struct field definition
-  definition: str | None = None
+  definition: str = ""
 
   # Initialization code for fields that require it
-  initialization: str | None = None
+  initialization: str = ""
 
   # Statement to reset the inner pointer when copying the field
-  ptr_copy_reset: str | None = None
+  ptr_copy_reset: str = ""
 
   # Whether the field is a primitive or fixed size
   is_primitive_or_fixed_size: bool = False
 
   # Underlying type of the field
-  typename: str | None = None
+  typename: str = ""
 
 
 @dataclasses.dataclass
@@ -70,6 +68,9 @@ class WrappedStructData:
 
   # Struct source code
   wrapped_source: str
+
+  # Struct bindings code
+  bindings: str = ""
 
   # Whether to use shallow copy for this struct
   use_shallow_copy: bool = True
@@ -269,9 +270,6 @@ class StructFieldHandler:
         inner_type_name.startswith("mj")
         and inner_type_name not in constants.PRIMITIVE_TYPES
     ):
-      debug_print(
-          f"\tcomplex pointer type: needs manual wrapper: {self.field.name}"
-      )
       # it's a pointer to a single struct,
       # like the `element` field in mjs structs
       # and the struct is not manually added
@@ -296,10 +294,6 @@ class StructFieldHandler:
             initialization=f", {self.field.name}(ptr_->{self.field.name})",
         )
       else:
-        debug_print(
-            "\tcomplex pointer type with array extent: needs manual wrapper:"
-            f" {self.field.name}"
-        )
         return self._get_manual_definition(comment_type="complex pointer field")
 
     return WrappedFieldData(
@@ -342,10 +336,8 @@ class StructFieldHandler:
       elif inner_type.name.startswith("mj") and not inner_type.name.startswith(
           "mjt"
       ):
-        debug_print(f"\tarray to vector wrapper needed: {self.field.name}")
         return self._get_manual_definition(comment_type="array field")
 
-    debug_print(f"\tNOT IMPLEMENTED ARRAY field: {self.field.name}")
     return WrappedFieldData(
         definition=(
             f"// TODO: NOT IMPLEMENTED ARRAY wrapper for {self.field.name}"
@@ -573,13 +565,17 @@ def build_struct_header(
         is_mjs=True,
     )
 
+  is_anonymous_struct = struct_name in constants.ANONYMOUS_STRUCTS.keys()
+  is_hardcoded_wrapper_struct = (
+      common.uppercase_first_letter(struct_name)
+      in constants.HARDCODED_WRAPPER_STRUCTS
+  )
+
   if (
-      (
-          common.uppercase_first_letter(struct_name)
-          not in constants.HARDCODED_WRAPPER_STRUCTS
-      )
+      not is_hardcoded_wrapper_struct
       and struct_info
       and not _has_nested_wrapper_members(struct_info)
+      or is_anonymous_struct
   ):
     return _build_struct_header_internal(
         struct_name, wrapped_fields, [], is_mjs=False
@@ -604,7 +600,7 @@ def build_struct_source(
 
   s = struct_name
   w = common.uppercase_first_letter(s)
-  is_mjs = "Mjs" in w
+  is_mjs = w.startswith("Mjs")
 
   fields_with_init = _find_fields_with_init(wrapped_fields)
   shallow_copy = use_shallow_copy(wrapped_fields)
@@ -664,6 +660,41 @@ def build_struct_source(
   with builder.function(f"void {w}::set({s}* ptr)"):
     builder.line("ptr_ = ptr;")
 
+  return builder.to_string()
+
+
+def _build_struct_bindings(
+    struct_name: str,
+    wrapped_fields: List[WrappedFieldData],
+):
+  """Builds the C++ bindings for a struct."""
+  # These structs require specific constructors
+  # which, for now, are hardcoded in the template file.
+  if struct_name in [
+      "mjData",
+      "mjModel",
+      "mjvScene",
+      "mjSpec",
+  ]:
+    return ""
+
+  w = common.uppercase_first_letter(struct_name)
+  spc = "    "
+  builder = code_builder.CodeBuilder()
+  builder.line(f"emscripten::class_<{w}>(\"{w}\")")
+
+  is_mjs = w.startswith("Mjs")
+  if not is_mjs:
+    builder.line(f"{spc}.constructor<>()")
+
+  shallow_copy = use_shallow_copy(wrapped_fields)
+  if shallow_copy and not is_mjs:
+    builder.line(f"{spc}.function(\"copy\", &{w}::copy, take_ownership())")
+
+  for field in wrapped_fields:
+    if field.binding:
+      builder.line(f"{spc}{field.binding}")
+  builder.line(f"{spc};")
   return builder.to_string()
 
 
@@ -727,8 +758,6 @@ def generate_wasm_bindings(
     else:
       raise RuntimeError(f"Struct not found: {struct_name}")
 
-    debug_print(f"Wrapping struct: {struct_name}")
-
     wrapped_fields: List[WrappedFieldData] = []
     for field in struct_fields:
       wrapped_field = StructFieldHandler(field, wrapped_name).generate()
@@ -742,12 +771,14 @@ def generate_wasm_bindings(
         struct_name,
         wrapped_fields,
     )
+    bindings = _build_struct_bindings(struct_name, wrapped_fields)
     wrap_data = WrappedStructData(
         wrap_name=wrapped_name,
         wrapped_fields=wrapped_fields,
         wrapped_header=wrapped_header,
         wrapped_source=wrapped_source,
         use_shallow_copy=use_shallow_copy(wrapped_fields),
+        bindings=bindings,
     )
 
     wrapped_structs[struct_name] = wrap_data
