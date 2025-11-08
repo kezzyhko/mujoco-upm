@@ -12,18 +12,15 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Builds WASM bindings for MuJoCo."""
-
 from introspect import ast_nodes
 from introspect import enums as introspect_enums
 from introspect import functions as introspect_functions
 
+from wasm.codegen.generators import common
+from wasm.codegen.generators import constants
 from wasm.codegen.generators import enums
 from wasm.codegen.generators import functions
 from wasm.codegen.generators import structs
-from wasm.codegen.helpers import common
-from wasm.codegen.helpers import constants as _constants
-from wasm.codegen.helpers import functions as function_utils
 
 
 class BindingBuilder:
@@ -55,8 +52,8 @@ class BindingBuilder:
 
     functions_to_bind: dict[str, ast_nodes.FunctionDecl] = {}
     for name, func in introspect_functions.FUNCTIONS.items():
-      if not function_utils.is_excluded_function_name(name):
-        if name not in _constants.BOUNDCHECK_FUNCS:
+      if not functions.is_excluded_function_name(name):
+        if name not in constants.BOUNDCHECK_FUNCS:
           functions_to_bind[name] = func
 
     generator = functions.Generator(functions_to_bind)
@@ -71,6 +68,4 @@ class BindingBuilder:
     return "".join(self.content_cc)
 
   def build(self, generated_path_cc: str):
-    """Writes the generated content to the output files."""
-
     common.write_to_file(generated_path_cc, self.to_string())

@@ -6,9 +6,14 @@ Upcoming version (not yet released)
 -----------------------------------
 
 General
-^^^^^^^^^
+^^^^^^^
 
-- Initial changes related to sleeping. Feature under development, documentation pending.
+.. youtube:: vct493lGQ8Q
+   :align: right
+   :width: 35%
+
+- Introduced a major new feature: :ref:`sleeping islands<Sleeping>`. Preliminary release for early testing, see
+  documentation for details.
 - Added "quadratic" option to :ref:`flexcomp/dof<body-flexcomp-dof>`. This type of fast :ref:`deformable<CDeformable>`
   flex object is similar to the "trilinear" option, but it includes curved deformations.
 - Raise an error if there are name collisions also during parsing.
@@ -37,6 +42,11 @@ MJX
      large array. This may break certain use-cases with Madrona MJX, but we are no longer supporting this codepath.
      We will be migrating users to a Warp-based batch renderer.
 
+
+Bug fixes
+^^^^^^^^^
+
+- Fixed a bug in the box-box distance computation. Reported by :github:user:`nvtw`.
 
 Version 3.3.7 (October 13, 2025)
 -----------------------------------
