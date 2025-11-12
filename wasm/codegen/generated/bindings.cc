@@ -1011,7 +1011,6 @@ struct MjWarningStat {
 
 struct MjsElement {
   explicit MjsElement(mjsElement *ptr);
-  ~MjsElement();
   mjsElement* get() const;
   void set(mjsElement* ptr);
   mjtObj elemtype() const {
@@ -1033,7 +1032,6 @@ struct MjsElement {
 
 struct MjsOrientation {
   explicit MjsOrientation(mjsOrientation *ptr);
-  ~MjsOrientation();
   mjsOrientation* get() const;
   void set(mjsOrientation* ptr);
   mjtOrientation type() const {
@@ -1679,7 +1677,6 @@ struct MjvPerturb {
 
 struct MjsCompiler {
   explicit MjsCompiler(mjsCompiler *ptr);
-  ~MjsCompiler();
   mjsCompiler* get() const;
   void set(mjsCompiler* ptr);
   mjtByte autolimits() const {
@@ -1792,7 +1789,6 @@ struct MjsCompiler {
 
 struct MjsEquality {
   explicit MjsEquality(mjsEquality *ptr);
-  ~MjsEquality();
   mjsEquality* get() const;
   void set(mjsEquality* ptr);
   mjtEq type() const {
@@ -1856,7 +1852,6 @@ struct MjsEquality {
 
 struct MjsExclude {
   explicit MjsExclude(mjsExclude *ptr);
-  ~MjsExclude();
   mjsExclude* get() const;
   void set(mjsExclude* ptr);
   mjString bodyname1() const {
@@ -1893,7 +1888,6 @@ struct MjsExclude {
 
 struct MjsFlex {
   explicit MjsFlex(mjsFlex *ptr);
-  ~MjsFlex();
   mjsFlex* get() const;
   void set(mjsFlex* ptr);
   int contype() const {
@@ -2093,7 +2087,6 @@ struct MjsFlex {
 
 struct MjsHField {
   explicit MjsHField(mjsHField *ptr);
-  ~MjsHField();
   mjsHField* get() const;
   void set(mjsHField* ptr);
   mjString content_type() const {
@@ -2148,7 +2141,6 @@ struct MjsHField {
 
 struct MjsJoint {
   explicit MjsJoint(mjsJoint *ptr);
-  ~MjsJoint();
   mjsJoint* get() const;
   void set(mjsJoint* ptr);
   mjtJoint type() const {
@@ -2277,7 +2269,6 @@ struct MjsJoint {
 
 struct MjsKey {
   explicit MjsKey(mjsKey *ptr);
-  ~MjsKey();
   mjsKey* get() const;
   void set(mjsKey* ptr);
   double time() const {
@@ -2322,7 +2313,6 @@ struct MjsKey {
 
 struct MjsLight {
   explicit MjsLight(mjsLight *ptr);
-  ~MjsLight();
   mjsLight* get() const;
   void set(mjsLight* ptr);
   emscripten::val pos() const {
@@ -2431,7 +2421,6 @@ struct MjsLight {
 
 struct MjsMaterial {
   explicit MjsMaterial(mjsMaterial *ptr);
-  ~MjsMaterial();
   mjsMaterial* get() const;
   void set(mjsMaterial* ptr);
   mjStringVec &textures() const {
@@ -2503,7 +2492,6 @@ struct MjsMaterial {
 
 struct MjsNumeric {
   explicit MjsNumeric(mjsNumeric *ptr);
-  ~MjsNumeric();
   mjsNumeric* get() const;
   void set(mjsNumeric* ptr);
   mjDoubleVec &data() const {
@@ -2533,7 +2521,6 @@ struct MjsNumeric {
 
 struct MjsPair {
   explicit MjsPair(mjsPair *ptr);
-  ~MjsPair();
   mjsPair* get() const;
   void set(mjsPair* ptr);
   mjString geomname1() const {
@@ -2600,7 +2587,6 @@ struct MjsPair {
 
 struct MjsPlugin {
   explicit MjsPlugin(mjsPlugin *ptr);
-  ~MjsPlugin();
   mjsPlugin* get() const;
   void set(mjsPlugin* ptr);
   mjString name() const {
@@ -2643,7 +2629,6 @@ struct MjsPlugin {
 
 struct MjsSkin {
   explicit MjsSkin(mjsSkin *ptr);
-  ~MjsSkin();
   mjsSkin* get() const;
   void set(mjsSkin* ptr);
   mjString file() const {
@@ -2719,7 +2704,6 @@ struct MjsSkin {
 
 struct MjsTendon {
   explicit MjsTendon(mjsTendon *ptr);
-  ~MjsTendon();
   mjsTendon* get() const;
   void set(mjsTendon* ptr);
   double stiffness() const {
@@ -2829,7 +2813,6 @@ struct MjsTendon {
 
 struct MjsText {
   explicit MjsText(mjsText *ptr);
-  ~MjsText();
   mjsText* get() const;
   void set(mjsText* ptr);
   mjString data() const {
@@ -2858,7 +2841,6 @@ struct MjsText {
 
 struct MjsTexture {
   explicit MjsTexture(mjsTexture *ptr);
-  ~MjsTexture();
   mjsTexture* get() const;
   void set(mjsTexture* ptr);
   mjtTexture type() const {
@@ -2976,7 +2958,6 @@ struct MjsTexture {
 
 struct MjsTuple {
   explicit MjsTuple(mjsTuple *ptr);
-  ~MjsTuple();
   mjsTuple* get() const;
   void set(mjsTuple* ptr);
   mjIntVec &objtype() const {
@@ -3006,7 +2987,6 @@ struct MjsTuple {
 
 struct MjsWrap {
   explicit MjsWrap(mjsWrap *ptr);
-  ~MjsWrap();
   mjsWrap* get() const;
   void set(mjsWrap* ptr);
   mjtWrap type() const {
@@ -3033,7 +3013,6 @@ struct MjsWrap {
 
 struct MjsCamera {
   explicit MjsCamera(mjsCamera *ptr);
-  ~MjsCamera();
   mjsCamera* get() const;
   void set(mjsCamera* ptr);
   emscripten::val pos() const {
@@ -3117,7 +3096,6 @@ struct MjsCamera {
 
 struct MjsFrame {
   explicit MjsFrame(mjsFrame *ptr);
-  ~MjsFrame();
   mjsFrame* get() const;
   void set(mjsFrame* ptr);
   mjString childclass() const {
@@ -3153,7 +3131,6 @@ struct MjsFrame {
 
 struct MjsSite {
   explicit MjsSite(mjsSite *ptr);
-  ~MjsSite();
   mjsSite* get() const;
   void set(mjsSite* ptr);
   emscripten::val pos() const {
@@ -3213,7 +3190,6 @@ struct MjsSite {
 
 struct MjsActuator {
   explicit MjsActuator(mjsActuator *ptr);
-  ~MjsActuator();
   mjsActuator* get() const;
   void set(mjsActuator* ptr);
   mjtGain gaintype() const {
@@ -3358,7 +3334,6 @@ struct MjsActuator {
 
 struct MjsBody {
   explicit MjsBody(mjsBody *ptr);
-  ~MjsBody();
   mjsBody* get() const;
   void set(mjsBody* ptr);
   mjString childclass() const {
@@ -3441,7 +3416,6 @@ struct MjsBody {
 
 struct MjsGeom {
   explicit MjsGeom(mjsGeom *ptr);
-  ~MjsGeom();
   mjsGeom* get() const;
   void set(mjsGeom* ptr);
   mjtGeom type() const {
@@ -3602,7 +3576,6 @@ struct MjsGeom {
 
 struct MjsMesh {
   explicit MjsMesh(mjsMesh *ptr);
-  ~MjsMesh();
   mjsMesh* get() const;
   void set(mjsMesh* ptr);
   mjString content_type() const {
@@ -3699,7 +3672,6 @@ struct MjsMesh {
 
 struct MjsSensor {
   explicit MjsSensor(mjsSensor *ptr);
-  ~MjsSensor();
   mjsSensor* get() const;
   void set(mjsSensor* ptr);
   mjtSensor type() const {
@@ -3791,7 +3763,6 @@ struct MjsSensor {
 
 struct MjsDefault {
   explicit MjsDefault(mjsDefault *ptr);
-  ~MjsDefault();
   mjsDefault* get() const;
   void set(mjsDefault* ptr);
 
@@ -6737,21 +6708,6 @@ struct MjSpec {
   MjsElement element;
 };
 
-// TODO: Refactor, Structs Manually added so functions.cc compile -- //
-struct MjpResourceProvider {
-  MjpResourceProvider(mjpResourceProvider *ptr_) { ptr = ptr_; };
-  ~MjpResourceProvider() {}
-  mjpResourceProvider *get() const { return ptr; }
-  mjpResourceProvider *ptr;
-};
-
-struct MjpPlugin {
-  MjpPlugin(mjpPlugin *ptr_) { ptr = ptr_; };
-  ~MjpPlugin() {}
-  mjpPlugin *get() const { return ptr; }
-  mjpPlugin *ptr;
-};
-
 using emscripten::enum_;
 using emscripten::class_;
 using emscripten::function;
@@ -6806,7 +6762,7 @@ val get_mjFRAMESTRING() { return MakeValArray(mjFRAMESTRING); }
 val get_mjVISSTRING() { return MakeValArray3(mjVISSTRING); }
 val get_mjRNDSTRING() { return MakeValArray3(mjRNDSTRING); }
 
-EMSCRIPTEN_BINDINGS(constants) {
+EMSCRIPTEN_BINDINGS(mujoco_constants) {
   // from mjmodel.h
   constant("mjPI", mjPI);
   constant("mjMAXVAL", mjMAXVAL);
@@ -7889,7 +7845,6 @@ void MjWarningStat::set(mjWarningStat* ptr) {
 }
 
 MjsElement::MjsElement(mjsElement *ptr) : ptr_(ptr) {}
-MjsElement::~MjsElement() {}
 mjsElement* MjsElement::get() const {
   return ptr_;
 }
@@ -7898,7 +7853,6 @@ void MjsElement::set(mjsElement* ptr) {
 }
 
 MjsOrientation::MjsOrientation(mjsOrientation *ptr) : ptr_(ptr) {}
-MjsOrientation::~MjsOrientation() {}
 mjsOrientation* MjsOrientation::get() const {
   return ptr_;
 }
@@ -8115,7 +8069,6 @@ void MjvPerturb::set(mjvPerturb* ptr) {
 }
 
 MjsCompiler::MjsCompiler(mjsCompiler *ptr) : ptr_(ptr), LRopt(&ptr_->LRopt) {}
-MjsCompiler::~MjsCompiler() {}
 mjsCompiler* MjsCompiler::get() const {
   return ptr_;
 }
@@ -8124,7 +8077,6 @@ void MjsCompiler::set(mjsCompiler* ptr) {
 }
 
 MjsEquality::MjsEquality(mjsEquality *ptr) : ptr_(ptr), element(ptr_->element) {}
-MjsEquality::~MjsEquality() {}
 mjsEquality* MjsEquality::get() const {
   return ptr_;
 }
@@ -8133,7 +8085,6 @@ void MjsEquality::set(mjsEquality* ptr) {
 }
 
 MjsExclude::MjsExclude(mjsExclude *ptr) : ptr_(ptr), element(ptr_->element) {}
-MjsExclude::~MjsExclude() {}
 mjsExclude* MjsExclude::get() const {
   return ptr_;
 }
@@ -8142,7 +8093,6 @@ void MjsExclude::set(mjsExclude* ptr) {
 }
 
 MjsFlex::MjsFlex(mjsFlex *ptr) : ptr_(ptr), element(ptr_->element) {}
-MjsFlex::~MjsFlex() {}
 mjsFlex* MjsFlex::get() const {
   return ptr_;
 }
@@ -8151,7 +8101,6 @@ void MjsFlex::set(mjsFlex* ptr) {
 }
 
 MjsHField::MjsHField(mjsHField *ptr) : ptr_(ptr), element(ptr_->element) {}
-MjsHField::~MjsHField() {}
 mjsHField* MjsHField::get() const {
   return ptr_;
 }
@@ -8160,7 +8109,6 @@ void MjsHField::set(mjsHField* ptr) {
 }
 
 MjsJoint::MjsJoint(mjsJoint *ptr) : ptr_(ptr), element(ptr_->element) {}
-MjsJoint::~MjsJoint() {}
 mjsJoint* MjsJoint::get() const {
   return ptr_;
 }
@@ -8169,7 +8117,6 @@ void MjsJoint::set(mjsJoint* ptr) {
 }
 
 MjsKey::MjsKey(mjsKey *ptr) : ptr_(ptr), element(ptr_->element) {}
-MjsKey::~MjsKey() {}
 mjsKey* MjsKey::get() const {
   return ptr_;
 }
@@ -8178,7 +8125,6 @@ void MjsKey::set(mjsKey* ptr) {
 }
 
 MjsLight::MjsLight(mjsLight *ptr) : ptr_(ptr), element(ptr_->element) {}
-MjsLight::~MjsLight() {}
 mjsLight* MjsLight::get() const {
   return ptr_;
 }
@@ -8187,7 +8133,6 @@ void MjsLight::set(mjsLight* ptr) {
 }
 
 MjsMaterial::MjsMaterial(mjsMaterial *ptr) : ptr_(ptr), element(ptr_->element) {}
-MjsMaterial::~MjsMaterial() {}
 mjsMaterial* MjsMaterial::get() const {
   return ptr_;
 }
@@ -8196,7 +8141,6 @@ void MjsMaterial::set(mjsMaterial* ptr) {
 }
 
 MjsNumeric::MjsNumeric(mjsNumeric *ptr) : ptr_(ptr), element(ptr_->element) {}
-MjsNumeric::~MjsNumeric() {}
 mjsNumeric* MjsNumeric::get() const {
   return ptr_;
 }
@@ -8205,7 +8149,6 @@ void MjsNumeric::set(mjsNumeric* ptr) {
 }
 
 MjsPair::MjsPair(mjsPair *ptr) : ptr_(ptr), element(ptr_->element) {}
-MjsPair::~MjsPair() {}
 mjsPair* MjsPair::get() const {
   return ptr_;
 }
@@ -8214,7 +8157,6 @@ void MjsPair::set(mjsPair* ptr) {
 }
 
 MjsPlugin::MjsPlugin(mjsPlugin *ptr) : ptr_(ptr), element(ptr_->element) {}
-MjsPlugin::~MjsPlugin() {}
 mjsPlugin* MjsPlugin::get() const {
   return ptr_;
 }
@@ -8223,7 +8165,6 @@ void MjsPlugin::set(mjsPlugin* ptr) {
 }
 
 MjsSkin::MjsSkin(mjsSkin *ptr) : ptr_(ptr), element(ptr_->element) {}
-MjsSkin::~MjsSkin() {}
 mjsSkin* MjsSkin::get() const {
   return ptr_;
 }
@@ -8232,7 +8173,6 @@ void MjsSkin::set(mjsSkin* ptr) {
 }
 
 MjsTendon::MjsTendon(mjsTendon *ptr) : ptr_(ptr), element(ptr_->element) {}
-MjsTendon::~MjsTendon() {}
 mjsTendon* MjsTendon::get() const {
   return ptr_;
 }
@@ -8241,7 +8181,6 @@ void MjsTendon::set(mjsTendon* ptr) {
 }
 
 MjsText::MjsText(mjsText *ptr) : ptr_(ptr), element(ptr_->element) {}
-MjsText::~MjsText() {}
 mjsText* MjsText::get() const {
   return ptr_;
 }
@@ -8250,7 +8189,6 @@ void MjsText::set(mjsText* ptr) {
 }
 
 MjsTexture::MjsTexture(mjsTexture *ptr) : ptr_(ptr), element(ptr_->element) {}
-MjsTexture::~MjsTexture() {}
 mjsTexture* MjsTexture::get() const {
   return ptr_;
 }
@@ -8259,7 +8197,6 @@ void MjsTexture::set(mjsTexture* ptr) {
 }
 
 MjsTuple::MjsTuple(mjsTuple *ptr) : ptr_(ptr), element(ptr_->element) {}
-MjsTuple::~MjsTuple() {}
 mjsTuple* MjsTuple::get() const {
   return ptr_;
 }
@@ -8268,7 +8205,6 @@ void MjsTuple::set(mjsTuple* ptr) {
 }
 
 MjsWrap::MjsWrap(mjsWrap *ptr) : ptr_(ptr), element(ptr_->element) {}
-MjsWrap::~MjsWrap() {}
 mjsWrap* MjsWrap::get() const {
   return ptr_;
 }
@@ -8277,7 +8213,6 @@ void MjsWrap::set(mjsWrap* ptr) {
 }
 
 MjsCamera::MjsCamera(mjsCamera *ptr) : ptr_(ptr), element(ptr_->element), alt(&ptr_->alt) {}
-MjsCamera::~MjsCamera() {}
 mjsCamera* MjsCamera::get() const {
   return ptr_;
 }
@@ -8286,7 +8221,6 @@ void MjsCamera::set(mjsCamera* ptr) {
 }
 
 MjsFrame::MjsFrame(mjsFrame *ptr) : ptr_(ptr), element(ptr_->element), alt(&ptr_->alt) {}
-MjsFrame::~MjsFrame() {}
 mjsFrame* MjsFrame::get() const {
   return ptr_;
 }
@@ -8295,7 +8229,6 @@ void MjsFrame::set(mjsFrame* ptr) {
 }
 
 MjsSite::MjsSite(mjsSite *ptr) : ptr_(ptr), element(ptr_->element), alt(&ptr_->alt) {}
-MjsSite::~MjsSite() {}
 mjsSite* MjsSite::get() const {
   return ptr_;
 }
@@ -8304,7 +8237,6 @@ void MjsSite::set(mjsSite* ptr) {
 }
 
 MjsActuator::MjsActuator(mjsActuator *ptr) : ptr_(ptr), element(ptr_->element), plugin(&ptr_->plugin) {}
-MjsActuator::~MjsActuator() {}
 mjsActuator* MjsActuator::get() const {
   return ptr_;
 }
@@ -8313,7 +8245,6 @@ void MjsActuator::set(mjsActuator* ptr) {
 }
 
 MjsBody::MjsBody(mjsBody *ptr) : ptr_(ptr), element(ptr_->element), alt(&ptr_->alt), ialt(&ptr_->ialt), plugin(&ptr_->plugin) {}
-MjsBody::~MjsBody() {}
 mjsBody* MjsBody::get() const {
   return ptr_;
 }
@@ -8322,7 +8253,6 @@ void MjsBody::set(mjsBody* ptr) {
 }
 
 MjsGeom::MjsGeom(mjsGeom *ptr) : ptr_(ptr), element(ptr_->element), alt(&ptr_->alt), plugin(&ptr_->plugin) {}
-MjsGeom::~MjsGeom() {}
 mjsGeom* MjsGeom::get() const {
   return ptr_;
 }
@@ -8331,7 +8261,6 @@ void MjsGeom::set(mjsGeom* ptr) {
 }
 
 MjsMesh::MjsMesh(mjsMesh *ptr) : ptr_(ptr), element(ptr_->element), plugin(&ptr_->plugin) {}
-MjsMesh::~MjsMesh() {}
 mjsMesh* MjsMesh::get() const {
   return ptr_;
 }
@@ -8340,7 +8269,6 @@ void MjsMesh::set(mjsMesh* ptr) {
 }
 
 MjsSensor::MjsSensor(mjsSensor *ptr) : ptr_(ptr), element(ptr_->element), plugin(&ptr_->plugin) {}
-MjsSensor::~MjsSensor() {}
 mjsSensor* MjsSensor::get() const {
   return ptr_;
 }
@@ -8349,7 +8277,6 @@ void MjsSensor::set(mjsSensor* ptr) {
 }
 
 MjsDefault::MjsDefault(mjsDefault *ptr) : ptr_(ptr), element(ptr_->element), joint(ptr_->joint), geom(ptr_->geom), site(ptr_->site), camera(ptr_->camera), light(ptr_->light), flex(ptr_->flex), mesh(ptr_->mesh), material(ptr_->material), pair(ptr_->pair), equality(ptr_->equality), tendon(ptr_->tendon), actuator(ptr_->actuator) {}
-MjsDefault::~MjsDefault() {}
 mjsDefault* MjsDefault::get() const {
   return ptr_;
 }
@@ -8556,8 +8483,7 @@ std::unique_ptr<MjSpec> parseXMLString(const std::string &xml) {
   return std::unique_ptr<MjSpec>(new MjSpec(ptr));
 }
 
-EMSCRIPTEN_BINDINGS(mujoco_bindings) {
-  function("parseXMLString", &parseXMLString, take_ownership());
+EMSCRIPTEN_BINDINGS(mujoco_structs) {
   emscripten::class_<MjContact>("MjContact")
     .constructor<>()
     .function("copy", &MjContact::copy, take_ownership())
@@ -12501,6 +12427,8 @@ void mjd_subQuat_wrapper(const NumberArray& qa, const NumberArray& qb, const val
 }
 
 EMSCRIPTEN_BINDINGS(mujoco_functions) {
+  function("parseXMLString", &parseXMLString, take_ownership());
+  function("error", &error_wrapper);
   function("mj_resetCallbacks", &mj_resetCallbacks);
   function("mj_version", &mj_version);
   function("mju_bandDiag", &mju_bandDiag);
@@ -12514,6 +12442,7 @@ EMSCRIPTEN_BINDINGS(mujoco_functions) {
   function("mju_Halton", &mju_Halton);
   function("mju_sigmoid", &mju_sigmoid);
   function("mj_copyBack", &mj_copyBack_wrapper);
+  function("mj_saveLastXML", &mj_saveLastXML_wrapper);
   function("mj_step", &mj_step_wrapper);
   function("mj_step1", &mj_step1_wrapper);
   function("mj_step2", &mj_step2_wrapper);
@@ -12530,6 +12459,7 @@ EMSCRIPTEN_BINDINGS(mujoco_functions) {
   function("mj_resetDataDebug", &mj_resetDataDebug_wrapper);
   function("mj_resetDataKeyframe", &mj_resetDataKeyframe_wrapper);
   function("mj_setConst", &mj_setConst_wrapper);
+  function("mj_setLengthRange", &mj_setLengthRange_wrapper);
   function("mjs_activatePlugin", &mjs_activatePlugin_wrapper);
   function("mjs_setDeepCopy", &mjs_setDeepCopy_wrapper);
   function("mj_printFormattedModel", &mj_printFormattedModel_wrapper);
@@ -12537,6 +12467,7 @@ EMSCRIPTEN_BINDINGS(mujoco_functions) {
   function("mj_printFormattedData", &mj_printFormattedData_wrapper);
   function("mj_printData", &mj_printData_wrapper);
   function("mju_printMat", &mju_printMat_wrapper);
+  function("mju_printMatSparse", &mju_printMatSparse_wrapper);
   function("mj_printScene", &mj_printScene_wrapper);
   function("mj_printFormattedScene", &mj_printFormattedScene_wrapper);
   function("mj_fwdPosition", &mj_fwdPosition_wrapper);
@@ -12568,31 +12499,58 @@ EMSCRIPTEN_BINDINGS(mujoco_functions) {
   function("mj_crb", &mj_crb_wrapper);
   function("mj_makeM", &mj_makeM_wrapper);
   function("mj_factorM", &mj_factorM_wrapper);
+  function("mj_solveM", &mj_solveM_wrapper);
+  function("mj_solveM2", &mj_solveM2_wrapper);
   function("mj_comVel", &mj_comVel_wrapper);
   function("mj_passive", &mj_passive_wrapper);
   function("mj_subtreeVel", &mj_subtreeVel_wrapper);
+  function("mj_rne", &mj_rne_wrapper);
   function("mj_rnePostConstraint", &mj_rnePostConstraint_wrapper);
   function("mj_collision", &mj_collision_wrapper);
   function("mj_makeConstraint", &mj_makeConstraint_wrapper);
   function("mj_island", &mj_island_wrapper);
   function("mj_projectConstraint", &mj_projectConstraint_wrapper);
   function("mj_referenceConstraint", &mj_referenceConstraint_wrapper);
+  function("mj_constraintUpdate", &mj_constraintUpdate_wrapper);
   function("mj_stateSize", &mj_stateSize_wrapper);
+  function("mj_getState", &mj_getState_wrapper);
   function("mj_extractState", &mj_extractState_wrapper);
+  function("mj_setState", &mj_setState_wrapper);
   function("mj_setKeyframe", &mj_setKeyframe_wrapper);
   function("mj_addContact", &mj_addContact_wrapper);
   function("mj_isPyramidal", &mj_isPyramidal_wrapper);
   function("mj_isSparse", &mj_isSparse_wrapper);
   function("mj_isDual", &mj_isDual_wrapper);
+  function("mj_mulJacVec", &mj_mulJacVec_wrapper);
+  function("mj_mulJacTVec", &mj_mulJacTVec_wrapper);
+  function("mj_jac", &mj_jac_wrapper);
+  function("mj_jacBody", &mj_jacBody_wrapper);
+  function("mj_jacBodyCom", &mj_jacBodyCom_wrapper);
+  function("mj_jacSubtreeCom", &mj_jacSubtreeCom_wrapper);
+  function("mj_jacGeom", &mj_jacGeom_wrapper);
+  function("mj_jacSite", &mj_jacSite_wrapper);
+  function("mj_jacPointAxis", &mj_jacPointAxis_wrapper);
+  function("mj_jacDot", &mj_jacDot_wrapper);
+  function("mj_angmomMat", &mj_angmomMat_wrapper);
   function("mj_name2id", &mj_name2id_wrapper);
   function("mj_id2name", &mj_id2name_wrapper);
+  function("mj_fullM", &mj_fullM_wrapper);
+  function("mj_mulM", &mj_mulM_wrapper);
+  function("mj_mulM2", &mj_mulM2_wrapper);
+  function("mj_addM", &mj_addM_wrapper);
+  function("mj_applyFT", &mj_applyFT_wrapper);
   function("mj_objectVelocity", &mj_objectVelocity_wrapper);
   function("mj_objectAcceleration", &mj_objectAcceleration_wrapper);
+  function("mj_geomDistance", &mj_geomDistance_wrapper);
   function("mj_contactForce", &mj_contactForce_wrapper);
+  function("mj_differentiatePos", &mj_differentiatePos_wrapper);
+  function("mj_integratePos", &mj_integratePos_wrapper);
+  function("mj_normalizeQuat", &mj_normalizeQuat_wrapper);
   function("mj_local2Global", &mj_local2Global_wrapper);
   function("mj_getTotalmass", &mj_getTotalmass_wrapper);
   function("mj_setTotalmass", &mj_setTotalmass_wrapper);
   function("mj_versionString", &mj_versionString_wrapper);
+  function("mj_multiRay", &mj_multiRay_wrapper);
   function("mj_ray", &mj_ray_wrapper);
   function("mj_rayHfield", &mj_rayHfield_wrapper);
   function("mj_rayMesh", &mj_rayMesh_wrapper);
@@ -12647,7 +12605,34 @@ EMSCRIPTEN_BINDINGS(mujoco_functions) {
   function("mju_unit4", &mju_unit4_wrapper);
   function("mju_copy4", &mju_copy4_wrapper);
   function("mju_normalize4", &mju_normalize4_wrapper);
+  function("mju_zero", &mju_zero_wrapper);
+  function("mju_fill", &mju_fill_wrapper);
+  function("mju_copy", &mju_copy_wrapper);
+  function("mju_sum", &mju_sum_wrapper);
+  function("mju_L1", &mju_L1_wrapper);
+  function("mju_scl", &mju_scl_wrapper);
+  function("mju_add", &mju_add_wrapper);
+  function("mju_sub", &mju_sub_wrapper);
+  function("mju_addTo", &mju_addTo_wrapper);
+  function("mju_subFrom", &mju_subFrom_wrapper);
+  function("mju_addToScl", &mju_addToScl_wrapper);
+  function("mju_addScl", &mju_addScl_wrapper);
+  function("mju_normalize", &mju_normalize_wrapper);
+  function("mju_norm", &mju_norm_wrapper);
+  function("mju_dot", &mju_dot_wrapper);
+  function("mju_mulMatVec", &mju_mulMatVec_wrapper);
+  function("mju_mulMatTVec", &mju_mulMatTVec_wrapper);
+  function("mju_mulVecMatVec", &mju_mulVecMatVec_wrapper);
+  function("mju_transpose", &mju_transpose_wrapper);
+  function("mju_symmetrize", &mju_symmetrize_wrapper);
+  function("mju_eye", &mju_eye_wrapper);
+  function("mju_mulMatMat", &mju_mulMatMat_wrapper);
+  function("mju_mulMatMatT", &mju_mulMatMatT_wrapper);
+  function("mju_mulMatTMat", &mju_mulMatTMat_wrapper);
+  function("mju_sqrMatTD", &mju_sqrMatTD_wrapper);
   function("mju_transformSpatial", &mju_transformSpatial_wrapper);
+  function("mju_dense2sparse", &mju_dense2sparse_wrapper);
+  function("mju_sparse2dense", &mju_sparse2dense_wrapper);
   function("mju_rotVecQuat", &mju_rotVecQuat_wrapper);
   function("mju_negQuat", &mju_negQuat_wrapper);
   function("mju_mulQuat", &mju_mulQuat_wrapper);
@@ -12665,15 +12650,36 @@ EMSCRIPTEN_BINDINGS(mujoco_functions) {
   function("mju_mulPose", &mju_mulPose_wrapper);
   function("mju_negPose", &mju_negPose_wrapper);
   function("mju_trnVecPose", &mju_trnVecPose_wrapper);
+  function("mju_cholFactor", &mju_cholFactor_wrapper);
+  function("mju_cholSolve", &mju_cholSolve_wrapper);
+  function("mju_cholUpdate", &mju_cholUpdate_wrapper);
+  function("mju_cholFactorBand", &mju_cholFactorBand_wrapper);
+  function("mju_cholSolveBand", &mju_cholSolveBand_wrapper);
+  function("mju_band2Dense", &mju_band2Dense_wrapper);
+  function("mju_dense2Band", &mju_dense2Band_wrapper);
+  function("mju_bandMulMatVec", &mju_bandMulMatVec_wrapper);
   function("mju_eig3", &mju_eig3_wrapper);
+  function("mju_boxQP", &mju_boxQP_wrapper);
   function("mju_muscleGain", &mju_muscleGain_wrapper);
   function("mju_muscleBias", &mju_muscleBias_wrapper);
   function("mju_muscleDynamics", &mju_muscleDynamics_wrapper);
+  function("mju_encodePyramid", &mju_encodePyramid_wrapper);
+  function("mju_decodePyramid", &mju_decodePyramid_wrapper);
   function("mju_type2Str", &mju_type2Str_wrapper);
   function("mju_str2Type", &mju_str2Type_wrapper);
   function("mju_writeNumBytes", &mju_writeNumBytes_wrapper);
   function("mju_warningText", &mju_warningText_wrapper);
+  function("mju_isZero", &mju_isZero_wrapper);
   function("mju_standardNormal", &mju_standardNormal_wrapper);
+  function("mju_f2n", &mju_f2n_wrapper);
+  function("mju_n2f", &mju_n2f_wrapper);
+  function("mju_d2n", &mju_d2n_wrapper);
+  function("mju_n2d", &mju_n2d_wrapper);
+  function("mju_insertionSort", &mju_insertionSort_wrapper);
+  function("mju_insertionSortInt", &mju_insertionSortInt_wrapper);
+  function("mjd_transitionFD", &mjd_transitionFD_wrapper);
+  function("mjd_inverseFD", &mjd_inverseFD_wrapper);
+  function("mjd_subQuat", &mjd_subQuat_wrapper);
   function("mjd_quatIntegrate", &mjd_quatIntegrate_wrapper);
   function("mjs_attach", &mjs_attach_wrapper);
   function("mjs_addBody", &mjs_addBody_wrapper);
@@ -12794,86 +12800,6 @@ EMSCRIPTEN_BINDINGS(mujoco_functions) {
   function("mjs_asTexture", &mjs_asTexture_wrapper);
   function("mjs_asMaterial", &mjs_asMaterial_wrapper);
   function("mjs_asPlugin", &mjs_asPlugin_wrapper);
-
-  function("error", &error_wrapper);
-  function("mju_printMatSparse", &mju_printMatSparse_wrapper);
-  function("mj_solveM", &mj_solveM_wrapper);
-  function("mj_solveM2", &mj_solveM2_wrapper);
-  function("mj_rne", &mj_rne_wrapper);
-  function("mj_saveLastXML", &mj_saveLastXML_wrapper);
-  function("mj_setLengthRange", &mj_setLengthRange_wrapper);
-  function("mj_constraintUpdate", &mj_constraintUpdate_wrapper);
-  function("mj_getState", &mj_getState_wrapper);
-  function("mj_setState", &mj_setState_wrapper);
-  function("mj_mulJacVec", &mj_mulJacVec_wrapper);
-  function("mj_mulJacTVec", &mj_mulJacTVec_wrapper);
-  function("mj_jac", &mj_jac_wrapper);
-  function("mj_jacBody", &mj_jacBody_wrapper);
-  function("mj_jacBodyCom", &mj_jacBodyCom_wrapper);
-  function("mj_jacSubtreeCom", &mj_jacSubtreeCom_wrapper);
-  function("mj_jacGeom", &mj_jacGeom_wrapper);
-  function("mj_jacSite", &mj_jacSite_wrapper);
-  function("mj_jacPointAxis", &mj_jacPointAxis_wrapper);
-  function("mj_jacDot", &mj_jacDot_wrapper);
-  function("mj_angmomMat", &mj_angmomMat_wrapper);
-  function("mj_fullM", &mj_fullM_wrapper);
-  function("mj_mulM", &mj_mulM_wrapper);
-  function("mj_mulM2", &mj_mulM2_wrapper);
-  function("mj_addM", &mj_addM_wrapper);
-  function("mj_applyFT", &mj_applyFT_wrapper);
-  function("mj_geomDistance", &mj_geomDistance_wrapper);
-  function("mj_differentiatePos", &mj_differentiatePos_wrapper);
-  function("mj_integratePos", &mj_integratePos_wrapper);
-  function("mj_normalizeQuat", &mj_normalizeQuat_wrapper);
-  function("mj_multiRay", &mj_multiRay_wrapper);
-  function("mju_zero", &mju_zero_wrapper);
-  function("mju_fill", &mju_fill_wrapper);
-  function("mju_copy", &mju_copy_wrapper);
-  function("mju_sum", &mju_sum_wrapper);
-  function("mju_L1", &mju_L1_wrapper);
-  function("mju_scl", &mju_scl_wrapper);
-  function("mju_add", &mju_add_wrapper);
-  function("mju_sub", &mju_sub_wrapper);
-  function("mju_addTo", &mju_addTo_wrapper);
-  function("mju_subFrom", &mju_subFrom_wrapper);
-  function("mju_addToScl", &mju_addToScl_wrapper);
-  function("mju_addScl", &mju_addScl_wrapper);
-  function("mju_normalize", &mju_normalize_wrapper);
-  function("mju_norm", &mju_norm_wrapper);
-  function("mju_dot", &mju_dot_wrapper);
-  function("mju_mulMatVec", &mju_mulMatVec_wrapper);
-  function("mju_mulMatTVec", &mju_mulMatTVec_wrapper);
-  function("mju_mulVecMatVec", &mju_mulVecMatVec_wrapper);
-  function("mju_transpose", &mju_transpose_wrapper);
-  function("mju_symmetrize", &mju_symmetrize_wrapper);
-  function("mju_eye", &mju_eye_wrapper);
-  function("mju_mulMatMat", &mju_mulMatMat_wrapper);
-  function("mju_mulMatMatT", &mju_mulMatMatT_wrapper);
-  function("mju_mulMatTMat", &mju_mulMatTMat_wrapper);
-  function("mju_sqrMatTD", &mju_sqrMatTD_wrapper);
-  function("mju_dense2sparse", &mju_dense2sparse_wrapper);
-  function("mju_sparse2dense", &mju_sparse2dense_wrapper);
-  function("mju_cholFactor", &mju_cholFactor_wrapper);
-  function("mju_cholSolve", &mju_cholSolve_wrapper);
-  function("mju_cholUpdate", &mju_cholUpdate_wrapper);
-  function("mju_cholFactorBand", &mju_cholFactorBand_wrapper);
-  function("mju_cholSolveBand", &mju_cholSolveBand_wrapper);
-  function("mju_band2Dense", &mju_band2Dense_wrapper);
-  function("mju_dense2Band", &mju_dense2Band_wrapper);
-  function("mju_bandMulMatVec", &mju_bandMulMatVec_wrapper);
-  function("mju_boxQP", &mju_boxQP_wrapper);
-  function("mju_encodePyramid", &mju_encodePyramid_wrapper);
-  function("mju_decodePyramid", &mju_decodePyramid_wrapper);
-  function("mju_isZero", &mju_isZero_wrapper);
-  function("mju_f2n", &mju_f2n_wrapper);
-  function("mju_n2f", &mju_n2f_wrapper);
-  function("mju_d2n", &mju_d2n_wrapper);
-  function("mju_n2d", &mju_n2d_wrapper);
-  function("mju_insertionSort", &mju_insertionSort_wrapper);
-  function("mju_insertionSortInt", &mju_insertionSortInt_wrapper);
-  function("mjd_transitionFD", &mjd_transitionFD_wrapper);
-  function("mjd_inverseFD", &mjd_inverseFD_wrapper);
-  function("mjd_subQuat", &mjd_subQuat_wrapper);
   class_<WasmBuffer<float>>("FloatBuffer")
       .constructor<int>()
       .class_function("FromArray", &WasmBuffer<float>::FromArray)

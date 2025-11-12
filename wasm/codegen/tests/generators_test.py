@@ -327,7 +327,6 @@ void MjLROpt::set(mjLROpt* ptr) {
         wrapped_structs["mjsElement"].wrapped_source,
         """
 MjsElement::MjsElement(mjsElement *ptr) : ptr_(ptr) {}
-MjsElement::~MjsElement() {}
 mjsElement* MjsElement::get() const {
   return ptr_;
 }
@@ -355,7 +354,6 @@ void MjsElement::set(mjsElement* ptr) {
         ),
         """
 MjsTexture::MjsTexture(mjsTexture *ptr) : ptr_(ptr), element(ptr_->element) {}
-MjsTexture::~MjsTexture() {}
 mjsTexture* MjsTexture::get() const {
   return ptr_;
 }
@@ -782,8 +780,8 @@ emscripten::val buffer() const {
         '.property("element", &MjsTexture::element, reference())',
     )
     self.assertEqual(
-        wrapped_field_data.initialization,
-        ", element(ptr_->element)",
+        wrapped_field_data.ptr_initialization,
+        "element(ptr_->element)",
     )
 
   def test_array_type_field(self):
@@ -933,7 +931,7 @@ class FunctionsGeneratorTest(absltest.TestCase):
     )
     self.assertEqual(
         self.generator._generate_function_binding(func_simple_void),
-        'function("do_nothing", &do_nothing);\n',
+        'function("do_nothing", &do_nothing);',
     )
 
   def test_generate_direct_bindable_functions_simple_filter(self):
@@ -957,8 +955,8 @@ class FunctionsGeneratorTest(absltest.TestCase):
     })
 
     generated_code = self.generator._generate_direct_bindable_functions()
-    self.assertIn('function("direct_bind", &direct_bind);\n', generated_code)
-    self.assertNotIn('function("needs_wrap", &needs_wrap);\n', generated_code)
+    self.assertIn('function("direct_bind", &direct_bind);', generated_code)
+    self.assertNotIn('function("needs_wrap", &needs_wrap);', generated_code)
 
 
 if __name__ == "__main__":
