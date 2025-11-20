@@ -105,6 +105,674 @@ std::vector<WrapperType> InitWrapperArray(ArrayType* array, SizeType size) {
   return result;
 }
 
+val get_mjDISABLESTRING() { return MakeValArray(mjDISABLESTRING); }
+val get_mjENABLESTRING() { return MakeValArray(mjENABLESTRING); }
+val get_mjTIMERSTRING() { return MakeValArray(mjTIMERSTRING); }
+val get_mjLABELSTRING() { return MakeValArray(mjLABELSTRING); }
+val get_mjFRAMESTRING() { return MakeValArray(mjFRAMESTRING); }
+val get_mjVISSTRING() { return MakeValArray3(mjVISSTRING); }
+val get_mjRNDSTRING() { return MakeValArray3(mjRNDSTRING); }
+
+EMSCRIPTEN_BINDINGS(mujoco_constants) {
+  // from mjmodel.h
+  constant("mjPI", mjPI);
+  constant("mjMAXVAL", mjMAXVAL);
+  constant("mjMINMU", mjMINMU);
+  constant("mjMINIMP", mjMINIMP);
+  constant("mjMAXIMP", mjMAXIMP);
+  constant("mjMAXCONPAIR", mjMAXCONPAIR);
+  constant("mjNEQDATA", mjNEQDATA);
+  constant("mjNDYN", mjNDYN);
+  constant("mjNGAIN", mjNGAIN);
+  constant("mjNBIAS", mjNBIAS);
+  constant("mjNREF", mjNREF);
+  constant("mjNIMP", mjNIMP);
+  constant("mjNSOLVER", mjNSOLVER);
+
+  // from mjvisualize.h
+  constant("mjNGROUP", mjNGROUP);
+  constant("mjMAXLIGHT", mjMAXLIGHT);
+  constant("mjMAXOVERLAY", mjMAXOVERLAY);
+  constant("mjMAXLINE", mjMAXLINE);
+  constant("mjMAXLINEPNT", mjMAXLINEPNT);
+  constant("mjMAXPLANEGRID", mjMAXPLANEGRID);
+
+  // from mujoco.h
+  constant("mjVERSION_HEADER", mjVERSION_HEADER);
+
+  // from mjtnum.h
+  constant("mjMINVAL", mjMINVAL);
+
+  // emscripten::constant() is designed for simple, compile-time literal values
+  // (like numbers or a single string literal), complex values need to be
+  // bound as functions.
+  emscripten::function("get_mjDISABLESTRING", &get_mjDISABLESTRING);
+  emscripten::function("get_mjENABLESTRING", &get_mjENABLESTRING);
+  emscripten::function("get_mjTIMERSTRING", &get_mjTIMERSTRING);
+  emscripten::function("get_mjLABELSTRING", &get_mjLABELSTRING);
+  emscripten::function("get_mjFRAMESTRING", &get_mjFRAMESTRING);
+  emscripten::function("get_mjVISSTRING", &get_mjVISSTRING);
+  emscripten::function("get_mjRNDSTRING", &get_mjRNDSTRING);
+}
+
+EMSCRIPTEN_BINDINGS(mujoco_enums) {
+  enum_<mjtDisableBit>("mjtDisableBit")
+    .value("mjDSBL_CONSTRAINT", mjDSBL_CONSTRAINT)
+    .value("mjDSBL_EQUALITY", mjDSBL_EQUALITY)
+    .value("mjDSBL_FRICTIONLOSS", mjDSBL_FRICTIONLOSS)
+    .value("mjDSBL_LIMIT", mjDSBL_LIMIT)
+    .value("mjDSBL_CONTACT", mjDSBL_CONTACT)
+    .value("mjDSBL_SPRING", mjDSBL_SPRING)
+    .value("mjDSBL_DAMPER", mjDSBL_DAMPER)
+    .value("mjDSBL_GRAVITY", mjDSBL_GRAVITY)
+    .value("mjDSBL_CLAMPCTRL", mjDSBL_CLAMPCTRL)
+    .value("mjDSBL_WARMSTART", mjDSBL_WARMSTART)
+    .value("mjDSBL_FILTERPARENT", mjDSBL_FILTERPARENT)
+    .value("mjDSBL_ACTUATION", mjDSBL_ACTUATION)
+    .value("mjDSBL_REFSAFE", mjDSBL_REFSAFE)
+    .value("mjDSBL_SENSOR", mjDSBL_SENSOR)
+    .value("mjDSBL_MIDPHASE", mjDSBL_MIDPHASE)
+    .value("mjDSBL_EULERDAMP", mjDSBL_EULERDAMP)
+    .value("mjDSBL_AUTORESET", mjDSBL_AUTORESET)
+    .value("mjDSBL_NATIVECCD", mjDSBL_NATIVECCD)
+    .value("mjDSBL_ISLAND", mjDSBL_ISLAND)
+    .value("mjNDISABLE", mjNDISABLE);
+
+  enum_<mjtEnableBit>("mjtEnableBit")
+    .value("mjENBL_OVERRIDE", mjENBL_OVERRIDE)
+    .value("mjENBL_ENERGY", mjENBL_ENERGY)
+    .value("mjENBL_FWDINV", mjENBL_FWDINV)
+    .value("mjENBL_INVDISCRETE", mjENBL_INVDISCRETE)
+    .value("mjENBL_MULTICCD", mjENBL_MULTICCD)
+    .value("mjENBL_SLEEP", mjENBL_SLEEP)
+    .value("mjNENABLE", mjNENABLE);
+
+  enum_<mjtJoint>("mjtJoint")
+    .value("mjJNT_FREE", mjJNT_FREE)
+    .value("mjJNT_BALL", mjJNT_BALL)
+    .value("mjJNT_SLIDE", mjJNT_SLIDE)
+    .value("mjJNT_HINGE", mjJNT_HINGE);
+
+  enum_<mjtGeom>("mjtGeom")
+    .value("mjGEOM_PLANE", mjGEOM_PLANE)
+    .value("mjGEOM_HFIELD", mjGEOM_HFIELD)
+    .value("mjGEOM_SPHERE", mjGEOM_SPHERE)
+    .value("mjGEOM_CAPSULE", mjGEOM_CAPSULE)
+    .value("mjGEOM_ELLIPSOID", mjGEOM_ELLIPSOID)
+    .value("mjGEOM_CYLINDER", mjGEOM_CYLINDER)
+    .value("mjGEOM_BOX", mjGEOM_BOX)
+    .value("mjGEOM_MESH", mjGEOM_MESH)
+    .value("mjGEOM_SDF", mjGEOM_SDF)
+    .value("mjNGEOMTYPES", mjNGEOMTYPES)
+    .value("mjGEOM_ARROW", mjGEOM_ARROW)
+    .value("mjGEOM_ARROW1", mjGEOM_ARROW1)
+    .value("mjGEOM_ARROW2", mjGEOM_ARROW2)
+    .value("mjGEOM_LINE", mjGEOM_LINE)
+    .value("mjGEOM_LINEBOX", mjGEOM_LINEBOX)
+    .value("mjGEOM_FLEX", mjGEOM_FLEX)
+    .value("mjGEOM_SKIN", mjGEOM_SKIN)
+    .value("mjGEOM_LABEL", mjGEOM_LABEL)
+    .value("mjGEOM_TRIANGLE", mjGEOM_TRIANGLE)
+    .value("mjGEOM_NONE", mjGEOM_NONE);
+
+  enum_<mjtCamLight>("mjtCamLight")
+    .value("mjCAMLIGHT_FIXED", mjCAMLIGHT_FIXED)
+    .value("mjCAMLIGHT_TRACK", mjCAMLIGHT_TRACK)
+    .value("mjCAMLIGHT_TRACKCOM", mjCAMLIGHT_TRACKCOM)
+    .value("mjCAMLIGHT_TARGETBODY", mjCAMLIGHT_TARGETBODY)
+    .value("mjCAMLIGHT_TARGETBODYCOM", mjCAMLIGHT_TARGETBODYCOM);
+
+  enum_<mjtLightType>("mjtLightType")
+    .value("mjLIGHT_SPOT", mjLIGHT_SPOT)
+    .value("mjLIGHT_DIRECTIONAL", mjLIGHT_DIRECTIONAL)
+    .value("mjLIGHT_POINT", mjLIGHT_POINT)
+    .value("mjLIGHT_IMAGE", mjLIGHT_IMAGE);
+
+  enum_<mjtTexture>("mjtTexture")
+    .value("mjTEXTURE_2D", mjTEXTURE_2D)
+    .value("mjTEXTURE_CUBE", mjTEXTURE_CUBE)
+    .value("mjTEXTURE_SKYBOX", mjTEXTURE_SKYBOX);
+
+  enum_<mjtTextureRole>("mjtTextureRole")
+    .value("mjTEXROLE_USER", mjTEXROLE_USER)
+    .value("mjTEXROLE_RGB", mjTEXROLE_RGB)
+    .value("mjTEXROLE_OCCLUSION", mjTEXROLE_OCCLUSION)
+    .value("mjTEXROLE_ROUGHNESS", mjTEXROLE_ROUGHNESS)
+    .value("mjTEXROLE_METALLIC", mjTEXROLE_METALLIC)
+    .value("mjTEXROLE_NORMAL", mjTEXROLE_NORMAL)
+    .value("mjTEXROLE_OPACITY", mjTEXROLE_OPACITY)
+    .value("mjTEXROLE_EMISSIVE", mjTEXROLE_EMISSIVE)
+    .value("mjTEXROLE_RGBA", mjTEXROLE_RGBA)
+    .value("mjTEXROLE_ORM", mjTEXROLE_ORM)
+    .value("mjNTEXROLE", mjNTEXROLE);
+
+  enum_<mjtColorSpace>("mjtColorSpace")
+    .value("mjCOLORSPACE_AUTO", mjCOLORSPACE_AUTO)
+    .value("mjCOLORSPACE_LINEAR", mjCOLORSPACE_LINEAR)
+    .value("mjCOLORSPACE_SRGB", mjCOLORSPACE_SRGB);
+
+  enum_<mjtIntegrator>("mjtIntegrator")
+    .value("mjINT_EULER", mjINT_EULER)
+    .value("mjINT_RK4", mjINT_RK4)
+    .value("mjINT_IMPLICIT", mjINT_IMPLICIT)
+    .value("mjINT_IMPLICITFAST", mjINT_IMPLICITFAST);
+
+  enum_<mjtCone>("mjtCone")
+    .value("mjCONE_PYRAMIDAL", mjCONE_PYRAMIDAL)
+    .value("mjCONE_ELLIPTIC", mjCONE_ELLIPTIC);
+
+  enum_<mjtJacobian>("mjtJacobian")
+    .value("mjJAC_DENSE", mjJAC_DENSE)
+    .value("mjJAC_SPARSE", mjJAC_SPARSE)
+    .value("mjJAC_AUTO", mjJAC_AUTO);
+
+  enum_<mjtSolver>("mjtSolver")
+    .value("mjSOL_PGS", mjSOL_PGS)
+    .value("mjSOL_CG", mjSOL_CG)
+    .value("mjSOL_NEWTON", mjSOL_NEWTON);
+
+  enum_<mjtEq>("mjtEq")
+    .value("mjEQ_CONNECT", mjEQ_CONNECT)
+    .value("mjEQ_WELD", mjEQ_WELD)
+    .value("mjEQ_JOINT", mjEQ_JOINT)
+    .value("mjEQ_TENDON", mjEQ_TENDON)
+    .value("mjEQ_FLEX", mjEQ_FLEX)
+    .value("mjEQ_DISTANCE", mjEQ_DISTANCE);
+
+  enum_<mjtWrap>("mjtWrap")
+    .value("mjWRAP_NONE", mjWRAP_NONE)
+    .value("mjWRAP_JOINT", mjWRAP_JOINT)
+    .value("mjWRAP_PULLEY", mjWRAP_PULLEY)
+    .value("mjWRAP_SITE", mjWRAP_SITE)
+    .value("mjWRAP_SPHERE", mjWRAP_SPHERE)
+    .value("mjWRAP_CYLINDER", mjWRAP_CYLINDER);
+
+  enum_<mjtTrn>("mjtTrn")
+    .value("mjTRN_JOINT", mjTRN_JOINT)
+    .value("mjTRN_JOINTINPARENT", mjTRN_JOINTINPARENT)
+    .value("mjTRN_SLIDERCRANK", mjTRN_SLIDERCRANK)
+    .value("mjTRN_TENDON", mjTRN_TENDON)
+    .value("mjTRN_SITE", mjTRN_SITE)
+    .value("mjTRN_BODY", mjTRN_BODY)
+    .value("mjTRN_UNDEFINED", mjTRN_UNDEFINED);
+
+  enum_<mjtDyn>("mjtDyn")
+    .value("mjDYN_NONE", mjDYN_NONE)
+    .value("mjDYN_INTEGRATOR", mjDYN_INTEGRATOR)
+    .value("mjDYN_FILTER", mjDYN_FILTER)
+    .value("mjDYN_FILTEREXACT", mjDYN_FILTEREXACT)
+    .value("mjDYN_MUSCLE", mjDYN_MUSCLE)
+    .value("mjDYN_USER", mjDYN_USER);
+
+  enum_<mjtGain>("mjtGain")
+    .value("mjGAIN_FIXED", mjGAIN_FIXED)
+    .value("mjGAIN_AFFINE", mjGAIN_AFFINE)
+    .value("mjGAIN_MUSCLE", mjGAIN_MUSCLE)
+    .value("mjGAIN_USER", mjGAIN_USER);
+
+  enum_<mjtBias>("mjtBias")
+    .value("mjBIAS_NONE", mjBIAS_NONE)
+    .value("mjBIAS_AFFINE", mjBIAS_AFFINE)
+    .value("mjBIAS_MUSCLE", mjBIAS_MUSCLE)
+    .value("mjBIAS_USER", mjBIAS_USER);
+
+  enum_<mjtObj>("mjtObj")
+    .value("mjOBJ_UNKNOWN", mjOBJ_UNKNOWN)
+    .value("mjOBJ_BODY", mjOBJ_BODY)
+    .value("mjOBJ_XBODY", mjOBJ_XBODY)
+    .value("mjOBJ_JOINT", mjOBJ_JOINT)
+    .value("mjOBJ_DOF", mjOBJ_DOF)
+    .value("mjOBJ_GEOM", mjOBJ_GEOM)
+    .value("mjOBJ_SITE", mjOBJ_SITE)
+    .value("mjOBJ_CAMERA", mjOBJ_CAMERA)
+    .value("mjOBJ_LIGHT", mjOBJ_LIGHT)
+    .value("mjOBJ_FLEX", mjOBJ_FLEX)
+    .value("mjOBJ_MESH", mjOBJ_MESH)
+    .value("mjOBJ_SKIN", mjOBJ_SKIN)
+    .value("mjOBJ_HFIELD", mjOBJ_HFIELD)
+    .value("mjOBJ_TEXTURE", mjOBJ_TEXTURE)
+    .value("mjOBJ_MATERIAL", mjOBJ_MATERIAL)
+    .value("mjOBJ_PAIR", mjOBJ_PAIR)
+    .value("mjOBJ_EXCLUDE", mjOBJ_EXCLUDE)
+    .value("mjOBJ_EQUALITY", mjOBJ_EQUALITY)
+    .value("mjOBJ_TENDON", mjOBJ_TENDON)
+    .value("mjOBJ_ACTUATOR", mjOBJ_ACTUATOR)
+    .value("mjOBJ_SENSOR", mjOBJ_SENSOR)
+    .value("mjOBJ_NUMERIC", mjOBJ_NUMERIC)
+    .value("mjOBJ_TEXT", mjOBJ_TEXT)
+    .value("mjOBJ_TUPLE", mjOBJ_TUPLE)
+    .value("mjOBJ_KEY", mjOBJ_KEY)
+    .value("mjOBJ_PLUGIN", mjOBJ_PLUGIN)
+    .value("mjNOBJECT", mjNOBJECT)
+    .value("mjOBJ_FRAME", mjOBJ_FRAME)
+    .value("mjOBJ_DEFAULT", mjOBJ_DEFAULT)
+    .value("mjOBJ_MODEL", mjOBJ_MODEL);
+
+  enum_<mjtSensor>("mjtSensor")
+    .value("mjSENS_TOUCH", mjSENS_TOUCH)
+    .value("mjSENS_ACCELEROMETER", mjSENS_ACCELEROMETER)
+    .value("mjSENS_VELOCIMETER", mjSENS_VELOCIMETER)
+    .value("mjSENS_GYRO", mjSENS_GYRO)
+    .value("mjSENS_FORCE", mjSENS_FORCE)
+    .value("mjSENS_TORQUE", mjSENS_TORQUE)
+    .value("mjSENS_MAGNETOMETER", mjSENS_MAGNETOMETER)
+    .value("mjSENS_RANGEFINDER", mjSENS_RANGEFINDER)
+    .value("mjSENS_CAMPROJECTION", mjSENS_CAMPROJECTION)
+    .value("mjSENS_JOINTPOS", mjSENS_JOINTPOS)
+    .value("mjSENS_JOINTVEL", mjSENS_JOINTVEL)
+    .value("mjSENS_TENDONPOS", mjSENS_TENDONPOS)
+    .value("mjSENS_TENDONVEL", mjSENS_TENDONVEL)
+    .value("mjSENS_ACTUATORPOS", mjSENS_ACTUATORPOS)
+    .value("mjSENS_ACTUATORVEL", mjSENS_ACTUATORVEL)
+    .value("mjSENS_ACTUATORFRC", mjSENS_ACTUATORFRC)
+    .value("mjSENS_JOINTACTFRC", mjSENS_JOINTACTFRC)
+    .value("mjSENS_TENDONACTFRC", mjSENS_TENDONACTFRC)
+    .value("mjSENS_BALLQUAT", mjSENS_BALLQUAT)
+    .value("mjSENS_BALLANGVEL", mjSENS_BALLANGVEL)
+    .value("mjSENS_JOINTLIMITPOS", mjSENS_JOINTLIMITPOS)
+    .value("mjSENS_JOINTLIMITVEL", mjSENS_JOINTLIMITVEL)
+    .value("mjSENS_JOINTLIMITFRC", mjSENS_JOINTLIMITFRC)
+    .value("mjSENS_TENDONLIMITPOS", mjSENS_TENDONLIMITPOS)
+    .value("mjSENS_TENDONLIMITVEL", mjSENS_TENDONLIMITVEL)
+    .value("mjSENS_TENDONLIMITFRC", mjSENS_TENDONLIMITFRC)
+    .value("mjSENS_FRAMEPOS", mjSENS_FRAMEPOS)
+    .value("mjSENS_FRAMEQUAT", mjSENS_FRAMEQUAT)
+    .value("mjSENS_FRAMEXAXIS", mjSENS_FRAMEXAXIS)
+    .value("mjSENS_FRAMEYAXIS", mjSENS_FRAMEYAXIS)
+    .value("mjSENS_FRAMEZAXIS", mjSENS_FRAMEZAXIS)
+    .value("mjSENS_FRAMELINVEL", mjSENS_FRAMELINVEL)
+    .value("mjSENS_FRAMEANGVEL", mjSENS_FRAMEANGVEL)
+    .value("mjSENS_FRAMELINACC", mjSENS_FRAMELINACC)
+    .value("mjSENS_FRAMEANGACC", mjSENS_FRAMEANGACC)
+    .value("mjSENS_SUBTREECOM", mjSENS_SUBTREECOM)
+    .value("mjSENS_SUBTREELINVEL", mjSENS_SUBTREELINVEL)
+    .value("mjSENS_SUBTREEANGMOM", mjSENS_SUBTREEANGMOM)
+    .value("mjSENS_INSIDESITE", mjSENS_INSIDESITE)
+    .value("mjSENS_GEOMDIST", mjSENS_GEOMDIST)
+    .value("mjSENS_GEOMNORMAL", mjSENS_GEOMNORMAL)
+    .value("mjSENS_GEOMFROMTO", mjSENS_GEOMFROMTO)
+    .value("mjSENS_CONTACT", mjSENS_CONTACT)
+    .value("mjSENS_E_POTENTIAL", mjSENS_E_POTENTIAL)
+    .value("mjSENS_E_KINETIC", mjSENS_E_KINETIC)
+    .value("mjSENS_CLOCK", mjSENS_CLOCK)
+    .value("mjSENS_TACTILE", mjSENS_TACTILE)
+    .value("mjSENS_PLUGIN", mjSENS_PLUGIN)
+    .value("mjSENS_USER", mjSENS_USER);
+
+  enum_<mjtStage>("mjtStage")
+    .value("mjSTAGE_NONE", mjSTAGE_NONE)
+    .value("mjSTAGE_POS", mjSTAGE_POS)
+    .value("mjSTAGE_VEL", mjSTAGE_VEL)
+    .value("mjSTAGE_ACC", mjSTAGE_ACC);
+
+  enum_<mjtDataType>("mjtDataType")
+    .value("mjDATATYPE_REAL", mjDATATYPE_REAL)
+    .value("mjDATATYPE_POSITIVE", mjDATATYPE_POSITIVE)
+    .value("mjDATATYPE_AXIS", mjDATATYPE_AXIS)
+    .value("mjDATATYPE_QUATERNION", mjDATATYPE_QUATERNION);
+
+  enum_<mjtConDataField>("mjtConDataField")
+    .value("mjCONDATA_FOUND", mjCONDATA_FOUND)
+    .value("mjCONDATA_FORCE", mjCONDATA_FORCE)
+    .value("mjCONDATA_TORQUE", mjCONDATA_TORQUE)
+    .value("mjCONDATA_DIST", mjCONDATA_DIST)
+    .value("mjCONDATA_POS", mjCONDATA_POS)
+    .value("mjCONDATA_NORMAL", mjCONDATA_NORMAL)
+    .value("mjCONDATA_TANGENT", mjCONDATA_TANGENT)
+    .value("mjNCONDATA", mjNCONDATA);
+
+  enum_<mjtSameFrame>("mjtSameFrame")
+    .value("mjSAMEFRAME_NONE", mjSAMEFRAME_NONE)
+    .value("mjSAMEFRAME_BODY", mjSAMEFRAME_BODY)
+    .value("mjSAMEFRAME_INERTIA", mjSAMEFRAME_INERTIA)
+    .value("mjSAMEFRAME_BODYROT", mjSAMEFRAME_BODYROT)
+    .value("mjSAMEFRAME_INERTIAROT", mjSAMEFRAME_INERTIAROT);
+
+  enum_<mjtSleepPolicy>("mjtSleepPolicy")
+    .value("mjSLEEP_AUTO", mjSLEEP_AUTO)
+    .value("mjSLEEP_AUTO_NEVER", mjSLEEP_AUTO_NEVER)
+    .value("mjSLEEP_AUTO_ALLOWED", mjSLEEP_AUTO_ALLOWED)
+    .value("mjSLEEP_NEVER", mjSLEEP_NEVER)
+    .value("mjSLEEP_ALLOWED", mjSLEEP_ALLOWED)
+    .value("mjSLEEP_INIT", mjSLEEP_INIT);
+
+  enum_<mjtLRMode>("mjtLRMode")
+    .value("mjLRMODE_NONE", mjLRMODE_NONE)
+    .value("mjLRMODE_MUSCLE", mjLRMODE_MUSCLE)
+    .value("mjLRMODE_MUSCLEUSER", mjLRMODE_MUSCLEUSER)
+    .value("mjLRMODE_ALL", mjLRMODE_ALL);
+
+  enum_<mjtFlexSelf>("mjtFlexSelf")
+    .value("mjFLEXSELF_NONE", mjFLEXSELF_NONE)
+    .value("mjFLEXSELF_NARROW", mjFLEXSELF_NARROW)
+    .value("mjFLEXSELF_BVH", mjFLEXSELF_BVH)
+    .value("mjFLEXSELF_SAP", mjFLEXSELF_SAP)
+    .value("mjFLEXSELF_AUTO", mjFLEXSELF_AUTO);
+
+  enum_<mjtSDFType>("mjtSDFType")
+    .value("mjSDFTYPE_SINGLE", mjSDFTYPE_SINGLE)
+    .value("mjSDFTYPE_INTERSECTION", mjSDFTYPE_INTERSECTION)
+    .value("mjSDFTYPE_MIDSURFACE", mjSDFTYPE_MIDSURFACE)
+    .value("mjSDFTYPE_COLLISION", mjSDFTYPE_COLLISION);
+
+  enum_<mjtTaskStatus>("mjtTaskStatus")
+    .value("mjTASK_NEW", mjTASK_NEW)
+    .value("mjTASK_QUEUED", mjTASK_QUEUED)
+    .value("mjTASK_COMPLETED", mjTASK_COMPLETED);
+
+  enum_<mjtState>("mjtState")
+    .value("mjSTATE_TIME", mjSTATE_TIME)
+    .value("mjSTATE_QPOS", mjSTATE_QPOS)
+    .value("mjSTATE_QVEL", mjSTATE_QVEL)
+    .value("mjSTATE_ACT", mjSTATE_ACT)
+    .value("mjSTATE_WARMSTART", mjSTATE_WARMSTART)
+    .value("mjSTATE_CTRL", mjSTATE_CTRL)
+    .value("mjSTATE_QFRC_APPLIED", mjSTATE_QFRC_APPLIED)
+    .value("mjSTATE_XFRC_APPLIED", mjSTATE_XFRC_APPLIED)
+    .value("mjSTATE_EQ_ACTIVE", mjSTATE_EQ_ACTIVE)
+    .value("mjSTATE_MOCAP_POS", mjSTATE_MOCAP_POS)
+    .value("mjSTATE_MOCAP_QUAT", mjSTATE_MOCAP_QUAT)
+    .value("mjSTATE_USERDATA", mjSTATE_USERDATA)
+    .value("mjSTATE_PLUGIN", mjSTATE_PLUGIN)
+    .value("mjNSTATE", mjNSTATE)
+    .value("mjSTATE_PHYSICS", mjSTATE_PHYSICS)
+    .value("mjSTATE_FULLPHYSICS", mjSTATE_FULLPHYSICS)
+    .value("mjSTATE_USER", mjSTATE_USER)
+    .value("mjSTATE_INTEGRATION", mjSTATE_INTEGRATION);
+
+  enum_<mjtConstraint>("mjtConstraint")
+    .value("mjCNSTR_EQUALITY", mjCNSTR_EQUALITY)
+    .value("mjCNSTR_FRICTION_DOF", mjCNSTR_FRICTION_DOF)
+    .value("mjCNSTR_FRICTION_TENDON", mjCNSTR_FRICTION_TENDON)
+    .value("mjCNSTR_LIMIT_JOINT", mjCNSTR_LIMIT_JOINT)
+    .value("mjCNSTR_LIMIT_TENDON", mjCNSTR_LIMIT_TENDON)
+    .value("mjCNSTR_CONTACT_FRICTIONLESS", mjCNSTR_CONTACT_FRICTIONLESS)
+    .value("mjCNSTR_CONTACT_PYRAMIDAL", mjCNSTR_CONTACT_PYRAMIDAL)
+    .value("mjCNSTR_CONTACT_ELLIPTIC", mjCNSTR_CONTACT_ELLIPTIC);
+
+  enum_<mjtConstraintState>("mjtConstraintState")
+    .value("mjCNSTRSTATE_SATISFIED", mjCNSTRSTATE_SATISFIED)
+    .value("mjCNSTRSTATE_QUADRATIC", mjCNSTRSTATE_QUADRATIC)
+    .value("mjCNSTRSTATE_LINEARNEG", mjCNSTRSTATE_LINEARNEG)
+    .value("mjCNSTRSTATE_LINEARPOS", mjCNSTRSTATE_LINEARPOS)
+    .value("mjCNSTRSTATE_CONE", mjCNSTRSTATE_CONE);
+
+  enum_<mjtWarning>("mjtWarning")
+    .value("mjWARN_INERTIA", mjWARN_INERTIA)
+    .value("mjWARN_CONTACTFULL", mjWARN_CONTACTFULL)
+    .value("mjWARN_CNSTRFULL", mjWARN_CNSTRFULL)
+    .value("mjWARN_VGEOMFULL", mjWARN_VGEOMFULL)
+    .value("mjWARN_BADQPOS", mjWARN_BADQPOS)
+    .value("mjWARN_BADQVEL", mjWARN_BADQVEL)
+    .value("mjWARN_BADQACC", mjWARN_BADQACC)
+    .value("mjWARN_BADCTRL", mjWARN_BADCTRL)
+    .value("mjNWARNING", mjNWARNING);
+
+  enum_<mjtTimer>("mjtTimer")
+    .value("mjTIMER_STEP", mjTIMER_STEP)
+    .value("mjTIMER_FORWARD", mjTIMER_FORWARD)
+    .value("mjTIMER_INVERSE", mjTIMER_INVERSE)
+    .value("mjTIMER_POSITION", mjTIMER_POSITION)
+    .value("mjTIMER_VELOCITY", mjTIMER_VELOCITY)
+    .value("mjTIMER_ACTUATION", mjTIMER_ACTUATION)
+    .value("mjTIMER_CONSTRAINT", mjTIMER_CONSTRAINT)
+    .value("mjTIMER_ADVANCE", mjTIMER_ADVANCE)
+    .value("mjTIMER_POS_KINEMATICS", mjTIMER_POS_KINEMATICS)
+    .value("mjTIMER_POS_INERTIA", mjTIMER_POS_INERTIA)
+    .value("mjTIMER_POS_COLLISION", mjTIMER_POS_COLLISION)
+    .value("mjTIMER_POS_MAKE", mjTIMER_POS_MAKE)
+    .value("mjTIMER_POS_PROJECT", mjTIMER_POS_PROJECT)
+    .value("mjTIMER_COL_BROAD", mjTIMER_COL_BROAD)
+    .value("mjTIMER_COL_NARROW", mjTIMER_COL_NARROW)
+    .value("mjNTIMER", mjNTIMER);
+
+  enum_<mjtSleepState>("mjtSleepState")
+    .value("mjS_STATIC", mjS_STATIC)
+    .value("mjS_ASLEEP", mjS_ASLEEP)
+    .value("mjS_AWAKE", mjS_AWAKE);
+
+  enum_<mjtGeomInertia>("mjtGeomInertia")
+    .value("mjINERTIA_VOLUME", mjINERTIA_VOLUME)
+    .value("mjINERTIA_SHELL", mjINERTIA_SHELL);
+
+  enum_<mjtMeshInertia>("mjtMeshInertia")
+    .value("mjMESH_INERTIA_CONVEX", mjMESH_INERTIA_CONVEX)
+    .value("mjMESH_INERTIA_EXACT", mjMESH_INERTIA_EXACT)
+    .value("mjMESH_INERTIA_LEGACY", mjMESH_INERTIA_LEGACY)
+    .value("mjMESH_INERTIA_SHELL", mjMESH_INERTIA_SHELL);
+
+  enum_<mjtMeshBuiltin>("mjtMeshBuiltin")
+    .value("mjMESH_BUILTIN_NONE", mjMESH_BUILTIN_NONE)
+    .value("mjMESH_BUILTIN_SPHERE", mjMESH_BUILTIN_SPHERE)
+    .value("mjMESH_BUILTIN_HEMISPHERE", mjMESH_BUILTIN_HEMISPHERE)
+    .value("mjMESH_BUILTIN_CONE", mjMESH_BUILTIN_CONE)
+    .value("mjMESH_BUILTIN_SUPERSPHERE", mjMESH_BUILTIN_SUPERSPHERE)
+    .value("mjMESH_BUILTIN_SUPERTORUS", mjMESH_BUILTIN_SUPERTORUS)
+    .value("mjMESH_BUILTIN_WEDGE", mjMESH_BUILTIN_WEDGE)
+    .value("mjMESH_BUILTIN_PLATE", mjMESH_BUILTIN_PLATE);
+
+  enum_<mjtBuiltin>("mjtBuiltin")
+    .value("mjBUILTIN_NONE", mjBUILTIN_NONE)
+    .value("mjBUILTIN_GRADIENT", mjBUILTIN_GRADIENT)
+    .value("mjBUILTIN_CHECKER", mjBUILTIN_CHECKER)
+    .value("mjBUILTIN_FLAT", mjBUILTIN_FLAT);
+
+  enum_<mjtMark>("mjtMark")
+    .value("mjMARK_NONE", mjMARK_NONE)
+    .value("mjMARK_EDGE", mjMARK_EDGE)
+    .value("mjMARK_CROSS", mjMARK_CROSS)
+    .value("mjMARK_RANDOM", mjMARK_RANDOM);
+
+  enum_<mjtLimited>("mjtLimited")
+    .value("mjLIMITED_FALSE", mjLIMITED_FALSE)
+    .value("mjLIMITED_TRUE", mjLIMITED_TRUE)
+    .value("mjLIMITED_AUTO", mjLIMITED_AUTO);
+
+  enum_<mjtAlignFree>("mjtAlignFree")
+    .value("mjALIGNFREE_FALSE", mjALIGNFREE_FALSE)
+    .value("mjALIGNFREE_TRUE", mjALIGNFREE_TRUE)
+    .value("mjALIGNFREE_AUTO", mjALIGNFREE_AUTO);
+
+  enum_<mjtInertiaFromGeom>("mjtInertiaFromGeom")
+    .value("mjINERTIAFROMGEOM_FALSE", mjINERTIAFROMGEOM_FALSE)
+    .value("mjINERTIAFROMGEOM_TRUE", mjINERTIAFROMGEOM_TRUE)
+    .value("mjINERTIAFROMGEOM_AUTO", mjINERTIAFROMGEOM_AUTO);
+
+  enum_<mjtOrientation>("mjtOrientation")
+    .value("mjORIENTATION_QUAT", mjORIENTATION_QUAT)
+    .value("mjORIENTATION_AXISANGLE", mjORIENTATION_AXISANGLE)
+    .value("mjORIENTATION_XYAXES", mjORIENTATION_XYAXES)
+    .value("mjORIENTATION_ZAXIS", mjORIENTATION_ZAXIS)
+    .value("mjORIENTATION_EULER", mjORIENTATION_EULER);
+
+  enum_<mjtCatBit>("mjtCatBit")
+    .value("mjCAT_STATIC", mjCAT_STATIC)
+    .value("mjCAT_DYNAMIC", mjCAT_DYNAMIC)
+    .value("mjCAT_DECOR", mjCAT_DECOR)
+    .value("mjCAT_ALL", mjCAT_ALL);
+
+  enum_<mjtMouse>("mjtMouse")
+    .value("mjMOUSE_NONE", mjMOUSE_NONE)
+    .value("mjMOUSE_ROTATE_V", mjMOUSE_ROTATE_V)
+    .value("mjMOUSE_ROTATE_H", mjMOUSE_ROTATE_H)
+    .value("mjMOUSE_MOVE_V", mjMOUSE_MOVE_V)
+    .value("mjMOUSE_MOVE_H", mjMOUSE_MOVE_H)
+    .value("mjMOUSE_ZOOM", mjMOUSE_ZOOM)
+    .value("mjMOUSE_MOVE_V_REL", mjMOUSE_MOVE_V_REL)
+    .value("mjMOUSE_MOVE_H_REL", mjMOUSE_MOVE_H_REL);
+
+  enum_<mjtPertBit>("mjtPertBit")
+    .value("mjPERT_TRANSLATE", mjPERT_TRANSLATE)
+    .value("mjPERT_ROTATE", mjPERT_ROTATE);
+
+  enum_<mjtCamera>("mjtCamera")
+    .value("mjCAMERA_FREE", mjCAMERA_FREE)
+    .value("mjCAMERA_TRACKING", mjCAMERA_TRACKING)
+    .value("mjCAMERA_FIXED", mjCAMERA_FIXED)
+    .value("mjCAMERA_USER", mjCAMERA_USER);
+
+  enum_<mjtLabel>("mjtLabel")
+    .value("mjLABEL_NONE", mjLABEL_NONE)
+    .value("mjLABEL_BODY", mjLABEL_BODY)
+    .value("mjLABEL_JOINT", mjLABEL_JOINT)
+    .value("mjLABEL_GEOM", mjLABEL_GEOM)
+    .value("mjLABEL_SITE", mjLABEL_SITE)
+    .value("mjLABEL_CAMERA", mjLABEL_CAMERA)
+    .value("mjLABEL_LIGHT", mjLABEL_LIGHT)
+    .value("mjLABEL_TENDON", mjLABEL_TENDON)
+    .value("mjLABEL_ACTUATOR", mjLABEL_ACTUATOR)
+    .value("mjLABEL_CONSTRAINT", mjLABEL_CONSTRAINT)
+    .value("mjLABEL_FLEX", mjLABEL_FLEX)
+    .value("mjLABEL_SKIN", mjLABEL_SKIN)
+    .value("mjLABEL_SELECTION", mjLABEL_SELECTION)
+    .value("mjLABEL_SELPNT", mjLABEL_SELPNT)
+    .value("mjLABEL_CONTACTPOINT", mjLABEL_CONTACTPOINT)
+    .value("mjLABEL_CONTACTFORCE", mjLABEL_CONTACTFORCE)
+    .value("mjLABEL_ISLAND", mjLABEL_ISLAND)
+    .value("mjNLABEL", mjNLABEL);
+
+  enum_<mjtFrame>("mjtFrame")
+    .value("mjFRAME_NONE", mjFRAME_NONE)
+    .value("mjFRAME_BODY", mjFRAME_BODY)
+    .value("mjFRAME_GEOM", mjFRAME_GEOM)
+    .value("mjFRAME_SITE", mjFRAME_SITE)
+    .value("mjFRAME_CAMERA", mjFRAME_CAMERA)
+    .value("mjFRAME_LIGHT", mjFRAME_LIGHT)
+    .value("mjFRAME_CONTACT", mjFRAME_CONTACT)
+    .value("mjFRAME_WORLD", mjFRAME_WORLD)
+    .value("mjNFRAME", mjNFRAME);
+
+  enum_<mjtVisFlag>("mjtVisFlag")
+    .value("mjVIS_CONVEXHULL", mjVIS_CONVEXHULL)
+    .value("mjVIS_TEXTURE", mjVIS_TEXTURE)
+    .value("mjVIS_JOINT", mjVIS_JOINT)
+    .value("mjVIS_CAMERA", mjVIS_CAMERA)
+    .value("mjVIS_ACTUATOR", mjVIS_ACTUATOR)
+    .value("mjVIS_ACTIVATION", mjVIS_ACTIVATION)
+    .value("mjVIS_LIGHT", mjVIS_LIGHT)
+    .value("mjVIS_TENDON", mjVIS_TENDON)
+    .value("mjVIS_RANGEFINDER", mjVIS_RANGEFINDER)
+    .value("mjVIS_CONSTRAINT", mjVIS_CONSTRAINT)
+    .value("mjVIS_INERTIA", mjVIS_INERTIA)
+    .value("mjVIS_SCLINERTIA", mjVIS_SCLINERTIA)
+    .value("mjVIS_PERTFORCE", mjVIS_PERTFORCE)
+    .value("mjVIS_PERTOBJ", mjVIS_PERTOBJ)
+    .value("mjVIS_CONTACTPOINT", mjVIS_CONTACTPOINT)
+    .value("mjVIS_ISLAND", mjVIS_ISLAND)
+    .value("mjVIS_CONTACTFORCE", mjVIS_CONTACTFORCE)
+    .value("mjVIS_CONTACTSPLIT", mjVIS_CONTACTSPLIT)
+    .value("mjVIS_TRANSPARENT", mjVIS_TRANSPARENT)
+    .value("mjVIS_AUTOCONNECT", mjVIS_AUTOCONNECT)
+    .value("mjVIS_COM", mjVIS_COM)
+    .value("mjVIS_SELECT", mjVIS_SELECT)
+    .value("mjVIS_STATIC", mjVIS_STATIC)
+    .value("mjVIS_SKIN", mjVIS_SKIN)
+    .value("mjVIS_FLEXVERT", mjVIS_FLEXVERT)
+    .value("mjVIS_FLEXEDGE", mjVIS_FLEXEDGE)
+    .value("mjVIS_FLEXFACE", mjVIS_FLEXFACE)
+    .value("mjVIS_FLEXSKIN", mjVIS_FLEXSKIN)
+    .value("mjVIS_BODYBVH", mjVIS_BODYBVH)
+    .value("mjVIS_MESHBVH", mjVIS_MESHBVH)
+    .value("mjVIS_SDFITER", mjVIS_SDFITER)
+    .value("mjNVISFLAG", mjNVISFLAG);
+
+  enum_<mjtRndFlag>("mjtRndFlag")
+    .value("mjRND_SHADOW", mjRND_SHADOW)
+    .value("mjRND_WIREFRAME", mjRND_WIREFRAME)
+    .value("mjRND_REFLECTION", mjRND_REFLECTION)
+    .value("mjRND_ADDITIVE", mjRND_ADDITIVE)
+    .value("mjRND_SKYBOX", mjRND_SKYBOX)
+    .value("mjRND_FOG", mjRND_FOG)
+    .value("mjRND_HAZE", mjRND_HAZE)
+    .value("mjRND_SEGMENT", mjRND_SEGMENT)
+    .value("mjRND_IDCOLOR", mjRND_IDCOLOR)
+    .value("mjRND_CULL_FACE", mjRND_CULL_FACE)
+    .value("mjNRNDFLAG", mjNRNDFLAG);
+
+  enum_<mjtStereo>("mjtStereo")
+    .value("mjSTEREO_NONE", mjSTEREO_NONE)
+    .value("mjSTEREO_QUADBUFFERED", mjSTEREO_QUADBUFFERED)
+    .value("mjSTEREO_SIDEBYSIDE", mjSTEREO_SIDEBYSIDE);
+
+  enum_<mjtPluginCapabilityBit>("mjtPluginCapabilityBit")
+    .value("mjPLUGIN_ACTUATOR", mjPLUGIN_ACTUATOR)
+    .value("mjPLUGIN_SENSOR", mjPLUGIN_SENSOR)
+    .value("mjPLUGIN_PASSIVE", mjPLUGIN_PASSIVE)
+    .value("mjPLUGIN_SDF", mjPLUGIN_SDF);
+
+  enum_<mjtGridPos>("mjtGridPos")
+    .value("mjGRID_TOPLEFT", mjGRID_TOPLEFT)
+    .value("mjGRID_TOPRIGHT", mjGRID_TOPRIGHT)
+    .value("mjGRID_BOTTOMLEFT", mjGRID_BOTTOMLEFT)
+    .value("mjGRID_BOTTOMRIGHT", mjGRID_BOTTOMRIGHT)
+    .value("mjGRID_TOP", mjGRID_TOP)
+    .value("mjGRID_BOTTOM", mjGRID_BOTTOM)
+    .value("mjGRID_LEFT", mjGRID_LEFT)
+    .value("mjGRID_RIGHT", mjGRID_RIGHT);
+
+  enum_<mjtFramebuffer>("mjtFramebuffer")
+    .value("mjFB_WINDOW", mjFB_WINDOW)
+    .value("mjFB_OFFSCREEN", mjFB_OFFSCREEN);
+
+  enum_<mjtDepthMap>("mjtDepthMap")
+    .value("mjDEPTH_ZERONEAR", mjDEPTH_ZERONEAR)
+    .value("mjDEPTH_ZEROFAR", mjDEPTH_ZEROFAR);
+
+  enum_<mjtFontScale>("mjtFontScale")
+    .value("mjFONTSCALE_50", mjFONTSCALE_50)
+    .value("mjFONTSCALE_100", mjFONTSCALE_100)
+    .value("mjFONTSCALE_150", mjFONTSCALE_150)
+    .value("mjFONTSCALE_200", mjFONTSCALE_200)
+    .value("mjFONTSCALE_250", mjFONTSCALE_250)
+    .value("mjFONTSCALE_300", mjFONTSCALE_300);
+
+  enum_<mjtFont>("mjtFont")
+    .value("mjFONT_NORMAL", mjFONT_NORMAL)
+    .value("mjFONT_SHADOW", mjFONT_SHADOW)
+    .value("mjFONT_BIG", mjFONT_BIG);
+
+  enum_<mjtButton>("mjtButton")
+    .value("mjBUTTON_NONE", mjBUTTON_NONE)
+    .value("mjBUTTON_LEFT", mjBUTTON_LEFT)
+    .value("mjBUTTON_RIGHT", mjBUTTON_RIGHT)
+    .value("mjBUTTON_MIDDLE", mjBUTTON_MIDDLE);
+
+  enum_<mjtEvent>("mjtEvent")
+    .value("mjEVENT_NONE", mjEVENT_NONE)
+    .value("mjEVENT_MOVE", mjEVENT_MOVE)
+    .value("mjEVENT_PRESS", mjEVENT_PRESS)
+    .value("mjEVENT_RELEASE", mjEVENT_RELEASE)
+    .value("mjEVENT_SCROLL", mjEVENT_SCROLL)
+    .value("mjEVENT_KEY", mjEVENT_KEY)
+    .value("mjEVENT_RESIZE", mjEVENT_RESIZE)
+    .value("mjEVENT_REDRAW", mjEVENT_REDRAW)
+    .value("mjEVENT_FILESDROP", mjEVENT_FILESDROP);
+
+  enum_<mjtItem>("mjtItem")
+    .value("mjITEM_END", mjITEM_END)
+    .value("mjITEM_SECTION", mjITEM_SECTION)
+    .value("mjITEM_SEPARATOR", mjITEM_SEPARATOR)
+    .value("mjITEM_STATIC", mjITEM_STATIC)
+    .value("mjITEM_BUTTON", mjITEM_BUTTON)
+    .value("mjITEM_CHECKINT", mjITEM_CHECKINT)
+    .value("mjITEM_CHECKBYTE", mjITEM_CHECKBYTE)
+    .value("mjITEM_RADIO", mjITEM_RADIO)
+    .value("mjITEM_RADIOLINE", mjITEM_RADIOLINE)
+    .value("mjITEM_SELECT", mjITEM_SELECT)
+    .value("mjITEM_SLIDERINT", mjITEM_SLIDERINT)
+    .value("mjITEM_SLIDERNUM", mjITEM_SLIDERNUM)
+    .value("mjITEM_EDITINT", mjITEM_EDITINT)
+    .value("mjITEM_EDITNUM", mjITEM_EDITNUM)
+    .value("mjITEM_EDITFLOAT", mjITEM_EDITFLOAT)
+    .value("mjITEM_EDITTXT", mjITEM_EDITTXT)
+    .value("mjNITEM", mjNITEM);
+
+  enum_<mjtSection>("mjtSection")
+    .value("mjSECT_CLOSED", mjSECT_CLOSED)
+    .value("mjSECT_OPEN", mjSECT_OPEN)
+    .value("mjSECT_FIXED", mjSECT_FIXED);
+}
+
 using mjVisualGlobal = decltype(::mjVisual::global);
 using mjVisualHeadlight = decltype(::mjVisual::headlight);
 using mjVisualMap = decltype(::mjVisual::map);
@@ -113,9 +781,9 @@ using mjVisualRgba = decltype(::mjVisual::rgba);
 using mjVisualScale = decltype(::mjVisual::scale);
 
 struct MjContact {
-  explicit MjContact(mjContact *ptr);
   ~MjContact();
   MjContact();
+  explicit MjContact(mjContact *ptr);
   MjContact(const MjContact &);
   MjContact &operator=(const MjContact &);
   std::unique_ptr<MjContact> copy();
@@ -209,9 +877,9 @@ struct MjContact {
 };
 
 struct MjLROpt {
-  explicit MjLROpt(mjLROpt *ptr);
   ~MjLROpt();
   MjLROpt();
+  explicit MjLROpt(mjLROpt *ptr);
   MjLROpt(const MjLROpt &);
   MjLROpt &operator=(const MjLROpt &);
   std::unique_ptr<MjLROpt> copy();
@@ -284,9 +952,9 @@ struct MjLROpt {
 };
 
 struct MjOption {
-  explicit MjOption(mjOption *ptr);
   ~MjOption();
   MjOption();
+  explicit MjOption(mjOption *ptr);
   MjOption(const MjOption &);
   MjOption &operator=(const MjOption &);
   std::unique_ptr<MjOption> copy();
@@ -455,9 +1123,9 @@ struct MjOption {
 };
 
 struct MjSolverStat {
-  explicit MjSolverStat(mjSolverStat *ptr);
   ~MjSolverStat();
   MjSolverStat();
+  explicit MjSolverStat(mjSolverStat *ptr);
   MjSolverStat(const MjSolverStat &);
   MjSolverStat &operator=(const MjSolverStat &);
   std::unique_ptr<MjSolverStat> copy();
@@ -512,9 +1180,9 @@ struct MjSolverStat {
 };
 
 struct MjStatistic {
-  explicit MjStatistic(mjStatistic *ptr);
   ~MjStatistic();
   MjStatistic();
+  explicit MjStatistic(mjStatistic *ptr);
   MjStatistic(const MjStatistic &);
   MjStatistic &operator=(const MjStatistic &);
   std::unique_ptr<MjStatistic> copy();
@@ -554,9 +1222,9 @@ struct MjStatistic {
 };
 
 struct MjTimerStat {
-  explicit MjTimerStat(mjTimerStat *ptr);
   ~MjTimerStat();
   MjTimerStat();
+  explicit MjTimerStat(mjTimerStat *ptr);
   MjTimerStat(const MjTimerStat &);
   MjTimerStat &operator=(const MjTimerStat &);
   std::unique_ptr<MjTimerStat> copy();
@@ -581,9 +1249,9 @@ struct MjTimerStat {
 };
 
 struct MjVisualGlobal {
-  explicit MjVisualGlobal(mjVisualGlobal *ptr);
   ~MjVisualGlobal();
   MjVisualGlobal();
+  explicit MjVisualGlobal(mjVisualGlobal *ptr);
   MjVisualGlobal(const MjVisualGlobal &);
   MjVisualGlobal &operator=(const MjVisualGlobal &);
   std::unique_ptr<MjVisualGlobal> copy();
@@ -674,9 +1342,9 @@ struct MjVisualGlobal {
 };
 
 struct MjVisualHeadlight {
-  explicit MjVisualHeadlight(mjVisualHeadlight *ptr);
   ~MjVisualHeadlight();
   MjVisualHeadlight();
+  explicit MjVisualHeadlight(mjVisualHeadlight *ptr);
   MjVisualHeadlight(const MjVisualHeadlight &);
   MjVisualHeadlight &operator=(const MjVisualHeadlight &);
   std::unique_ptr<MjVisualHeadlight> copy();
@@ -704,9 +1372,9 @@ struct MjVisualHeadlight {
 };
 
 struct MjVisualMap {
-  explicit MjVisualMap(mjVisualMap *ptr);
   ~MjVisualMap();
   MjVisualMap();
+  explicit MjVisualMap(mjVisualMap *ptr);
   MjVisualMap(const MjVisualMap &);
   MjVisualMap &operator=(const MjVisualMap &);
   std::unique_ptr<MjVisualMap> copy();
@@ -797,9 +1465,9 @@ struct MjVisualMap {
 };
 
 struct MjVisualQuality {
-  explicit MjVisualQuality(mjVisualQuality *ptr);
   ~MjVisualQuality();
   MjVisualQuality();
+  explicit MjVisualQuality(mjVisualQuality *ptr);
   MjVisualQuality(const MjVisualQuality &);
   MjVisualQuality &operator=(const MjVisualQuality &);
   std::unique_ptr<MjVisualQuality> copy();
@@ -842,9 +1510,9 @@ struct MjVisualQuality {
 };
 
 struct MjVisualRgba {
-  explicit MjVisualRgba(mjVisualRgba *ptr);
   ~MjVisualRgba();
   MjVisualRgba();
+  explicit MjVisualRgba(mjVisualRgba *ptr);
   MjVisualRgba(const MjVisualRgba &);
   MjVisualRgba &operator=(const MjVisualRgba &);
   std::unique_ptr<MjVisualRgba> copy();
@@ -932,9 +1600,9 @@ struct MjVisualRgba {
 };
 
 struct MjVisualScale {
-  explicit MjVisualScale(mjVisualScale *ptr);
   ~MjVisualScale();
   MjVisualScale();
+  explicit MjVisualScale(mjVisualScale *ptr);
   MjVisualScale(const MjVisualScale &);
   MjVisualScale &operator=(const MjVisualScale &);
   std::unique_ptr<MjVisualScale> copy();
@@ -1049,9 +1717,9 @@ struct MjVisualScale {
 };
 
 struct MjWarningStat {
-  explicit MjWarningStat(mjWarningStat *ptr);
   ~MjWarningStat();
   MjWarningStat();
+  explicit MjWarningStat(mjWarningStat *ptr);
   MjWarningStat(const MjWarningStat &);
   MjWarningStat &operator=(const MjWarningStat &);
   std::unique_ptr<MjWarningStat> copy();
@@ -1124,9 +1792,9 @@ struct MjsOrientation {
 };
 
 struct MjvCamera {
-  explicit MjvCamera(mjvCamera *ptr);
   ~MjvCamera();
   MjvCamera();
+  explicit MjvCamera(mjvCamera *ptr);
   MjvCamera(const MjvCamera &);
   MjvCamera &operator=(const MjvCamera &);
   std::unique_ptr<MjvCamera> copy();
@@ -1184,9 +1852,9 @@ struct MjvCamera {
 };
 
 struct MjvFigure {
-  explicit MjvFigure(mjvFigure *ptr);
   ~MjvFigure();
   MjvFigure();
+  explicit MjvFigure(mjvFigure *ptr);
   MjvFigure(const MjvFigure &);
   MjvFigure &operator=(const MjvFigure &);
   std::unique_ptr<MjvFigure> copy();
@@ -1331,9 +1999,9 @@ struct MjvFigure {
 };
 
 struct MjvGLCamera {
-  explicit MjvGLCamera(mjvGLCamera *ptr);
   ~MjvGLCamera();
   MjvGLCamera();
+  explicit MjvGLCamera(mjvGLCamera *ptr);
   MjvGLCamera(const MjvGLCamera &);
   MjvGLCamera &operator=(const MjvGLCamera &);
   std::unique_ptr<MjvGLCamera> copy();
@@ -1397,9 +2065,9 @@ struct MjvGLCamera {
 };
 
 struct MjvGeom {
-  explicit MjvGeom(mjvGeom *ptr);
   ~MjvGeom();
   MjvGeom();
+  explicit MjvGeom(mjvGeom *ptr);
   MjvGeom(const MjvGeom &);
   MjvGeom &operator=(const MjvGeom &);
   std::unique_ptr<MjvGeom> copy();
@@ -1517,9 +2185,9 @@ struct MjvGeom {
 };
 
 struct MjvLight {
-  explicit MjvLight(mjvLight *ptr);
   ~MjvLight();
   MjvLight();
+  explicit MjvLight(mjvLight *ptr);
   MjvLight(const MjvLight &);
   MjvLight &operator=(const MjvLight &);
   std::unique_ptr<MjvLight> copy();
@@ -1610,9 +2278,9 @@ struct MjvLight {
 };
 
 struct MjvOption {
-  explicit MjvOption(mjvOption *ptr);
   ~MjvOption();
   MjvOption();
+  explicit MjvOption(mjvOption *ptr);
   MjvOption(const MjvOption &);
   MjvOption &operator=(const MjvOption &);
   std::unique_ptr<MjvOption> copy();
@@ -1673,9 +2341,9 @@ struct MjvOption {
 };
 
 struct MjvPerturb {
-  explicit MjvPerturb(mjvPerturb *ptr);
   ~MjvPerturb();
   MjvPerturb();
+  explicit MjvPerturb(mjvPerturb *ptr);
   MjvPerturb(const MjvPerturb &);
   MjvPerturb &operator=(const MjvPerturb &);
   std::unique_ptr<MjvPerturb> copy();
@@ -1851,6 +2519,29 @@ struct MjsCompiler {
 
  public:
   MjLROpt LRopt;
+};
+
+struct MjVisual {
+  ~MjVisual();
+  MjVisual();
+  explicit MjVisual(mjVisual *ptr);
+  MjVisual(const MjVisual &);
+  MjVisual &operator=(const MjVisual &);
+  std::unique_ptr<MjVisual> copy();
+  mjVisual* get() const;
+  void set(mjVisual* ptr);
+
+ private:
+  mjVisual* ptr_;
+  bool owned_ = false;
+
+ public:
+  MjVisualGlobal global;
+  MjVisualQuality quality;
+  MjVisualHeadlight headlight;
+  MjVisualMap map;
+  MjVisualScale scale;
+  MjVisualRgba rgba;
 };
 
 struct MjsEquality {
@@ -3254,631 +3945,10 @@ struct MjsSite {
   MjsOrientation alt;
 };
 
-struct MjsActuator {
-  explicit MjsActuator(mjsActuator *ptr);
-  mjsActuator* get() const;
-  void set(mjsActuator* ptr);
-  mjtGain gaintype() const {
-    return ptr_->gaintype;
-  }
-  void set_gaintype(mjtGain value) {
-    ptr_->gaintype = value;
-  }
-  emscripten::val gainprm() const {
-    return emscripten::val(emscripten::typed_memory_view(10, ptr_->gainprm));
-  }
-  mjtBias biastype() const {
-    return ptr_->biastype;
-  }
-  void set_biastype(mjtBias value) {
-    ptr_->biastype = value;
-  }
-  emscripten::val biasprm() const {
-    return emscripten::val(emscripten::typed_memory_view(10, ptr_->biasprm));
-  }
-  mjtDyn dyntype() const {
-    return ptr_->dyntype;
-  }
-  void set_dyntype(mjtDyn value) {
-    ptr_->dyntype = value;
-  }
-  emscripten::val dynprm() const {
-    return emscripten::val(emscripten::typed_memory_view(10, ptr_->dynprm));
-  }
-  int actdim() const {
-    return ptr_->actdim;
-  }
-  void set_actdim(int value) {
-    ptr_->actdim = value;
-  }
-  mjtByte actearly() const {
-    return ptr_->actearly;
-  }
-  void set_actearly(mjtByte value) {
-    ptr_->actearly = value;
-  }
-  mjtTrn trntype() const {
-    return ptr_->trntype;
-  }
-  void set_trntype(mjtTrn value) {
-    ptr_->trntype = value;
-  }
-  emscripten::val gear() const {
-    return emscripten::val(emscripten::typed_memory_view(6, ptr_->gear));
-  }
-  mjString target() const {
-    return (ptr_ && ptr_->target) ? *(ptr_->target) : "";
-  }
-  void set_target(const mjString& value) {
-    if (ptr_ && ptr_->target) {
-      *(ptr_->target) = value;
-    }
-  }
-  mjString refsite() const {
-    return (ptr_ && ptr_->refsite) ? *(ptr_->refsite) : "";
-  }
-  void set_refsite(const mjString& value) {
-    if (ptr_ && ptr_->refsite) {
-      *(ptr_->refsite) = value;
-    }
-  }
-  mjString slidersite() const {
-    return (ptr_ && ptr_->slidersite) ? *(ptr_->slidersite) : "";
-  }
-  void set_slidersite(const mjString& value) {
-    if (ptr_ && ptr_->slidersite) {
-      *(ptr_->slidersite) = value;
-    }
-  }
-  double cranklength() const {
-    return ptr_->cranklength;
-  }
-  void set_cranklength(double value) {
-    ptr_->cranklength = value;
-  }
-  emscripten::val lengthrange() const {
-    return emscripten::val(emscripten::typed_memory_view(2, ptr_->lengthrange));
-  }
-  double inheritrange() const {
-    return ptr_->inheritrange;
-  }
-  void set_inheritrange(double value) {
-    ptr_->inheritrange = value;
-  }
-  int ctrllimited() const {
-    return ptr_->ctrllimited;
-  }
-  void set_ctrllimited(int value) {
-    ptr_->ctrllimited = value;
-  }
-  emscripten::val ctrlrange() const {
-    return emscripten::val(emscripten::typed_memory_view(2, ptr_->ctrlrange));
-  }
-  int forcelimited() const {
-    return ptr_->forcelimited;
-  }
-  void set_forcelimited(int value) {
-    ptr_->forcelimited = value;
-  }
-  emscripten::val forcerange() const {
-    return emscripten::val(emscripten::typed_memory_view(2, ptr_->forcerange));
-  }
-  int actlimited() const {
-    return ptr_->actlimited;
-  }
-  void set_actlimited(int value) {
-    ptr_->actlimited = value;
-  }
-  emscripten::val actrange() const {
-    return emscripten::val(emscripten::typed_memory_view(2, ptr_->actrange));
-  }
-  int group() const {
-    return ptr_->group;
-  }
-  void set_group(int value) {
-    ptr_->group = value;
-  }
-  mjDoubleVec &userdata() const {
-    return *(ptr_->userdata);
-  }
-  mjString info() const {
-    return (ptr_ && ptr_->info) ? *(ptr_->info) : "";
-  }
-  void set_info(const mjString& value) {
-    if (ptr_ && ptr_->info) {
-      *(ptr_->info) = value;
-    }
-  }
-
- private:
-  mjsActuator* ptr_;
-
- public:
-  MjsElement element;
-  MjsPlugin plugin;
-};
-
-struct MjsBody {
-  explicit MjsBody(mjsBody *ptr);
-  mjsBody* get() const;
-  void set(mjsBody* ptr);
-  mjString childclass() const {
-    return (ptr_ && ptr_->childclass) ? *(ptr_->childclass) : "";
-  }
-  void set_childclass(const mjString& value) {
-    if (ptr_ && ptr_->childclass) {
-      *(ptr_->childclass) = value;
-    }
-  }
-  emscripten::val pos() const {
-    return emscripten::val(emscripten::typed_memory_view(3, ptr_->pos));
-  }
-  emscripten::val quat() const {
-    return emscripten::val(emscripten::typed_memory_view(4, ptr_->quat));
-  }
-  double mass() const {
-    return ptr_->mass;
-  }
-  void set_mass(double value) {
-    ptr_->mass = value;
-  }
-  emscripten::val ipos() const {
-    return emscripten::val(emscripten::typed_memory_view(3, ptr_->ipos));
-  }
-  emscripten::val iquat() const {
-    return emscripten::val(emscripten::typed_memory_view(4, ptr_->iquat));
-  }
-  emscripten::val inertia() const {
-    return emscripten::val(emscripten::typed_memory_view(3, ptr_->inertia));
-  }
-  emscripten::val fullinertia() const {
-    return emscripten::val(emscripten::typed_memory_view(6, ptr_->fullinertia));
-  }
-  mjtByte mocap() const {
-    return ptr_->mocap;
-  }
-  void set_mocap(mjtByte value) {
-    ptr_->mocap = value;
-  }
-  double gravcomp() const {
-    return ptr_->gravcomp;
-  }
-  void set_gravcomp(double value) {
-    ptr_->gravcomp = value;
-  }
-  mjtSleepPolicy sleep() const {
-    return ptr_->sleep;
-  }
-  void set_sleep(mjtSleepPolicy value) {
-    ptr_->sleep = value;
-  }
-  mjDoubleVec &userdata() const {
-    return *(ptr_->userdata);
-  }
-  mjtByte explicitinertial() const {
-    return ptr_->explicitinertial;
-  }
-  void set_explicitinertial(mjtByte value) {
-    ptr_->explicitinertial = value;
-  }
-  mjString info() const {
-    return (ptr_ && ptr_->info) ? *(ptr_->info) : "";
-  }
-  void set_info(const mjString& value) {
-    if (ptr_ && ptr_->info) {
-      *(ptr_->info) = value;
-    }
-  }
-
- private:
-  mjsBody* ptr_;
-
- public:
-  MjsElement element;
-  MjsOrientation alt;
-  MjsOrientation ialt;
-  MjsPlugin plugin;
-};
-
-struct MjsGeom {
-  explicit MjsGeom(mjsGeom *ptr);
-  mjsGeom* get() const;
-  void set(mjsGeom* ptr);
-  mjtGeom type() const {
-    return ptr_->type;
-  }
-  void set_type(mjtGeom value) {
-    ptr_->type = value;
-  }
-  emscripten::val pos() const {
-    return emscripten::val(emscripten::typed_memory_view(3, ptr_->pos));
-  }
-  emscripten::val quat() const {
-    return emscripten::val(emscripten::typed_memory_view(4, ptr_->quat));
-  }
-  emscripten::val fromto() const {
-    return emscripten::val(emscripten::typed_memory_view(6, ptr_->fromto));
-  }
-  emscripten::val size() const {
-    return emscripten::val(emscripten::typed_memory_view(3, ptr_->size));
-  }
-  int contype() const {
-    return ptr_->contype;
-  }
-  void set_contype(int value) {
-    ptr_->contype = value;
-  }
-  int conaffinity() const {
-    return ptr_->conaffinity;
-  }
-  void set_conaffinity(int value) {
-    ptr_->conaffinity = value;
-  }
-  int condim() const {
-    return ptr_->condim;
-  }
-  void set_condim(int value) {
-    ptr_->condim = value;
-  }
-  int priority() const {
-    return ptr_->priority;
-  }
-  void set_priority(int value) {
-    ptr_->priority = value;
-  }
-  emscripten::val friction() const {
-    return emscripten::val(emscripten::typed_memory_view(3, ptr_->friction));
-  }
-  double solmix() const {
-    return ptr_->solmix;
-  }
-  void set_solmix(double value) {
-    ptr_->solmix = value;
-  }
-  emscripten::val solref() const {
-    return emscripten::val(emscripten::typed_memory_view(2, ptr_->solref));
-  }
-  emscripten::val solimp() const {
-    return emscripten::val(emscripten::typed_memory_view(5, ptr_->solimp));
-  }
-  double margin() const {
-    return ptr_->margin;
-  }
-  void set_margin(double value) {
-    ptr_->margin = value;
-  }
-  double gap() const {
-    return ptr_->gap;
-  }
-  void set_gap(double value) {
-    ptr_->gap = value;
-  }
-  double mass() const {
-    return ptr_->mass;
-  }
-  void set_mass(double value) {
-    ptr_->mass = value;
-  }
-  double density() const {
-    return ptr_->density;
-  }
-  void set_density(double value) {
-    ptr_->density = value;
-  }
-  mjtGeomInertia typeinertia() const {
-    return ptr_->typeinertia;
-  }
-  void set_typeinertia(mjtGeomInertia value) {
-    ptr_->typeinertia = value;
-  }
-  mjtNum fluid_ellipsoid() const {
-    return ptr_->fluid_ellipsoid;
-  }
-  void set_fluid_ellipsoid(mjtNum value) {
-    ptr_->fluid_ellipsoid = value;
-  }
-  emscripten::val fluid_coefs() const {
-    return emscripten::val(emscripten::typed_memory_view(5, ptr_->fluid_coefs));
-  }
-  mjString material() const {
-    return (ptr_ && ptr_->material) ? *(ptr_->material) : "";
-  }
-  void set_material(const mjString& value) {
-    if (ptr_ && ptr_->material) {
-      *(ptr_->material) = value;
-    }
-  }
-  emscripten::val rgba() const {
-    return emscripten::val(emscripten::typed_memory_view(4, ptr_->rgba));
-  }
-  int group() const {
-    return ptr_->group;
-  }
-  void set_group(int value) {
-    ptr_->group = value;
-  }
-  mjString hfieldname() const {
-    return (ptr_ && ptr_->hfieldname) ? *(ptr_->hfieldname) : "";
-  }
-  void set_hfieldname(const mjString& value) {
-    if (ptr_ && ptr_->hfieldname) {
-      *(ptr_->hfieldname) = value;
-    }
-  }
-  mjString meshname() const {
-    return (ptr_ && ptr_->meshname) ? *(ptr_->meshname) : "";
-  }
-  void set_meshname(const mjString& value) {
-    if (ptr_ && ptr_->meshname) {
-      *(ptr_->meshname) = value;
-    }
-  }
-  double fitscale() const {
-    return ptr_->fitscale;
-  }
-  void set_fitscale(double value) {
-    ptr_->fitscale = value;
-  }
-  mjDoubleVec &userdata() const {
-    return *(ptr_->userdata);
-  }
-  mjString info() const {
-    return (ptr_ && ptr_->info) ? *(ptr_->info) : "";
-  }
-  void set_info(const mjString& value) {
-    if (ptr_ && ptr_->info) {
-      *(ptr_->info) = value;
-    }
-  }
-
- private:
-  mjsGeom* ptr_;
-
- public:
-  MjsElement element;
-  MjsOrientation alt;
-  MjsPlugin plugin;
-};
-
-struct MjsMesh {
-  explicit MjsMesh(mjsMesh *ptr);
-  mjsMesh* get() const;
-  void set(mjsMesh* ptr);
-  mjString content_type() const {
-    return (ptr_ && ptr_->content_type) ? *(ptr_->content_type) : "";
-  }
-  void set_content_type(const mjString& value) {
-    if (ptr_ && ptr_->content_type) {
-      *(ptr_->content_type) = value;
-    }
-  }
-  mjString file() const {
-    return (ptr_ && ptr_->file) ? *(ptr_->file) : "";
-  }
-  void set_file(const mjString& value) {
-    if (ptr_ && ptr_->file) {
-      *(ptr_->file) = value;
-    }
-  }
-  emscripten::val refpos() const {
-    return emscripten::val(emscripten::typed_memory_view(3, ptr_->refpos));
-  }
-  emscripten::val refquat() const {
-    return emscripten::val(emscripten::typed_memory_view(4, ptr_->refquat));
-  }
-  emscripten::val scale() const {
-    return emscripten::val(emscripten::typed_memory_view(3, ptr_->scale));
-  }
-  mjtMeshInertia inertia() const {
-    return ptr_->inertia;
-  }
-  void set_inertia(mjtMeshInertia value) {
-    ptr_->inertia = value;
-  }
-  mjtByte smoothnormal() const {
-    return ptr_->smoothnormal;
-  }
-  void set_smoothnormal(mjtByte value) {
-    ptr_->smoothnormal = value;
-  }
-  mjtByte needsdf() const {
-    return ptr_->needsdf;
-  }
-  void set_needsdf(mjtByte value) {
-    ptr_->needsdf = value;
-  }
-  int maxhullvert() const {
-    return ptr_->maxhullvert;
-  }
-  void set_maxhullvert(int value) {
-    ptr_->maxhullvert = value;
-  }
-  mjFloatVec &uservert() const {
-    return *(ptr_->uservert);
-  }
-  mjFloatVec &usernormal() const {
-    return *(ptr_->usernormal);
-  }
-  mjFloatVec &usertexcoord() const {
-    return *(ptr_->usertexcoord);
-  }
-  mjIntVec &userface() const {
-    return *(ptr_->userface);
-  }
-  mjIntVec &userfacenormal() const {
-    return *(ptr_->userfacenormal);
-  }
-  mjIntVec &userfacetexcoord() const {
-    return *(ptr_->userfacetexcoord);
-  }
-  mjString material() const {
-    return (ptr_ && ptr_->material) ? *(ptr_->material) : "";
-  }
-  void set_material(const mjString& value) {
-    if (ptr_ && ptr_->material) {
-      *(ptr_->material) = value;
-    }
-  }
-  mjString info() const {
-    return (ptr_ && ptr_->info) ? *(ptr_->info) : "";
-  }
-  void set_info(const mjString& value) {
-    if (ptr_ && ptr_->info) {
-      *(ptr_->info) = value;
-    }
-  }
-
- private:
-  mjsMesh* ptr_;
-
- public:
-  MjsElement element;
-  MjsPlugin plugin;
-};
-
-struct MjsSensor {
-  explicit MjsSensor(mjsSensor *ptr);
-  mjsSensor* get() const;
-  void set(mjsSensor* ptr);
-  mjtSensor type() const {
-    return ptr_->type;
-  }
-  void set_type(mjtSensor value) {
-    ptr_->type = value;
-  }
-  mjtObj objtype() const {
-    return ptr_->objtype;
-  }
-  void set_objtype(mjtObj value) {
-    ptr_->objtype = value;
-  }
-  mjString objname() const {
-    return (ptr_ && ptr_->objname) ? *(ptr_->objname) : "";
-  }
-  void set_objname(const mjString& value) {
-    if (ptr_ && ptr_->objname) {
-      *(ptr_->objname) = value;
-    }
-  }
-  mjtObj reftype() const {
-    return ptr_->reftype;
-  }
-  void set_reftype(mjtObj value) {
-    ptr_->reftype = value;
-  }
-  mjString refname() const {
-    return (ptr_ && ptr_->refname) ? *(ptr_->refname) : "";
-  }
-  void set_refname(const mjString& value) {
-    if (ptr_ && ptr_->refname) {
-      *(ptr_->refname) = value;
-    }
-  }
-  emscripten::val intprm() const {
-    return emscripten::val(emscripten::typed_memory_view(3, ptr_->intprm));
-  }
-  mjtDataType datatype() const {
-    return ptr_->datatype;
-  }
-  void set_datatype(mjtDataType value) {
-    ptr_->datatype = value;
-  }
-  mjtStage needstage() const {
-    return ptr_->needstage;
-  }
-  void set_needstage(mjtStage value) {
-    ptr_->needstage = value;
-  }
-  int dim() const {
-    return ptr_->dim;
-  }
-  void set_dim(int value) {
-    ptr_->dim = value;
-  }
-  double cutoff() const {
-    return ptr_->cutoff;
-  }
-  void set_cutoff(double value) {
-    ptr_->cutoff = value;
-  }
-  double noise() const {
-    return ptr_->noise;
-  }
-  void set_noise(double value) {
-    ptr_->noise = value;
-  }
-  mjDoubleVec &userdata() const {
-    return *(ptr_->userdata);
-  }
-  mjString info() const {
-    return (ptr_ && ptr_->info) ? *(ptr_->info) : "";
-  }
-  void set_info(const mjString& value) {
-    if (ptr_ && ptr_->info) {
-      *(ptr_->info) = value;
-    }
-  }
-
- private:
-  mjsSensor* ptr_;
-
- public:
-  MjsElement element;
-  MjsPlugin plugin;
-};
-
-struct MjsDefault {
-  explicit MjsDefault(mjsDefault *ptr);
-  mjsDefault* get() const;
-  void set(mjsDefault* ptr);
-
- private:
-  mjsDefault* ptr_;
-
- public:
-  MjsElement element;
-  MjsJoint joint;
-  MjsGeom geom;
-  MjsSite site;
-  MjsCamera camera;
-  MjsLight light;
-  MjsFlex flex;
-  MjsMesh mesh;
-  MjsMaterial material;
-  MjsPair pair;
-  MjsEquality equality;
-  MjsTendon tendon;
-  MjsActuator actuator;
-};
-
-
-struct MjVisual {
-  MjVisual();
-  explicit MjVisual(mjVisual *ptr_);
-  MjVisual(const MjVisual &);
-  MjVisual &operator=(const MjVisual &);
-  ~MjVisual();
-  std::unique_ptr<MjVisual> copy();
-  mjVisual* get() const;
-  void set(mjVisual* ptr);
-
- private:
-  mjVisual* ptr_;
-  bool owned_ = false;
-
- public:
-  MjVisualGlobal global;
-  MjVisualQuality quality;
-  MjVisualHeadlight headlight;
-  MjVisualMap map;
-  MjVisualScale scale;
-  MjVisualRgba rgba;
-};
-
 struct MjModel {
-  explicit MjModel(mjModel *m);
-  explicit MjModel(const MjModel &other);
   ~MjModel();
+  explicit MjModel(mjModel *ptr);
+  MjModel(const MjModel &);
   std::unique_ptr<MjModel> copy();
   mjModel* get() const;
   void set(mjModel* ptr);
@@ -4398,9 +4468,6 @@ struct MjModel {
   void set_nbuffer(mjtSize value) {
     ptr_->nbuffer = value;
   }
-  // opt field is handled manually in template file struct declaration
-  // vis field is handled manually in template file struct declaration
-  // stat field is handled manually in template file struct declaration
   emscripten::val buffer() const {
     return emscripten::val(emscripten::typed_memory_view(ptr_->nbuffer, static_cast<uint8_t*>(ptr_->buffer)));
   }
@@ -5727,14 +5794,735 @@ struct MjModel {
 
  public:
   MjOption opt;
-  MjStatistic stat;
   MjVisual vis;
+  MjStatistic stat;
+};
+
+struct MjSpec {
+  ~MjSpec();
+  MjSpec();
+  explicit MjSpec(mjSpec *ptr);
+  MjSpec(const MjSpec &);
+  MjSpec &operator=(const MjSpec &);
+  std::unique_ptr<MjSpec> copy();
+  mjSpec* get() const;
+  void set(mjSpec* ptr);
+  mjString modelname() const {
+    return (ptr_ && ptr_->modelname) ? *(ptr_->modelname) : "";
+  }
+  void set_modelname(const mjString& value) {
+    if (ptr_ && ptr_->modelname) {
+      *(ptr_->modelname) = value;
+    }
+  }
+  mjtByte strippath() const {
+    return ptr_->strippath;
+  }
+  void set_strippath(mjtByte value) {
+    ptr_->strippath = value;
+  }
+  mjtSize memory() const {
+    return ptr_->memory;
+  }
+  void set_memory(mjtSize value) {
+    ptr_->memory = value;
+  }
+  int nemax() const {
+    return ptr_->nemax;
+  }
+  void set_nemax(int value) {
+    ptr_->nemax = value;
+  }
+  int nuserdata() const {
+    return ptr_->nuserdata;
+  }
+  void set_nuserdata(int value) {
+    ptr_->nuserdata = value;
+  }
+  int nuser_body() const {
+    return ptr_->nuser_body;
+  }
+  void set_nuser_body(int value) {
+    ptr_->nuser_body = value;
+  }
+  int nuser_jnt() const {
+    return ptr_->nuser_jnt;
+  }
+  void set_nuser_jnt(int value) {
+    ptr_->nuser_jnt = value;
+  }
+  int nuser_geom() const {
+    return ptr_->nuser_geom;
+  }
+  void set_nuser_geom(int value) {
+    ptr_->nuser_geom = value;
+  }
+  int nuser_site() const {
+    return ptr_->nuser_site;
+  }
+  void set_nuser_site(int value) {
+    ptr_->nuser_site = value;
+  }
+  int nuser_cam() const {
+    return ptr_->nuser_cam;
+  }
+  void set_nuser_cam(int value) {
+    ptr_->nuser_cam = value;
+  }
+  int nuser_tendon() const {
+    return ptr_->nuser_tendon;
+  }
+  void set_nuser_tendon(int value) {
+    ptr_->nuser_tendon = value;
+  }
+  int nuser_actuator() const {
+    return ptr_->nuser_actuator;
+  }
+  void set_nuser_actuator(int value) {
+    ptr_->nuser_actuator = value;
+  }
+  int nuser_sensor() const {
+    return ptr_->nuser_sensor;
+  }
+  void set_nuser_sensor(int value) {
+    ptr_->nuser_sensor = value;
+  }
+  int nkey() const {
+    return ptr_->nkey;
+  }
+  void set_nkey(int value) {
+    ptr_->nkey = value;
+  }
+  int njmax() const {
+    return ptr_->njmax;
+  }
+  void set_njmax(int value) {
+    ptr_->njmax = value;
+  }
+  int nconmax() const {
+    return ptr_->nconmax;
+  }
+  void set_nconmax(int value) {
+    ptr_->nconmax = value;
+  }
+  mjtSize nstack() const {
+    return ptr_->nstack;
+  }
+  void set_nstack(mjtSize value) {
+    ptr_->nstack = value;
+  }
+  mjString comment() const {
+    return (ptr_ && ptr_->comment) ? *(ptr_->comment) : "";
+  }
+  void set_comment(const mjString& value) {
+    if (ptr_ && ptr_->comment) {
+      *(ptr_->comment) = value;
+    }
+  }
+  mjString modelfiledir() const {
+    return (ptr_ && ptr_->modelfiledir) ? *(ptr_->modelfiledir) : "";
+  }
+  void set_modelfiledir(const mjString& value) {
+    if (ptr_ && ptr_->modelfiledir) {
+      *(ptr_->modelfiledir) = value;
+    }
+  }
+  mjtByte hasImplicitPluginElem() const {
+    return ptr_->hasImplicitPluginElem;
+  }
+  void set_hasImplicitPluginElem(mjtByte value) {
+    ptr_->hasImplicitPluginElem = value;
+  }
+
+ private:
+  mjSpec* ptr_;
+  bool owned_ = false;
+
+ public:
+  MjsElement element;
+  MjsCompiler compiler;
+  MjOption option;
+  MjVisual visual;
+  MjStatistic stat;
+};
+
+struct MjsActuator {
+  explicit MjsActuator(mjsActuator *ptr);
+  mjsActuator* get() const;
+  void set(mjsActuator* ptr);
+  mjtGain gaintype() const {
+    return ptr_->gaintype;
+  }
+  void set_gaintype(mjtGain value) {
+    ptr_->gaintype = value;
+  }
+  emscripten::val gainprm() const {
+    return emscripten::val(emscripten::typed_memory_view(10, ptr_->gainprm));
+  }
+  mjtBias biastype() const {
+    return ptr_->biastype;
+  }
+  void set_biastype(mjtBias value) {
+    ptr_->biastype = value;
+  }
+  emscripten::val biasprm() const {
+    return emscripten::val(emscripten::typed_memory_view(10, ptr_->biasprm));
+  }
+  mjtDyn dyntype() const {
+    return ptr_->dyntype;
+  }
+  void set_dyntype(mjtDyn value) {
+    ptr_->dyntype = value;
+  }
+  emscripten::val dynprm() const {
+    return emscripten::val(emscripten::typed_memory_view(10, ptr_->dynprm));
+  }
+  int actdim() const {
+    return ptr_->actdim;
+  }
+  void set_actdim(int value) {
+    ptr_->actdim = value;
+  }
+  mjtByte actearly() const {
+    return ptr_->actearly;
+  }
+  void set_actearly(mjtByte value) {
+    ptr_->actearly = value;
+  }
+  mjtTrn trntype() const {
+    return ptr_->trntype;
+  }
+  void set_trntype(mjtTrn value) {
+    ptr_->trntype = value;
+  }
+  emscripten::val gear() const {
+    return emscripten::val(emscripten::typed_memory_view(6, ptr_->gear));
+  }
+  mjString target() const {
+    return (ptr_ && ptr_->target) ? *(ptr_->target) : "";
+  }
+  void set_target(const mjString& value) {
+    if (ptr_ && ptr_->target) {
+      *(ptr_->target) = value;
+    }
+  }
+  mjString refsite() const {
+    return (ptr_ && ptr_->refsite) ? *(ptr_->refsite) : "";
+  }
+  void set_refsite(const mjString& value) {
+    if (ptr_ && ptr_->refsite) {
+      *(ptr_->refsite) = value;
+    }
+  }
+  mjString slidersite() const {
+    return (ptr_ && ptr_->slidersite) ? *(ptr_->slidersite) : "";
+  }
+  void set_slidersite(const mjString& value) {
+    if (ptr_ && ptr_->slidersite) {
+      *(ptr_->slidersite) = value;
+    }
+  }
+  double cranklength() const {
+    return ptr_->cranklength;
+  }
+  void set_cranklength(double value) {
+    ptr_->cranklength = value;
+  }
+  emscripten::val lengthrange() const {
+    return emscripten::val(emscripten::typed_memory_view(2, ptr_->lengthrange));
+  }
+  double inheritrange() const {
+    return ptr_->inheritrange;
+  }
+  void set_inheritrange(double value) {
+    ptr_->inheritrange = value;
+  }
+  int ctrllimited() const {
+    return ptr_->ctrllimited;
+  }
+  void set_ctrllimited(int value) {
+    ptr_->ctrllimited = value;
+  }
+  emscripten::val ctrlrange() const {
+    return emscripten::val(emscripten::typed_memory_view(2, ptr_->ctrlrange));
+  }
+  int forcelimited() const {
+    return ptr_->forcelimited;
+  }
+  void set_forcelimited(int value) {
+    ptr_->forcelimited = value;
+  }
+  emscripten::val forcerange() const {
+    return emscripten::val(emscripten::typed_memory_view(2, ptr_->forcerange));
+  }
+  int actlimited() const {
+    return ptr_->actlimited;
+  }
+  void set_actlimited(int value) {
+    ptr_->actlimited = value;
+  }
+  emscripten::val actrange() const {
+    return emscripten::val(emscripten::typed_memory_view(2, ptr_->actrange));
+  }
+  int group() const {
+    return ptr_->group;
+  }
+  void set_group(int value) {
+    ptr_->group = value;
+  }
+  mjDoubleVec &userdata() const {
+    return *(ptr_->userdata);
+  }
+  mjString info() const {
+    return (ptr_ && ptr_->info) ? *(ptr_->info) : "";
+  }
+  void set_info(const mjString& value) {
+    if (ptr_ && ptr_->info) {
+      *(ptr_->info) = value;
+    }
+  }
+
+ private:
+  mjsActuator* ptr_;
+
+ public:
+  MjsElement element;
+  MjsPlugin plugin;
+};
+
+struct MjsBody {
+  explicit MjsBody(mjsBody *ptr);
+  mjsBody* get() const;
+  void set(mjsBody* ptr);
+  mjString childclass() const {
+    return (ptr_ && ptr_->childclass) ? *(ptr_->childclass) : "";
+  }
+  void set_childclass(const mjString& value) {
+    if (ptr_ && ptr_->childclass) {
+      *(ptr_->childclass) = value;
+    }
+  }
+  emscripten::val pos() const {
+    return emscripten::val(emscripten::typed_memory_view(3, ptr_->pos));
+  }
+  emscripten::val quat() const {
+    return emscripten::val(emscripten::typed_memory_view(4, ptr_->quat));
+  }
+  double mass() const {
+    return ptr_->mass;
+  }
+  void set_mass(double value) {
+    ptr_->mass = value;
+  }
+  emscripten::val ipos() const {
+    return emscripten::val(emscripten::typed_memory_view(3, ptr_->ipos));
+  }
+  emscripten::val iquat() const {
+    return emscripten::val(emscripten::typed_memory_view(4, ptr_->iquat));
+  }
+  emscripten::val inertia() const {
+    return emscripten::val(emscripten::typed_memory_view(3, ptr_->inertia));
+  }
+  emscripten::val fullinertia() const {
+    return emscripten::val(emscripten::typed_memory_view(6, ptr_->fullinertia));
+  }
+  mjtByte mocap() const {
+    return ptr_->mocap;
+  }
+  void set_mocap(mjtByte value) {
+    ptr_->mocap = value;
+  }
+  double gravcomp() const {
+    return ptr_->gravcomp;
+  }
+  void set_gravcomp(double value) {
+    ptr_->gravcomp = value;
+  }
+  mjtSleepPolicy sleep() const {
+    return ptr_->sleep;
+  }
+  void set_sleep(mjtSleepPolicy value) {
+    ptr_->sleep = value;
+  }
+  mjDoubleVec &userdata() const {
+    return *(ptr_->userdata);
+  }
+  mjtByte explicitinertial() const {
+    return ptr_->explicitinertial;
+  }
+  void set_explicitinertial(mjtByte value) {
+    ptr_->explicitinertial = value;
+  }
+  mjString info() const {
+    return (ptr_ && ptr_->info) ? *(ptr_->info) : "";
+  }
+  void set_info(const mjString& value) {
+    if (ptr_ && ptr_->info) {
+      *(ptr_->info) = value;
+    }
+  }
+
+ private:
+  mjsBody* ptr_;
+
+ public:
+  MjsElement element;
+  MjsOrientation alt;
+  MjsOrientation ialt;
+  MjsPlugin plugin;
+};
+
+struct MjsGeom {
+  explicit MjsGeom(mjsGeom *ptr);
+  mjsGeom* get() const;
+  void set(mjsGeom* ptr);
+  mjtGeom type() const {
+    return ptr_->type;
+  }
+  void set_type(mjtGeom value) {
+    ptr_->type = value;
+  }
+  emscripten::val pos() const {
+    return emscripten::val(emscripten::typed_memory_view(3, ptr_->pos));
+  }
+  emscripten::val quat() const {
+    return emscripten::val(emscripten::typed_memory_view(4, ptr_->quat));
+  }
+  emscripten::val fromto() const {
+    return emscripten::val(emscripten::typed_memory_view(6, ptr_->fromto));
+  }
+  emscripten::val size() const {
+    return emscripten::val(emscripten::typed_memory_view(3, ptr_->size));
+  }
+  int contype() const {
+    return ptr_->contype;
+  }
+  void set_contype(int value) {
+    ptr_->contype = value;
+  }
+  int conaffinity() const {
+    return ptr_->conaffinity;
+  }
+  void set_conaffinity(int value) {
+    ptr_->conaffinity = value;
+  }
+  int condim() const {
+    return ptr_->condim;
+  }
+  void set_condim(int value) {
+    ptr_->condim = value;
+  }
+  int priority() const {
+    return ptr_->priority;
+  }
+  void set_priority(int value) {
+    ptr_->priority = value;
+  }
+  emscripten::val friction() const {
+    return emscripten::val(emscripten::typed_memory_view(3, ptr_->friction));
+  }
+  double solmix() const {
+    return ptr_->solmix;
+  }
+  void set_solmix(double value) {
+    ptr_->solmix = value;
+  }
+  emscripten::val solref() const {
+    return emscripten::val(emscripten::typed_memory_view(2, ptr_->solref));
+  }
+  emscripten::val solimp() const {
+    return emscripten::val(emscripten::typed_memory_view(5, ptr_->solimp));
+  }
+  double margin() const {
+    return ptr_->margin;
+  }
+  void set_margin(double value) {
+    ptr_->margin = value;
+  }
+  double gap() const {
+    return ptr_->gap;
+  }
+  void set_gap(double value) {
+    ptr_->gap = value;
+  }
+  double mass() const {
+    return ptr_->mass;
+  }
+  void set_mass(double value) {
+    ptr_->mass = value;
+  }
+  double density() const {
+    return ptr_->density;
+  }
+  void set_density(double value) {
+    ptr_->density = value;
+  }
+  mjtGeomInertia typeinertia() const {
+    return ptr_->typeinertia;
+  }
+  void set_typeinertia(mjtGeomInertia value) {
+    ptr_->typeinertia = value;
+  }
+  mjtNum fluid_ellipsoid() const {
+    return ptr_->fluid_ellipsoid;
+  }
+  void set_fluid_ellipsoid(mjtNum value) {
+    ptr_->fluid_ellipsoid = value;
+  }
+  emscripten::val fluid_coefs() const {
+    return emscripten::val(emscripten::typed_memory_view(5, ptr_->fluid_coefs));
+  }
+  mjString material() const {
+    return (ptr_ && ptr_->material) ? *(ptr_->material) : "";
+  }
+  void set_material(const mjString& value) {
+    if (ptr_ && ptr_->material) {
+      *(ptr_->material) = value;
+    }
+  }
+  emscripten::val rgba() const {
+    return emscripten::val(emscripten::typed_memory_view(4, ptr_->rgba));
+  }
+  int group() const {
+    return ptr_->group;
+  }
+  void set_group(int value) {
+    ptr_->group = value;
+  }
+  mjString hfieldname() const {
+    return (ptr_ && ptr_->hfieldname) ? *(ptr_->hfieldname) : "";
+  }
+  void set_hfieldname(const mjString& value) {
+    if (ptr_ && ptr_->hfieldname) {
+      *(ptr_->hfieldname) = value;
+    }
+  }
+  mjString meshname() const {
+    return (ptr_ && ptr_->meshname) ? *(ptr_->meshname) : "";
+  }
+  void set_meshname(const mjString& value) {
+    if (ptr_ && ptr_->meshname) {
+      *(ptr_->meshname) = value;
+    }
+  }
+  double fitscale() const {
+    return ptr_->fitscale;
+  }
+  void set_fitscale(double value) {
+    ptr_->fitscale = value;
+  }
+  mjDoubleVec &userdata() const {
+    return *(ptr_->userdata);
+  }
+  mjString info() const {
+    return (ptr_ && ptr_->info) ? *(ptr_->info) : "";
+  }
+  void set_info(const mjString& value) {
+    if (ptr_ && ptr_->info) {
+      *(ptr_->info) = value;
+    }
+  }
+
+ private:
+  mjsGeom* ptr_;
+
+ public:
+  MjsElement element;
+  MjsOrientation alt;
+  MjsPlugin plugin;
+};
+
+struct MjsMesh {
+  explicit MjsMesh(mjsMesh *ptr);
+  mjsMesh* get() const;
+  void set(mjsMesh* ptr);
+  mjString content_type() const {
+    return (ptr_ && ptr_->content_type) ? *(ptr_->content_type) : "";
+  }
+  void set_content_type(const mjString& value) {
+    if (ptr_ && ptr_->content_type) {
+      *(ptr_->content_type) = value;
+    }
+  }
+  mjString file() const {
+    return (ptr_ && ptr_->file) ? *(ptr_->file) : "";
+  }
+  void set_file(const mjString& value) {
+    if (ptr_ && ptr_->file) {
+      *(ptr_->file) = value;
+    }
+  }
+  emscripten::val refpos() const {
+    return emscripten::val(emscripten::typed_memory_view(3, ptr_->refpos));
+  }
+  emscripten::val refquat() const {
+    return emscripten::val(emscripten::typed_memory_view(4, ptr_->refquat));
+  }
+  emscripten::val scale() const {
+    return emscripten::val(emscripten::typed_memory_view(3, ptr_->scale));
+  }
+  mjtMeshInertia inertia() const {
+    return ptr_->inertia;
+  }
+  void set_inertia(mjtMeshInertia value) {
+    ptr_->inertia = value;
+  }
+  mjtByte smoothnormal() const {
+    return ptr_->smoothnormal;
+  }
+  void set_smoothnormal(mjtByte value) {
+    ptr_->smoothnormal = value;
+  }
+  mjtByte needsdf() const {
+    return ptr_->needsdf;
+  }
+  void set_needsdf(mjtByte value) {
+    ptr_->needsdf = value;
+  }
+  int maxhullvert() const {
+    return ptr_->maxhullvert;
+  }
+  void set_maxhullvert(int value) {
+    ptr_->maxhullvert = value;
+  }
+  mjFloatVec &uservert() const {
+    return *(ptr_->uservert);
+  }
+  mjFloatVec &usernormal() const {
+    return *(ptr_->usernormal);
+  }
+  mjFloatVec &usertexcoord() const {
+    return *(ptr_->usertexcoord);
+  }
+  mjIntVec &userface() const {
+    return *(ptr_->userface);
+  }
+  mjIntVec &userfacenormal() const {
+    return *(ptr_->userfacenormal);
+  }
+  mjIntVec &userfacetexcoord() const {
+    return *(ptr_->userfacetexcoord);
+  }
+  mjString material() const {
+    return (ptr_ && ptr_->material) ? *(ptr_->material) : "";
+  }
+  void set_material(const mjString& value) {
+    if (ptr_ && ptr_->material) {
+      *(ptr_->material) = value;
+    }
+  }
+  mjString info() const {
+    return (ptr_ && ptr_->info) ? *(ptr_->info) : "";
+  }
+  void set_info(const mjString& value) {
+    if (ptr_ && ptr_->info) {
+      *(ptr_->info) = value;
+    }
+  }
+
+ private:
+  mjsMesh* ptr_;
+
+ public:
+  MjsElement element;
+  MjsPlugin plugin;
+};
+
+struct MjsSensor {
+  explicit MjsSensor(mjsSensor *ptr);
+  mjsSensor* get() const;
+  void set(mjsSensor* ptr);
+  mjtSensor type() const {
+    return ptr_->type;
+  }
+  void set_type(mjtSensor value) {
+    ptr_->type = value;
+  }
+  mjtObj objtype() const {
+    return ptr_->objtype;
+  }
+  void set_objtype(mjtObj value) {
+    ptr_->objtype = value;
+  }
+  mjString objname() const {
+    return (ptr_ && ptr_->objname) ? *(ptr_->objname) : "";
+  }
+  void set_objname(const mjString& value) {
+    if (ptr_ && ptr_->objname) {
+      *(ptr_->objname) = value;
+    }
+  }
+  mjtObj reftype() const {
+    return ptr_->reftype;
+  }
+  void set_reftype(mjtObj value) {
+    ptr_->reftype = value;
+  }
+  mjString refname() const {
+    return (ptr_ && ptr_->refname) ? *(ptr_->refname) : "";
+  }
+  void set_refname(const mjString& value) {
+    if (ptr_ && ptr_->refname) {
+      *(ptr_->refname) = value;
+    }
+  }
+  emscripten::val intprm() const {
+    return emscripten::val(emscripten::typed_memory_view(3, ptr_->intprm));
+  }
+  mjtDataType datatype() const {
+    return ptr_->datatype;
+  }
+  void set_datatype(mjtDataType value) {
+    ptr_->datatype = value;
+  }
+  mjtStage needstage() const {
+    return ptr_->needstage;
+  }
+  void set_needstage(mjtStage value) {
+    ptr_->needstage = value;
+  }
+  int dim() const {
+    return ptr_->dim;
+  }
+  void set_dim(int value) {
+    ptr_->dim = value;
+  }
+  double cutoff() const {
+    return ptr_->cutoff;
+  }
+  void set_cutoff(double value) {
+    ptr_->cutoff = value;
+  }
+  double noise() const {
+    return ptr_->noise;
+  }
+  void set_noise(double value) {
+    ptr_->noise = value;
+  }
+  mjDoubleVec &userdata() const {
+    return *(ptr_->userdata);
+  }
+  mjString info() const {
+    return (ptr_ && ptr_->info) ? *(ptr_->info) : "";
+  }
+  void set_info(const mjString& value) {
+    if (ptr_ && ptr_->info) {
+      *(ptr_->info) = value;
+    }
+  }
+
+ private:
+  mjsSensor* ptr_;
+
+ public:
+  MjsElement element;
+  MjsPlugin plugin;
 };
 
 struct MjData {
+  ~MjData();
   MjData(MjModel *m);
   explicit MjData(const MjModel &, const MjData &);
-  ~MjData();
   std::vector<MjContact> contact() const;
   std::unique_ptr<MjData> copy();
   mjData* get() const;
@@ -5802,7 +6590,6 @@ struct MjData {
   void set_maxuse_efc(int value) {
     ptr_->maxuse_efc = value;
   }
-  // solver field is handled manually in template file struct declaration
   emscripten::val solver_niter() const {
     return emscripten::val(emscripten::typed_memory_view(20, ptr_->solver_niter));
   }
@@ -5812,8 +6599,6 @@ struct MjData {
   emscripten::val solver_fwdinv() const {
     return emscripten::val(emscripten::typed_memory_view(2, ptr_->solver_fwdinv));
   }
-  // warning field is handled manually in template file struct declaration
-  // timer field is handled manually in template file struct declaration
   int ncon() const {
     return ptr_->ncon;
   }
@@ -6402,1045 +7187,36 @@ struct MjData {
   mjData* ptr_;
 
  public:
-  mjModel *model;
   std::vector<MjSolverStat> solver;
-  std::vector<MjTimerStat> timer;
   std::vector<MjWarningStat> warning;
-};
-
-struct MjvScene {
-  MjvScene();
-  MjvScene(MjModel *m, int maxgeom);
-  // MjvScene(const MjvScene &);
-  ~MjvScene();
-  std::unique_ptr<MjvScene> copy();
-  int GetSumFlexFaces() const;
-
-  mjvScene* get() const;
-  void set(mjvScene* ptr);
-
-  std::vector<MjvGeom> geoms() const;
-
-  emscripten::val geomorder() const {
-    return emscripten::val(
-        emscripten::typed_memory_view(ptr_->ngeom, ptr_->geomorder));
-  }
-  emscripten::val flexedgeadr() const {
-    return emscripten::val(
-        emscripten::typed_memory_view(ptr_->nflex, ptr_->flexedgeadr));
-  }
-  emscripten::val flexedgenum() const {
-    return emscripten::val(
-        emscripten::typed_memory_view(ptr_->nflex, ptr_->flexedgenum));
-  }
-  emscripten::val flexvertadr() const {
-    return emscripten::val(
-        emscripten::typed_memory_view(ptr_->nflex, ptr_->flexvertadr));
-  }
-  emscripten::val flexvertnum() const {
-    return emscripten::val(
-        emscripten::typed_memory_view(ptr_->nflex, ptr_->flexvertnum));
-  }
-  emscripten::val flexfaceadr() const {
-    return emscripten::val(
-        emscripten::typed_memory_view(ptr_->nflex, ptr_->flexfaceadr));
-  }
-  emscripten::val flexfacenum() const {
-    return emscripten::val(
-        emscripten::typed_memory_view(ptr_->nflex, ptr_->flexfacenum));
-  }
-  emscripten::val flexfaceused() const {
-    return emscripten::val(
-        emscripten::typed_memory_view(ptr_->nflex, ptr_->flexfaceused));
-  }
-  emscripten::val flexedge() const {
-    return emscripten::val(
-        emscripten::typed_memory_view(2 * model->nflexedge, ptr_->flexedge));
-  }
-  emscripten::val flexvert() const {
-    return emscripten::val(
-        emscripten::typed_memory_view(3 * model->nflexvert, ptr_->flexvert));
-  }
-  emscripten::val skinfacenum() const {
-    return emscripten::val(
-        emscripten::typed_memory_view(ptr_->nskin, ptr_->skinfacenum));
-  }
-  emscripten::val skinvertadr() const {
-    return emscripten::val(
-        emscripten::typed_memory_view(ptr_->nskin, ptr_->skinvertadr));
-  }
-  emscripten::val skinvertnum() const {
-    return emscripten::val(
-        emscripten::typed_memory_view(ptr_->nskin, ptr_->skinvertnum));
-  }
-  emscripten::val skinvert() const {
-    return emscripten::val(
-        emscripten::typed_memory_view(3 * model->nskinvert, ptr_->skinvert));
-  }
-  emscripten::val skinnormal() const {
-    return emscripten::val(
-        emscripten::typed_memory_view(3 * model->nskinvert, ptr_->skinnormal));
-  }
-  emscripten::val flexface() const {
-    return emscripten::val(emscripten::typed_memory_view(
-        9 * MjvScene::GetSumFlexFaces(), ptr_->flexface));
-  }
-  emscripten::val flexnormal() const {
-    return emscripten::val(emscripten::typed_memory_view(
-        9 * MjvScene::GetSumFlexFaces(), ptr_->flexnormal));
-  }
-  emscripten::val flextexcoord() const {
-    return emscripten::val(emscripten::typed_memory_view(
-        6 * MjvScene::GetSumFlexFaces(), ptr_->flextexcoord));
-  }
-  int maxgeom() const {
-    return ptr_->maxgeom;
-  }
-  void set_maxgeom(int value) {
-    ptr_->maxgeom = value;
-  }
-  int ngeom() const {
-    return ptr_->ngeom;
-  }
-  void set_ngeom(int value) {
-    ptr_->ngeom = value;
-  }
-  // geoms field is handled manually in template file struct declaration
-  // geomorder field is handled manually in template file struct declaration
-  int nflex() const {
-    return ptr_->nflex;
-  }
-  void set_nflex(int value) {
-    ptr_->nflex = value;
-  }
-  // flexedgeadr field is handled manually in template file struct declaration
-  // flexedgenum field is handled manually in template file struct declaration
-  // flexvertadr field is handled manually in template file struct declaration
-  // flexvertnum field is handled manually in template file struct declaration
-  // flexfaceadr field is handled manually in template file struct declaration
-  // flexfacenum field is handled manually in template file struct declaration
-  // flexfaceused field is handled manually in template file struct declaration
-  // flexedge field is handled manually in template file struct declaration
-  // flexvert field is handled manually in template file struct declaration
-  // flexface field is handled manually in template file struct declaration
-  // flexnormal field is handled manually in template file struct declaration
-  // flextexcoord field is handled manually in template file struct declaration
-  mjtByte flexvertopt() const {
-    return ptr_->flexvertopt;
-  }
-  void set_flexvertopt(mjtByte value) {
-    ptr_->flexvertopt = value;
-  }
-  mjtByte flexedgeopt() const {
-    return ptr_->flexedgeopt;
-  }
-  void set_flexedgeopt(mjtByte value) {
-    ptr_->flexedgeopt = value;
-  }
-  mjtByte flexfaceopt() const {
-    return ptr_->flexfaceopt;
-  }
-  void set_flexfaceopt(mjtByte value) {
-    ptr_->flexfaceopt = value;
-  }
-  mjtByte flexskinopt() const {
-    return ptr_->flexskinopt;
-  }
-  void set_flexskinopt(mjtByte value) {
-    ptr_->flexskinopt = value;
-  }
-  int nskin() const {
-    return ptr_->nskin;
-  }
-  void set_nskin(int value) {
-    ptr_->nskin = value;
-  }
-  // skinfacenum field is handled manually in template file struct declaration
-  // skinvertadr field is handled manually in template file struct declaration
-  // skinvertnum field is handled manually in template file struct declaration
-  // skinvert field is handled manually in template file struct declaration
-  // skinnormal field is handled manually in template file struct declaration
-  int nlight() const {
-    return ptr_->nlight;
-  }
-  void set_nlight(int value) {
-    ptr_->nlight = value;
-  }
-  // lights field is handled manually in template file struct declaration
-  // camera field is handled manually in template file struct declaration
-  mjtByte enabletransform() const {
-    return ptr_->enabletransform;
-  }
-  void set_enabletransform(mjtByte value) {
-    ptr_->enabletransform = value;
-  }
-  emscripten::val translate() const {
-    return emscripten::val(emscripten::typed_memory_view(3, ptr_->translate));
-  }
-  emscripten::val rotate() const {
-    return emscripten::val(emscripten::typed_memory_view(4, ptr_->rotate));
-  }
-  float scale() const {
-    return ptr_->scale;
-  }
-  void set_scale(float value) {
-    ptr_->scale = value;
-  }
-  int stereo() const {
-    return ptr_->stereo;
-  }
-  void set_stereo(int value) {
-    ptr_->stereo = value;
-  }
-  emscripten::val flags() const {
-    return emscripten::val(emscripten::typed_memory_view(10, ptr_->flags));
-  }
-  int framewidth() const {
-    return ptr_->framewidth;
-  }
-  void set_framewidth(int value) {
-    ptr_->framewidth = value;
-  }
-  emscripten::val framergb() const {
-    return emscripten::val(emscripten::typed_memory_view(3, ptr_->framergb));
-  }
-  int status() const {
-    return ptr_->status;
-  }
-  void set_status(int value) {
-    ptr_->status = value;
-  }
-
- private:
-  mjvScene* ptr_;
-  bool owned_ = false;
-
- public:
+  std::vector<MjTimerStat> timer;
   mjModel *model;
-  std::vector<MjvLight> lights;
-  std::vector<MjvGLCamera> camera;
 };
 
-struct MjSpec {
-  MjSpec();
-  explicit MjSpec(mjSpec *ptr);
-  MjSpec(const MjSpec &);
-  MjSpec &operator=(const MjSpec &);
-  ~MjSpec();
-  std::unique_ptr<MjSpec> copy();
-  mjSpec* get() const;
-  void set(mjSpec* ptr);
-  // element field is handled manually in template file struct declaration
-  mjString modelname() const {
-    return (ptr_ && ptr_->modelname) ? *(ptr_->modelname) : "";
-  }
-  void set_modelname(const mjString& value) {
-    if (ptr_ && ptr_->modelname) {
-      *(ptr_->modelname) = value;
-    }
-  }
-  // compiler field is handled manually in template file struct declaration
-  mjtByte strippath() const {
-    return ptr_->strippath;
-  }
-  void set_strippath(mjtByte value) {
-    ptr_->strippath = value;
-  }
-  // option field is handled manually in template file struct declaration
-  // visual field is handled manually in template file struct declaration
-  // stat field is handled manually in template file struct declaration
-  mjtSize memory() const {
-    return ptr_->memory;
-  }
-  void set_memory(mjtSize value) {
-    ptr_->memory = value;
-  }
-  int nemax() const {
-    return ptr_->nemax;
-  }
-  void set_nemax(int value) {
-    ptr_->nemax = value;
-  }
-  int nuserdata() const {
-    return ptr_->nuserdata;
-  }
-  void set_nuserdata(int value) {
-    ptr_->nuserdata = value;
-  }
-  int nuser_body() const {
-    return ptr_->nuser_body;
-  }
-  void set_nuser_body(int value) {
-    ptr_->nuser_body = value;
-  }
-  int nuser_jnt() const {
-    return ptr_->nuser_jnt;
-  }
-  void set_nuser_jnt(int value) {
-    ptr_->nuser_jnt = value;
-  }
-  int nuser_geom() const {
-    return ptr_->nuser_geom;
-  }
-  void set_nuser_geom(int value) {
-    ptr_->nuser_geom = value;
-  }
-  int nuser_site() const {
-    return ptr_->nuser_site;
-  }
-  void set_nuser_site(int value) {
-    ptr_->nuser_site = value;
-  }
-  int nuser_cam() const {
-    return ptr_->nuser_cam;
-  }
-  void set_nuser_cam(int value) {
-    ptr_->nuser_cam = value;
-  }
-  int nuser_tendon() const {
-    return ptr_->nuser_tendon;
-  }
-  void set_nuser_tendon(int value) {
-    ptr_->nuser_tendon = value;
-  }
-  int nuser_actuator() const {
-    return ptr_->nuser_actuator;
-  }
-  void set_nuser_actuator(int value) {
-    ptr_->nuser_actuator = value;
-  }
-  int nuser_sensor() const {
-    return ptr_->nuser_sensor;
-  }
-  void set_nuser_sensor(int value) {
-    ptr_->nuser_sensor = value;
-  }
-  int nkey() const {
-    return ptr_->nkey;
-  }
-  void set_nkey(int value) {
-    ptr_->nkey = value;
-  }
-  int njmax() const {
-    return ptr_->njmax;
-  }
-  void set_njmax(int value) {
-    ptr_->njmax = value;
-  }
-  int nconmax() const {
-    return ptr_->nconmax;
-  }
-  void set_nconmax(int value) {
-    ptr_->nconmax = value;
-  }
-  mjtSize nstack() const {
-    return ptr_->nstack;
-  }
-  void set_nstack(mjtSize value) {
-    ptr_->nstack = value;
-  }
-  mjString comment() const {
-    return (ptr_ && ptr_->comment) ? *(ptr_->comment) : "";
-  }
-  void set_comment(const mjString& value) {
-    if (ptr_ && ptr_->comment) {
-      *(ptr_->comment) = value;
-    }
-  }
-  mjString modelfiledir() const {
-    return (ptr_ && ptr_->modelfiledir) ? *(ptr_->modelfiledir) : "";
-  }
-  void set_modelfiledir(const mjString& value) {
-    if (ptr_ && ptr_->modelfiledir) {
-      *(ptr_->modelfiledir) = value;
-    }
-  }
-  mjtByte hasImplicitPluginElem() const {
-    return ptr_->hasImplicitPluginElem;
-  }
-  void set_hasImplicitPluginElem(mjtByte value) {
-    ptr_->hasImplicitPluginElem = value;
-  }
+struct MjsDefault {
+  explicit MjsDefault(mjsDefault *ptr);
+  mjsDefault* get() const;
+  void set(mjsDefault* ptr);
 
  private:
-  mjSpec* ptr_;
-  bool owned_ = false;
+  mjsDefault* ptr_;
 
  public:
-  MjOption option;
-  MjVisual visual;
-  MjStatistic stat;
-  MjsCompiler compiler;
   MjsElement element;
+  MjsJoint joint;
+  MjsGeom geom;
+  MjsSite site;
+  MjsCamera camera;
+  MjsLight light;
+  MjsFlex flex;
+  MjsMesh mesh;
+  MjsMaterial material;
+  MjsPair pair;
+  MjsEquality equality;
+  MjsTendon tendon;
+  MjsActuator actuator;
 };
 
-val get_mjDISABLESTRING() { return MakeValArray(mjDISABLESTRING); }
-val get_mjENABLESTRING() { return MakeValArray(mjENABLESTRING); }
-val get_mjTIMERSTRING() { return MakeValArray(mjTIMERSTRING); }
-val get_mjLABELSTRING() { return MakeValArray(mjLABELSTRING); }
-val get_mjFRAMESTRING() { return MakeValArray(mjFRAMESTRING); }
-val get_mjVISSTRING() { return MakeValArray3(mjVISSTRING); }
-val get_mjRNDSTRING() { return MakeValArray3(mjRNDSTRING); }
-
-EMSCRIPTEN_BINDINGS(mujoco_constants) {
-  // from mjmodel.h
-  constant("mjPI", mjPI);
-  constant("mjMAXVAL", mjMAXVAL);
-  constant("mjMINMU", mjMINMU);
-  constant("mjMINIMP", mjMINIMP);
-  constant("mjMAXIMP", mjMAXIMP);
-  constant("mjMAXCONPAIR", mjMAXCONPAIR);
-  constant("mjNEQDATA", mjNEQDATA);
-  constant("mjNDYN", mjNDYN);
-  constant("mjNGAIN", mjNGAIN);
-  constant("mjNBIAS", mjNBIAS);
-  constant("mjNREF", mjNREF);
-  constant("mjNIMP", mjNIMP);
-  constant("mjNSOLVER", mjNSOLVER);
-
-  // from mjvisualize.h
-  constant("mjNGROUP", mjNGROUP);
-  constant("mjMAXLIGHT", mjMAXLIGHT);
-  constant("mjMAXOVERLAY", mjMAXOVERLAY);
-  constant("mjMAXLINE", mjMAXLINE);
-  constant("mjMAXLINEPNT", mjMAXLINEPNT);
-  constant("mjMAXPLANEGRID", mjMAXPLANEGRID);
-
-  // from mujoco.h
-  constant("mjVERSION_HEADER", mjVERSION_HEADER);
-
-  // from mjtnum.h
-  constant("mjMINVAL", mjMINVAL);
-
-  // emscripten::constant() is designed for simple, compile-time literal values
-  // (like numbers or a single string literal), complex values need to be
-  // bound as functions.
-  emscripten::function("get_mjDISABLESTRING", &get_mjDISABLESTRING);
-  emscripten::function("get_mjENABLESTRING", &get_mjENABLESTRING);
-  emscripten::function("get_mjTIMERSTRING", &get_mjTIMERSTRING);
-  emscripten::function("get_mjLABELSTRING", &get_mjLABELSTRING);
-  emscripten::function("get_mjFRAMESTRING", &get_mjFRAMESTRING);
-  emscripten::function("get_mjVISSTRING", &get_mjVISSTRING);
-  emscripten::function("get_mjRNDSTRING", &get_mjRNDSTRING);
-}
-
-EMSCRIPTEN_BINDINGS(mujoco_enums) {
-  enum_<mjtDisableBit>("mjtDisableBit")
-    .value("mjDSBL_CONSTRAINT", mjDSBL_CONSTRAINT)
-    .value("mjDSBL_EQUALITY", mjDSBL_EQUALITY)
-    .value("mjDSBL_FRICTIONLOSS", mjDSBL_FRICTIONLOSS)
-    .value("mjDSBL_LIMIT", mjDSBL_LIMIT)
-    .value("mjDSBL_CONTACT", mjDSBL_CONTACT)
-    .value("mjDSBL_SPRING", mjDSBL_SPRING)
-    .value("mjDSBL_DAMPER", mjDSBL_DAMPER)
-    .value("mjDSBL_GRAVITY", mjDSBL_GRAVITY)
-    .value("mjDSBL_CLAMPCTRL", mjDSBL_CLAMPCTRL)
-    .value("mjDSBL_WARMSTART", mjDSBL_WARMSTART)
-    .value("mjDSBL_FILTERPARENT", mjDSBL_FILTERPARENT)
-    .value("mjDSBL_ACTUATION", mjDSBL_ACTUATION)
-    .value("mjDSBL_REFSAFE", mjDSBL_REFSAFE)
-    .value("mjDSBL_SENSOR", mjDSBL_SENSOR)
-    .value("mjDSBL_MIDPHASE", mjDSBL_MIDPHASE)
-    .value("mjDSBL_EULERDAMP", mjDSBL_EULERDAMP)
-    .value("mjDSBL_AUTORESET", mjDSBL_AUTORESET)
-    .value("mjDSBL_NATIVECCD", mjDSBL_NATIVECCD)
-    .value("mjDSBL_ISLAND", mjDSBL_ISLAND)
-    .value("mjNDISABLE", mjNDISABLE);
-
-  enum_<mjtEnableBit>("mjtEnableBit")
-    .value("mjENBL_OVERRIDE", mjENBL_OVERRIDE)
-    .value("mjENBL_ENERGY", mjENBL_ENERGY)
-    .value("mjENBL_FWDINV", mjENBL_FWDINV)
-    .value("mjENBL_INVDISCRETE", mjENBL_INVDISCRETE)
-    .value("mjENBL_MULTICCD", mjENBL_MULTICCD)
-    .value("mjENBL_SLEEP", mjENBL_SLEEP)
-    .value("mjNENABLE", mjNENABLE);
-
-  enum_<mjtJoint>("mjtJoint")
-    .value("mjJNT_FREE", mjJNT_FREE)
-    .value("mjJNT_BALL", mjJNT_BALL)
-    .value("mjJNT_SLIDE", mjJNT_SLIDE)
-    .value("mjJNT_HINGE", mjJNT_HINGE);
-
-  enum_<mjtGeom>("mjtGeom")
-    .value("mjGEOM_PLANE", mjGEOM_PLANE)
-    .value("mjGEOM_HFIELD", mjGEOM_HFIELD)
-    .value("mjGEOM_SPHERE", mjGEOM_SPHERE)
-    .value("mjGEOM_CAPSULE", mjGEOM_CAPSULE)
-    .value("mjGEOM_ELLIPSOID", mjGEOM_ELLIPSOID)
-    .value("mjGEOM_CYLINDER", mjGEOM_CYLINDER)
-    .value("mjGEOM_BOX", mjGEOM_BOX)
-    .value("mjGEOM_MESH", mjGEOM_MESH)
-    .value("mjGEOM_SDF", mjGEOM_SDF)
-    .value("mjNGEOMTYPES", mjNGEOMTYPES)
-    .value("mjGEOM_ARROW", mjGEOM_ARROW)
-    .value("mjGEOM_ARROW1", mjGEOM_ARROW1)
-    .value("mjGEOM_ARROW2", mjGEOM_ARROW2)
-    .value("mjGEOM_LINE", mjGEOM_LINE)
-    .value("mjGEOM_LINEBOX", mjGEOM_LINEBOX)
-    .value("mjGEOM_FLEX", mjGEOM_FLEX)
-    .value("mjGEOM_SKIN", mjGEOM_SKIN)
-    .value("mjGEOM_LABEL", mjGEOM_LABEL)
-    .value("mjGEOM_TRIANGLE", mjGEOM_TRIANGLE)
-    .value("mjGEOM_NONE", mjGEOM_NONE);
-
-  enum_<mjtCamLight>("mjtCamLight")
-    .value("mjCAMLIGHT_FIXED", mjCAMLIGHT_FIXED)
-    .value("mjCAMLIGHT_TRACK", mjCAMLIGHT_TRACK)
-    .value("mjCAMLIGHT_TRACKCOM", mjCAMLIGHT_TRACKCOM)
-    .value("mjCAMLIGHT_TARGETBODY", mjCAMLIGHT_TARGETBODY)
-    .value("mjCAMLIGHT_TARGETBODYCOM", mjCAMLIGHT_TARGETBODYCOM);
-
-  enum_<mjtLightType>("mjtLightType")
-    .value("mjLIGHT_SPOT", mjLIGHT_SPOT)
-    .value("mjLIGHT_DIRECTIONAL", mjLIGHT_DIRECTIONAL)
-    .value("mjLIGHT_POINT", mjLIGHT_POINT)
-    .value("mjLIGHT_IMAGE", mjLIGHT_IMAGE);
-
-  enum_<mjtTexture>("mjtTexture")
-    .value("mjTEXTURE_2D", mjTEXTURE_2D)
-    .value("mjTEXTURE_CUBE", mjTEXTURE_CUBE)
-    .value("mjTEXTURE_SKYBOX", mjTEXTURE_SKYBOX);
-
-  enum_<mjtTextureRole>("mjtTextureRole")
-    .value("mjTEXROLE_USER", mjTEXROLE_USER)
-    .value("mjTEXROLE_RGB", mjTEXROLE_RGB)
-    .value("mjTEXROLE_OCCLUSION", mjTEXROLE_OCCLUSION)
-    .value("mjTEXROLE_ROUGHNESS", mjTEXROLE_ROUGHNESS)
-    .value("mjTEXROLE_METALLIC", mjTEXROLE_METALLIC)
-    .value("mjTEXROLE_NORMAL", mjTEXROLE_NORMAL)
-    .value("mjTEXROLE_OPACITY", mjTEXROLE_OPACITY)
-    .value("mjTEXROLE_EMISSIVE", mjTEXROLE_EMISSIVE)
-    .value("mjTEXROLE_RGBA", mjTEXROLE_RGBA)
-    .value("mjTEXROLE_ORM", mjTEXROLE_ORM)
-    .value("mjNTEXROLE", mjNTEXROLE);
-
-  enum_<mjtColorSpace>("mjtColorSpace")
-    .value("mjCOLORSPACE_AUTO", mjCOLORSPACE_AUTO)
-    .value("mjCOLORSPACE_LINEAR", mjCOLORSPACE_LINEAR)
-    .value("mjCOLORSPACE_SRGB", mjCOLORSPACE_SRGB);
-
-  enum_<mjtIntegrator>("mjtIntegrator")
-    .value("mjINT_EULER", mjINT_EULER)
-    .value("mjINT_RK4", mjINT_RK4)
-    .value("mjINT_IMPLICIT", mjINT_IMPLICIT)
-    .value("mjINT_IMPLICITFAST", mjINT_IMPLICITFAST);
-
-  enum_<mjtCone>("mjtCone")
-    .value("mjCONE_PYRAMIDAL", mjCONE_PYRAMIDAL)
-    .value("mjCONE_ELLIPTIC", mjCONE_ELLIPTIC);
-
-  enum_<mjtJacobian>("mjtJacobian")
-    .value("mjJAC_DENSE", mjJAC_DENSE)
-    .value("mjJAC_SPARSE", mjJAC_SPARSE)
-    .value("mjJAC_AUTO", mjJAC_AUTO);
-
-  enum_<mjtSolver>("mjtSolver")
-    .value("mjSOL_PGS", mjSOL_PGS)
-    .value("mjSOL_CG", mjSOL_CG)
-    .value("mjSOL_NEWTON", mjSOL_NEWTON);
-
-  enum_<mjtEq>("mjtEq")
-    .value("mjEQ_CONNECT", mjEQ_CONNECT)
-    .value("mjEQ_WELD", mjEQ_WELD)
-    .value("mjEQ_JOINT", mjEQ_JOINT)
-    .value("mjEQ_TENDON", mjEQ_TENDON)
-    .value("mjEQ_FLEX", mjEQ_FLEX)
-    .value("mjEQ_DISTANCE", mjEQ_DISTANCE);
-
-  enum_<mjtWrap>("mjtWrap")
-    .value("mjWRAP_NONE", mjWRAP_NONE)
-    .value("mjWRAP_JOINT", mjWRAP_JOINT)
-    .value("mjWRAP_PULLEY", mjWRAP_PULLEY)
-    .value("mjWRAP_SITE", mjWRAP_SITE)
-    .value("mjWRAP_SPHERE", mjWRAP_SPHERE)
-    .value("mjWRAP_CYLINDER", mjWRAP_CYLINDER);
-
-  enum_<mjtTrn>("mjtTrn")
-    .value("mjTRN_JOINT", mjTRN_JOINT)
-    .value("mjTRN_JOINTINPARENT", mjTRN_JOINTINPARENT)
-    .value("mjTRN_SLIDERCRANK", mjTRN_SLIDERCRANK)
-    .value("mjTRN_TENDON", mjTRN_TENDON)
-    .value("mjTRN_SITE", mjTRN_SITE)
-    .value("mjTRN_BODY", mjTRN_BODY)
-    .value("mjTRN_UNDEFINED", mjTRN_UNDEFINED);
-
-  enum_<mjtDyn>("mjtDyn")
-    .value("mjDYN_NONE", mjDYN_NONE)
-    .value("mjDYN_INTEGRATOR", mjDYN_INTEGRATOR)
-    .value("mjDYN_FILTER", mjDYN_FILTER)
-    .value("mjDYN_FILTEREXACT", mjDYN_FILTEREXACT)
-    .value("mjDYN_MUSCLE", mjDYN_MUSCLE)
-    .value("mjDYN_USER", mjDYN_USER);
-
-  enum_<mjtGain>("mjtGain")
-    .value("mjGAIN_FIXED", mjGAIN_FIXED)
-    .value("mjGAIN_AFFINE", mjGAIN_AFFINE)
-    .value("mjGAIN_MUSCLE", mjGAIN_MUSCLE)
-    .value("mjGAIN_USER", mjGAIN_USER);
-
-  enum_<mjtBias>("mjtBias")
-    .value("mjBIAS_NONE", mjBIAS_NONE)
-    .value("mjBIAS_AFFINE", mjBIAS_AFFINE)
-    .value("mjBIAS_MUSCLE", mjBIAS_MUSCLE)
-    .value("mjBIAS_USER", mjBIAS_USER);
-
-  enum_<mjtObj>("mjtObj")
-    .value("mjOBJ_UNKNOWN", mjOBJ_UNKNOWN)
-    .value("mjOBJ_BODY", mjOBJ_BODY)
-    .value("mjOBJ_XBODY", mjOBJ_XBODY)
-    .value("mjOBJ_JOINT", mjOBJ_JOINT)
-    .value("mjOBJ_DOF", mjOBJ_DOF)
-    .value("mjOBJ_GEOM", mjOBJ_GEOM)
-    .value("mjOBJ_SITE", mjOBJ_SITE)
-    .value("mjOBJ_CAMERA", mjOBJ_CAMERA)
-    .value("mjOBJ_LIGHT", mjOBJ_LIGHT)
-    .value("mjOBJ_FLEX", mjOBJ_FLEX)
-    .value("mjOBJ_MESH", mjOBJ_MESH)
-    .value("mjOBJ_SKIN", mjOBJ_SKIN)
-    .value("mjOBJ_HFIELD", mjOBJ_HFIELD)
-    .value("mjOBJ_TEXTURE", mjOBJ_TEXTURE)
-    .value("mjOBJ_MATERIAL", mjOBJ_MATERIAL)
-    .value("mjOBJ_PAIR", mjOBJ_PAIR)
-    .value("mjOBJ_EXCLUDE", mjOBJ_EXCLUDE)
-    .value("mjOBJ_EQUALITY", mjOBJ_EQUALITY)
-    .value("mjOBJ_TENDON", mjOBJ_TENDON)
-    .value("mjOBJ_ACTUATOR", mjOBJ_ACTUATOR)
-    .value("mjOBJ_SENSOR", mjOBJ_SENSOR)
-    .value("mjOBJ_NUMERIC", mjOBJ_NUMERIC)
-    .value("mjOBJ_TEXT", mjOBJ_TEXT)
-    .value("mjOBJ_TUPLE", mjOBJ_TUPLE)
-    .value("mjOBJ_KEY", mjOBJ_KEY)
-    .value("mjOBJ_PLUGIN", mjOBJ_PLUGIN)
-    .value("mjNOBJECT", mjNOBJECT)
-    .value("mjOBJ_FRAME", mjOBJ_FRAME)
-    .value("mjOBJ_DEFAULT", mjOBJ_DEFAULT)
-    .value("mjOBJ_MODEL", mjOBJ_MODEL);
-
-  enum_<mjtSensor>("mjtSensor")
-    .value("mjSENS_TOUCH", mjSENS_TOUCH)
-    .value("mjSENS_ACCELEROMETER", mjSENS_ACCELEROMETER)
-    .value("mjSENS_VELOCIMETER", mjSENS_VELOCIMETER)
-    .value("mjSENS_GYRO", mjSENS_GYRO)
-    .value("mjSENS_FORCE", mjSENS_FORCE)
-    .value("mjSENS_TORQUE", mjSENS_TORQUE)
-    .value("mjSENS_MAGNETOMETER", mjSENS_MAGNETOMETER)
-    .value("mjSENS_RANGEFINDER", mjSENS_RANGEFINDER)
-    .value("mjSENS_CAMPROJECTION", mjSENS_CAMPROJECTION)
-    .value("mjSENS_JOINTPOS", mjSENS_JOINTPOS)
-    .value("mjSENS_JOINTVEL", mjSENS_JOINTVEL)
-    .value("mjSENS_TENDONPOS", mjSENS_TENDONPOS)
-    .value("mjSENS_TENDONVEL", mjSENS_TENDONVEL)
-    .value("mjSENS_ACTUATORPOS", mjSENS_ACTUATORPOS)
-    .value("mjSENS_ACTUATORVEL", mjSENS_ACTUATORVEL)
-    .value("mjSENS_ACTUATORFRC", mjSENS_ACTUATORFRC)
-    .value("mjSENS_JOINTACTFRC", mjSENS_JOINTACTFRC)
-    .value("mjSENS_TENDONACTFRC", mjSENS_TENDONACTFRC)
-    .value("mjSENS_BALLQUAT", mjSENS_BALLQUAT)
-    .value("mjSENS_BALLANGVEL", mjSENS_BALLANGVEL)
-    .value("mjSENS_JOINTLIMITPOS", mjSENS_JOINTLIMITPOS)
-    .value("mjSENS_JOINTLIMITVEL", mjSENS_JOINTLIMITVEL)
-    .value("mjSENS_JOINTLIMITFRC", mjSENS_JOINTLIMITFRC)
-    .value("mjSENS_TENDONLIMITPOS", mjSENS_TENDONLIMITPOS)
-    .value("mjSENS_TENDONLIMITVEL", mjSENS_TENDONLIMITVEL)
-    .value("mjSENS_TENDONLIMITFRC", mjSENS_TENDONLIMITFRC)
-    .value("mjSENS_FRAMEPOS", mjSENS_FRAMEPOS)
-    .value("mjSENS_FRAMEQUAT", mjSENS_FRAMEQUAT)
-    .value("mjSENS_FRAMEXAXIS", mjSENS_FRAMEXAXIS)
-    .value("mjSENS_FRAMEYAXIS", mjSENS_FRAMEYAXIS)
-    .value("mjSENS_FRAMEZAXIS", mjSENS_FRAMEZAXIS)
-    .value("mjSENS_FRAMELINVEL", mjSENS_FRAMELINVEL)
-    .value("mjSENS_FRAMEANGVEL", mjSENS_FRAMEANGVEL)
-    .value("mjSENS_FRAMELINACC", mjSENS_FRAMELINACC)
-    .value("mjSENS_FRAMEANGACC", mjSENS_FRAMEANGACC)
-    .value("mjSENS_SUBTREECOM", mjSENS_SUBTREECOM)
-    .value("mjSENS_SUBTREELINVEL", mjSENS_SUBTREELINVEL)
-    .value("mjSENS_SUBTREEANGMOM", mjSENS_SUBTREEANGMOM)
-    .value("mjSENS_INSIDESITE", mjSENS_INSIDESITE)
-    .value("mjSENS_GEOMDIST", mjSENS_GEOMDIST)
-    .value("mjSENS_GEOMNORMAL", mjSENS_GEOMNORMAL)
-    .value("mjSENS_GEOMFROMTO", mjSENS_GEOMFROMTO)
-    .value("mjSENS_CONTACT", mjSENS_CONTACT)
-    .value("mjSENS_E_POTENTIAL", mjSENS_E_POTENTIAL)
-    .value("mjSENS_E_KINETIC", mjSENS_E_KINETIC)
-    .value("mjSENS_CLOCK", mjSENS_CLOCK)
-    .value("mjSENS_TACTILE", mjSENS_TACTILE)
-    .value("mjSENS_PLUGIN", mjSENS_PLUGIN)
-    .value("mjSENS_USER", mjSENS_USER);
-
-  enum_<mjtStage>("mjtStage")
-    .value("mjSTAGE_NONE", mjSTAGE_NONE)
-    .value("mjSTAGE_POS", mjSTAGE_POS)
-    .value("mjSTAGE_VEL", mjSTAGE_VEL)
-    .value("mjSTAGE_ACC", mjSTAGE_ACC);
-
-  enum_<mjtDataType>("mjtDataType")
-    .value("mjDATATYPE_REAL", mjDATATYPE_REAL)
-    .value("mjDATATYPE_POSITIVE", mjDATATYPE_POSITIVE)
-    .value("mjDATATYPE_AXIS", mjDATATYPE_AXIS)
-    .value("mjDATATYPE_QUATERNION", mjDATATYPE_QUATERNION);
-
-  enum_<mjtConDataField>("mjtConDataField")
-    .value("mjCONDATA_FOUND", mjCONDATA_FOUND)
-    .value("mjCONDATA_FORCE", mjCONDATA_FORCE)
-    .value("mjCONDATA_TORQUE", mjCONDATA_TORQUE)
-    .value("mjCONDATA_DIST", mjCONDATA_DIST)
-    .value("mjCONDATA_POS", mjCONDATA_POS)
-    .value("mjCONDATA_NORMAL", mjCONDATA_NORMAL)
-    .value("mjCONDATA_TANGENT", mjCONDATA_TANGENT)
-    .value("mjNCONDATA", mjNCONDATA);
-
-  enum_<mjtSameFrame>("mjtSameFrame")
-    .value("mjSAMEFRAME_NONE", mjSAMEFRAME_NONE)
-    .value("mjSAMEFRAME_BODY", mjSAMEFRAME_BODY)
-    .value("mjSAMEFRAME_INERTIA", mjSAMEFRAME_INERTIA)
-    .value("mjSAMEFRAME_BODYROT", mjSAMEFRAME_BODYROT)
-    .value("mjSAMEFRAME_INERTIAROT", mjSAMEFRAME_INERTIAROT);
-
-  enum_<mjtSleepPolicy>("mjtSleepPolicy")
-    .value("mjSLEEP_AUTO", mjSLEEP_AUTO)
-    .value("mjSLEEP_AUTO_NEVER", mjSLEEP_AUTO_NEVER)
-    .value("mjSLEEP_AUTO_ALLOWED", mjSLEEP_AUTO_ALLOWED)
-    .value("mjSLEEP_NEVER", mjSLEEP_NEVER)
-    .value("mjSLEEP_ALLOWED", mjSLEEP_ALLOWED)
-    .value("mjSLEEP_INIT", mjSLEEP_INIT);
-
-  enum_<mjtLRMode>("mjtLRMode")
-    .value("mjLRMODE_NONE", mjLRMODE_NONE)
-    .value("mjLRMODE_MUSCLE", mjLRMODE_MUSCLE)
-    .value("mjLRMODE_MUSCLEUSER", mjLRMODE_MUSCLEUSER)
-    .value("mjLRMODE_ALL", mjLRMODE_ALL);
-
-  enum_<mjtFlexSelf>("mjtFlexSelf")
-    .value("mjFLEXSELF_NONE", mjFLEXSELF_NONE)
-    .value("mjFLEXSELF_NARROW", mjFLEXSELF_NARROW)
-    .value("mjFLEXSELF_BVH", mjFLEXSELF_BVH)
-    .value("mjFLEXSELF_SAP", mjFLEXSELF_SAP)
-    .value("mjFLEXSELF_AUTO", mjFLEXSELF_AUTO);
-
-  enum_<mjtSDFType>("mjtSDFType")
-    .value("mjSDFTYPE_SINGLE", mjSDFTYPE_SINGLE)
-    .value("mjSDFTYPE_INTERSECTION", mjSDFTYPE_INTERSECTION)
-    .value("mjSDFTYPE_MIDSURFACE", mjSDFTYPE_MIDSURFACE)
-    .value("mjSDFTYPE_COLLISION", mjSDFTYPE_COLLISION);
-
-  enum_<mjtTaskStatus>("mjtTaskStatus")
-    .value("mjTASK_NEW", mjTASK_NEW)
-    .value("mjTASK_QUEUED", mjTASK_QUEUED)
-    .value("mjTASK_COMPLETED", mjTASK_COMPLETED);
-
-  enum_<mjtState>("mjtState")
-    .value("mjSTATE_TIME", mjSTATE_TIME)
-    .value("mjSTATE_QPOS", mjSTATE_QPOS)
-    .value("mjSTATE_QVEL", mjSTATE_QVEL)
-    .value("mjSTATE_ACT", mjSTATE_ACT)
-    .value("mjSTATE_WARMSTART", mjSTATE_WARMSTART)
-    .value("mjSTATE_CTRL", mjSTATE_CTRL)
-    .value("mjSTATE_QFRC_APPLIED", mjSTATE_QFRC_APPLIED)
-    .value("mjSTATE_XFRC_APPLIED", mjSTATE_XFRC_APPLIED)
-    .value("mjSTATE_EQ_ACTIVE", mjSTATE_EQ_ACTIVE)
-    .value("mjSTATE_MOCAP_POS", mjSTATE_MOCAP_POS)
-    .value("mjSTATE_MOCAP_QUAT", mjSTATE_MOCAP_QUAT)
-    .value("mjSTATE_USERDATA", mjSTATE_USERDATA)
-    .value("mjSTATE_PLUGIN", mjSTATE_PLUGIN)
-    .value("mjNSTATE", mjNSTATE)
-    .value("mjSTATE_PHYSICS", mjSTATE_PHYSICS)
-    .value("mjSTATE_FULLPHYSICS", mjSTATE_FULLPHYSICS)
-    .value("mjSTATE_USER", mjSTATE_USER)
-    .value("mjSTATE_INTEGRATION", mjSTATE_INTEGRATION);
-
-  enum_<mjtConstraint>("mjtConstraint")
-    .value("mjCNSTR_EQUALITY", mjCNSTR_EQUALITY)
-    .value("mjCNSTR_FRICTION_DOF", mjCNSTR_FRICTION_DOF)
-    .value("mjCNSTR_FRICTION_TENDON", mjCNSTR_FRICTION_TENDON)
-    .value("mjCNSTR_LIMIT_JOINT", mjCNSTR_LIMIT_JOINT)
-    .value("mjCNSTR_LIMIT_TENDON", mjCNSTR_LIMIT_TENDON)
-    .value("mjCNSTR_CONTACT_FRICTIONLESS", mjCNSTR_CONTACT_FRICTIONLESS)
-    .value("mjCNSTR_CONTACT_PYRAMIDAL", mjCNSTR_CONTACT_PYRAMIDAL)
-    .value("mjCNSTR_CONTACT_ELLIPTIC", mjCNSTR_CONTACT_ELLIPTIC);
-
-  enum_<mjtConstraintState>("mjtConstraintState")
-    .value("mjCNSTRSTATE_SATISFIED", mjCNSTRSTATE_SATISFIED)
-    .value("mjCNSTRSTATE_QUADRATIC", mjCNSTRSTATE_QUADRATIC)
-    .value("mjCNSTRSTATE_LINEARNEG", mjCNSTRSTATE_LINEARNEG)
-    .value("mjCNSTRSTATE_LINEARPOS", mjCNSTRSTATE_LINEARPOS)
-    .value("mjCNSTRSTATE_CONE", mjCNSTRSTATE_CONE);
-
-  enum_<mjtWarning>("mjtWarning")
-    .value("mjWARN_INERTIA", mjWARN_INERTIA)
-    .value("mjWARN_CONTACTFULL", mjWARN_CONTACTFULL)
-    .value("mjWARN_CNSTRFULL", mjWARN_CNSTRFULL)
-    .value("mjWARN_VGEOMFULL", mjWARN_VGEOMFULL)
-    .value("mjWARN_BADQPOS", mjWARN_BADQPOS)
-    .value("mjWARN_BADQVEL", mjWARN_BADQVEL)
-    .value("mjWARN_BADQACC", mjWARN_BADQACC)
-    .value("mjWARN_BADCTRL", mjWARN_BADCTRL)
-    .value("mjNWARNING", mjNWARNING);
-
-  enum_<mjtTimer>("mjtTimer")
-    .value("mjTIMER_STEP", mjTIMER_STEP)
-    .value("mjTIMER_FORWARD", mjTIMER_FORWARD)
-    .value("mjTIMER_INVERSE", mjTIMER_INVERSE)
-    .value("mjTIMER_POSITION", mjTIMER_POSITION)
-    .value("mjTIMER_VELOCITY", mjTIMER_VELOCITY)
-    .value("mjTIMER_ACTUATION", mjTIMER_ACTUATION)
-    .value("mjTIMER_CONSTRAINT", mjTIMER_CONSTRAINT)
-    .value("mjTIMER_ADVANCE", mjTIMER_ADVANCE)
-    .value("mjTIMER_POS_KINEMATICS", mjTIMER_POS_KINEMATICS)
-    .value("mjTIMER_POS_INERTIA", mjTIMER_POS_INERTIA)
-    .value("mjTIMER_POS_COLLISION", mjTIMER_POS_COLLISION)
-    .value("mjTIMER_POS_MAKE", mjTIMER_POS_MAKE)
-    .value("mjTIMER_POS_PROJECT", mjTIMER_POS_PROJECT)
-    .value("mjTIMER_COL_BROAD", mjTIMER_COL_BROAD)
-    .value("mjTIMER_COL_NARROW", mjTIMER_COL_NARROW)
-    .value("mjNTIMER", mjNTIMER);
-
-  enum_<mjtSleepState>("mjtSleepState")
-    .value("mjS_STATIC", mjS_STATIC)
-    .value("mjS_ASLEEP", mjS_ASLEEP)
-    .value("mjS_AWAKE", mjS_AWAKE);
-
-  enum_<mjtGeomInertia>("mjtGeomInertia")
-    .value("mjINERTIA_VOLUME", mjINERTIA_VOLUME)
-    .value("mjINERTIA_SHELL", mjINERTIA_SHELL);
-
-  enum_<mjtMeshInertia>("mjtMeshInertia")
-    .value("mjMESH_INERTIA_CONVEX", mjMESH_INERTIA_CONVEX)
-    .value("mjMESH_INERTIA_EXACT", mjMESH_INERTIA_EXACT)
-    .value("mjMESH_INERTIA_LEGACY", mjMESH_INERTIA_LEGACY)
-    .value("mjMESH_INERTIA_SHELL", mjMESH_INERTIA_SHELL);
-
-  enum_<mjtMeshBuiltin>("mjtMeshBuiltin")
-    .value("mjMESH_BUILTIN_NONE", mjMESH_BUILTIN_NONE)
-    .value("mjMESH_BUILTIN_SPHERE", mjMESH_BUILTIN_SPHERE)
-    .value("mjMESH_BUILTIN_HEMISPHERE", mjMESH_BUILTIN_HEMISPHERE)
-    .value("mjMESH_BUILTIN_CONE", mjMESH_BUILTIN_CONE)
-    .value("mjMESH_BUILTIN_SUPERSPHERE", mjMESH_BUILTIN_SUPERSPHERE)
-    .value("mjMESH_BUILTIN_SUPERTORUS", mjMESH_BUILTIN_SUPERTORUS)
-    .value("mjMESH_BUILTIN_WEDGE", mjMESH_BUILTIN_WEDGE)
-    .value("mjMESH_BUILTIN_PLATE", mjMESH_BUILTIN_PLATE);
-
-  enum_<mjtBuiltin>("mjtBuiltin")
-    .value("mjBUILTIN_NONE", mjBUILTIN_NONE)
-    .value("mjBUILTIN_GRADIENT", mjBUILTIN_GRADIENT)
-    .value("mjBUILTIN_CHECKER", mjBUILTIN_CHECKER)
-    .value("mjBUILTIN_FLAT", mjBUILTIN_FLAT);
-
-  enum_<mjtMark>("mjtMark")
-    .value("mjMARK_NONE", mjMARK_NONE)
-    .value("mjMARK_EDGE", mjMARK_EDGE)
-    .value("mjMARK_CROSS", mjMARK_CROSS)
-    .value("mjMARK_RANDOM", mjMARK_RANDOM);
-
-  enum_<mjtLimited>("mjtLimited")
-    .value("mjLIMITED_FALSE", mjLIMITED_FALSE)
-    .value("mjLIMITED_TRUE", mjLIMITED_TRUE)
-    .value("mjLIMITED_AUTO", mjLIMITED_AUTO);
-
-  enum_<mjtAlignFree>("mjtAlignFree")
-    .value("mjALIGNFREE_FALSE", mjALIGNFREE_FALSE)
-    .value("mjALIGNFREE_TRUE", mjALIGNFREE_TRUE)
-    .value("mjALIGNFREE_AUTO", mjALIGNFREE_AUTO);
-
-  enum_<mjtInertiaFromGeom>("mjtInertiaFromGeom")
-    .value("mjINERTIAFROMGEOM_FALSE", mjINERTIAFROMGEOM_FALSE)
-    .value("mjINERTIAFROMGEOM_TRUE", mjINERTIAFROMGEOM_TRUE)
-    .value("mjINERTIAFROMGEOM_AUTO", mjINERTIAFROMGEOM_AUTO);
-
-  enum_<mjtOrientation>("mjtOrientation")
-    .value("mjORIENTATION_QUAT", mjORIENTATION_QUAT)
-    .value("mjORIENTATION_AXISANGLE", mjORIENTATION_AXISANGLE)
-    .value("mjORIENTATION_XYAXES", mjORIENTATION_XYAXES)
-    .value("mjORIENTATION_ZAXIS", mjORIENTATION_ZAXIS)
-    .value("mjORIENTATION_EULER", mjORIENTATION_EULER);
-
-  enum_<mjtCatBit>("mjtCatBit")
-    .value("mjCAT_STATIC", mjCAT_STATIC)
-    .value("mjCAT_DYNAMIC", mjCAT_DYNAMIC)
-    .value("mjCAT_DECOR", mjCAT_DECOR)
-    .value("mjCAT_ALL", mjCAT_ALL);
-
-  enum_<mjtMouse>("mjtMouse")
-    .value("mjMOUSE_NONE", mjMOUSE_NONE)
-    .value("mjMOUSE_ROTATE_V", mjMOUSE_ROTATE_V)
-    .value("mjMOUSE_ROTATE_H", mjMOUSE_ROTATE_H)
-    .value("mjMOUSE_MOVE_V", mjMOUSE_MOVE_V)
-    .value("mjMOUSE_MOVE_H", mjMOUSE_MOVE_H)
-    .value("mjMOUSE_ZOOM", mjMOUSE_ZOOM)
-    .value("mjMOUSE_MOVE_V_REL", mjMOUSE_MOVE_V_REL)
-    .value("mjMOUSE_MOVE_H_REL", mjMOUSE_MOVE_H_REL);
-
-  enum_<mjtPertBit>("mjtPertBit")
-    .value("mjPERT_TRANSLATE", mjPERT_TRANSLATE)
-    .value("mjPERT_ROTATE", mjPERT_ROTATE);
-
-  enum_<mjtCamera>("mjtCamera")
-    .value("mjCAMERA_FREE", mjCAMERA_FREE)
-    .value("mjCAMERA_TRACKING", mjCAMERA_TRACKING)
-    .value("mjCAMERA_FIXED", mjCAMERA_FIXED)
-    .value("mjCAMERA_USER", mjCAMERA_USER);
-
-  enum_<mjtLabel>("mjtLabel")
-    .value("mjLABEL_NONE", mjLABEL_NONE)
-    .value("mjLABEL_BODY", mjLABEL_BODY)
-    .value("mjLABEL_JOINT", mjLABEL_JOINT)
-    .value("mjLABEL_GEOM", mjLABEL_GEOM)
-    .value("mjLABEL_SITE", mjLABEL_SITE)
-    .value("mjLABEL_CAMERA", mjLABEL_CAMERA)
-    .value("mjLABEL_LIGHT", mjLABEL_LIGHT)
-    .value("mjLABEL_TENDON", mjLABEL_TENDON)
-    .value("mjLABEL_ACTUATOR", mjLABEL_ACTUATOR)
-    .value("mjLABEL_CONSTRAINT", mjLABEL_CONSTRAINT)
-    .value("mjLABEL_FLEX", mjLABEL_FLEX)
-    .value("mjLABEL_SKIN", mjLABEL_SKIN)
-    .value("mjLABEL_SELECTION", mjLABEL_SELECTION)
-    .value("mjLABEL_SELPNT", mjLABEL_SELPNT)
-    .value("mjLABEL_CONTACTPOINT", mjLABEL_CONTACTPOINT)
-    .value("mjLABEL_CONTACTFORCE", mjLABEL_CONTACTFORCE)
-    .value("mjLABEL_ISLAND", mjLABEL_ISLAND)
-    .value("mjNLABEL", mjNLABEL);
-
-  enum_<mjtFrame>("mjtFrame")
-    .value("mjFRAME_NONE", mjFRAME_NONE)
-    .value("mjFRAME_BODY", mjFRAME_BODY)
-    .value("mjFRAME_GEOM", mjFRAME_GEOM)
-    .value("mjFRAME_SITE", mjFRAME_SITE)
-    .value("mjFRAME_CAMERA", mjFRAME_CAMERA)
-    .value("mjFRAME_LIGHT", mjFRAME_LIGHT)
-    .value("mjFRAME_CONTACT", mjFRAME_CONTACT)
-    .value("mjFRAME_WORLD", mjFRAME_WORLD)
-    .value("mjNFRAME", mjNFRAME);
-
-  enum_<mjtVisFlag>("mjtVisFlag")
-    .value("mjVIS_CONVEXHULL", mjVIS_CONVEXHULL)
-    .value("mjVIS_TEXTURE", mjVIS_TEXTURE)
-    .value("mjVIS_JOINT", mjVIS_JOINT)
-    .value("mjVIS_CAMERA", mjVIS_CAMERA)
-    .value("mjVIS_ACTUATOR", mjVIS_ACTUATOR)
-    .value("mjVIS_ACTIVATION", mjVIS_ACTIVATION)
-    .value("mjVIS_LIGHT", mjVIS_LIGHT)
-    .value("mjVIS_TENDON", mjVIS_TENDON)
-    .value("mjVIS_RANGEFINDER", mjVIS_RANGEFINDER)
-    .value("mjVIS_CONSTRAINT", mjVIS_CONSTRAINT)
-    .value("mjVIS_INERTIA", mjVIS_INERTIA)
-    .value("mjVIS_SCLINERTIA", mjVIS_SCLINERTIA)
-    .value("mjVIS_PERTFORCE", mjVIS_PERTFORCE)
-    .value("mjVIS_PERTOBJ", mjVIS_PERTOBJ)
-    .value("mjVIS_CONTACTPOINT", mjVIS_CONTACTPOINT)
-    .value("mjVIS_ISLAND", mjVIS_ISLAND)
-    .value("mjVIS_CONTACTFORCE", mjVIS_CONTACTFORCE)
-    .value("mjVIS_CONTACTSPLIT", mjVIS_CONTACTSPLIT)
-    .value("mjVIS_TRANSPARENT", mjVIS_TRANSPARENT)
-    .value("mjVIS_AUTOCONNECT", mjVIS_AUTOCONNECT)
-    .value("mjVIS_COM", mjVIS_COM)
-    .value("mjVIS_SELECT", mjVIS_SELECT)
-    .value("mjVIS_STATIC", mjVIS_STATIC)
-    .value("mjVIS_SKIN", mjVIS_SKIN)
-    .value("mjVIS_FLEXVERT", mjVIS_FLEXVERT)
-    .value("mjVIS_FLEXEDGE", mjVIS_FLEXEDGE)
-    .value("mjVIS_FLEXFACE", mjVIS_FLEXFACE)
-    .value("mjVIS_FLEXSKIN", mjVIS_FLEXSKIN)
-    .value("mjVIS_BODYBVH", mjVIS_BODYBVH)
-    .value("mjVIS_MESHBVH", mjVIS_MESHBVH)
-    .value("mjVIS_SDFITER", mjVIS_SDFITER)
-    .value("mjNVISFLAG", mjNVISFLAG);
-
-  enum_<mjtRndFlag>("mjtRndFlag")
-    .value("mjRND_SHADOW", mjRND_SHADOW)
-    .value("mjRND_WIREFRAME", mjRND_WIREFRAME)
-    .value("mjRND_REFLECTION", mjRND_REFLECTION)
-    .value("mjRND_ADDITIVE", mjRND_ADDITIVE)
-    .value("mjRND_SKYBOX", mjRND_SKYBOX)
-    .value("mjRND_FOG", mjRND_FOG)
-    .value("mjRND_HAZE", mjRND_HAZE)
-    .value("mjRND_SEGMENT", mjRND_SEGMENT)
-    .value("mjRND_IDCOLOR", mjRND_IDCOLOR)
-    .value("mjRND_CULL_FACE", mjRND_CULL_FACE)
-    .value("mjNRNDFLAG", mjNRNDFLAG);
-
-  enum_<mjtStereo>("mjtStereo")
-    .value("mjSTEREO_NONE", mjSTEREO_NONE)
-    .value("mjSTEREO_QUADBUFFERED", mjSTEREO_QUADBUFFERED)
-    .value("mjSTEREO_SIDEBYSIDE", mjSTEREO_SIDEBYSIDE);
-
-  enum_<mjtPluginCapabilityBit>("mjtPluginCapabilityBit")
-    .value("mjPLUGIN_ACTUATOR", mjPLUGIN_ACTUATOR)
-    .value("mjPLUGIN_SENSOR", mjPLUGIN_SENSOR)
-    .value("mjPLUGIN_PASSIVE", mjPLUGIN_PASSIVE)
-    .value("mjPLUGIN_SDF", mjPLUGIN_SDF);
-
-  enum_<mjtGridPos>("mjtGridPos")
-    .value("mjGRID_TOPLEFT", mjGRID_TOPLEFT)
-    .value("mjGRID_TOPRIGHT", mjGRID_TOPRIGHT)
-    .value("mjGRID_BOTTOMLEFT", mjGRID_BOTTOMLEFT)
-    .value("mjGRID_BOTTOMRIGHT", mjGRID_BOTTOMRIGHT)
-    .value("mjGRID_TOP", mjGRID_TOP)
-    .value("mjGRID_BOTTOM", mjGRID_BOTTOM)
-    .value("mjGRID_LEFT", mjGRID_LEFT)
-    .value("mjGRID_RIGHT", mjGRID_RIGHT);
-
-  enum_<mjtFramebuffer>("mjtFramebuffer")
-    .value("mjFB_WINDOW", mjFB_WINDOW)
-    .value("mjFB_OFFSCREEN", mjFB_OFFSCREEN);
-
-  enum_<mjtDepthMap>("mjtDepthMap")
-    .value("mjDEPTH_ZERONEAR", mjDEPTH_ZERONEAR)
-    .value("mjDEPTH_ZEROFAR", mjDEPTH_ZEROFAR);
-
-  enum_<mjtFontScale>("mjtFontScale")
-    .value("mjFONTSCALE_50", mjFONTSCALE_50)
-    .value("mjFONTSCALE_100", mjFONTSCALE_100)
-    .value("mjFONTSCALE_150", mjFONTSCALE_150)
-    .value("mjFONTSCALE_200", mjFONTSCALE_200)
-    .value("mjFONTSCALE_250", mjFONTSCALE_250)
-    .value("mjFONTSCALE_300", mjFONTSCALE_300);
-
-  enum_<mjtFont>("mjtFont")
-    .value("mjFONT_NORMAL", mjFONT_NORMAL)
-    .value("mjFONT_SHADOW", mjFONT_SHADOW)
-    .value("mjFONT_BIG", mjFONT_BIG);
-
-  enum_<mjtButton>("mjtButton")
-    .value("mjBUTTON_NONE", mjBUTTON_NONE)
-    .value("mjBUTTON_LEFT", mjBUTTON_LEFT)
-    .value("mjBUTTON_RIGHT", mjBUTTON_RIGHT)
-    .value("mjBUTTON_MIDDLE", mjBUTTON_MIDDLE);
-
-  enum_<mjtEvent>("mjtEvent")
-    .value("mjEVENT_NONE", mjEVENT_NONE)
-    .value("mjEVENT_MOVE", mjEVENT_MOVE)
-    .value("mjEVENT_PRESS", mjEVENT_PRESS)
-    .value("mjEVENT_RELEASE", mjEVENT_RELEASE)
-    .value("mjEVENT_SCROLL", mjEVENT_SCROLL)
-    .value("mjEVENT_KEY", mjEVENT_KEY)
-    .value("mjEVENT_RESIZE", mjEVENT_RESIZE)
-    .value("mjEVENT_REDRAW", mjEVENT_REDRAW)
-    .value("mjEVENT_FILESDROP", mjEVENT_FILESDROP);
-
-  enum_<mjtItem>("mjtItem")
-    .value("mjITEM_END", mjITEM_END)
-    .value("mjITEM_SECTION", mjITEM_SECTION)
-    .value("mjITEM_SEPARATOR", mjITEM_SEPARATOR)
-    .value("mjITEM_STATIC", mjITEM_STATIC)
-    .value("mjITEM_BUTTON", mjITEM_BUTTON)
-    .value("mjITEM_CHECKINT", mjITEM_CHECKINT)
-    .value("mjITEM_CHECKBYTE", mjITEM_CHECKBYTE)
-    .value("mjITEM_RADIO", mjITEM_RADIO)
-    .value("mjITEM_RADIOLINE", mjITEM_RADIOLINE)
-    .value("mjITEM_SELECT", mjITEM_SELECT)
-    .value("mjITEM_SLIDERINT", mjITEM_SLIDERINT)
-    .value("mjITEM_SLIDERNUM", mjITEM_SLIDERNUM)
-    .value("mjITEM_EDITINT", mjITEM_EDITINT)
-    .value("mjITEM_EDITNUM", mjITEM_EDITNUM)
-    .value("mjITEM_EDITFLOAT", mjITEM_EDITFLOAT)
-    .value("mjITEM_EDITTXT", mjITEM_EDITTXT)
-    .value("mjNITEM", mjNITEM);
-
-  enum_<mjtSection>("mjtSection")
-    .value("mjSECT_CLOSED", mjSECT_CLOSED)
-    .value("mjSECT_OPEN", mjSECT_OPEN)
-    .value("mjSECT_FIXED", mjSECT_FIXED);
-}
 
 MjContact::MjContact(mjContact *ptr) : ptr_(ptr) {}
 MjContact::~MjContact() {
@@ -7615,48 +7391,6 @@ mjTimerStat* MjTimerStat::get() const {
   return ptr_;
 }
 void MjTimerStat::set(mjTimerStat* ptr) {
-  ptr_ = ptr;
-}
-
-MjVisual::MjVisual(mjVisual *ptr) : ptr_(ptr), global(&ptr_->global), quality(&ptr_->quality), headlight(&ptr_->headlight), map(&ptr_->map), scale(&ptr_->scale), rgba(&ptr_->rgba) {}
-MjVisual::~MjVisual() {
-  if (owned_ && ptr_) {
-    delete ptr_;
-  }
-}
-MjVisual::MjVisual() : ptr_(new mjVisual), global(&ptr_->global), quality(&ptr_->quality), headlight(&ptr_->headlight), map(&ptr_->map), scale(&ptr_->scale), rgba(&ptr_->rgba) {
-  owned_ = true;
-  mj_defaultVisual(ptr_);
-}
-MjVisual::MjVisual(const MjVisual &other) : MjVisual() {
-  *ptr_ = *other.get();
-  global.set(&ptr_->global);
-  quality.set(&ptr_->quality);
-  headlight.set(&ptr_->headlight);
-  map.set(&ptr_->map);
-  scale.set(&ptr_->scale);
-  rgba.set(&ptr_->rgba);
-}
-MjVisual& MjVisual::operator=(const MjVisual &other) {
-  if (this == &other) {
-    return *this;
-  }
-  *ptr_ = *other.get();
-  global.set(&ptr_->global);
-  quality.set(&ptr_->quality);
-  headlight.set(&ptr_->headlight);
-  map.set(&ptr_->map);
-  scale.set(&ptr_->scale);
-  rgba.set(&ptr_->rgba);
-  return *this;
-}
-std::unique_ptr<MjVisual> MjVisual::copy() {
-  return std::make_unique<MjVisual>(*this);
-}
-mjVisual* MjVisual::get() const {
-  return ptr_;
-}
-void MjVisual::set(mjVisual* ptr) {
   ptr_ = ptr;
 }
 
@@ -8095,6 +7829,48 @@ void MjsCompiler::set(mjsCompiler* ptr) {
   ptr_ = ptr;
 }
 
+MjVisual::MjVisual(mjVisual *ptr) : ptr_(ptr), global(&ptr_->global), quality(&ptr_->quality), headlight(&ptr_->headlight), map(&ptr_->map), scale(&ptr_->scale), rgba(&ptr_->rgba) {}
+MjVisual::~MjVisual() {
+  if (owned_ && ptr_) {
+    delete ptr_;
+  }
+}
+MjVisual::MjVisual() : ptr_(new mjVisual), global(&ptr_->global), quality(&ptr_->quality), headlight(&ptr_->headlight), map(&ptr_->map), scale(&ptr_->scale), rgba(&ptr_->rgba) {
+  owned_ = true;
+  mj_defaultVisual(ptr_);
+}
+MjVisual::MjVisual(const MjVisual &other) : MjVisual() {
+  *ptr_ = *other.get();
+  global.set(&ptr_->global);
+  quality.set(&ptr_->quality);
+  headlight.set(&ptr_->headlight);
+  map.set(&ptr_->map);
+  scale.set(&ptr_->scale);
+  rgba.set(&ptr_->rgba);
+}
+MjVisual& MjVisual::operator=(const MjVisual &other) {
+  if (this == &other) {
+    return *this;
+  }
+  *ptr_ = *other.get();
+  global.set(&ptr_->global);
+  quality.set(&ptr_->quality);
+  headlight.set(&ptr_->headlight);
+  map.set(&ptr_->map);
+  scale.set(&ptr_->scale);
+  rgba.set(&ptr_->rgba);
+  return *this;
+}
+std::unique_ptr<MjVisual> MjVisual::copy() {
+  return std::make_unique<MjVisual>(*this);
+}
+mjVisual* MjVisual::get() const {
+  return ptr_;
+}
+void MjVisual::set(mjVisual* ptr) {
+  ptr_ = ptr;
+}
+
 MjsEquality::MjsEquality(mjsEquality *ptr) : ptr_(ptr), element(ptr_->element) {}
 mjsEquality* MjsEquality::get() const {
   return ptr_;
@@ -8304,14 +8080,226 @@ void MjsDefault::set(mjsDefault* ptr) {
 }
 
 
+struct MjvScene {
+  MjvScene();
+  MjvScene(MjModel *m, int maxgeom);
+  ~MjvScene();
+  std::unique_ptr<MjvScene> copy();
+  int GetSumFlexFaces() const;
+
+  mjvScene* get() const;
+  void set(mjvScene* ptr);
+
+  std::vector<MjvGeom> geoms() const;
+
+  emscripten::val geomorder() const {
+    return emscripten::val(
+        emscripten::typed_memory_view(ptr_->ngeom, ptr_->geomorder));
+  }
+  emscripten::val flexedgeadr() const {
+    return emscripten::val(
+        emscripten::typed_memory_view(ptr_->nflex, ptr_->flexedgeadr));
+  }
+  emscripten::val flexedgenum() const {
+    return emscripten::val(
+        emscripten::typed_memory_view(ptr_->nflex, ptr_->flexedgenum));
+  }
+  emscripten::val flexvertadr() const {
+    return emscripten::val(
+        emscripten::typed_memory_view(ptr_->nflex, ptr_->flexvertadr));
+  }
+  emscripten::val flexvertnum() const {
+    return emscripten::val(
+        emscripten::typed_memory_view(ptr_->nflex, ptr_->flexvertnum));
+  }
+  emscripten::val flexfaceadr() const {
+    return emscripten::val(
+        emscripten::typed_memory_view(ptr_->nflex, ptr_->flexfaceadr));
+  }
+  emscripten::val flexfacenum() const {
+    return emscripten::val(
+        emscripten::typed_memory_view(ptr_->nflex, ptr_->flexfacenum));
+  }
+  emscripten::val flexfaceused() const {
+    return emscripten::val(
+        emscripten::typed_memory_view(ptr_->nflex, ptr_->flexfaceused));
+  }
+  emscripten::val flexedge() const {
+    return emscripten::val(
+        emscripten::typed_memory_view(2 * model->nflexedge, ptr_->flexedge));
+  }
+  emscripten::val flexvert() const {
+    return emscripten::val(
+        emscripten::typed_memory_view(3 * model->nflexvert, ptr_->flexvert));
+  }
+  emscripten::val skinfacenum() const {
+    return emscripten::val(
+        emscripten::typed_memory_view(ptr_->nskin, ptr_->skinfacenum));
+  }
+  emscripten::val skinvertadr() const {
+    return emscripten::val(
+        emscripten::typed_memory_view(ptr_->nskin, ptr_->skinvertadr));
+  }
+  emscripten::val skinvertnum() const {
+    return emscripten::val(
+        emscripten::typed_memory_view(ptr_->nskin, ptr_->skinvertnum));
+  }
+  emscripten::val skinvert() const {
+    return emscripten::val(
+        emscripten::typed_memory_view(3 * model->nskinvert, ptr_->skinvert));
+  }
+  emscripten::val skinnormal() const {
+    return emscripten::val(
+        emscripten::typed_memory_view(3 * model->nskinvert, ptr_->skinnormal));
+  }
+  emscripten::val flexface() const {
+    return emscripten::val(emscripten::typed_memory_view(
+        9 * MjvScene::GetSumFlexFaces(), ptr_->flexface));
+  }
+  emscripten::val flexnormal() const {
+    return emscripten::val(emscripten::typed_memory_view(
+        9 * MjvScene::GetSumFlexFaces(), ptr_->flexnormal));
+  }
+  emscripten::val flextexcoord() const {
+    return emscripten::val(emscripten::typed_memory_view(
+        6 * MjvScene::GetSumFlexFaces(), ptr_->flextexcoord));
+  }
+  int maxgeom() const {
+    return ptr_->maxgeom;
+  }
+  void set_maxgeom(int value) {
+    ptr_->maxgeom = value;
+  }
+  int ngeom() const {
+    return ptr_->ngeom;
+  }
+  void set_ngeom(int value) {
+    ptr_->ngeom = value;
+  }
+  // geoms field is handled manually in template file struct declaration
+  // geomorder field is handled manually in template file struct declaration
+  int nflex() const {
+    return ptr_->nflex;
+  }
+  void set_nflex(int value) {
+    ptr_->nflex = value;
+  }
+  // flexedgeadr field is handled manually in template file struct declaration
+  // flexedgenum field is handled manually in template file struct declaration
+  // flexvertadr field is handled manually in template file struct declaration
+  // flexvertnum field is handled manually in template file struct declaration
+  // flexfaceadr field is handled manually in template file struct declaration
+  // flexfacenum field is handled manually in template file struct declaration
+  // flexfaceused field is handled manually in template file struct declaration
+  // flexedge field is handled manually in template file struct declaration
+  // flexvert field is handled manually in template file struct declaration
+  // flexface field is handled manually in template file struct declaration
+  // flexnormal field is handled manually in template file struct declaration
+  // flextexcoord field is handled manually in template file struct declaration
+  mjtByte flexvertopt() const {
+    return ptr_->flexvertopt;
+  }
+  void set_flexvertopt(mjtByte value) {
+    ptr_->flexvertopt = value;
+  }
+  mjtByte flexedgeopt() const {
+    return ptr_->flexedgeopt;
+  }
+  void set_flexedgeopt(mjtByte value) {
+    ptr_->flexedgeopt = value;
+  }
+  mjtByte flexfaceopt() const {
+    return ptr_->flexfaceopt;
+  }
+  void set_flexfaceopt(mjtByte value) {
+    ptr_->flexfaceopt = value;
+  }
+  mjtByte flexskinopt() const {
+    return ptr_->flexskinopt;
+  }
+  void set_flexskinopt(mjtByte value) {
+    ptr_->flexskinopt = value;
+  }
+  int nskin() const {
+    return ptr_->nskin;
+  }
+  void set_nskin(int value) {
+    ptr_->nskin = value;
+  }
+  // skinfacenum field is handled manually in template file struct declaration
+  // skinvertadr field is handled manually in template file struct declaration
+  // skinvertnum field is handled manually in template file struct declaration
+  // skinvert field is handled manually in template file struct declaration
+  // skinnormal field is handled manually in template file struct declaration
+  int nlight() const {
+    return ptr_->nlight;
+  }
+  void set_nlight(int value) {
+    ptr_->nlight = value;
+  }
+  // lights field is handled manually in template file struct declaration
+  // camera field is handled manually in template file struct declaration
+  mjtByte enabletransform() const {
+    return ptr_->enabletransform;
+  }
+  void set_enabletransform(mjtByte value) {
+    ptr_->enabletransform = value;
+  }
+  emscripten::val translate() const {
+    return emscripten::val(emscripten::typed_memory_view(3, ptr_->translate));
+  }
+  emscripten::val rotate() const {
+    return emscripten::val(emscripten::typed_memory_view(4, ptr_->rotate));
+  }
+  float scale() const {
+    return ptr_->scale;
+  }
+  void set_scale(float value) {
+    ptr_->scale = value;
+  }
+  int stereo() const {
+    return ptr_->stereo;
+  }
+  void set_stereo(int value) {
+    ptr_->stereo = value;
+  }
+  emscripten::val flags() const {
+    return emscripten::val(emscripten::typed_memory_view(10, ptr_->flags));
+  }
+  int framewidth() const {
+    return ptr_->framewidth;
+  }
+  void set_framewidth(int value) {
+    ptr_->framewidth = value;
+  }
+  emscripten::val framergb() const {
+    return emscripten::val(emscripten::typed_memory_view(3, ptr_->framergb));
+  }
+  int status() const {
+    return ptr_->status;
+  }
+  void set_status(int value) {
+    ptr_->status = value;
+  }
+
+ private:
+  mjvScene* ptr_;
+  bool owned_ = false;
+
+ public:
+  mjModel *model;
+  std::vector<MjvLight> lights;
+  std::vector<MjvGLCamera> camera;
+};
+
 // =============== MjModel =============== //
-MjModel::MjModel(mjModel *m)
-    : ptr_(m), opt(&m->opt), stat(&m->stat), vis(&m->vis) {}
+MjModel::MjModel(mjModel *ptr)
+    : ptr_(ptr), opt(&ptr->opt), vis(&ptr->vis), stat(&ptr->stat) {}
 MjModel::MjModel(const MjModel &other)
     : ptr_(mj_copyModel(nullptr, other.get())),
       opt(&ptr_->opt),
-      stat(&ptr_->stat),
-      vis(&ptr_->vis) {}
+      vis(&ptr_->vis),
+      stat(&ptr_->stat) {}
 MjModel::~MjModel() {
   if (ptr_) {
     mj_deleteModel(ptr_);
@@ -8419,30 +8407,30 @@ std::vector<MjvGeom> MjvScene::geoms() const {
 
 MjSpec::MjSpec()
     : ptr_(mj_makeSpec()),
+      element(ptr_->element),
+      compiler(&ptr_->compiler),
       option(&ptr_->option),
       visual(&ptr_->visual),
-      stat(&ptr_->stat),
-      compiler(&ptr_->compiler),
-      element(ptr_->element) {
+      stat(&ptr_->stat) {
   owned_ = true;
   mjs_defaultSpec(ptr_);
 };
 
 MjSpec::MjSpec(mjSpec *ptr)
     : ptr_(ptr),
+      element(ptr_->element),
+      compiler(&ptr_->compiler),
       option(&ptr_->option),
       visual(&ptr_->visual),
-      stat(&ptr_->stat),
-      compiler(&ptr_->compiler),
-      element(ptr_->element) {}
+      stat(&ptr_->stat) {}
 
 MjSpec::MjSpec(const MjSpec &other)
     : ptr_(mj_copySpec(other.get())),
+      element(ptr_->element),
+      compiler(&ptr_->compiler),
       option(&ptr_->option),
       visual(&ptr_->visual),
-      stat(&ptr_->stat),
-      compiler(&ptr_->compiler),
-      element(ptr_->element) {
+      stat(&ptr_->stat) {
   owned_ = true;
 }
 
@@ -8473,7 +8461,7 @@ mjSpec *MjSpec::get() const { return ptr_; }
 void MjSpec::set(mjSpec *ptr) { ptr_ = ptr; }
 
 // ======= FACTORY AND HELPER FUNCTIONS ========= //
-std::unique_ptr<MjModel> loadFromXML(std::string filename) {
+std::unique_ptr<MjModel> loadFromXML_wrapper(std::string filename) {
   char error[1000];
   mjModel *model = mj_loadXML(filename.c_str(), nullptr, error, sizeof(error));
   if (!model) {
@@ -8483,7 +8471,7 @@ std::unique_ptr<MjModel> loadFromXML(std::string filename) {
   return std::unique_ptr<MjModel>(new MjModel(model));
 }
 
-std::unique_ptr<MjSpec> parseXMLString(const std::string &xml) {
+std::unique_ptr<MjSpec> parseXMLString_wrapper(const std::string &xml) {
   char error[1000];
   mjSpec *ptr = mj_parseXMLString(xml.c_str(), nullptr, error, sizeof(error));
   if (!ptr) {
@@ -8491,6 +8479,27 @@ std::unique_ptr<MjSpec> parseXMLString(const std::string &xml) {
     return nullptr;
   }
   return std::unique_ptr<MjSpec>(new MjSpec(ptr));
+}
+
+void error_wrapper(const String& msg) { mju_error("%s\n", msg.as<const std::string>().data()); }
+
+int mj_saveLastXML_wrapper(const String& filename, const MjModel& m) {
+  CHECK_VAL(filename);
+  std::array<char, 1024> error;
+  int result = mj_saveLastXML(filename.as<const std::string>().data(), m.get(), error.data(), error.size());
+  if (!result) {
+    mju_error("%s", error.data());
+  }
+  return result;
+}
+
+int mj_setLengthRange_wrapper(const MjModel& m, const MjData& d, int index, const MjLROpt& opt) {
+  std::array<char, 1024> error;
+  int result = mj_setLengthRange(m.get(), d.get(), index, opt.get(), error.data(), error.size());
+  if (!result) {
+    mju_error("%s", error.data());
+  }
+  return result;
 }
 
 EMSCRIPTEN_BINDINGS(mujoco_structs) {
@@ -8584,15 +8593,6 @@ EMSCRIPTEN_BINDINGS(mujoco_structs) {
     .function("copy", &MjTimerStat::copy, take_ownership())
     .property("duration", &MjTimerStat::duration, &MjTimerStat::set_duration, reference())
     .property("number", &MjTimerStat::number, &MjTimerStat::set_number, reference());
-  emscripten::class_<MjVisual>("MjVisual")
-    .constructor<>()
-    .function("copy", &MjVisual::copy, take_ownership())
-    .property("global", &MjVisual::global, reference())
-    .property("quality", &MjVisual::quality, reference())
-    .property("headlight", &MjVisual::headlight, reference())
-    .property("map", &MjVisual::map, reference())
-    .property("scale", &MjVisual::scale, reference())
-    .property("rgba", &MjVisual::rgba, reference());
   emscripten::class_<MjVisualGlobal>("MjVisualGlobal")
     .constructor<>()
     .function("copy", &MjVisualGlobal::copy, take_ownership())
@@ -8833,205 +8833,6 @@ EMSCRIPTEN_BINDINGS(mujoco_structs) {
     .property("localpos", &MjvPerturb::localpos)
     .property("localmass", &MjvPerturb::localmass, &MjvPerturb::set_localmass, reference())
     .property("scale", &MjvPerturb::scale, &MjvPerturb::set_scale, reference());
-  emscripten::class_<MjData>("MjData")
-    .constructor<MjModel *>()
-    .constructor<const MjModel &, const MjData &>()
-    .property("narena", &MjData::narena, &MjData::set_narena, reference())
-    .property("nbuffer", &MjData::nbuffer, &MjData::set_nbuffer, reference())
-    .property("nplugin", &MjData::nplugin, &MjData::set_nplugin, reference())
-    .property("pstack", &MjData::pstack, &MjData::set_pstack, reference())
-    .property("pbase", &MjData::pbase, &MjData::set_pbase, reference())
-    .property("parena", &MjData::parena, &MjData::set_parena, reference())
-    .property("maxuse_stack", &MjData::maxuse_stack, &MjData::set_maxuse_stack, reference())
-    .property("maxuse_threadstack", &MjData::maxuse_threadstack)
-    .property("maxuse_arena", &MjData::maxuse_arena, &MjData::set_maxuse_arena, reference())
-    .property("maxuse_con", &MjData::maxuse_con, &MjData::set_maxuse_con, reference())
-    .property("maxuse_efc", &MjData::maxuse_efc, &MjData::set_maxuse_efc, reference())
-    .property("solver", &MjData::solver)
-    .property("solver_niter", &MjData::solver_niter)
-    .property("solver_nnz", &MjData::solver_nnz)
-    .property("solver_fwdinv", &MjData::solver_fwdinv)
-    .property("warning", &MjData::warning)
-    .property("timer", &MjData::timer)
-    .property("ncon", &MjData::ncon, &MjData::set_ncon, reference())
-    .property("ne", &MjData::ne, &MjData::set_ne, reference())
-    .property("nf", &MjData::nf, &MjData::set_nf, reference())
-    .property("nl", &MjData::nl, &MjData::set_nl, reference())
-    .property("nefc", &MjData::nefc, &MjData::set_nefc, reference())
-    .property("nJ", &MjData::nJ, &MjData::set_nJ, reference())
-    .property("nA", &MjData::nA, &MjData::set_nA, reference())
-    .property("nisland", &MjData::nisland, &MjData::set_nisland, reference())
-    .property("nidof", &MjData::nidof, &MjData::set_nidof, reference())
-    .property("ntree_awake", &MjData::ntree_awake, &MjData::set_ntree_awake, reference())
-    .property("nbody_awake", &MjData::nbody_awake, &MjData::set_nbody_awake, reference())
-    .property("nparent_awake", &MjData::nparent_awake, &MjData::set_nparent_awake, reference())
-    .property("nv_awake", &MjData::nv_awake, &MjData::set_nv_awake, reference())
-    .property("time", &MjData::time, &MjData::set_time, reference())
-    .property("energy", &MjData::energy)
-    .property("buffer", &MjData::buffer)
-    .property("arena", &MjData::arena)
-    .property("qpos", &MjData::qpos)
-    .property("qvel", &MjData::qvel)
-    .property("act", &MjData::act)
-    .property("qacc_warmstart", &MjData::qacc_warmstart)
-    .property("plugin_state", &MjData::plugin_state)
-    .property("ctrl", &MjData::ctrl)
-    .property("qfrc_applied", &MjData::qfrc_applied)
-    .property("xfrc_applied", &MjData::xfrc_applied)
-    .property("eq_active", &MjData::eq_active)
-    .property("mocap_pos", &MjData::mocap_pos)
-    .property("mocap_quat", &MjData::mocap_quat)
-    .property("qacc", &MjData::qacc)
-    .property("act_dot", &MjData::act_dot)
-    .property("userdata", &MjData::userdata)
-    .property("sensordata", &MjData::sensordata)
-    .property("tree_asleep", &MjData::tree_asleep)
-    .property("plugin", &MjData::plugin)
-    .property("plugin_data", &MjData::plugin_data)
-    .property("xpos", &MjData::xpos)
-    .property("xquat", &MjData::xquat)
-    .property("xmat", &MjData::xmat)
-    .property("xipos", &MjData::xipos)
-    .property("ximat", &MjData::ximat)
-    .property("xanchor", &MjData::xanchor)
-    .property("xaxis", &MjData::xaxis)
-    .property("geom_xpos", &MjData::geom_xpos)
-    .property("geom_xmat", &MjData::geom_xmat)
-    .property("site_xpos", &MjData::site_xpos)
-    .property("site_xmat", &MjData::site_xmat)
-    .property("cam_xpos", &MjData::cam_xpos)
-    .property("cam_xmat", &MjData::cam_xmat)
-    .property("light_xpos", &MjData::light_xpos)
-    .property("light_xdir", &MjData::light_xdir)
-    .property("subtree_com", &MjData::subtree_com)
-    .property("cdof", &MjData::cdof)
-    .property("cinert", &MjData::cinert)
-    .property("flexvert_xpos", &MjData::flexvert_xpos)
-    .property("flexelem_aabb", &MjData::flexelem_aabb)
-    .property("flexedge_J_rownnz", &MjData::flexedge_J_rownnz)
-    .property("flexedge_J_rowadr", &MjData::flexedge_J_rowadr)
-    .property("flexedge_J_colind", &MjData::flexedge_J_colind)
-    .property("flexedge_J", &MjData::flexedge_J)
-    .property("flexedge_length", &MjData::flexedge_length)
-    .property("bvh_aabb_dyn", &MjData::bvh_aabb_dyn)
-    .property("ten_wrapadr", &MjData::ten_wrapadr)
-    .property("ten_wrapnum", &MjData::ten_wrapnum)
-    .property("ten_J_rownnz", &MjData::ten_J_rownnz)
-    .property("ten_J_rowadr", &MjData::ten_J_rowadr)
-    .property("ten_J_colind", &MjData::ten_J_colind)
-    .property("ten_J", &MjData::ten_J)
-    .property("ten_length", &MjData::ten_length)
-    .property("wrap_obj", &MjData::wrap_obj)
-    .property("wrap_xpos", &MjData::wrap_xpos)
-    .property("actuator_length", &MjData::actuator_length)
-    .property("moment_rownnz", &MjData::moment_rownnz)
-    .property("moment_rowadr", &MjData::moment_rowadr)
-    .property("moment_colind", &MjData::moment_colind)
-    .property("actuator_moment", &MjData::actuator_moment)
-    .property("crb", &MjData::crb)
-    .property("qM", &MjData::qM)
-    .property("M", &MjData::M)
-    .property("qLD", &MjData::qLD)
-    .property("qLDiagInv", &MjData::qLDiagInv)
-    .property("bvh_active", &MjData::bvh_active)
-    .property("tree_awake", &MjData::tree_awake)
-    .property("body_awake", &MjData::body_awake)
-    .property("body_awake_ind", &MjData::body_awake_ind)
-    .property("parent_awake_ind", &MjData::parent_awake_ind)
-    .property("dof_awake_ind", &MjData::dof_awake_ind)
-    .property("flexedge_velocity", &MjData::flexedge_velocity)
-    .property("ten_velocity", &MjData::ten_velocity)
-    .property("actuator_velocity", &MjData::actuator_velocity)
-    .property("cvel", &MjData::cvel)
-    .property("cdof_dot", &MjData::cdof_dot)
-    .property("qfrc_bias", &MjData::qfrc_bias)
-    .property("qfrc_spring", &MjData::qfrc_spring)
-    .property("qfrc_damper", &MjData::qfrc_damper)
-    .property("qfrc_gravcomp", &MjData::qfrc_gravcomp)
-    .property("qfrc_fluid", &MjData::qfrc_fluid)
-    .property("qfrc_passive", &MjData::qfrc_passive)
-    .property("subtree_linvel", &MjData::subtree_linvel)
-    .property("subtree_angmom", &MjData::subtree_angmom)
-    .property("qH", &MjData::qH)
-    .property("qHDiagInv", &MjData::qHDiagInv)
-    .property("qDeriv", &MjData::qDeriv)
-    .property("qLU", &MjData::qLU)
-    .property("actuator_force", &MjData::actuator_force)
-    .property("qfrc_actuator", &MjData::qfrc_actuator)
-    .property("qfrc_smooth", &MjData::qfrc_smooth)
-    .property("qacc_smooth", &MjData::qacc_smooth)
-    .property("qfrc_constraint", &MjData::qfrc_constraint)
-    .property("qfrc_inverse", &MjData::qfrc_inverse)
-    .property("cacc", &MjData::cacc)
-    .property("cfrc_int", &MjData::cfrc_int)
-    .property("cfrc_ext", &MjData::cfrc_ext)
-    .property("contact", &MjData::contact)
-    .property("efc_type", &MjData::efc_type)
-    .property("efc_id", &MjData::efc_id)
-    .property("efc_J_rownnz", &MjData::efc_J_rownnz)
-    .property("efc_J_rowadr", &MjData::efc_J_rowadr)
-    .property("efc_J_rowsuper", &MjData::efc_J_rowsuper)
-    .property("efc_J_colind", &MjData::efc_J_colind)
-    .property("efc_J", &MjData::efc_J)
-    .property("efc_pos", &MjData::efc_pos)
-    .property("efc_margin", &MjData::efc_margin)
-    .property("efc_frictionloss", &MjData::efc_frictionloss)
-    .property("efc_diagApprox", &MjData::efc_diagApprox)
-    .property("efc_KBIP", &MjData::efc_KBIP)
-    .property("efc_D", &MjData::efc_D)
-    .property("efc_R", &MjData::efc_R)
-    .property("tendon_efcadr", &MjData::tendon_efcadr)
-    .property("tree_island", &MjData::tree_island)
-    .property("island_ntree", &MjData::island_ntree)
-    .property("island_itreeadr", &MjData::island_itreeadr)
-    .property("map_itree2tree", &MjData::map_itree2tree)
-    .property("dof_island", &MjData::dof_island)
-    .property("island_nv", &MjData::island_nv)
-    .property("island_idofadr", &MjData::island_idofadr)
-    .property("island_dofadr", &MjData::island_dofadr)
-    .property("map_dof2idof", &MjData::map_dof2idof)
-    .property("map_idof2dof", &MjData::map_idof2dof)
-    .property("ifrc_smooth", &MjData::ifrc_smooth)
-    .property("iacc_smooth", &MjData::iacc_smooth)
-    .property("iM_rownnz", &MjData::iM_rownnz)
-    .property("iM_rowadr", &MjData::iM_rowadr)
-    .property("iM_colind", &MjData::iM_colind)
-    .property("iM", &MjData::iM)
-    .property("iLD", &MjData::iLD)
-    .property("iLDiagInv", &MjData::iLDiagInv)
-    .property("iacc", &MjData::iacc)
-    .property("efc_island", &MjData::efc_island)
-    .property("island_ne", &MjData::island_ne)
-    .property("island_nf", &MjData::island_nf)
-    .property("island_nefc", &MjData::island_nefc)
-    .property("island_iefcadr", &MjData::island_iefcadr)
-    .property("map_efc2iefc", &MjData::map_efc2iefc)
-    .property("map_iefc2efc", &MjData::map_iefc2efc)
-    .property("iefc_type", &MjData::iefc_type)
-    .property("iefc_id", &MjData::iefc_id)
-    .property("iefc_J_rownnz", &MjData::iefc_J_rownnz)
-    .property("iefc_J_rowadr", &MjData::iefc_J_rowadr)
-    .property("iefc_J_rowsuper", &MjData::iefc_J_rowsuper)
-    .property("iefc_J_colind", &MjData::iefc_J_colind)
-    .property("iefc_J", &MjData::iefc_J)
-    .property("iefc_frictionloss", &MjData::iefc_frictionloss)
-    .property("iefc_D", &MjData::iefc_D)
-    .property("iefc_R", &MjData::iefc_R)
-    .property("efc_AR_rownnz", &MjData::efc_AR_rownnz)
-    .property("efc_AR_rowadr", &MjData::efc_AR_rowadr)
-    .property("efc_AR_colind", &MjData::efc_AR_colind)
-    .property("efc_AR", &MjData::efc_AR)
-    .property("efc_vel", &MjData::efc_vel)
-    .property("efc_aref", &MjData::efc_aref)
-    .property("efc_b", &MjData::efc_b)
-    .property("iefc_aref", &MjData::iefc_aref)
-    .property("iefc_state", &MjData::iefc_state)
-    .property("iefc_force", &MjData::iefc_force)
-    .property("efc_state", &MjData::efc_state)
-    .property("efc_force", &MjData::efc_force)
-    .property("ifrc_constraint", &MjData::ifrc_constraint)
-    .property("threadpool", &MjData::threadpool, &MjData::set_threadpool, reference())
-    .property("signature", &MjData::signature, &MjData::set_signature, reference());
   emscripten::class_<MjsCompiler>("MjsCompiler")
     .property("autolimits", &MjsCompiler::autolimits, &MjsCompiler::set_autolimits, reference())
     .property("boundmass", &MjsCompiler::boundmass, &MjsCompiler::set_boundmass, reference())
@@ -9051,8 +8852,327 @@ EMSCRIPTEN_BINDINGS(mujoco_structs) {
     .property("LRopt", &MjsCompiler::LRopt, reference())
     .property("meshdir", &MjsCompiler::meshdir, &MjsCompiler::set_meshdir, reference())
     .property("texturedir", &MjsCompiler::texturedir, &MjsCompiler::set_texturedir, reference());
+  emscripten::class_<MjVisual>("MjVisual")
+    .constructor<>()
+    .function("copy", &MjVisual::copy, take_ownership())
+    .property("global", &MjVisual::global, reference())
+    .property("quality", &MjVisual::quality, reference())
+    .property("headlight", &MjVisual::headlight, reference())
+    .property("map", &MjVisual::map, reference())
+    .property("scale", &MjVisual::scale, reference())
+    .property("rgba", &MjVisual::rgba, reference());
+  emscripten::class_<MjsEquality>("MjsEquality")
+    .property("element", &MjsEquality::element, reference())
+    .property("type", &MjsEquality::type, &MjsEquality::set_type, reference())
+    .property("data", &MjsEquality::data)
+    .property("active", &MjsEquality::active, &MjsEquality::set_active, reference())
+    .property("name1", &MjsEquality::name1, &MjsEquality::set_name1, reference())
+    .property("name2", &MjsEquality::name2, &MjsEquality::set_name2, reference())
+    .property("objtype", &MjsEquality::objtype, &MjsEquality::set_objtype, reference())
+    .property("solref", &MjsEquality::solref)
+    .property("solimp", &MjsEquality::solimp)
+    .property("info", &MjsEquality::info, &MjsEquality::set_info, reference());
+  emscripten::class_<MjsExclude>("MjsExclude")
+    .property("element", &MjsExclude::element, reference())
+    .property("bodyname1", &MjsExclude::bodyname1, &MjsExclude::set_bodyname1, reference())
+    .property("bodyname2", &MjsExclude::bodyname2, &MjsExclude::set_bodyname2, reference())
+    .property("info", &MjsExclude::info, &MjsExclude::set_info, reference());
+  emscripten::class_<MjsFlex>("MjsFlex")
+    .property("element", &MjsFlex::element, reference())
+    .property("contype", &MjsFlex::contype, &MjsFlex::set_contype, reference())
+    .property("conaffinity", &MjsFlex::conaffinity, &MjsFlex::set_conaffinity, reference())
+    .property("condim", &MjsFlex::condim, &MjsFlex::set_condim, reference())
+    .property("priority", &MjsFlex::priority, &MjsFlex::set_priority, reference())
+    .property("friction", &MjsFlex::friction)
+    .property("solmix", &MjsFlex::solmix, &MjsFlex::set_solmix, reference())
+    .property("solref", &MjsFlex::solref)
+    .property("solimp", &MjsFlex::solimp)
+    .property("margin", &MjsFlex::margin, &MjsFlex::set_margin, reference())
+    .property("gap", &MjsFlex::gap, &MjsFlex::set_gap, reference())
+    .property("dim", &MjsFlex::dim, &MjsFlex::set_dim, reference())
+    .property("radius", &MjsFlex::radius, &MjsFlex::set_radius, reference())
+    .property("internal", &MjsFlex::internal, &MjsFlex::set_internal, reference())
+    .property("flatskin", &MjsFlex::flatskin, &MjsFlex::set_flatskin, reference())
+    .property("selfcollide", &MjsFlex::selfcollide, &MjsFlex::set_selfcollide, reference())
+    .property("vertcollide", &MjsFlex::vertcollide, &MjsFlex::set_vertcollide, reference())
+    .property("passive", &MjsFlex::passive, &MjsFlex::set_passive, reference())
+    .property("activelayers", &MjsFlex::activelayers, &MjsFlex::set_activelayers, reference())
+    .property("group", &MjsFlex::group, &MjsFlex::set_group, reference())
+    .property("edgestiffness", &MjsFlex::edgestiffness, &MjsFlex::set_edgestiffness, reference())
+    .property("edgedamping", &MjsFlex::edgedamping, &MjsFlex::set_edgedamping, reference())
+    .property("rgba", &MjsFlex::rgba)
+    .property("material", &MjsFlex::material, &MjsFlex::set_material, reference())
+    .property("young", &MjsFlex::young, &MjsFlex::set_young, reference())
+    .property("poisson", &MjsFlex::poisson, &MjsFlex::set_poisson, reference())
+    .property("damping", &MjsFlex::damping, &MjsFlex::set_damping, reference())
+    .property("thickness", &MjsFlex::thickness, &MjsFlex::set_thickness, reference())
+    .property("elastic2d", &MjsFlex::elastic2d, &MjsFlex::set_elastic2d, reference())
+    .property("nodebody", &MjsFlex::nodebody, reference())
+    .property("vertbody", &MjsFlex::vertbody, reference())
+    .property("node", &MjsFlex::node, reference())
+    .property("vert", &MjsFlex::vert, reference())
+    .property("elem", &MjsFlex::elem, reference())
+    .property("texcoord", &MjsFlex::texcoord, reference())
+    .property("elemtexcoord", &MjsFlex::elemtexcoord, reference())
+    .property("info", &MjsFlex::info, &MjsFlex::set_info, reference());
+  emscripten::class_<MjsHField>("MjsHField")
+    .property("element", &MjsHField::element, reference())
+    .property("content_type", &MjsHField::content_type, &MjsHField::set_content_type, reference())
+    .property("file", &MjsHField::file, &MjsHField::set_file, reference())
+    .property("size", &MjsHField::size)
+    .property("nrow", &MjsHField::nrow, &MjsHField::set_nrow, reference())
+    .property("ncol", &MjsHField::ncol, &MjsHField::set_ncol, reference())
+    .property("userdata", &MjsHField::userdata, reference())
+    .property("info", &MjsHField::info, &MjsHField::set_info, reference());
+  emscripten::class_<MjsJoint>("MjsJoint")
+    .property("element", &MjsJoint::element, reference())
+    .property("type", &MjsJoint::type, &MjsJoint::set_type, reference())
+    .property("pos", &MjsJoint::pos)
+    .property("axis", &MjsJoint::axis)
+    .property("ref", &MjsJoint::ref, &MjsJoint::set_ref, reference())
+    .property("align", &MjsJoint::align, &MjsJoint::set_align, reference())
+    .property("stiffness", &MjsJoint::stiffness, &MjsJoint::set_stiffness, reference())
+    .property("springref", &MjsJoint::springref, &MjsJoint::set_springref, reference())
+    .property("springdamper", &MjsJoint::springdamper)
+    .property("limited", &MjsJoint::limited, &MjsJoint::set_limited, reference())
+    .property("range", &MjsJoint::range)
+    .property("margin", &MjsJoint::margin, &MjsJoint::set_margin, reference())
+    .property("solref_limit", &MjsJoint::solref_limit)
+    .property("solimp_limit", &MjsJoint::solimp_limit)
+    .property("actfrclimited", &MjsJoint::actfrclimited, &MjsJoint::set_actfrclimited, reference())
+    .property("actfrcrange", &MjsJoint::actfrcrange)
+    .property("armature", &MjsJoint::armature, &MjsJoint::set_armature, reference())
+    .property("damping", &MjsJoint::damping, &MjsJoint::set_damping, reference())
+    .property("frictionloss", &MjsJoint::frictionloss, &MjsJoint::set_frictionloss, reference())
+    .property("solref_friction", &MjsJoint::solref_friction)
+    .property("solimp_friction", &MjsJoint::solimp_friction)
+    .property("group", &MjsJoint::group, &MjsJoint::set_group, reference())
+    .property("actgravcomp", &MjsJoint::actgravcomp, &MjsJoint::set_actgravcomp, reference())
+    .property("userdata", &MjsJoint::userdata, reference())
+    .property("info", &MjsJoint::info, &MjsJoint::set_info, reference());
+  emscripten::class_<MjsKey>("MjsKey")
+    .property("element", &MjsKey::element, reference())
+    .property("time", &MjsKey::time, &MjsKey::set_time, reference())
+    .property("qpos", &MjsKey::qpos, reference())
+    .property("qvel", &MjsKey::qvel, reference())
+    .property("act", &MjsKey::act, reference())
+    .property("mpos", &MjsKey::mpos, reference())
+    .property("mquat", &MjsKey::mquat, reference())
+    .property("ctrl", &MjsKey::ctrl, reference())
+    .property("info", &MjsKey::info, &MjsKey::set_info, reference());
+  emscripten::class_<MjsLight>("MjsLight")
+    .property("element", &MjsLight::element, reference())
+    .property("pos", &MjsLight::pos)
+    .property("dir", &MjsLight::dir)
+    .property("mode", &MjsLight::mode, &MjsLight::set_mode, reference())
+    .property("targetbody", &MjsLight::targetbody, &MjsLight::set_targetbody, reference())
+    .property("active", &MjsLight::active, &MjsLight::set_active, reference())
+    .property("type", &MjsLight::type, &MjsLight::set_type, reference())
+    .property("texture", &MjsLight::texture, &MjsLight::set_texture, reference())
+    .property("castshadow", &MjsLight::castshadow, &MjsLight::set_castshadow, reference())
+    .property("bulbradius", &MjsLight::bulbradius, &MjsLight::set_bulbradius, reference())
+    .property("intensity", &MjsLight::intensity, &MjsLight::set_intensity, reference())
+    .property("range", &MjsLight::range, &MjsLight::set_range, reference())
+    .property("attenuation", &MjsLight::attenuation)
+    .property("cutoff", &MjsLight::cutoff, &MjsLight::set_cutoff, reference())
+    .property("exponent", &MjsLight::exponent, &MjsLight::set_exponent, reference())
+    .property("ambient", &MjsLight::ambient)
+    .property("diffuse", &MjsLight::diffuse)
+    .property("specular", &MjsLight::specular)
+    .property("info", &MjsLight::info, &MjsLight::set_info, reference());
+  emscripten::class_<MjsMaterial>("MjsMaterial")
+    .property("element", &MjsMaterial::element, reference())
+    .property("textures", &MjsMaterial::textures, reference())
+    .property("texuniform", &MjsMaterial::texuniform, &MjsMaterial::set_texuniform, reference())
+    .property("texrepeat", &MjsMaterial::texrepeat)
+    .property("emission", &MjsMaterial::emission, &MjsMaterial::set_emission, reference())
+    .property("specular", &MjsMaterial::specular, &MjsMaterial::set_specular, reference())
+    .property("shininess", &MjsMaterial::shininess, &MjsMaterial::set_shininess, reference())
+    .property("reflectance", &MjsMaterial::reflectance, &MjsMaterial::set_reflectance, reference())
+    .property("metallic", &MjsMaterial::metallic, &MjsMaterial::set_metallic, reference())
+    .property("roughness", &MjsMaterial::roughness, &MjsMaterial::set_roughness, reference())
+    .property("rgba", &MjsMaterial::rgba)
+    .property("info", &MjsMaterial::info, &MjsMaterial::set_info, reference());
+  emscripten::class_<MjsNumeric>("MjsNumeric")
+    .property("element", &MjsNumeric::element, reference())
+    .property("data", &MjsNumeric::data, reference())
+    .property("size", &MjsNumeric::size, &MjsNumeric::set_size, reference())
+    .property("info", &MjsNumeric::info, &MjsNumeric::set_info, reference());
+  emscripten::class_<MjsPair>("MjsPair")
+    .property("element", &MjsPair::element, reference())
+    .property("geomname1", &MjsPair::geomname1, &MjsPair::set_geomname1, reference())
+    .property("geomname2", &MjsPair::geomname2, &MjsPair::set_geomname2, reference())
+    .property("condim", &MjsPair::condim, &MjsPair::set_condim, reference())
+    .property("solref", &MjsPair::solref)
+    .property("solreffriction", &MjsPair::solreffriction)
+    .property("solimp", &MjsPair::solimp)
+    .property("margin", &MjsPair::margin, &MjsPair::set_margin, reference())
+    .property("gap", &MjsPair::gap, &MjsPair::set_gap, reference())
+    .property("friction", &MjsPair::friction)
+    .property("info", &MjsPair::info, &MjsPair::set_info, reference());
+  emscripten::class_<MjsPlugin>("MjsPlugin")
+    .property("element", &MjsPlugin::element, reference())
+    .property("name", &MjsPlugin::name, &MjsPlugin::set_name, reference())
+    .property("plugin_name", &MjsPlugin::plugin_name, &MjsPlugin::set_plugin_name, reference())
+    .property("active", &MjsPlugin::active, &MjsPlugin::set_active, reference())
+    .property("info", &MjsPlugin::info, &MjsPlugin::set_info, reference());
+  emscripten::class_<MjsSkin>("MjsSkin")
+    .property("element", &MjsSkin::element, reference())
+    .property("file", &MjsSkin::file, &MjsSkin::set_file, reference())
+    .property("material", &MjsSkin::material, &MjsSkin::set_material, reference())
+    .property("rgba", &MjsSkin::rgba)
+    .property("inflate", &MjsSkin::inflate, &MjsSkin::set_inflate, reference())
+    .property("group", &MjsSkin::group, &MjsSkin::set_group, reference())
+    .property("vert", &MjsSkin::vert, reference())
+    .property("texcoord", &MjsSkin::texcoord, reference())
+    .property("face", &MjsSkin::face, reference())
+    .property("bodyname", &MjsSkin::bodyname, reference())
+    .property("bindpos", &MjsSkin::bindpos, reference())
+    .property("bindquat", &MjsSkin::bindquat, reference())
+    .property("vertid", &MjsSkin::vertid, reference())
+    .property("vertweight", &MjsSkin::vertweight, reference())
+    .property("info", &MjsSkin::info, &MjsSkin::set_info, reference());
+  emscripten::class_<MjsTendon>("MjsTendon")
+    .property("element", &MjsTendon::element, reference())
+    .property("stiffness", &MjsTendon::stiffness, &MjsTendon::set_stiffness, reference())
+    .property("springlength", &MjsTendon::springlength)
+    .property("damping", &MjsTendon::damping, &MjsTendon::set_damping, reference())
+    .property("frictionloss", &MjsTendon::frictionloss, &MjsTendon::set_frictionloss, reference())
+    .property("solref_friction", &MjsTendon::solref_friction)
+    .property("solimp_friction", &MjsTendon::solimp_friction)
+    .property("armature", &MjsTendon::armature, &MjsTendon::set_armature, reference())
+    .property("limited", &MjsTendon::limited, &MjsTendon::set_limited, reference())
+    .property("actfrclimited", &MjsTendon::actfrclimited, &MjsTendon::set_actfrclimited, reference())
+    .property("range", &MjsTendon::range)
+    .property("actfrcrange", &MjsTendon::actfrcrange)
+    .property("margin", &MjsTendon::margin, &MjsTendon::set_margin, reference())
+    .property("solref_limit", &MjsTendon::solref_limit)
+    .property("solimp_limit", &MjsTendon::solimp_limit)
+    .property("material", &MjsTendon::material, &MjsTendon::set_material, reference())
+    .property("width", &MjsTendon::width, &MjsTendon::set_width, reference())
+    .property("rgba", &MjsTendon::rgba)
+    .property("group", &MjsTendon::group, &MjsTendon::set_group, reference())
+    .property("userdata", &MjsTendon::userdata, reference())
+    .property("info", &MjsTendon::info, &MjsTendon::set_info, reference());
+  emscripten::class_<MjsText>("MjsText")
+    .property("element", &MjsText::element, reference())
+    .property("data", &MjsText::data, &MjsText::set_data, reference())
+    .property("info", &MjsText::info, &MjsText::set_info, reference());
+  emscripten::class_<MjsTexture>("MjsTexture")
+    .property("element", &MjsTexture::element, reference())
+    .property("type", &MjsTexture::type, &MjsTexture::set_type, reference())
+    .property("colorspace", &MjsTexture::colorspace, &MjsTexture::set_colorspace, reference())
+    .property("builtin", &MjsTexture::builtin, &MjsTexture::set_builtin, reference())
+    .property("mark", &MjsTexture::mark, &MjsTexture::set_mark, reference())
+    .property("rgb1", &MjsTexture::rgb1)
+    .property("rgb2", &MjsTexture::rgb2)
+    .property("markrgb", &MjsTexture::markrgb)
+    .property("random", &MjsTexture::random, &MjsTexture::set_random, reference())
+    .property("height", &MjsTexture::height, &MjsTexture::set_height, reference())
+    .property("width", &MjsTexture::width, &MjsTexture::set_width, reference())
+    .property("nchannel", &MjsTexture::nchannel, &MjsTexture::set_nchannel, reference())
+    .property("content_type", &MjsTexture::content_type, &MjsTexture::set_content_type, reference())
+    .property("file", &MjsTexture::file, &MjsTexture::set_file, reference())
+    .property("gridsize", &MjsTexture::gridsize)
+    .property("gridlayout", &MjsTexture::gridlayout)
+    .property("cubefiles", &MjsTexture::cubefiles, reference())
+    .property("data", &MjsTexture::data, reference())
+    .property("hflip", &MjsTexture::hflip, &MjsTexture::set_hflip, reference())
+    .property("vflip", &MjsTexture::vflip, &MjsTexture::set_vflip, reference())
+    .property("info", &MjsTexture::info, &MjsTexture::set_info, reference());
+  emscripten::class_<MjsTuple>("MjsTuple")
+    .property("element", &MjsTuple::element, reference())
+    .property("objtype", &MjsTuple::objtype, reference())
+    .property("objname", &MjsTuple::objname, reference())
+    .property("objprm", &MjsTuple::objprm, reference())
+    .property("info", &MjsTuple::info, &MjsTuple::set_info, reference());
+  emscripten::class_<MjsWrap>("MjsWrap")
+    .property("element", &MjsWrap::element, reference())
+    .property("type", &MjsWrap::type, &MjsWrap::set_type, reference())
+    .property("info", &MjsWrap::info, &MjsWrap::set_info, reference());
+  emscripten::class_<MjsCamera>("MjsCamera")
+    .property("element", &MjsCamera::element, reference())
+    .property("pos", &MjsCamera::pos)
+    .property("quat", &MjsCamera::quat)
+    .property("alt", &MjsCamera::alt, reference())
+    .property("mode", &MjsCamera::mode, &MjsCamera::set_mode, reference())
+    .property("targetbody", &MjsCamera::targetbody, &MjsCamera::set_targetbody, reference())
+    .property("orthographic", &MjsCamera::orthographic, &MjsCamera::set_orthographic, reference())
+    .property("fovy", &MjsCamera::fovy, &MjsCamera::set_fovy, reference())
+    .property("ipd", &MjsCamera::ipd, &MjsCamera::set_ipd, reference())
+    .property("intrinsic", &MjsCamera::intrinsic)
+    .property("sensor_size", &MjsCamera::sensor_size)
+    .property("resolution", &MjsCamera::resolution)
+    .property("focal_length", &MjsCamera::focal_length)
+    .property("focal_pixel", &MjsCamera::focal_pixel)
+    .property("principal_length", &MjsCamera::principal_length)
+    .property("principal_pixel", &MjsCamera::principal_pixel)
+    .property("userdata", &MjsCamera::userdata, reference())
+    .property("info", &MjsCamera::info, &MjsCamera::set_info, reference());
+  emscripten::class_<MjsFrame>("MjsFrame")
+    .property("element", &MjsFrame::element, reference())
+    .property("childclass", &MjsFrame::childclass, &MjsFrame::set_childclass, reference())
+    .property("pos", &MjsFrame::pos)
+    .property("quat", &MjsFrame::quat)
+    .property("alt", &MjsFrame::alt, reference())
+    .property("info", &MjsFrame::info, &MjsFrame::set_info, reference());
+  emscripten::class_<MjsSite>("MjsSite")
+    .property("element", &MjsSite::element, reference())
+    .property("pos", &MjsSite::pos)
+    .property("quat", &MjsSite::quat)
+    .property("alt", &MjsSite::alt, reference())
+    .property("fromto", &MjsSite::fromto)
+    .property("size", &MjsSite::size)
+    .property("type", &MjsSite::type, &MjsSite::set_type, reference())
+    .property("material", &MjsSite::material, &MjsSite::set_material, reference())
+    .property("group", &MjsSite::group, &MjsSite::set_group, reference())
+    .property("rgba", &MjsSite::rgba)
+    .property("userdata", &MjsSite::userdata, reference())
+    .property("info", &MjsSite::info, &MjsSite::set_info, reference());
+  emscripten::class_<MjvScene>("MjvScene")
+    .constructor<MjModel *, int>()
+    .constructor<>()
+    .property("maxgeom", &MjvScene::maxgeom, &MjvScene::set_maxgeom, reference())
+    .property("ngeom", &MjvScene::ngeom, &MjvScene::set_ngeom, reference())
+    .property("geoms", &MjvScene::geoms)
+    .property("geomorder", &MjvScene::geomorder)
+    .property("nflex", &MjvScene::nflex, &MjvScene::set_nflex, reference())
+    .property("flexedgeadr", &MjvScene::flexedgeadr)
+    .property("flexedgenum", &MjvScene::flexedgenum)
+    .property("flexvertadr", &MjvScene::flexvertadr)
+    .property("flexvertnum", &MjvScene::flexvertnum)
+    .property("flexfaceadr", &MjvScene::flexfaceadr)
+    .property("flexfacenum", &MjvScene::flexfacenum)
+    .property("flexfaceused", &MjvScene::flexfaceused)
+    .property("flexedge", &MjvScene::flexedge)
+    .property("flexvert", &MjvScene::flexvert)
+    .property("flexface", &MjvScene::flexface)
+    .property("flexnormal", &MjvScene::flexnormal)
+    .property("flextexcoord", &MjvScene::flextexcoord)
+    .property("flexvertopt", &MjvScene::flexvertopt, &MjvScene::set_flexvertopt, reference())
+    .property("flexedgeopt", &MjvScene::flexedgeopt, &MjvScene::set_flexedgeopt, reference())
+    .property("flexfaceopt", &MjvScene::flexfaceopt, &MjvScene::set_flexfaceopt, reference())
+    .property("flexskinopt", &MjvScene::flexskinopt, &MjvScene::set_flexskinopt, reference())
+    .property("nskin", &MjvScene::nskin, &MjvScene::set_nskin, reference())
+    .property("skinfacenum", &MjvScene::skinfacenum)
+    .property("skinvertadr", &MjvScene::skinvertadr)
+    .property("skinvertnum", &MjvScene::skinvertnum)
+    .property("skinvert", &MjvScene::skinvert)
+    .property("skinnormal", &MjvScene::skinnormal)
+    .property("nlight", &MjvScene::nlight, &MjvScene::set_nlight, reference())
+    .property("lights", &MjvScene::lights)
+    .property("camera", &MjvScene::camera)
+    .property("enabletransform", &MjvScene::enabletransform, &MjvScene::set_enabletransform, reference())
+    .property("translate", &MjvScene::translate)
+    .property("rotate", &MjvScene::rotate)
+    .property("scale", &MjvScene::scale, &MjvScene::set_scale, reference())
+    .property("stereo", &MjvScene::stereo, &MjvScene::set_stereo, reference())
+    .property("flags", &MjvScene::flags)
+    .property("framewidth", &MjvScene::framewidth, &MjvScene::set_framewidth, reference())
+    .property("framergb", &MjvScene::framergb)
+    .property("status", &MjvScene::status, &MjvScene::set_status, reference());
   emscripten::class_<MjModel>("MjModel")
-    .class_function("loadFromXML", &loadFromXML, take_ownership())
+    .class_function("loadFromXML", &loadFromXML_wrapper, take_ownership())
     .constructor<const MjModel &>()
     .property("nq", &MjModel::nq, &MjModel::set_nq, reference())
     .property("nv", &MjModel::nv, &MjModel::set_nv, reference())
@@ -9582,325 +9702,15 @@ EMSCRIPTEN_BINDINGS(mujoco_structs) {
     .property("mapM2D", &MjModel::mapM2D)
     .property("mapD2M", &MjModel::mapD2M)
     .property("signature", &MjModel::signature, &MjModel::set_signature, reference());
-  emscripten::class_<MjsEquality>("MjsEquality")
-    .property("element", &MjsEquality::element, reference())
-    .property("type", &MjsEquality::type, &MjsEquality::set_type, reference())
-    .property("data", &MjsEquality::data)
-    .property("active", &MjsEquality::active, &MjsEquality::set_active, reference())
-    .property("name1", &MjsEquality::name1, &MjsEquality::set_name1, reference())
-    .property("name2", &MjsEquality::name2, &MjsEquality::set_name2, reference())
-    .property("objtype", &MjsEquality::objtype, &MjsEquality::set_objtype, reference())
-    .property("solref", &MjsEquality::solref)
-    .property("solimp", &MjsEquality::solimp)
-    .property("info", &MjsEquality::info, &MjsEquality::set_info, reference());
-  emscripten::class_<MjsExclude>("MjsExclude")
-    .property("element", &MjsExclude::element, reference())
-    .property("bodyname1", &MjsExclude::bodyname1, &MjsExclude::set_bodyname1, reference())
-    .property("bodyname2", &MjsExclude::bodyname2, &MjsExclude::set_bodyname2, reference())
-    .property("info", &MjsExclude::info, &MjsExclude::set_info, reference());
-  emscripten::class_<MjsFlex>("MjsFlex")
-    .property("element", &MjsFlex::element, reference())
-    .property("contype", &MjsFlex::contype, &MjsFlex::set_contype, reference())
-    .property("conaffinity", &MjsFlex::conaffinity, &MjsFlex::set_conaffinity, reference())
-    .property("condim", &MjsFlex::condim, &MjsFlex::set_condim, reference())
-    .property("priority", &MjsFlex::priority, &MjsFlex::set_priority, reference())
-    .property("friction", &MjsFlex::friction)
-    .property("solmix", &MjsFlex::solmix, &MjsFlex::set_solmix, reference())
-    .property("solref", &MjsFlex::solref)
-    .property("solimp", &MjsFlex::solimp)
-    .property("margin", &MjsFlex::margin, &MjsFlex::set_margin, reference())
-    .property("gap", &MjsFlex::gap, &MjsFlex::set_gap, reference())
-    .property("dim", &MjsFlex::dim, &MjsFlex::set_dim, reference())
-    .property("radius", &MjsFlex::radius, &MjsFlex::set_radius, reference())
-    .property("internal", &MjsFlex::internal, &MjsFlex::set_internal, reference())
-    .property("flatskin", &MjsFlex::flatskin, &MjsFlex::set_flatskin, reference())
-    .property("selfcollide", &MjsFlex::selfcollide, &MjsFlex::set_selfcollide, reference())
-    .property("vertcollide", &MjsFlex::vertcollide, &MjsFlex::set_vertcollide, reference())
-    .property("passive", &MjsFlex::passive, &MjsFlex::set_passive, reference())
-    .property("activelayers", &MjsFlex::activelayers, &MjsFlex::set_activelayers, reference())
-    .property("group", &MjsFlex::group, &MjsFlex::set_group, reference())
-    .property("edgestiffness", &MjsFlex::edgestiffness, &MjsFlex::set_edgestiffness, reference())
-    .property("edgedamping", &MjsFlex::edgedamping, &MjsFlex::set_edgedamping, reference())
-    .property("rgba", &MjsFlex::rgba)
-    .property("material", &MjsFlex::material, &MjsFlex::set_material, reference())
-    .property("young", &MjsFlex::young, &MjsFlex::set_young, reference())
-    .property("poisson", &MjsFlex::poisson, &MjsFlex::set_poisson, reference())
-    .property("damping", &MjsFlex::damping, &MjsFlex::set_damping, reference())
-    .property("thickness", &MjsFlex::thickness, &MjsFlex::set_thickness, reference())
-    .property("elastic2d", &MjsFlex::elastic2d, &MjsFlex::set_elastic2d, reference())
-    .property("nodebody", &MjsFlex::nodebody, reference())
-    .property("vertbody", &MjsFlex::vertbody, reference())
-    .property("node", &MjsFlex::node, reference())
-    .property("vert", &MjsFlex::vert, reference())
-    .property("elem", &MjsFlex::elem, reference())
-    .property("texcoord", &MjsFlex::texcoord, reference())
-    .property("elemtexcoord", &MjsFlex::elemtexcoord, reference())
-    .property("info", &MjsFlex::info, &MjsFlex::set_info, reference());
-  emscripten::class_<MjsHField>("MjsHField")
-    .property("element", &MjsHField::element, reference())
-    .property("content_type", &MjsHField::content_type, &MjsHField::set_content_type, reference())
-    .property("file", &MjsHField::file, &MjsHField::set_file, reference())
-    .property("size", &MjsHField::size)
-    .property("nrow", &MjsHField::nrow, &MjsHField::set_nrow, reference())
-    .property("ncol", &MjsHField::ncol, &MjsHField::set_ncol, reference())
-    .property("userdata", &MjsHField::userdata, reference())
-    .property("info", &MjsHField::info, &MjsHField::set_info, reference());
-  emscripten::class_<MjsJoint>("MjsJoint")
-    .property("element", &MjsJoint::element, reference())
-    .property("type", &MjsJoint::type, &MjsJoint::set_type, reference())
-    .property("pos", &MjsJoint::pos)
-    .property("axis", &MjsJoint::axis)
-    .property("ref", &MjsJoint::ref, &MjsJoint::set_ref, reference())
-    .property("align", &MjsJoint::align, &MjsJoint::set_align, reference())
-    .property("stiffness", &MjsJoint::stiffness, &MjsJoint::set_stiffness, reference())
-    .property("springref", &MjsJoint::springref, &MjsJoint::set_springref, reference())
-    .property("springdamper", &MjsJoint::springdamper)
-    .property("limited", &MjsJoint::limited, &MjsJoint::set_limited, reference())
-    .property("range", &MjsJoint::range)
-    .property("margin", &MjsJoint::margin, &MjsJoint::set_margin, reference())
-    .property("solref_limit", &MjsJoint::solref_limit)
-    .property("solimp_limit", &MjsJoint::solimp_limit)
-    .property("actfrclimited", &MjsJoint::actfrclimited, &MjsJoint::set_actfrclimited, reference())
-    .property("actfrcrange", &MjsJoint::actfrcrange)
-    .property("armature", &MjsJoint::armature, &MjsJoint::set_armature, reference())
-    .property("damping", &MjsJoint::damping, &MjsJoint::set_damping, reference())
-    .property("frictionloss", &MjsJoint::frictionloss, &MjsJoint::set_frictionloss, reference())
-    .property("solref_friction", &MjsJoint::solref_friction)
-    .property("solimp_friction", &MjsJoint::solimp_friction)
-    .property("group", &MjsJoint::group, &MjsJoint::set_group, reference())
-    .property("actgravcomp", &MjsJoint::actgravcomp, &MjsJoint::set_actgravcomp, reference())
-    .property("userdata", &MjsJoint::userdata, reference())
-    .property("info", &MjsJoint::info, &MjsJoint::set_info, reference());
-  emscripten::class_<MjsKey>("MjsKey")
-    .property("element", &MjsKey::element, reference())
-    .property("time", &MjsKey::time, &MjsKey::set_time, reference())
-    .property("qpos", &MjsKey::qpos, reference())
-    .property("qvel", &MjsKey::qvel, reference())
-    .property("act", &MjsKey::act, reference())
-    .property("mpos", &MjsKey::mpos, reference())
-    .property("mquat", &MjsKey::mquat, reference())
-    .property("ctrl", &MjsKey::ctrl, reference())
-    .property("info", &MjsKey::info, &MjsKey::set_info, reference());
-  emscripten::class_<MjsLight>("MjsLight")
-    .property("element", &MjsLight::element, reference())
-    .property("pos", &MjsLight::pos)
-    .property("dir", &MjsLight::dir)
-    .property("mode", &MjsLight::mode, &MjsLight::set_mode, reference())
-    .property("targetbody", &MjsLight::targetbody, &MjsLight::set_targetbody, reference())
-    .property("active", &MjsLight::active, &MjsLight::set_active, reference())
-    .property("type", &MjsLight::type, &MjsLight::set_type, reference())
-    .property("texture", &MjsLight::texture, &MjsLight::set_texture, reference())
-    .property("castshadow", &MjsLight::castshadow, &MjsLight::set_castshadow, reference())
-    .property("bulbradius", &MjsLight::bulbradius, &MjsLight::set_bulbradius, reference())
-    .property("intensity", &MjsLight::intensity, &MjsLight::set_intensity, reference())
-    .property("range", &MjsLight::range, &MjsLight::set_range, reference())
-    .property("attenuation", &MjsLight::attenuation)
-    .property("cutoff", &MjsLight::cutoff, &MjsLight::set_cutoff, reference())
-    .property("exponent", &MjsLight::exponent, &MjsLight::set_exponent, reference())
-    .property("ambient", &MjsLight::ambient)
-    .property("diffuse", &MjsLight::diffuse)
-    .property("specular", &MjsLight::specular)
-    .property("info", &MjsLight::info, &MjsLight::set_info, reference());
-  emscripten::class_<MjsMaterial>("MjsMaterial")
-    .property("element", &MjsMaterial::element, reference())
-    .property("textures", &MjsMaterial::textures, reference())
-    .property("texuniform", &MjsMaterial::texuniform, &MjsMaterial::set_texuniform, reference())
-    .property("texrepeat", &MjsMaterial::texrepeat)
-    .property("emission", &MjsMaterial::emission, &MjsMaterial::set_emission, reference())
-    .property("specular", &MjsMaterial::specular, &MjsMaterial::set_specular, reference())
-    .property("shininess", &MjsMaterial::shininess, &MjsMaterial::set_shininess, reference())
-    .property("reflectance", &MjsMaterial::reflectance, &MjsMaterial::set_reflectance, reference())
-    .property("metallic", &MjsMaterial::metallic, &MjsMaterial::set_metallic, reference())
-    .property("roughness", &MjsMaterial::roughness, &MjsMaterial::set_roughness, reference())
-    .property("rgba", &MjsMaterial::rgba)
-    .property("info", &MjsMaterial::info, &MjsMaterial::set_info, reference());
-  emscripten::class_<MjsNumeric>("MjsNumeric")
-    .property("element", &MjsNumeric::element, reference())
-    .property("data", &MjsNumeric::data, reference())
-    .property("size", &MjsNumeric::size, &MjsNumeric::set_size, reference())
-    .property("info", &MjsNumeric::info, &MjsNumeric::set_info, reference());
-  emscripten::class_<MjsPair>("MjsPair")
-    .property("element", &MjsPair::element, reference())
-    .property("geomname1", &MjsPair::geomname1, &MjsPair::set_geomname1, reference())
-    .property("geomname2", &MjsPair::geomname2, &MjsPair::set_geomname2, reference())
-    .property("condim", &MjsPair::condim, &MjsPair::set_condim, reference())
-    .property("solref", &MjsPair::solref)
-    .property("solreffriction", &MjsPair::solreffriction)
-    .property("solimp", &MjsPair::solimp)
-    .property("margin", &MjsPair::margin, &MjsPair::set_margin, reference())
-    .property("gap", &MjsPair::gap, &MjsPair::set_gap, reference())
-    .property("friction", &MjsPair::friction)
-    .property("info", &MjsPair::info, &MjsPair::set_info, reference());
-  emscripten::class_<MjsPlugin>("MjsPlugin")
-    .property("element", &MjsPlugin::element, reference())
-    .property("name", &MjsPlugin::name, &MjsPlugin::set_name, reference())
-    .property("plugin_name", &MjsPlugin::plugin_name, &MjsPlugin::set_plugin_name, reference())
-    .property("active", &MjsPlugin::active, &MjsPlugin::set_active, reference())
-    .property("info", &MjsPlugin::info, &MjsPlugin::set_info, reference());
-  emscripten::class_<MjsSkin>("MjsSkin")
-    .property("element", &MjsSkin::element, reference())
-    .property("file", &MjsSkin::file, &MjsSkin::set_file, reference())
-    .property("material", &MjsSkin::material, &MjsSkin::set_material, reference())
-    .property("rgba", &MjsSkin::rgba)
-    .property("inflate", &MjsSkin::inflate, &MjsSkin::set_inflate, reference())
-    .property("group", &MjsSkin::group, &MjsSkin::set_group, reference())
-    .property("vert", &MjsSkin::vert, reference())
-    .property("texcoord", &MjsSkin::texcoord, reference())
-    .property("face", &MjsSkin::face, reference())
-    .property("bodyname", &MjsSkin::bodyname, reference())
-    .property("bindpos", &MjsSkin::bindpos, reference())
-    .property("bindquat", &MjsSkin::bindquat, reference())
-    .property("vertid", &MjsSkin::vertid, reference())
-    .property("vertweight", &MjsSkin::vertweight, reference())
-    .property("info", &MjsSkin::info, &MjsSkin::set_info, reference());
-  emscripten::class_<MjsTendon>("MjsTendon")
-    .property("element", &MjsTendon::element, reference())
-    .property("stiffness", &MjsTendon::stiffness, &MjsTendon::set_stiffness, reference())
-    .property("springlength", &MjsTendon::springlength)
-    .property("damping", &MjsTendon::damping, &MjsTendon::set_damping, reference())
-    .property("frictionloss", &MjsTendon::frictionloss, &MjsTendon::set_frictionloss, reference())
-    .property("solref_friction", &MjsTendon::solref_friction)
-    .property("solimp_friction", &MjsTendon::solimp_friction)
-    .property("armature", &MjsTendon::armature, &MjsTendon::set_armature, reference())
-    .property("limited", &MjsTendon::limited, &MjsTendon::set_limited, reference())
-    .property("actfrclimited", &MjsTendon::actfrclimited, &MjsTendon::set_actfrclimited, reference())
-    .property("range", &MjsTendon::range)
-    .property("actfrcrange", &MjsTendon::actfrcrange)
-    .property("margin", &MjsTendon::margin, &MjsTendon::set_margin, reference())
-    .property("solref_limit", &MjsTendon::solref_limit)
-    .property("solimp_limit", &MjsTendon::solimp_limit)
-    .property("material", &MjsTendon::material, &MjsTendon::set_material, reference())
-    .property("width", &MjsTendon::width, &MjsTendon::set_width, reference())
-    .property("rgba", &MjsTendon::rgba)
-    .property("group", &MjsTendon::group, &MjsTendon::set_group, reference())
-    .property("userdata", &MjsTendon::userdata, reference())
-    .property("info", &MjsTendon::info, &MjsTendon::set_info, reference());
-  emscripten::class_<MjsText>("MjsText")
-    .property("element", &MjsText::element, reference())
-    .property("data", &MjsText::data, &MjsText::set_data, reference())
-    .property("info", &MjsText::info, &MjsText::set_info, reference());
-  emscripten::class_<MjsTexture>("MjsTexture")
-    .property("element", &MjsTexture::element, reference())
-    .property("type", &MjsTexture::type, &MjsTexture::set_type, reference())
-    .property("colorspace", &MjsTexture::colorspace, &MjsTexture::set_colorspace, reference())
-    .property("builtin", &MjsTexture::builtin, &MjsTexture::set_builtin, reference())
-    .property("mark", &MjsTexture::mark, &MjsTexture::set_mark, reference())
-    .property("rgb1", &MjsTexture::rgb1)
-    .property("rgb2", &MjsTexture::rgb2)
-    .property("markrgb", &MjsTexture::markrgb)
-    .property("random", &MjsTexture::random, &MjsTexture::set_random, reference())
-    .property("height", &MjsTexture::height, &MjsTexture::set_height, reference())
-    .property("width", &MjsTexture::width, &MjsTexture::set_width, reference())
-    .property("nchannel", &MjsTexture::nchannel, &MjsTexture::set_nchannel, reference())
-    .property("content_type", &MjsTexture::content_type, &MjsTexture::set_content_type, reference())
-    .property("file", &MjsTexture::file, &MjsTexture::set_file, reference())
-    .property("gridsize", &MjsTexture::gridsize)
-    .property("gridlayout", &MjsTexture::gridlayout)
-    .property("cubefiles", &MjsTexture::cubefiles, reference())
-    .property("data", &MjsTexture::data, reference())
-    .property("hflip", &MjsTexture::hflip, &MjsTexture::set_hflip, reference())
-    .property("vflip", &MjsTexture::vflip, &MjsTexture::set_vflip, reference())
-    .property("info", &MjsTexture::info, &MjsTexture::set_info, reference());
-  emscripten::class_<MjsTuple>("MjsTuple")
-    .property("element", &MjsTuple::element, reference())
-    .property("objtype", &MjsTuple::objtype, reference())
-    .property("objname", &MjsTuple::objname, reference())
-    .property("objprm", &MjsTuple::objprm, reference())
-    .property("info", &MjsTuple::info, &MjsTuple::set_info, reference());
-  emscripten::class_<MjsWrap>("MjsWrap")
-    .property("element", &MjsWrap::element, reference())
-    .property("type", &MjsWrap::type, &MjsWrap::set_type, reference())
-    .property("info", &MjsWrap::info, &MjsWrap::set_info, reference());
-  emscripten::class_<MjsCamera>("MjsCamera")
-    .property("element", &MjsCamera::element, reference())
-    .property("pos", &MjsCamera::pos)
-    .property("quat", &MjsCamera::quat)
-    .property("alt", &MjsCamera::alt, reference())
-    .property("mode", &MjsCamera::mode, &MjsCamera::set_mode, reference())
-    .property("targetbody", &MjsCamera::targetbody, &MjsCamera::set_targetbody, reference())
-    .property("orthographic", &MjsCamera::orthographic, &MjsCamera::set_orthographic, reference())
-    .property("fovy", &MjsCamera::fovy, &MjsCamera::set_fovy, reference())
-    .property("ipd", &MjsCamera::ipd, &MjsCamera::set_ipd, reference())
-    .property("intrinsic", &MjsCamera::intrinsic)
-    .property("sensor_size", &MjsCamera::sensor_size)
-    .property("resolution", &MjsCamera::resolution)
-    .property("focal_length", &MjsCamera::focal_length)
-    .property("focal_pixel", &MjsCamera::focal_pixel)
-    .property("principal_length", &MjsCamera::principal_length)
-    .property("principal_pixel", &MjsCamera::principal_pixel)
-    .property("userdata", &MjsCamera::userdata, reference())
-    .property("info", &MjsCamera::info, &MjsCamera::set_info, reference());
-  emscripten::class_<MjsFrame>("MjsFrame")
-    .property("element", &MjsFrame::element, reference())
-    .property("childclass", &MjsFrame::childclass, &MjsFrame::set_childclass, reference())
-    .property("pos", &MjsFrame::pos)
-    .property("quat", &MjsFrame::quat)
-    .property("alt", &MjsFrame::alt, reference())
-    .property("info", &MjsFrame::info, &MjsFrame::set_info, reference());
-  emscripten::class_<MjsSite>("MjsSite")
-    .property("element", &MjsSite::element, reference())
-    .property("pos", &MjsSite::pos)
-    .property("quat", &MjsSite::quat)
-    .property("alt", &MjsSite::alt, reference())
-    .property("fromto", &MjsSite::fromto)
-    .property("size", &MjsSite::size)
-    .property("type", &MjsSite::type, &MjsSite::set_type, reference())
-    .property("material", &MjsSite::material, &MjsSite::set_material, reference())
-    .property("group", &MjsSite::group, &MjsSite::set_group, reference())
-    .property("rgba", &MjsSite::rgba)
-    .property("userdata", &MjsSite::userdata, reference())
-    .property("info", &MjsSite::info, &MjsSite::set_info, reference());
-  emscripten::class_<MjvScene>("MjvScene")
-    .constructor<MjModel *, int>()
-    .constructor<>()
-    .property("maxgeom", &MjvScene::maxgeom, &MjvScene::set_maxgeom, reference())
-    .property("ngeom", &MjvScene::ngeom, &MjvScene::set_ngeom, reference())
-    .property("geoms", &MjvScene::geoms)
-    .property("geomorder", &MjvScene::geomorder)
-    .property("nflex", &MjvScene::nflex, &MjvScene::set_nflex, reference())
-    .property("flexedgeadr", &MjvScene::flexedgeadr)
-    .property("flexedgenum", &MjvScene::flexedgenum)
-    .property("flexvertadr", &MjvScene::flexvertadr)
-    .property("flexvertnum", &MjvScene::flexvertnum)
-    .property("flexfaceadr", &MjvScene::flexfaceadr)
-    .property("flexfacenum", &MjvScene::flexfacenum)
-    .property("flexfaceused", &MjvScene::flexfaceused)
-    .property("flexedge", &MjvScene::flexedge)
-    .property("flexvert", &MjvScene::flexvert)
-    .property("flexface", &MjvScene::flexface)
-    .property("flexnormal", &MjvScene::flexnormal)
-    .property("flextexcoord", &MjvScene::flextexcoord)
-    .property("flexvertopt", &MjvScene::flexvertopt, &MjvScene::set_flexvertopt, reference())
-    .property("flexedgeopt", &MjvScene::flexedgeopt, &MjvScene::set_flexedgeopt, reference())
-    .property("flexfaceopt", &MjvScene::flexfaceopt, &MjvScene::set_flexfaceopt, reference())
-    .property("flexskinopt", &MjvScene::flexskinopt, &MjvScene::set_flexskinopt, reference())
-    .property("nskin", &MjvScene::nskin, &MjvScene::set_nskin, reference())
-    .property("skinfacenum", &MjvScene::skinfacenum)
-    .property("skinvertadr", &MjvScene::skinvertadr)
-    .property("skinvertnum", &MjvScene::skinvertnum)
-    .property("skinvert", &MjvScene::skinvert)
-    .property("skinnormal", &MjvScene::skinnormal)
-    .property("nlight", &MjvScene::nlight, &MjvScene::set_nlight, reference())
-    .property("lights", &MjvScene::lights)
-    .property("camera", &MjvScene::camera)
-    .property("enabletransform", &MjvScene::enabletransform, &MjvScene::set_enabletransform, reference())
-    .property("translate", &MjvScene::translate)
-    .property("rotate", &MjvScene::rotate)
-    .property("scale", &MjvScene::scale, &MjvScene::set_scale, reference())
-    .property("stereo", &MjvScene::stereo, &MjvScene::set_stereo, reference())
-    .property("flags", &MjvScene::flags)
-    .property("framewidth", &MjvScene::framewidth, &MjvScene::set_framewidth, reference())
-    .property("framergb", &MjvScene::framergb)
-    .property("status", &MjvScene::status, &MjvScene::set_status, reference());
   emscripten::class_<MjSpec>("MjSpec")
     .constructor<const MjSpec &>()
-    .property("element", &MjSpec::element)
+    .property("element", &MjSpec::element, reference())
     .property("modelname", &MjSpec::modelname, &MjSpec::set_modelname, reference())
-    .property("compiler", &MjSpec::compiler)
+    .property("compiler", &MjSpec::compiler, reference())
     .property("strippath", &MjSpec::strippath, &MjSpec::set_strippath, reference())
-    .property("option", &MjSpec::option)
-    .property("visual", &MjSpec::visual)
-    .property("stat", &MjSpec::stat)
+    .property("option", &MjSpec::option, reference())
+    .property("visual", &MjSpec::visual, reference())
+    .property("stat", &MjSpec::stat, reference())
     .property("memory", &MjSpec::memory, &MjSpec::set_memory, reference())
     .property("nemax", &MjSpec::nemax, &MjSpec::set_nemax, reference())
     .property("nuserdata", &MjSpec::nuserdata, &MjSpec::set_nuserdata, reference())
@@ -10034,6 +9844,205 @@ EMSCRIPTEN_BINDINGS(mujoco_structs) {
     .property("userdata", &MjsSensor::userdata, reference())
     .property("plugin", &MjsSensor::plugin, reference())
     .property("info", &MjsSensor::info, &MjsSensor::set_info, reference());
+  emscripten::class_<MjData>("MjData")
+    .constructor<MjModel *>()
+    .constructor<const MjModel &, const MjData &>()
+    .property("narena", &MjData::narena, &MjData::set_narena, reference())
+    .property("nbuffer", &MjData::nbuffer, &MjData::set_nbuffer, reference())
+    .property("nplugin", &MjData::nplugin, &MjData::set_nplugin, reference())
+    .property("pstack", &MjData::pstack, &MjData::set_pstack, reference())
+    .property("pbase", &MjData::pbase, &MjData::set_pbase, reference())
+    .property("parena", &MjData::parena, &MjData::set_parena, reference())
+    .property("maxuse_stack", &MjData::maxuse_stack, &MjData::set_maxuse_stack, reference())
+    .property("maxuse_threadstack", &MjData::maxuse_threadstack)
+    .property("maxuse_arena", &MjData::maxuse_arena, &MjData::set_maxuse_arena, reference())
+    .property("maxuse_con", &MjData::maxuse_con, &MjData::set_maxuse_con, reference())
+    .property("maxuse_efc", &MjData::maxuse_efc, &MjData::set_maxuse_efc, reference())
+    .property("solver", &MjData::solver, reference())
+    .property("solver_niter", &MjData::solver_niter)
+    .property("solver_nnz", &MjData::solver_nnz)
+    .property("solver_fwdinv", &MjData::solver_fwdinv)
+    .property("warning", &MjData::warning, reference())
+    .property("timer", &MjData::timer, reference())
+    .property("ncon", &MjData::ncon, &MjData::set_ncon, reference())
+    .property("ne", &MjData::ne, &MjData::set_ne, reference())
+    .property("nf", &MjData::nf, &MjData::set_nf, reference())
+    .property("nl", &MjData::nl, &MjData::set_nl, reference())
+    .property("nefc", &MjData::nefc, &MjData::set_nefc, reference())
+    .property("nJ", &MjData::nJ, &MjData::set_nJ, reference())
+    .property("nA", &MjData::nA, &MjData::set_nA, reference())
+    .property("nisland", &MjData::nisland, &MjData::set_nisland, reference())
+    .property("nidof", &MjData::nidof, &MjData::set_nidof, reference())
+    .property("ntree_awake", &MjData::ntree_awake, &MjData::set_ntree_awake, reference())
+    .property("nbody_awake", &MjData::nbody_awake, &MjData::set_nbody_awake, reference())
+    .property("nparent_awake", &MjData::nparent_awake, &MjData::set_nparent_awake, reference())
+    .property("nv_awake", &MjData::nv_awake, &MjData::set_nv_awake, reference())
+    .property("time", &MjData::time, &MjData::set_time, reference())
+    .property("energy", &MjData::energy)
+    .property("buffer", &MjData::buffer)
+    .property("arena", &MjData::arena)
+    .property("qpos", &MjData::qpos)
+    .property("qvel", &MjData::qvel)
+    .property("act", &MjData::act)
+    .property("qacc_warmstart", &MjData::qacc_warmstart)
+    .property("plugin_state", &MjData::plugin_state)
+    .property("ctrl", &MjData::ctrl)
+    .property("qfrc_applied", &MjData::qfrc_applied)
+    .property("xfrc_applied", &MjData::xfrc_applied)
+    .property("eq_active", &MjData::eq_active)
+    .property("mocap_pos", &MjData::mocap_pos)
+    .property("mocap_quat", &MjData::mocap_quat)
+    .property("qacc", &MjData::qacc)
+    .property("act_dot", &MjData::act_dot)
+    .property("userdata", &MjData::userdata)
+    .property("sensordata", &MjData::sensordata)
+    .property("tree_asleep", &MjData::tree_asleep)
+    .property("plugin", &MjData::plugin)
+    .property("plugin_data", &MjData::plugin_data)
+    .property("xpos", &MjData::xpos)
+    .property("xquat", &MjData::xquat)
+    .property("xmat", &MjData::xmat)
+    .property("xipos", &MjData::xipos)
+    .property("ximat", &MjData::ximat)
+    .property("xanchor", &MjData::xanchor)
+    .property("xaxis", &MjData::xaxis)
+    .property("geom_xpos", &MjData::geom_xpos)
+    .property("geom_xmat", &MjData::geom_xmat)
+    .property("site_xpos", &MjData::site_xpos)
+    .property("site_xmat", &MjData::site_xmat)
+    .property("cam_xpos", &MjData::cam_xpos)
+    .property("cam_xmat", &MjData::cam_xmat)
+    .property("light_xpos", &MjData::light_xpos)
+    .property("light_xdir", &MjData::light_xdir)
+    .property("subtree_com", &MjData::subtree_com)
+    .property("cdof", &MjData::cdof)
+    .property("cinert", &MjData::cinert)
+    .property("flexvert_xpos", &MjData::flexvert_xpos)
+    .property("flexelem_aabb", &MjData::flexelem_aabb)
+    .property("flexedge_J_rownnz", &MjData::flexedge_J_rownnz)
+    .property("flexedge_J_rowadr", &MjData::flexedge_J_rowadr)
+    .property("flexedge_J_colind", &MjData::flexedge_J_colind)
+    .property("flexedge_J", &MjData::flexedge_J)
+    .property("flexedge_length", &MjData::flexedge_length)
+    .property("bvh_aabb_dyn", &MjData::bvh_aabb_dyn)
+    .property("ten_wrapadr", &MjData::ten_wrapadr)
+    .property("ten_wrapnum", &MjData::ten_wrapnum)
+    .property("ten_J_rownnz", &MjData::ten_J_rownnz)
+    .property("ten_J_rowadr", &MjData::ten_J_rowadr)
+    .property("ten_J_colind", &MjData::ten_J_colind)
+    .property("ten_J", &MjData::ten_J)
+    .property("ten_length", &MjData::ten_length)
+    .property("wrap_obj", &MjData::wrap_obj)
+    .property("wrap_xpos", &MjData::wrap_xpos)
+    .property("actuator_length", &MjData::actuator_length)
+    .property("moment_rownnz", &MjData::moment_rownnz)
+    .property("moment_rowadr", &MjData::moment_rowadr)
+    .property("moment_colind", &MjData::moment_colind)
+    .property("actuator_moment", &MjData::actuator_moment)
+    .property("crb", &MjData::crb)
+    .property("qM", &MjData::qM)
+    .property("M", &MjData::M)
+    .property("qLD", &MjData::qLD)
+    .property("qLDiagInv", &MjData::qLDiagInv)
+    .property("bvh_active", &MjData::bvh_active)
+    .property("tree_awake", &MjData::tree_awake)
+    .property("body_awake", &MjData::body_awake)
+    .property("body_awake_ind", &MjData::body_awake_ind)
+    .property("parent_awake_ind", &MjData::parent_awake_ind)
+    .property("dof_awake_ind", &MjData::dof_awake_ind)
+    .property("flexedge_velocity", &MjData::flexedge_velocity)
+    .property("ten_velocity", &MjData::ten_velocity)
+    .property("actuator_velocity", &MjData::actuator_velocity)
+    .property("cvel", &MjData::cvel)
+    .property("cdof_dot", &MjData::cdof_dot)
+    .property("qfrc_bias", &MjData::qfrc_bias)
+    .property("qfrc_spring", &MjData::qfrc_spring)
+    .property("qfrc_damper", &MjData::qfrc_damper)
+    .property("qfrc_gravcomp", &MjData::qfrc_gravcomp)
+    .property("qfrc_fluid", &MjData::qfrc_fluid)
+    .property("qfrc_passive", &MjData::qfrc_passive)
+    .property("subtree_linvel", &MjData::subtree_linvel)
+    .property("subtree_angmom", &MjData::subtree_angmom)
+    .property("qH", &MjData::qH)
+    .property("qHDiagInv", &MjData::qHDiagInv)
+    .property("qDeriv", &MjData::qDeriv)
+    .property("qLU", &MjData::qLU)
+    .property("actuator_force", &MjData::actuator_force)
+    .property("qfrc_actuator", &MjData::qfrc_actuator)
+    .property("qfrc_smooth", &MjData::qfrc_smooth)
+    .property("qacc_smooth", &MjData::qacc_smooth)
+    .property("qfrc_constraint", &MjData::qfrc_constraint)
+    .property("qfrc_inverse", &MjData::qfrc_inverse)
+    .property("cacc", &MjData::cacc)
+    .property("cfrc_int", &MjData::cfrc_int)
+    .property("cfrc_ext", &MjData::cfrc_ext)
+    .property("contact", &MjData::contact)
+    .property("efc_type", &MjData::efc_type)
+    .property("efc_id", &MjData::efc_id)
+    .property("efc_J_rownnz", &MjData::efc_J_rownnz)
+    .property("efc_J_rowadr", &MjData::efc_J_rowadr)
+    .property("efc_J_rowsuper", &MjData::efc_J_rowsuper)
+    .property("efc_J_colind", &MjData::efc_J_colind)
+    .property("efc_J", &MjData::efc_J)
+    .property("efc_pos", &MjData::efc_pos)
+    .property("efc_margin", &MjData::efc_margin)
+    .property("efc_frictionloss", &MjData::efc_frictionloss)
+    .property("efc_diagApprox", &MjData::efc_diagApprox)
+    .property("efc_KBIP", &MjData::efc_KBIP)
+    .property("efc_D", &MjData::efc_D)
+    .property("efc_R", &MjData::efc_R)
+    .property("tendon_efcadr", &MjData::tendon_efcadr)
+    .property("tree_island", &MjData::tree_island)
+    .property("island_ntree", &MjData::island_ntree)
+    .property("island_itreeadr", &MjData::island_itreeadr)
+    .property("map_itree2tree", &MjData::map_itree2tree)
+    .property("dof_island", &MjData::dof_island)
+    .property("island_nv", &MjData::island_nv)
+    .property("island_idofadr", &MjData::island_idofadr)
+    .property("island_dofadr", &MjData::island_dofadr)
+    .property("map_dof2idof", &MjData::map_dof2idof)
+    .property("map_idof2dof", &MjData::map_idof2dof)
+    .property("ifrc_smooth", &MjData::ifrc_smooth)
+    .property("iacc_smooth", &MjData::iacc_smooth)
+    .property("iM_rownnz", &MjData::iM_rownnz)
+    .property("iM_rowadr", &MjData::iM_rowadr)
+    .property("iM_colind", &MjData::iM_colind)
+    .property("iM", &MjData::iM)
+    .property("iLD", &MjData::iLD)
+    .property("iLDiagInv", &MjData::iLDiagInv)
+    .property("iacc", &MjData::iacc)
+    .property("efc_island", &MjData::efc_island)
+    .property("island_ne", &MjData::island_ne)
+    .property("island_nf", &MjData::island_nf)
+    .property("island_nefc", &MjData::island_nefc)
+    .property("island_iefcadr", &MjData::island_iefcadr)
+    .property("map_efc2iefc", &MjData::map_efc2iefc)
+    .property("map_iefc2efc", &MjData::map_iefc2efc)
+    .property("iefc_type", &MjData::iefc_type)
+    .property("iefc_id", &MjData::iefc_id)
+    .property("iefc_J_rownnz", &MjData::iefc_J_rownnz)
+    .property("iefc_J_rowadr", &MjData::iefc_J_rowadr)
+    .property("iefc_J_rowsuper", &MjData::iefc_J_rowsuper)
+    .property("iefc_J_colind", &MjData::iefc_J_colind)
+    .property("iefc_J", &MjData::iefc_J)
+    .property("iefc_frictionloss", &MjData::iefc_frictionloss)
+    .property("iefc_D", &MjData::iefc_D)
+    .property("iefc_R", &MjData::iefc_R)
+    .property("efc_AR_rownnz", &MjData::efc_AR_rownnz)
+    .property("efc_AR_rowadr", &MjData::efc_AR_rowadr)
+    .property("efc_AR_colind", &MjData::efc_AR_colind)
+    .property("efc_AR", &MjData::efc_AR)
+    .property("efc_vel", &MjData::efc_vel)
+    .property("efc_aref", &MjData::efc_aref)
+    .property("efc_b", &MjData::efc_b)
+    .property("iefc_aref", &MjData::iefc_aref)
+    .property("iefc_state", &MjData::iefc_state)
+    .property("iefc_force", &MjData::iefc_force)
+    .property("efc_state", &MjData::efc_state)
+    .property("efc_force", &MjData::efc_force)
+    .property("ifrc_constraint", &MjData::ifrc_constraint)
+    .property("threadpool", &MjData::threadpool, &MjData::set_threadpool, reference())
+    .property("signature", &MjData::signature, &MjData::set_signature, reference());
   emscripten::class_<MjsDefault>("MjsDefault")
     .property("element", &MjsDefault::element, reference())
     .property("joint", &MjsDefault::joint, reference())
@@ -12362,29 +12371,8 @@ std::optional<MjsPlugin> mjs_asPlugin_wrapper(MjsElement& element) {
   return MjsPlugin(result);
 }
 
-void error_wrapper(const String& msg) { mju_error("%s\n", msg.as<const std::string>().data()); }
-
-int mj_saveLastXML_wrapper(const String& filename, const MjModel& m) {
-  CHECK_VAL(filename);
-  std::array<char, 1024> error;
-  int result = mj_saveLastXML(filename.as<const std::string>().data(), m.get(), error.data(), error.size());
-  if (!result) {
-    mju_error("%s", error.data());
-  }
-  return result;
-}
-
-int mj_setLengthRange_wrapper(const MjModel& m, const MjData& d, int index, const MjLROpt& opt) {
-  std::array<char, 1024> error;
-  int result = mj_setLengthRange(m.get(), d.get(), index, opt.get(), error.data(), error.size());
-  if (!result) {
-    mju_error("%s", error.data());
-  }
-  return result;
-}
-
 EMSCRIPTEN_BINDINGS(mujoco_functions) {
-  function("parseXMLString", &parseXMLString, take_ownership());
+  function("parseXMLString", &parseXMLString_wrapper, take_ownership());
   function("error", &error_wrapper);
   function("mj_resetCallbacks", &mj_resetCallbacks);
   function("mj_version", &mj_version);
