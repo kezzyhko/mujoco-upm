@@ -91,7 +91,7 @@ MJWarp is optimized for parallel simulation. A batch of simulations can be speci
 - _`nconmax`: Expected number of contacts per world. The maximum number of contacts for all worlds is
   ``nconmax * nworld``.
 - _`naconmax`: Alternative to `nconmax`_, maximum number of contacts over all worlds. If `nconmax`_ and `naconmax`_ are
-  both set and ``nworld * nconmax != naconmax`` an error will be raised.
+  both set then `nconmax`_ is ignored.
 - _`njmax`: Maximum number of constraints per world.
 
 .. admonition:: Semantic difference for `nconmax`_ and `njmax`_.
@@ -277,6 +277,15 @@ contacts per sensor :attr:`Option.contact_sensor_max_match <mujoco_warp.Option.c
 performance, the value of this parameter should be as small as possible while ensuring the simulation does not exceed
 the limit. Matched contacts that exceed this limit will be ignored.
 
+The value of this parameter can be set directly, for example ``model.opt.contact_sensor_maxmatch = 16``, or via an XML
+custom numeric field
+
+.. code-block:: xml
+
+   <custom>
+     <numeric name="contact_sensor_maxmatch" data="16"/>
+   </custom>
+
 Similar to the maximum numbers of contacts and constraints, a good value for this setting is expected to be environment
 specific. :func:`mjwarp-testspeed <mujoco_warp.testspeed>` and :func:`mjwarp-viewer <mujoco_warp.viewer>` may be useful
 for tuning the value of this parameter.
@@ -382,6 +391,32 @@ No. MJWarp is not currently differentiable via
 Warp's `automatic differentiation <https://nvidia.github.io/warp/modules/differentiability.html#differentiability>`__
 functionality. Updates from the team related to enabling automatic differentiation for MJWarp are tracked in this
 `GitHub issue <https://github.com/google-deepmind/mujoco_warp/issues/500>`__.
+
+**Does MJWarp work with multiple GPUs?**
+
+Yes. Warp's ``wp.ScopedDevice`` enables multi-GPU computation
+
+.. code-block:: python
+
+   # create a graph for each device
+   graph = {}
+   for device in wp.get_cuda_devices():
+     with wp.ScopedDevice(device):
+       m = mjw.put_model(mjm)
+       d = mjw.make_data(mjm)
+       with wp.ScopedCapture(device) as capture:
+         mjw.step(m, d)
+       graph[device] = capture.graph
+
+   # launch a graph on each device
+   for device in wp.get_cuda_devices():
+     wp.capture_launch(graph[device])
+
+Please see the
+`Warp documentation <https://nvidia.github.io/modules/devices.html#example-using-wp-scopeddevice-with-multiple-gpus>`__
+for details and
+`mjlab distributed training <https://github.com/mujocolab/mjlab/tree/main/docs/api/distributed_training.md>`__ for a
+reinforcement learning example.
 
 Orientation representation
 --------------------------
