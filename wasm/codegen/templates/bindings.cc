@@ -199,7 +199,7 @@ struct MjvScene {
     return emscripten::val(emscripten::typed_memory_view(
         6 * MjvScene::GetSumFlexFaces(), ptr_->flextexcoord));
   }
-  // INSERT-GENERATED-MjvScene-DEFINITIONS
+  // INSERT-GENERATED-MjvScene-DECLARATION
 
  private:
   mjvScene* ptr_;
@@ -386,7 +386,7 @@ MjSpec::~MjSpec() {
 mjSpec *MjSpec::get() const { return ptr_; }
 void MjSpec::set(mjSpec *ptr) { ptr_ = ptr; }
 
-std::unique_ptr<MjModel> loadFromXML_wrapper(std::string filename) {
+std::unique_ptr<MjModel> mj_loadXML_wrapper(std::string filename) {
   char error[1000];
   mjModel *model = mj_loadXML(filename.c_str(), nullptr, error, sizeof(error));
   if (!model) {
