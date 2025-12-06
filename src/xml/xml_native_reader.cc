@@ -97,412 +97,415 @@ static void UpdateString(string& psuffix, int count, int i) {
 
 //---------------------------------- MJCF schema ---------------------------------------------------
 
-const char* MJCF[nMJCF][mjXATTRNUM] = {
-{"mujoco", "!", "1", "model"},
+std::vector<const char*> MJCF[nMJCF] = {
+{"mujoco", "!", "model"},
 {"<"},
-    {"compiler", "*", "20", "autolimits", "boundmass", "boundinertia", "settotalmass",
+    {"compiler", "*", "autolimits", "boundmass", "boundinertia", "settotalmass",
         "balanceinertia", "strippath", "coordinate", "angle", "fitaabb", "eulerseq",
         "meshdir", "texturedir", "discardvisual", "usethread", "fusestatic", "inertiafromgeom",
         "inertiagrouprange", "saveinertial", "assetdir", "alignfree"},
     {"<"},
-        {"lengthrange", "?", "10", "mode", "useexisting", "uselimit",
+        {"lengthrange", "?", "mode", "useexisting", "uselimit",
             "accel", "maxforce", "timeconst", "timestep",
             "inttotal", "interval", "tolrange"},
     {">"},
 
-    {"option", "*", "26",
+    {"option", "*",
         "timestep", "impratio", "tolerance", "ls_tolerance", "noslip_tolerance",
-        "ccd_tolerance", "gravity", "wind", "magnetic", "density", "viscosity",
+        "ccd_tolerance", "sleep_tolerance", "gravity", "wind", "magnetic", "density", "viscosity",
         "o_margin", "o_solref", "o_solimp", "o_friction",
         "integrator", "cone", "jacobian",
         "solver", "iterations", "ls_iterations", "noslip_iterations", "ccd_iterations",
         "sdf_iterations", "sdf_initpoints", "actuatorgroupdisable"},
     {"<"},
-        {"flag", "?", "24", "constraint", "equality", "frictionloss", "limit", "contact",
-            "spring", "damper", "gravity", "clampctrl", "warmstart",
-            "filterparent", "actuation", "refsafe", "sensor", "midphase", "eulerdamp", "autoreset",
-            "nativeccd", "island", "override", "energy", "fwdinv", "invdiscrete", "multiccd"},
+        {"flag", "?", "constraint", "equality", "frictionloss", "limit", "contact",
+            "spring", "damper", "gravity", "clampctrl", "warmstart", "filterparent", "actuation",
+            "refsafe", "sensor", "midphase", "eulerdamp", "autoreset", "nativeccd", "island",
+            "override", "energy", "fwdinv", "invdiscrete", "multiccd", "sleep"},
     {">"},
 
-    {"size", "*", "14", "memory", "njmax", "nconmax", "nstack", "nuserdata", "nkey",
+    {"size", "*", "memory", "njmax", "nconmax", "nstack", "nuserdata", "nkey",
         "nuser_body", "nuser_jnt", "nuser_geom", "nuser_site", "nuser_cam",
         "nuser_tendon", "nuser_actuator", "nuser_sensor"},
 
-    {"visual", "*", "0"},
+    {"visual", "*"},
     {"<"},
-        {"global", "?", "13", "cameraid", "orthographic", "fovy", "ipd", "azimuth", "elevation",
+        {"global", "?", "cameraid", "orthographic", "fovy", "ipd", "azimuth", "elevation",
             "linewidth", "glow", "offwidth", "offheight", "realtime", "ellipsoidinertia",
             "bvactive"},
-        {"quality", "?", "5", "shadowsize", "offsamples", "numslices", "numstacks",
+        {"quality", "?", "shadowsize", "offsamples", "numslices", "numstacks",
             "numquads"},
-        {"headlight", "?", "4", "ambient", "diffuse", "specular", "active"},
-        {"map", "?", "13", "stiffness", "stiffnessrot", "force", "torque", "alpha",
+        {"headlight", "?", "ambient", "diffuse", "specular", "active"},
+        {"map", "?", "stiffness", "stiffnessrot", "force", "torque", "alpha",
             "fogstart", "fogend", "znear", "zfar", "haze", "shadowclip", "shadowscale",
             "actuatortendon"},
-        {"scale", "?", "17", "forcewidth", "contactwidth", "contactheight", "connect", "com",
+        {"scale", "?", "forcewidth", "contactwidth", "contactheight", "connect", "com",
             "camera", "light", "selectpoint", "jointlength", "jointwidth", "actuatorlength",
             "actuatorwidth", "framelength", "framewidth", "constraint", "slidercrank", "frustum"},
-        {"rgba", "?", "25", "fog", "haze", "force", "inertia", "joint",
+        {"rgba", "?", "fog", "haze", "force", "inertia", "joint",
             "actuator", "actuatornegative", "actuatorpositive", "com",
             "camera", "light", "selectpoint", "connect", "contactpoint", "contactforce",
             "contactfriction", "contacttorque", "contactgap", "rangefinder",
             "constraint", "slidercrank", "crankbroken", "frustum", "bv", "bvactive"},
     {">"},
 
-    {"statistic", "*", "5", "meaninertia", "meanmass", "meansize", "extent", "center"},
+    {"statistic", "*", "meaninertia", "meanmass", "meansize", "extent", "center"},
 
-    {"default", "R", "1", "class"},
+    {"default", "R", "class"},
     {"<"},
-        {"mesh", "?", "3", "scale", "maxhullvert", "inertia"},
-        {"material", "?", "10", "texture", "emission", "specular", "shininess",
+        {"mesh", "?", "scale", "maxhullvert", "inertia"},
+        {"material", "?", "texture", "emission", "specular", "shininess",
             "reflectance", "metallic", "roughness", "rgba", "texrepeat", "texuniform"},
-        {"joint", "?", "22", "type", "group", "pos", "axis", "springdamper",
+        {"<"},
+            {"layer", "*", "texture", "role"},
+        {">"},
+        {"joint", "?", "type", "group", "pos", "axis", "springdamper",
             "limited", "actuatorfrclimited", "solreflimit", "solimplimit",
             "solreffriction", "solimpfriction", "stiffness", "range", "actuatorfrcrange",
             "actuatorgravcomp", "margin", "ref", "springref", "armature", "damping",
             "frictionloss", "user"},
-        {"geom", "?", "31", "type", "pos", "quat", "contype", "conaffinity", "condim",
+        {"geom", "?", "type", "pos", "quat", "contype", "conaffinity", "condim",
             "group", "priority", "size", "material", "friction", "mass", "density",
             "shellinertia", "solmix", "solref", "solimp",
             "margin", "gap", "fromto", "axisangle", "xyaxes", "zaxis", "euler",
             "hfield", "mesh", "fitscale", "rgba", "fluidshape", "fluidcoef", "user"},
-        {"site", "?", "13", "type", "group", "pos", "quat", "material",
+        {"site", "?", "type", "group", "pos", "quat", "material",
             "size", "fromto", "axisangle", "xyaxes", "zaxis", "euler", "rgba", "user"},
-        {"camera", "?", "17", "orthographic", "fovy", "ipd", "resolution", "pos", "quat",
+        {"camera", "?", "orthographic", "fovy", "ipd", "resolution", "pos", "quat",
             "axisangle", "xyaxes", "zaxis", "euler", "mode", "focal", "focalpixel",
             "principal", "principalpixel", "sensorsize", "user"},
-        {"light", "?", "16", "pos", "dir", "bulbradius", "intensity", "range",
+        {"light", "?", "pos", "dir", "bulbradius", "intensity", "range",
             "directional", "type", "castshadow", "active", "attenuation", "cutoff", "exponent",
             "ambient", "diffuse", "specular", "mode"},
-        {"pair", "?", "7", "condim", "friction", "solref", "solreffriction", "solimp",
+        {"pair", "?", "condim", "friction", "solref", "solreffriction", "solimp",
          "gap", "margin"},
-        {"equality", "?", "3", "active", "solref", "solimp"},
-        {"tendon", "?", "16", "group", "limited", "range",
+        {"equality", "?", "active", "solref", "solimp"},
+        {"tendon", "?", "group", "limited", "range",
             "solreflimit", "solimplimit", "solreffriction", "solimpfriction",
             "frictionloss", "springlength", "width", "material",
             "margin", "stiffness", "damping", "rgba", "user"},
-        {"general", "?", "18", "ctrllimited", "forcelimited", "actlimited", "ctrlrange",
+        {"general", "?", "ctrllimited", "forcelimited", "actlimited", "ctrlrange",
             "forcerange", "actrange", "gear", "cranklength", "user", "group", "actdim",
             "dyntype", "gaintype", "biastype", "dynprm", "gainprm", "biasprm", "actearly"},
-        {"motor", "?", "8", "ctrllimited", "forcelimited", "ctrlrange", "forcerange",
+        {"motor", "?", "ctrllimited", "forcelimited", "ctrlrange", "forcerange",
             "gear", "cranklength", "user", "group"},
-        {"position", "?", "13", "ctrllimited", "forcelimited", "ctrlrange", "inheritrange",
+        {"position", "?", "ctrllimited", "forcelimited", "ctrlrange", "inheritrange",
             "forcerange", "gear", "cranklength", "user", "group", "kp", "kv", "dampratio", "timeconst"},
-        {"velocity", "?", "9", "ctrllimited", "forcelimited", "ctrlrange", "forcerange",
+        {"velocity", "?", "ctrllimited", "forcelimited", "ctrlrange", "forcerange",
             "gear", "cranklength", "user", "group", "kv"},
-        {"intvelocity", "?", "13", "ctrllimited", "forcelimited",
+        {"intvelocity", "?", "ctrllimited", "forcelimited",
             "ctrlrange", "forcerange", "actrange", "inheritrange",
             "gear", "cranklength", "user", "group",
             "kp", "kv", "dampratio"},
-        {"damper", "?", "8", "forcelimited", "ctrlrange", "forcerange",
+        {"damper", "?", "forcelimited", "ctrlrange", "forcerange",
             "gear", "cranklength", "user", "group", "kv"},
-        {"cylinder", "?", "12", "ctrllimited", "forcelimited", "ctrlrange", "forcerange",
+        {"cylinder", "?", "ctrllimited", "forcelimited", "ctrlrange", "forcerange",
             "gear", "cranklength", "user", "group",
             "timeconst", "area", "diameter", "bias"},
-        {"muscle", "?", "17", "ctrllimited", "forcelimited", "ctrlrange", "forcerange",
+        {"muscle", "?", "ctrllimited", "forcelimited", "ctrlrange", "forcerange",
             "gear", "cranklength", "user", "group",
             "timeconst", "range", "force", "scale",
             "lmin", "lmax", "vmax", "fpmax", "fvmax"},
-        {"adhesion", "?", "6", "forcelimited", "ctrlrange", "forcerange",
+        {"adhesion", "?", "forcelimited", "ctrlrange", "forcerange",
             "gain", "user", "group"},
     {">"},
 
-    {"extension", "*", "0"},
+    {"extension", "*"},
     {"<"},
-        {"plugin", "*", "1", "plugin"},
+        {"plugin", "*", "plugin"},
         {"<"},
-            {"instance", "*", "1", "name"},
+            {"instance", "*", "name"},
             {"<"},
-                {"config", "*", "2", "key", "value"},
+                {"config", "*", "key", "value"},
             {">"},
         {">"},
     {">"},
 
-    {"custom", "*", "0"},
+    {"custom", "*"},
     {"<"},
-        {"numeric", "*", "3", "name", "size", "data"},
-        {"text", "*", "2", "name", "data"},
-        {"tuple", "*", "1", "name"},
+        {"numeric", "*",  "name", "size", "data"},
+        {"text", "*", "name", "data"},
+        {"tuple", "*", "name"},
         {"<"},
-            {"element", "*", "3", "objtype", "objname", "prm"},
+            {"element", "*",  "objtype", "objname", "prm"},
         {">"},
     {">"},
 
-    {"asset", "*", "0"},
+    {"asset", "*"},
     {"<"},
-        {"mesh", "*", "17", "name", "class", "content_type", "file", "vertex", "normal",
+        {"mesh", "*", "name", "class", "content_type", "file", "vertex", "normal",
             "texcoord", "face", "refpos", "refquat", "scale", "smoothnormal",
             "maxhullvert", "inertia", "builtin", "params", "material"},
         {"<"},
-          {"plugin", "*", "2", "plugin", "instance"},
+          {"plugin", "*", "plugin", "instance"},
           {"<"},
-            {"config", "*", "2", "key", "value"},
+            {"config", "*", "key", "value"},
           {">"},
         {">"},
-        {"hfield", "*", "7", "name", "content_type", "file", "nrow", "ncol", "size", "elevation"},
-        {"skin", "*", "9", "name", "file", "material", "rgba", "inflate",
+        {"hfield", "*", "name", "content_type", "file", "nrow", "ncol", "size", "elevation"},
+        {"skin", "*", "name", "file", "material", "rgba", "inflate",
             "vertex", "texcoord", "face", "group"},
         {"<"},
-            {"bone", "*", "5", "body", "bindpos", "bindquat", "vertid", "vertweight"},
+            {"bone", "*", "body", "bindpos", "bindquat", "vertid", "vertweight"},
         {">"},
-        {"texture", "*", "24", "name", "type", "colorspace", "content_type", "file", "gridsize",
+        {"texture", "*", "name", "type", "colorspace", "content_type", "file", "gridsize",
             "gridlayout", "fileright", "fileleft", "fileup", "filedown", "filefront", "fileback",
             "builtin", "rgb1", "rgb2", "mark", "markrgb", "random", "width", "height",
             "hflip", "vflip", "nchannel"},
-        {"material", "*", "12", "name", "class", "texture",  "texrepeat", "texuniform",
+        {"material", "*", "name", "class", "texture",  "texrepeat", "texuniform",
             "emission", "specular", "shininess", "reflectance", "metallic", "roughness", "rgba"},
         {"<"},
-            {"layer", "*", "2", "texture", "role"},
+            {"layer", "*", "texture", "role"},
         {">"},
-        {"model", "*", "3", "name", "file", "content_type"},
+        {"model", "*", "name", "file", "content_type"},
     {">"},
 
-    {"body", "R", "11", "name", "childclass", "pos", "quat", "mocap",
-        "axisangle", "xyaxes", "zaxis", "euler", "gravcomp", "user"},
+    {"body", "R", "name", "childclass", "pos", "quat", "mocap",
+        "axisangle", "xyaxes", "zaxis", "euler", "gravcomp", "sleep", "user"},
     {"<"},
-        {"inertial", "?", "9", "pos", "quat", "mass", "diaginertia",
+        {"inertial", "?", "pos", "quat", "mass", "diaginertia",
             "axisangle", "xyaxes", "zaxis", "euler", "fullinertia"},
-        {"joint", "*", "24", "name", "class", "type", "group", "pos", "axis",
+        {"joint", "*", "name", "class", "type", "group", "pos", "axis",
             "springdamper", "limited", "actuatorfrclimited",
             "solreflimit", "solimplimit", "solreffriction", "solimpfriction",
             "stiffness", "range", "actuatorfrcrange", "actuatorgravcomp", "margin", "ref",
             "springref", "armature", "damping", "frictionloss", "user"},
-        {"freejoint", "*", "3", "name", "group", "align"},
-        {"geom", "*", "33", "name", "class", "type", "contype", "conaffinity", "condim",
+        {"freejoint", "*",  "name", "group", "align"},
+        {"geom", "*", "name", "class", "type", "contype", "conaffinity", "condim",
             "group", "priority", "size", "material", "friction", "mass", "density",
             "shellinertia", "solmix", "solref", "solimp",
             "margin", "gap", "fromto", "pos", "quat", "axisangle", "xyaxes", "zaxis", "euler",
             "hfield", "mesh", "fitscale", "rgba", "fluidshape", "fluidcoef", "user"},
         {"<"},
-            {"plugin", "*", "2", "plugin", "instance"},
+            {"plugin", "*", "plugin", "instance"},
             {"<"},
-              {"config", "*", "2", "key", "value"},
+              {"config", "*", "key", "value"},
             {">"},
         {">"},
-        {"attach", "*", "3", "model", "body", "prefix"},
-        {"site", "*", "15", "name", "class", "type", "group", "pos", "quat",
+        {"attach", "*", "model", "body", "prefix"},
+        {"site", "*",  "name", "class", "type", "group", "pos", "quat",
             "material", "size", "fromto", "axisangle", "xyaxes", "zaxis", "euler", "rgba", "user"},
-        {"camera", "*", "20", "name", "class", "orthographic", "fovy", "ipd", "resolution", "pos",
+        {"camera", "*", "name", "class", "orthographic", "fovy", "ipd", "resolution", "pos",
             "quat", "axisangle", "xyaxes", "zaxis", "euler", "mode", "target",
             "focal", "focalpixel", "principal", "principalpixel", "sensorsize", "user"},
-        {"light", "*", "20", "name", "class", "directional", "type", "castshadow", "active",
+        {"light", "*", "name", "class", "directional", "type", "castshadow", "active",
             "pos", "dir", "bulbradius", "intensity", "range", "attenuation", "cutoff",
             "exponent", "ambient", "diffuse", "specular", "mode", "target", "texture"},
-        {"plugin", "*", "2", "plugin", "instance"},
+        {"plugin", "*", "plugin", "instance"},
         {"<"},
-          {"config", "*", "2", "key", "value"},
+          {"config", "*", "key", "value"},
         {">"},
-        {"composite", "*", "9", "prefix", "type", "count", "offset",
+        {"composite", "*", "prefix", "type", "count", "offset",
             "vertex", "initial", "curve", "size", "quat"},
         {"<"},
-            {"joint", "*", "17", "kind", "group", "stiffness", "damping", "armature",
+            {"joint", "*", "kind", "group", "stiffness", "damping", "armature",
                 "solreffix", "solimpfix", "type", "axis",
                 "limited", "range", "margin", "solreflimit", "solimplimit",
                 "frictionloss", "solreffriction", "solimpfriction"},
-            {"skin", "?", "6", "texcoord", "material", "group", "rgba", "inflate", "subgrid"},
-            {"geom", "?", "17", "type", "contype", "conaffinity", "condim",
+            {"skin", "?", "texcoord", "material", "group", "rgba", "inflate", "subgrid"},
+            {"geom", "?", "type", "contype", "conaffinity", "condim",
                 "group", "priority", "size", "material", "rgba", "friction", "mass",
                 "density", "solmix", "solref", "solimp", "margin", "gap"},
-            {"site", "?", "4", "group", "size", "material", "rgba"},
-            {"plugin", "*", "2", "plugin", "instance"},
+            {"site", "?", "group", "size", "material", "rgba"},
+            {"plugin", "*", "plugin", "instance"},
             {"<"},
-              {"config", "*", "2", "key", "value"},
+              {"config", "*", "key", "value"},
             {">"},
         {">"},
-        {"flexcomp", "*", "26", "name", "type", "group", "dim", "dof",
+        {"flexcomp", "*", "name", "type", "group", "dim", "dof",
             "count", "spacing", "radius", "rigid", "mass", "inertiabox",
             "scale", "file", "point", "element", "texcoord", "material", "rgba",
             "flatskin", "pos", "quat", "axisangle", "xyaxes", "zaxis", "euler", "origin"},
         {"<"},
-            {"edge", "?", "5", "equality", "solref", "solimp", "stiffness", "damping"},
-            {"elasticity", "?", "5", "young", "poisson", "damping", "thickness", "elastic2d"},
-            {"contact", "?", "15", "contype", "conaffinity", "condim", "priority",
+            {"edge", "?", "equality", "solref", "solimp", "stiffness", "damping"},
+            {"elasticity", "?", "young", "poisson", "damping", "thickness", "elastic2d"},
+            {"contact", "?",  "contype", "conaffinity", "condim", "priority",
                 "friction", "solmix", "solref", "solimp", "margin", "gap",
                 "internal", "selfcollide", "activelayers", "vertcollide", "passive"},
-            {"pin", "*", "4", "id", "range", "grid", "gridrange"},
-            {"plugin", "*", "2", "plugin", "instance"},
+            {"pin", "*", "id", "range", "grid", "gridrange"},
+            {"plugin", "*", "plugin", "instance"},
             {"<"},
-              {"config", "*", "2", "key", "value"},
+              {"config", "*", "key", "value"},
             {">"},
         {">"},
     {">"},
 
-    {"deformable", "*", "0"},
+    {"deformable", "*"},
     {"<"},
-        {"flex", "*", "13", "name", "group", "dim", "radius", "material",
+        {"flex", "*", "name", "group", "dim", "radius", "material",
             "rgba", "flatskin", "body", "vertex", "element", "texcoord", "elemtexcoord", "node"},
         {"<"},
-            {"contact", "?", "15", "contype", "conaffinity", "condim", "priority",
+            {"contact", "?",  "contype", "conaffinity", "condim", "priority",
                 "friction", "solmix", "solref", "solimp", "margin", "gap",
                 "internal", "selfcollide", "activelayers", "vertcollide", "passive"},
-            {"edge", "?", "2", "stiffness", "damping"},
-            {"elasticity", "?", "5", "young", "poisson", "damping", "thickness", "elastic2d"},
+            {"edge", "?", "stiffness", "damping"},
+            {"elasticity", "?", "young", "poisson", "damping", "thickness", "elastic2d"},
         {">"},
-        {"skin", "*", "9", "name", "file", "material", "rgba", "inflate",
+        {"skin", "*", "name", "file", "material", "rgba", "inflate",
             "vertex", "texcoord", "face", "group"},
         {"<"},
-            {"bone", "*", "5", "body", "bindpos", "bindquat", "vertid", "vertweight"},
+            {"bone", "*", "body", "bindpos", "bindquat", "vertid", "vertweight"},
         {">"},
     {">"},
 
-    {"contact", "*", "0"},
+    {"contact", "*"},
     {"<"},
-        {"pair", "*", "11", "name", "class", "geom1", "geom2", "condim", "friction",
+        {"pair", "*", "name", "class", "geom1", "geom2", "condim", "friction",
             "solref", "solreffriction", "solimp", "gap", "margin"},
-        {"exclude", "*", "3", "name", "body1", "body2"},
+        {"exclude", "*", "name", "body1", "body2"},
     {">"},
 
-    {"equality", "*", "0"},
+    {"equality", "*"},
     {"<"},
-        {"connect", "*", "10", "name", "class", "body1", "body2", "anchor",
+        {"connect", "*",  "name", "class", "body1", "body2", "anchor",
             "site1", "site2", "active", "solref", "solimp"},
-        {"weld", "*", "12", "name", "class", "body1", "body2", "relpose", "anchor",
+        {"weld", "*", "name", "class", "body1", "body2", "relpose", "anchor",
             "site1", "site2", "active", "solref", "solimp", "torquescale"},
-        {"joint", "*", "8", "name", "class", "joint1", "joint2", "polycoef",
+        {"joint", "*", "name", "class", "joint1", "joint2", "polycoef",
             "active", "solref", "solimp"},
-        {"tendon", "*", "8", "name", "class", "tendon1", "tendon2", "polycoef",
+        {"tendon", "*", "name", "class", "tendon1", "tendon2", "polycoef",
             "active", "solref", "solimp"},
-        {"flex", "*", "6", "name", "class", "flex",
+        {"flex", "*", "name", "class", "flex",
             "active", "solref", "solimp"},
     {">"},
 
-    {"tendon", "*", "0"},
+    {"tendon", "*"},
     {"<"},
-        {"spatial", "*", "21", "name", "class", "group", "limited", "actuatorfrclimited", "range",
+        {"spatial", "*", "name", "class", "group", "limited", "actuatorfrclimited", "range",
             "actuatorfrcrange", "solreflimit", "solimplimit", "solreffriction", "solimpfriction",
             "frictionloss", "springlength", "width", "material",
             "margin", "stiffness", "damping", "armature", "rgba", "user"},
         {"<"},
-            {"site", "*", "1", "site"},
-            {"geom", "*", "2", "geom", "sidesite"},
-            {"pulley", "*", "1", "divisor"},
+            {"site", "*", "site"},
+            {"geom", "*", "geom", "sidesite"},
+            {"pulley", "*", "divisor"},
         {">"},
-        {"fixed", "*", "18", "name", "class", "group", "limited", "actuatorfrclimited", "range",
+        {"fixed", "*", "name", "class", "group", "limited", "actuatorfrclimited", "range",
             "actuatorfrcrange","solreflimit", "solimplimit", "solreffriction", "solimpfriction",
             "frictionloss", "springlength", "margin", "stiffness", "damping", "armature", "user"},
         {"<"},
-            {"joint", "*", "2", "joint", "coef"},
+            {"joint", "*", "joint", "coef"},
         {">"},
     {">"},
 
-    {"actuator", "*", "0"},
+    {"actuator", "*"},
     {"<"},
-        {"general", "*", "29", "name", "class", "group",
+        {"general", "*", "name", "class", "group",
             "ctrllimited", "forcelimited", "actlimited", "ctrlrange", "forcerange", "actrange",
             "lengthrange", "gear", "cranklength", "user",
             "joint", "jointinparent", "tendon", "slidersite", "cranksite", "site", "refsite",
             "body", "actdim", "dyntype", "gaintype", "biastype", "dynprm", "gainprm", "biasprm",
             "actearly"},
-        {"motor", "*", "18", "name", "class", "group",
+        {"motor", "*", "name", "class", "group",
             "ctrllimited", "forcelimited", "ctrlrange", "forcerange",
             "lengthrange", "gear", "cranklength", "user",
             "joint", "jointinparent", "tendon", "slidersite", "cranksite", "site", "refsite"},
-        {"position", "*", "23", "name", "class", "group",
+        {"position", "*", "name", "class", "group",
             "ctrllimited", "forcelimited", "ctrlrange", "inheritrange", "forcerange",
             "lengthrange", "gear", "cranklength", "user",
             "joint", "jointinparent", "tendon", "slidersite", "cranksite", "site", "refsite",
             "kp", "kv", "dampratio", "timeconst"},
-        {"velocity", "*", "19", "name", "class", "group",
+        {"velocity", "*", "name", "class", "group",
             "ctrllimited", "forcelimited", "ctrlrange", "forcerange",
             "lengthrange", "gear", "cranklength", "user",
             "joint", "jointinparent", "tendon", "slidersite", "cranksite", "site", "refsite",
             "kv"},
-        {"intvelocity", "*", "23", "name", "class", "group",
+        {"intvelocity", "*", "name", "class", "group",
             "ctrllimited", "forcelimited",
             "ctrlrange", "forcerange", "actrange", "inheritrange", "lengthrange",
             "gear", "cranklength", "user",
             "joint", "jointinparent", "tendon", "slidersite", "cranksite", "site", "refsite",
             "kp", "kv", "dampratio"},
-        {"damper", "*", "18", "name", "class", "group",
+        {"damper", "*", "name", "class", "group",
             "forcelimited", "ctrlrange", "forcerange",
             "lengthrange", "gear", "cranklength", "user",
             "joint", "jointinparent", "tendon", "slidersite", "cranksite", "site", "refsite",
             "kv"},
-        {"cylinder", "*", "22", "name", "class", "group",
+        {"cylinder", "*", "name", "class", "group",
             "ctrllimited", "forcelimited", "ctrlrange", "forcerange",
             "lengthrange", "gear", "cranklength", "user",
             "joint", "jointinparent", "tendon", "slidersite", "cranksite", "site", "refsite",
             "timeconst", "area", "diameter", "bias"},
-        {"muscle", "*", "26",  "name", "class", "group",
+        {"muscle", "*",  "name", "class", "group",
             "ctrllimited", "forcelimited", "ctrlrange", "forcerange",
             "lengthrange", "gear", "cranklength", "user",
             "joint", "jointinparent", "tendon", "slidersite", "cranksite",
             "timeconst", "tausmooth", "range", "force", "scale",
             "lmin", "lmax", "vmax", "fpmax", "fvmax"},
-        {"adhesion", "*", "9", "name", "class", "group",
+        {"adhesion", "*", "name", "class", "group",
             "forcelimited", "ctrlrange", "forcerange", "user", "body", "gain"},
-        {"plugin", "*", "25", "name", "class",  "plugin", "instance", "group",
+        {"plugin", "*", "name", "class",  "plugin", "instance", "group",
             "ctrllimited", "forcelimited", "actlimited", "ctrlrange", "forcerange", "actrange",
             "lengthrange", "gear", "cranklength", "joint", "jointinparent",
             "site", "actdim", "dyntype", "dynprm", "tendon", "cranksite", "slidersite", "user",
             "actearly"},
         {"<"},
-          {"config", "*", "2", "key", "value"},
+          {"config", "*", "key", "value"},
         {">"},
     {">"},
 
-    {"sensor", "*", "0"},
+    {"sensor", "*"},
     {"<"},
-        {"touch", "*", "5", "name", "site", "cutoff", "noise", "user"},
-        {"accelerometer", "*", "5", "name", "site", "cutoff", "noise", "user"},
-        {"velocimeter", "*", "5", "name", "site", "cutoff", "noise", "user"},
-        {"gyro", "*", "5", "name", "site", "cutoff", "noise", "user"},
-        {"force", "*", "5", "name", "site", "cutoff", "noise", "user"},
-        {"torque", "*", "5", "name", "site", "cutoff", "noise", "user"},
-        {"magnetometer", "*", "5", "name", "site", "cutoff", "noise", "user"},
-        {"camprojection", "*", "6", "name", "site", "camera", "cutoff", "noise", "user"},
-        {"rangefinder", "*", "5", "name", "site", "cutoff", "noise", "user"},
-        {"jointpos", "*", "5", "name", "joint", "cutoff", "noise", "user"},
-        {"jointvel", "*", "5", "name", "joint", "cutoff", "noise", "user"},
-        {"tendonpos", "*", "5", "name", "tendon", "cutoff", "noise", "user"},
-        {"tendonvel", "*", "5", "name", "tendon", "cutoff", "noise", "user"},
-        {"actuatorpos", "*", "5", "name", "actuator", "cutoff", "noise", "user"},
-        {"actuatorvel", "*", "5", "name", "actuator", "cutoff", "noise", "user"},
-        {"actuatorfrc", "*", "5", "name", "actuator", "cutoff", "noise", "user"},
-        {"jointactuatorfrc", "*", "5", "name", "joint", "cutoff", "noise", "user"},
-        {"tendonactuatorfrc", "*", "5", "name", "tendon", "cutoff", "noise", "user"},
-        {"ballquat", "*", "5", "name", "joint", "cutoff", "noise", "user"},
-        {"ballangvel", "*", "5", "name", "joint", "cutoff", "noise", "user"},
-        {"jointlimitpos", "*", "5", "name", "joint", "cutoff", "noise", "user"},
-        {"jointlimitvel", "*", "5", "name", "joint", "cutoff", "noise", "user"},
-        {"jointlimitfrc", "*", "5", "name", "joint", "cutoff", "noise", "user"},
-        {"tendonlimitpos", "*", "5", "name", "tendon", "cutoff", "noise", "user"},
-        {"tendonlimitvel", "*", "5", "name", "tendon", "cutoff", "noise", "user"},
-        {"tendonlimitfrc", "*", "5", "name", "tendon", "cutoff", "noise", "user"},
-        {"framepos", "*", "8", "name", "objtype", "objname", "reftype", "refname", "cutoff", "noise", "user"},
-        {"framequat", "*", "8", "name", "objtype", "objname", "reftype", "refname", "cutoff", "noise", "user"},
-        {"framexaxis", "*", "8", "name", "objtype", "objname", "reftype", "refname", "cutoff", "noise", "user"},
-        {"frameyaxis", "*", "8", "name", "objtype", "objname", "reftype", "refname", "cutoff", "noise", "user"},
-        {"framezaxis", "*", "8", "name", "objtype", "objname", "reftype", "refname", "cutoff", "noise", "user"},
-        {"framelinvel", "*", "8", "name", "objtype", "objname", "reftype", "refname", "cutoff", "noise", "user"},
-        {"frameangvel", "*", "8", "name", "objtype", "objname", "reftype", "refname", "cutoff", "noise", "user"},
-        {"framelinacc", "*", "6", "name", "objtype", "objname", "cutoff", "noise", "user"},
-        {"frameangacc", "*", "6", "name", "objtype", "objname", "cutoff", "noise", "user"},
-        {"subtreecom", "*", "5", "name", "body", "cutoff", "noise", "user"},
-        {"subtreelinvel", "*", "5", "name", "body", "cutoff", "noise", "user"},
-        {"subtreeangmom", "*", "5", "name", "body", "cutoff", "noise", "user"},
-        {"insidesite", "*", "7", "name", "site", "objtype", "objname", "cutoff", "noise", "user"},
-        {"distance", "*", "8", "name", "geom1", "geom2", "body1", "body2", "cutoff", "noise", "user"},
-        {"normal", "*", "8", "name", "geom1", "geom2", "body1", "body2", "cutoff", "noise", "user"},
-        {"fromto", "*", "8", "name", "geom1", "geom2", "body1", "body2", "cutoff", "noise", "user"},
-        {"contact", "*", "12", "name", "geom1", "geom2", "body1", "body2", "subtree1", "subtree2", "site",
+        {"touch", "*", "name", "site", "cutoff", "noise", "user"},
+        {"accelerometer", "*", "name", "site", "cutoff", "noise", "user"},
+        {"velocimeter", "*", "name", "site", "cutoff", "noise", "user"},
+        {"gyro", "*", "name", "site", "cutoff", "noise", "user"},
+        {"force", "*", "name", "site", "cutoff", "noise", "user"},
+        {"torque", "*", "name", "site", "cutoff", "noise", "user"},
+        {"magnetometer", "*", "name", "site", "cutoff", "noise", "user"},
+        {"camprojection", "*", "name", "site", "camera", "cutoff", "noise", "user"},
+        {"rangefinder", "*", "name", "site", "cutoff", "noise", "user"},
+        {"jointpos", "*", "name", "joint", "cutoff", "noise", "user"},
+        {"jointvel", "*", "name", "joint", "cutoff", "noise", "user"},
+        {"tendonpos", "*", "name", "tendon", "cutoff", "noise", "user"},
+        {"tendonvel", "*", "name", "tendon", "cutoff", "noise", "user"},
+        {"actuatorpos", "*", "name", "actuator", "cutoff", "noise", "user"},
+        {"actuatorvel", "*", "name", "actuator", "cutoff", "noise", "user"},
+        {"actuatorfrc", "*", "name", "actuator", "cutoff", "noise", "user"},
+        {"jointactuatorfrc", "*", "name", "joint", "cutoff", "noise", "user"},
+        {"tendonactuatorfrc", "*", "name", "tendon", "cutoff", "noise", "user"},
+        {"ballquat", "*", "name", "joint", "cutoff", "noise", "user"},
+        {"ballangvel", "*", "name", "joint", "cutoff", "noise", "user"},
+        {"jointlimitpos", "*", "name", "joint", "cutoff", "noise", "user"},
+        {"jointlimitvel", "*", "name", "joint", "cutoff", "noise", "user"},
+        {"jointlimitfrc", "*", "name", "joint", "cutoff", "noise", "user"},
+        {"tendonlimitpos", "*", "name", "tendon", "cutoff", "noise", "user"},
+        {"tendonlimitvel", "*", "name", "tendon", "cutoff", "noise", "user"},
+        {"tendonlimitfrc", "*", "name", "tendon", "cutoff", "noise", "user"},
+        {"framepos", "*", "name", "objtype", "objname", "reftype", "refname", "cutoff", "noise", "user"},
+        {"framequat", "*", "name", "objtype", "objname", "reftype", "refname", "cutoff", "noise", "user"},
+        {"framexaxis", "*", "name", "objtype", "objname", "reftype", "refname", "cutoff", "noise", "user"},
+        {"frameyaxis", "*", "name", "objtype", "objname", "reftype", "refname", "cutoff", "noise", "user"},
+        {"framezaxis", "*", "name", "objtype", "objname", "reftype", "refname", "cutoff", "noise", "user"},
+        {"framelinvel", "*", "name", "objtype", "objname", "reftype", "refname", "cutoff", "noise", "user"},
+        {"frameangvel", "*", "name", "objtype", "objname", "reftype", "refname", "cutoff", "noise", "user"},
+        {"framelinacc", "*", "name", "objtype", "objname", "cutoff", "noise", "user"},
+        {"frameangacc", "*", "name", "objtype", "objname", "cutoff", "noise", "user"},
+        {"subtreecom", "*", "name", "body", "cutoff", "noise", "user"},
+        {"subtreelinvel", "*", "name", "body", "cutoff", "noise", "user"},
+        {"subtreeangmom", "*", "name", "body", "cutoff", "noise", "user"},
+        {"insidesite", "*", "name", "site", "objtype", "objname", "cutoff", "noise", "user"},
+        {"distance", "*", "name", "geom1", "geom2", "body1", "body2", "cutoff", "noise", "user"},
+        {"normal", "*", "name", "geom1", "geom2", "body1", "body2", "cutoff", "noise", "user"},
+        {"fromto", "*", "name", "geom1", "geom2", "body1", "body2", "cutoff", "noise", "user"},
+        {"contact", "*", "name", "geom1", "geom2", "body1", "body2", "subtree1", "subtree2", "site",
             "num", "data", "reduce", "cutoff", "noise", "user"},
-        {"e_potential", "*", "4", "name", "cutoff", "noise", "user"},
-        {"e_kinetic", "*", "4", "name", "cutoff", "noise", "user"},
-        {"clock", "*", "4", "name", "cutoff", "noise", "user"},
-        {"user", "*", "9", "name", "objtype", "objname", "datatype", "needstage",
+        {"e_potential", "*", "name", "cutoff", "noise", "user"},
+        {"e_kinetic", "*", "name", "cutoff", "noise", "user"},
+        {"clock", "*", "name", "cutoff", "noise", "user"},
+        {"user", "*", "name", "objtype", "objname", "datatype", "needstage",
             "dim", "cutoff", "noise", "user"},
-    {"tactile", "*", "4", "name", "geom", "mesh", "user"},
-        {"plugin", "*", "9", "name", "plugin", "instance", "cutoff", "objtype", "objname", "reftype", "refname",
+    {"tactile", "*", "name", "geom", "mesh", "user"},
+        {"plugin", "*", "name", "plugin", "instance", "cutoff", "objtype", "objname", "reftype", "refname",
             "user"},
         {"<"},
-          {"config", "*", "2", "key", "value"},
+          {"config", "*", "key", "value"},
         {">"},
     {">"},
 
-    {"keyframe", "*", "0"},
+    {"keyframe", "*"},
     {"<"},
-        {"key", "*", "8", "name", "time", "qpos", "qvel", "act", "mpos", "mquat", "ctrl"},
+        {"key", "*", "name", "time", "qpos", "qvel", "act", "mpos", "mquat", "ctrl"},
     {">"},
 {">"}
 };
@@ -553,6 +556,15 @@ const mjMap TFAuto_map[3] = {
   {"auto",    2}
 };
 
+
+// body sleep type
+const int bodysleep_sz = 4;
+const mjMap bodysleep_map[bodysleep_sz] = {
+  {"auto",          mjSLEEP_AUTO},
+  {"never",         mjSLEEP_NEVER},
+  {"allowed",       mjSLEEP_ALLOWED},
+  {"init",          mjSLEEP_INIT}
+};
 
 // joint type
 const int joint_sz = 4;
@@ -859,7 +871,8 @@ const mjMap fcomp_map[mjNFCOMPTYPES] = {
 const mjMap fdof_map[mjNFCOMPDOFS] = {
   {"full",          mjFCOMPDOF_FULL},
   {"radial",        mjFCOMPDOF_RADIAL},
-  {"trilinear",     mjFCOMPDOF_TRILINEAR}
+  {"trilinear",     mjFCOMPDOF_TRILINEAR},
+  {"quadratic",     mjFCOMPDOF_QUADRATIC}
 };
 
 
@@ -1135,6 +1148,7 @@ void mjXReader::Option(XMLElement* section, mjOption* opt) {
   ReadAttr(section, "ls_tolerance", 1, &opt->ls_tolerance, text);
   ReadAttr(section, "noslip_tolerance", 1, &opt->noslip_tolerance, text);
   ReadAttr(section, "ccd_tolerance", 1, &opt->ccd_tolerance, text);
+  ReadAttr(section, "sleep_tolerance", 1, &opt->sleep_tolerance, text);
   ReadAttr(section, "gravity", 3, opt->gravity, text);
   ReadAttr(section, "wind", 3, opt->wind, text);
   ReadAttr(section, "magnetic", 3, opt->magnetic, text);
@@ -1212,6 +1226,7 @@ void mjXReader::Option(XMLElement* section, mjOption* opt) {
     READENBL("fwdinv",      mjENBL_FWDINV)
     READENBL("invdiscrete", mjENBL_INVDISCRETE)
     READENBL("multiccd",    mjENBL_MULTICCD)
+    READENBL("sleep",       mjENBL_SLEEP)
 #undef READENBL
   }
 }
@@ -1401,7 +1416,9 @@ void mjXReader::OneFlex(XMLElement* elem, mjsFlex* flex) {
 
   // read attributes
   if (ReadAttrTxt(elem, "name", name)) {
-    mjs_setName(flex->element, name.c_str());
+    if (mjs_setName(flex->element, name.c_str())) {
+      throw mjXError(elem, "%s", mjs_getError(spec));
+    }
   }
   if (ReadAttrTxt(elem, "material", material)) {
     mjs_setString(flex->material, material.c_str());
@@ -1495,7 +1512,9 @@ void mjXReader::OneMesh(XMLElement* elem, mjsMesh* mesh, const mjVFS* vfs) {
 
   // read attributes
   if (ReadAttrTxt(elem, "name", name)) {
-    mjs_setName(mesh->element, name.c_str());
+    if (mjs_setName(mesh->element, name.c_str())) {
+      throw mjXError(elem, "%s", mjs_getError(spec));
+    }
   }
   if (ReadAttrTxt(elem, "content_type", content_type)) {
     *mesh->content_type = content_type;
@@ -1568,7 +1587,7 @@ void mjXReader::OneMesh(XMLElement* elem, mjsMesh* mesh, const mjVFS* vfs) {
       throw mjXError(elem, "builtin mesh cannot be used with user vertex data");
     }
     if (mjs_makeMesh(mesh, (mjtMeshBuiltin)n, params.data(), nparams)) {
-      throw mjXError(elem, mjs_getError(spec));
+      throw mjXError(elem, "%s", mjs_getError(spec));
     }
   }
 
@@ -1590,7 +1609,9 @@ void mjXReader::OneSkin(XMLElement* elem, mjsSkin* skin, const mjVFS* vfs) {
 
   // read attributes
   if (ReadAttrTxt(elem, "name", name)) {
-    mjs_setName(skin->element, name.c_str());
+    if (mjs_setName(skin->element, name.c_str())) {
+      throw mjXError(elem, "%s", mjs_getError(spec));
+    }
   }
   auto file = ReadAttrFile(elem, "file", vfs, AssetDir());
   if (file.has_value()) {
@@ -1680,7 +1701,9 @@ void mjXReader::OneMaterial(XMLElement* elem, mjsMaterial* material) {
 
   // read attributes
   if (ReadAttrTxt(elem, "name", name)) {
-    mjs_setName(material->element, name.c_str());
+    if (mjs_setName(material->element, name.c_str())) {
+      throw mjXError(elem, "%s", mjs_getError(spec));
+    }
   }
 
   bool tex_attributes_found = false;
@@ -1729,7 +1752,9 @@ void mjXReader::OneJoint(XMLElement* elem, mjsJoint* joint) {
 
   // read attributes
   if (ReadAttrTxt(elem, "name", name)) {
-    mjs_setName(joint->element, name.c_str());
+    if (mjs_setName(joint->element, name.c_str())) {
+      throw mjXError(elem, "%s", mjs_getError(spec));
+    }
   }
   if (MapValue(elem, "type", &n, joint_map, joint_sz)) {
     joint->type = (mjtJoint)n;
@@ -1777,7 +1802,9 @@ void mjXReader::OneGeom(XMLElement* elem, mjsGeom* geom) {
 
   // read attributes
   if (ReadAttrTxt(elem, "name", name)) {
-    mjs_setName(geom->element, name.c_str());
+    if (mjs_setName(geom->element, name.c_str())) {
+      throw mjXError(elem, "%s", mjs_getError(spec));
+    }
   }
   if (MapValue(elem, "type", &n, geom_map, mjNGEOMTYPES)) {
     geom->type = (mjtGeom)n;
@@ -1849,7 +1876,9 @@ void mjXReader::OneSite(XMLElement* elem, mjsSite* site) {
 
   // read attributes
   if (ReadAttrTxt(elem, "name", name)) {
-    mjs_setName(site->element, name.c_str());
+    if (mjs_setName(site->element, name.c_str())) {
+      throw mjXError(elem, "%s", mjs_getError(spec));
+    }
   }
   if (MapValue(elem, "type", &n, geom_map, mjNGEOMTYPES)) {
     site->type = (mjtGeom)n;
@@ -1882,7 +1911,9 @@ void mjXReader::OneCamera(XMLElement* elem, mjsCamera* camera) {
 
   // read attributes
   if (ReadAttrTxt(elem, "name", name)) {
-    mjs_setName(camera->element, name.c_str());
+    if (mjs_setName(camera->element, name.c_str())) {
+      throw mjXError(elem, "%s", mjs_getError(spec));
+    }
   }
   if (ReadAttrTxt(elem, "target", targetbody)) {
     mjs_setString(camera->targetbody, targetbody.c_str());
@@ -1937,7 +1968,9 @@ void mjXReader::OneLight(XMLElement* elem, mjsLight* light) {
 
   // read attributes
   if (ReadAttrTxt(elem, "name", name)) {
-    mjs_setName(light->element, name.c_str());
+    if (mjs_setName(light->element, name.c_str())) {
+      throw mjXError(elem, "%s", mjs_getError(spec));
+    }
   }
   if (ReadAttrTxt(elem, "texture", texture)) {
     mjs_setString(light->texture, texture.c_str());
@@ -1998,7 +2031,9 @@ void mjXReader::OnePair(XMLElement* elem, mjsPair* pair) {
 
   // read other parameters
   if (ReadAttrTxt(elem, "name", name)) {
-    mjs_setName(pair->element, name.c_str());
+    if (mjs_setName(pair->element, name.c_str())) {
+      throw mjXError(elem, "%s", mjs_getError(spec));
+    }
   }
   ReadAttrInt(elem, "condim", &pair->condim);
   ReadAttr(elem, "solref", mjNREF, pair->solref, text, false, false);
@@ -2026,7 +2061,9 @@ void mjXReader::OneEquality(XMLElement* elem, mjsEquality* equality) {
   // regular only
   if (!readingdefaults) {
     if (ReadAttrTxt(elem, "name", name)) {
-      mjs_setName(equality->element, name.c_str());
+      if (mjs_setName(equality->element, name.c_str())) {
+        throw mjXError(elem, "%s", mjs_getError(spec));
+      }
     }
 
     switch (equality->type) {
@@ -2162,7 +2199,9 @@ void mjXReader::OneTendon(XMLElement* elem, mjsTendon* tendon) {
 
   // read attributes
   if (ReadAttrTxt(elem, "name", name)) {
-    mjs_setName(tendon->element, name.c_str());
+    if (mjs_setName(tendon->element, name.c_str())) {
+      throw mjXError(elem, "%s", mjs_getError(spec));
+    }
   }
   ReadAttrInt(elem, "group", &tendon->group);
   if (ReadAttrTxt(elem, "material", material)) {
@@ -2205,7 +2244,9 @@ void mjXReader::OneActuator(XMLElement* elem, mjsActuator* actuator) {
 
   // common attributes
   if (ReadAttrTxt(elem, "name", name)) {
-    mjs_setName(actuator->element, name.c_str());
+    if (mjs_setName(actuator->element, name.c_str())) {
+      throw mjXError(elem, "%s", mjs_getError(spec));
+    }
   }
   ReadAttrInt(elem, "group", &actuator->group);
   MapValue(elem, "ctrllimited", &actuator->ctrllimited, TFAuto_map, 3);
@@ -2956,7 +2997,9 @@ void mjXReader::Custom(XMLElement* section) {
 
       // read attributes
       ReadAttrTxt(elem, "name", elname, true);
-      mjs_setName(numeric->element, elname.c_str());
+      if (mjs_setName(numeric->element, elname.c_str())) {
+        throw mjXError(elem, "%s", mjs_getError(spec));
+      }
       if (ReadAttrInt(elem, "size", &numeric->size)) {
         int sz = numeric->size < 500 ? numeric->size : 500;
         for (int i=0; i < sz; i++) {
@@ -2987,7 +3030,9 @@ void mjXReader::Custom(XMLElement* section) {
 
       // read attributes
       ReadAttrTxt(elem, "name", elname, true);
-      mjs_setName(text->element, elname.c_str());
+      if (mjs_setName(text->element, elname.c_str())) {
+        throw mjXError(elem, "%s", mjs_getError(spec));
+      }
       ReadAttrTxt(elem, "data", str, true);
       if (str.empty()) {
         throw mjXError(elem, "text field cannot be empty");
@@ -3007,7 +3052,9 @@ void mjXReader::Custom(XMLElement* section) {
 
       // read attributes
       ReadAttrTxt(elem, "name", elname, true);
-      mjs_setName(tuple->element, elname.c_str());
+      if (mjs_setName(tuple->element, elname.c_str())) {
+        throw mjXError(elem, "%s", mjs_getError(spec));
+      }
 
       // read objects and add
       XMLElement* obj = FirstChildElement(elem);
@@ -3223,7 +3270,9 @@ void mjXReader::Asset(XMLElement* section, const mjVFS* vfs) {
         texture->colorspace = (mjtColorSpace)n;
       }
       if (ReadAttrTxt(elem, "name", texname)) {
-        mjs_setName(texture->element, texname.c_str());
+        if (mjs_setName(texture->element, texname.c_str())) {
+          throw mjXError(elem, "%s", mjs_getError(spec));
+        }
       }
       if (ReadAttrTxt(elem, "content_type", content_type)) {
         mjs_setString(texture->content_type, content_type.c_str());
@@ -3315,7 +3364,9 @@ void mjXReader::Asset(XMLElement* section, const mjVFS* vfs) {
       // read attributes
       string name, content_type;
       if (ReadAttrTxt(elem, "name", name)) {
-        mjs_setName(hfield->element, name.c_str());
+        if (mjs_setName(hfield->element, name.c_str())) {
+          throw mjXError(elem, "%s", mjs_getError(spec));
+        }
       }
       if (ReadAttrTxt(elem, "content_type", content_type)) {
         mjs_setString(hfield->content_type, content_type.c_str());
@@ -3364,25 +3415,24 @@ void mjXReader::Asset(XMLElement* section, const mjVFS* vfs) {
 
     // model sub-element
     else if (name == "model") {
-      string content_type;
-      if (!ReadAttrTxt(elem, "content_type", content_type)) {
-        content_type = "text/xml";
-      }
+      std::string content_type;
+      ReadAttrTxt(elem, "content_type", content_type);
 
       // parse the child
       mjSpec* child = nullptr;
       std::array<char, 1024> error;
       auto filename = modelfiledir_ + ReadAttrFile(elem, "file", vfs).value();
 
-      if (content_type == "text/xml") {
-        child = mj_parseXML(filename.c_str(), vfs, error.data(), error.size());
 #ifdef mjUSEUSD
-      } else if (content_type == "text/usd") {
+      if (content_type == "text/usd") {
         child = mj_parseUSD(filename.c_str(), vfs, error.data(), error.size());
-#endif  // mjUSEUSD
       } else {
-        throw mjXError(elem, "unsupported content_type: %s", content_type.c_str());
+#endif  // mjUSEUSD
+        child = mj_parse(filename.c_str(), content_type.c_str(), vfs,
+                               error.data(), error.size());
+#ifdef mjUSEUSD
       }
+#endif  // mjUSEUSD
 
       if (!child) {
         throw mjXError(elem, "could not parse model file with error: %s", error.data());
@@ -3482,7 +3532,9 @@ void mjXReader::Body(XMLElement* section, mjsBody* body, mjsFrame* frame,
       // read attributes
       string name;
       if (ReadAttrTxt(elem, "name", name)) {
-        mjs_setName(joint->element, name.c_str());
+        if (mjs_setName(joint->element, name.c_str())) {
+          throw mjXError(elem, "%s", mjs_getError(spec));
+        }
       }
       ReadAttrInt(elem, "group", &joint->group);
       MapValue(elem, "align", &joint->align, TFAuto_map, 3);
@@ -3554,7 +3606,9 @@ void mjXReader::Body(XMLElement* section, mjsBody* body, mjsFrame* frame,
       // read attributes
       string name, childclass;
       if (ReadAttrTxt(elem, "name", name)) {
-        mjs_setName(pframe->element, name.c_str());
+        if (mjs_setName(pframe->element, name.c_str())) {
+          throw mjXError(elem, "%s", mjs_getError(spec));
+        }
       }
       if (ReadAttrTxt(elem, "childclass", childclass)) {
         mjs_setString(pframe->childclass, childclass.c_str());
@@ -3626,13 +3680,13 @@ void mjXReader::Body(XMLElement* section, mjsBody* body, mjsFrame* frame,
 
         // attach to parent
         if (!mjs_attach(body->element, pframe->element, /*prefix=*/"", suffix.c_str())) {
-          throw mjXError(elem, mjs_getError(spec));
+          throw mjXError(elem, "%s", mjs_getError(spec));
         }
       }
 
       // delete subtree
       if (mjs_delete(spec, subtree->element)) {
-        throw mjXError(elem, mjs_getError(spec));
+        throw mjXError(elem, "%s", mjs_getError(spec));
       }
     }
 
@@ -3655,7 +3709,9 @@ void mjXReader::Body(XMLElement* section, mjsBody* body, mjsFrame* frame,
       // read attributes
       string name, childclass;
       if (ReadAttrTxt(elem, "name", name)) {
-        mjs_setName(child->element, name.c_str());
+        if (mjs_setName(child->element, name.c_str())) {
+          throw mjXError(elem, "%s", mjs_getError(spec));
+        }
       }
       if (ReadAttrTxt(elem, "childclass", childclass)) {
         mjs_setString(child->childclass, childclass.c_str());
@@ -3667,8 +3723,11 @@ void mjXReader::Body(XMLElement* section, mjsBody* body, mjsFrame* frame,
       }
       ReadAlternative(elem, child->alt);
 
-      // read gravcomp
+      // gravcomp, sleep policy
       ReadAttr(elem, "gravcomp", 1, &child->gravcomp, text);
+      if (MapValue(elem, "sleep", &n, bodysleep_map, bodysleep_sz)) {
+        child->sleep = (mjtSleepPolicy) n;
+      }
 
       // read userdata
       std::vector<double> userdata;
@@ -3708,12 +3767,12 @@ void mjXReader::Body(XMLElement* section, mjsBody* body, mjsFrame* frame,
           child = child_body->element;
         }
         if (!mjs_attach(pframe->element, child, prefix.c_str(), "")) {
-          throw mjXError(elem, mjs_getError(spec));
+          throw mjXError(elem, "%s", mjs_getError(spec));
         }
       } else {
         // only set frame to existing body
         if (mjs_setFrame(child_body->element, pframe)) {
-          throw mjXError(elem, mjs_getError(spec));
+          throw mjXError(elem, "%s", mjs_getError(spec));
         }
       }
     }
@@ -3764,7 +3823,9 @@ void mjXReader::Contact(XMLElement* section) {
 
       // read name and body names
       if (ReadAttrTxt(elem, "name", exname)) {
-        mjs_setName(exclude->element, exname.c_str());
+        if (mjs_setName(exclude->element, exname.c_str())) {
+          throw mjXError(elem, "%s", mjs_getError(spec));
+        }
       }
       ReadAttrTxt(elem, "body1", exbody1, true);
       mjs_setString(exclude->bodyname1, exbody1.c_str());
@@ -3946,7 +4007,9 @@ void mjXReader::Sensor(XMLElement* section) {
 
     // read name, noise, userdata
     if (ReadAttrTxt(elem, "name", name)) {
-      mjs_setName(sensor->element, name.c_str());
+      if (mjs_setName(sensor->element, name.c_str())) {
+        throw mjXError(elem, "%s", mjs_getError(spec));
+      }
     }
     ReadAttr(elem, "cutoff", 1, &sensor->cutoff, text);
     ReadAttr(elem, "noise", 1, &sensor->noise, text);
@@ -4377,7 +4440,9 @@ void mjXReader::Keyframe(XMLElement* section) {
 
     // read name, time
     ReadAttrTxt(elem, "name", name);
-    mjs_setName(key->element, name.c_str());
+    if (mjs_setName(key->element, name.c_str())) {
+      throw mjXError(elem, "%s", mjs_getError(spec));
+    }
     ReadAttr(elem, "time", 1, &key->time, text);
 
     // read qpos

@@ -27,6 +27,7 @@
 #include <filesystem>  // NOLINT(build/c++17)
 #include <functional>
 #include <mutex>
+#include <sstream>
 #include <string>
 #include <string_view>
 #include <thread>
@@ -119,7 +120,7 @@ bool IsNullPose(const T pos[3], const T quat[4]) {
 // get body id from wrap object
 int GetBodyIdFromWrap(const mjCWrap* wrap) {
   if (!wrap || !wrap->obj) return -1;
-  switch (wrap->type) {
+  switch (wrap->Type()) {
     case mjWRAP_SITE:
       return static_cast<mjCSite*>(wrap->obj)->Body()->id;
     case mjWRAP_CYLINDER:
@@ -2930,12 +2931,25 @@ void mjCModel::CopyTree(mjModel* m) {
     }
   }
 
-  // count bodies with gravity compensation, compute ngravcomp
-  int ngravcomp = 0;
-  for (int i=0; i < nbody; i++) {
-    ngravcomp += (m->body_gravcomp[i] > 0);
+  // initialize AUTO sleep policy for all trees
+  for (int i=0; i < m->ntree; i++) {
+    m->tree_sleep_policy[i] = mjSLEEP_AUTO;
   }
-  m->ngravcomp = ngravcomp;
+
+  // loop over bodies, check and set non-default sleep policy
+  for (int i=1; i < nbody; i++) {
+    mjCBody* pb = bodies_[i];
+
+    // validate and set non-default sleep policy
+    if (pb->sleep != mjSLEEP_AUTO) {
+      int treeid = m->body_treeid[i];
+      // non-default sleep policy only allowed for first body in a tree
+      if (treeid == -1 || treeid == m->body_treeid[i-1]) {
+        throw mjCError(pb, "sleep policy only allowed for movable root bodies");
+      }
+      m->tree_sleep_policy[treeid] = pb->sleep;
+    }
+  }
 
   // recompute nM and dof_Madr given m.dof_parentid, validate
   int nM_post = 0;
@@ -3376,7 +3390,7 @@ void mjCModel::CopyObjects(mjModel* m) {
     }
 
     // set interpolation type, only two types for now
-    m->flex_interp[i] = pfl->interpolated;
+    m->flex_interp[i] = pfl->order_;
 
     // convert edge pairs to int array, set edge rigid
     for (int k=0; k < pfl->nedge; k++) {
@@ -3605,10 +3619,10 @@ void mjCModel::CopyObjects(mjModel* m) {
 
     // set wraps
     for (int j=0; j < (int)pte->path.size(); j++) {
-      m->wrap_type[adr+j] = pte->path[j]->type;
+      m->wrap_type[adr+j] = pte->path[j]->Type();
       m->wrap_objid[adr+j] = pte->path[j]->obj ? pte->path[j]->obj->id : -1;
       m->wrap_prm[adr+j] = (mjtNum)pte->path[j]->prm;
-      if (pte->path[j]->type == mjWRAP_SPHERE || pte->path[j]->type == mjWRAP_CYLINDER) {
+      if (pte->path[j]->Type() == mjWRAP_SPHERE || pte->path[j]->Type() == mjWRAP_CYLINDER) {
         m->wrap_prm[adr+j] = (mjtNum)pte->path[j]->sideid;
       }
     }
@@ -4403,6 +4417,10 @@ mjModel* mjCModel::Compile(const mjVFS* vfs, mjModel** m) {
 
     // save error info
     errInfo = err;
+    if (warningtext[0]) {
+      mju::strcat_arr(errInfo.message, "\n");
+      mju::strcat_arr(errInfo.message, warningtext);
+    }
 
     // restore handler, return 0
     _mjPRIVATE__set_tls_error_fn(save_error);
@@ -4917,6 +4935,8 @@ void mjCModel::TryCompile(mjModel*& m, mjData*& d, const mjVFS* vfs) {
   // create data
   int disableflags = m->opt.disableflags;
   m->opt.disableflags |= mjDSBL_CONTACT;
+  int enableflags = m->opt.enableflags;
+  m->opt.enableflags &= ~mjENBL_SLEEP;
   mj_makeRawData(&d, m);
   if (!d) {
     // m will be deleted by the catch statement in mjCModel::Compile()
@@ -4962,18 +4982,39 @@ void mjCModel::TryCompile(mjModel*& m, mjData*& d, const mjVFS* vfs) {
   // delete partial mjData (no plugins), make a complete one
   mj_deleteData(d);
   d = nullptr;
+
+  // if sleep was enabled, check for trees initialized as sleeping
+  bool asleep_init = false;
+  if (enableflags & mjENBL_SLEEP) {
+    for (int i=0; i < m->ntree; i++) {
+      if (m->tree_sleep_policy[i] == mjSLEEP_INIT) {
+        asleep_init = true;
+        break;
+      }
+    }
+  }
+
+  // if any trees initialized as sleeping, restore flags before mj_makeData
+  if (asleep_init) {
+    m->opt.disableflags = disableflags;
+    m->opt.enableflags = enableflags;
+  }
+
   d = mj_makeData(m);
   if (!d) {
     // m will be deleted by the catch statement in mjCModel::Compile()
     throw mjCError(0, "could not create mjData");
   }
 
-  // test forward simulation
-  mj_step(m, d);
+  // test forward simulation unless asleep_init is true (potentially expensive)
+  if (!asleep_init) {
+    mj_step(m, d);
+  }
 
-  // delete data
+  // delete data, restore flags
   mj_deleteData(d);
   m->opt.disableflags = disableflags;
+  m->opt.enableflags = enableflags;
   d = nullptr;
 
   // pass warning back
@@ -4999,78 +5040,98 @@ void mjCModel::TryCompile(mjModel*& m, mjData*& d, const mjVFS* vfs) {
 
 
 
-std::string mjCModel::PrintTree(const mjCBody* body, std::string indent) {
-  std::string tree;
-  tree += indent + "<body>\n";
-  indent += "  ";
+static void PrintIndent(std::stringstream& ss, int depth) {
+  // A static string of spaces, created only once during the program's lifetime.
+  static const std::string spaces(1024, ' ');
+
+  if (depth > 0) {
+    // Write 'depth * 2' spaces directly to the stringstream
+    // without creating any new std::string objects.
+    ss.write(spaces.c_str(), std::min((size_t)depth * 2, spaces.length()));
+  }
+}
+
+
+
+void mjCModel::PrintTree(std::stringstream& tree, const mjCBody* body, int depth) {
+  if (depth == 1024) {
+    throw mjCError(body, "depth limit exceeded in signature computation");
+  }
+  PrintIndent(tree, depth);
+  tree << "<body>\n";
   for (const auto& joint : body->joints) {
-    tree += indent + "<joint>" + std::to_string(joint->nq()) + "</joint>\n";
+    PrintIndent(tree, depth + 1);
+    tree << "<joint>" << std::to_string(joint->nq()) << "</joint>\n";
   }
   for (uint64_t i = 0; i < body->geoms.size(); ++i) {
-    tree += indent + "<geom/>\n";
+    PrintIndent(tree, depth + 1);
+    tree << "<geom/>\n";
   }
   for (uint64_t i = 0; i < body->sites.size(); ++i) {
-    tree += indent + "<site/>\n";
+    PrintIndent(tree, depth + 1);
+    tree << "<site/>\n";
   }
   for (uint64_t i = 0; i < body->cameras.size(); ++i) {
-    tree += indent + "<camera/>\n";
+    PrintIndent(tree, depth + 1);
+    tree << "<camera/>\n";
   }
   for (uint64_t i = 0; i < body->lights.size(); ++i) {
-    tree += indent + "<light/>\n";
+    PrintIndent(tree, depth + 1);
+    tree << "<light/>\n";
   }
   for (uint64_t i = 0; i < body->bodies.size(); ++i) {
-    tree += PrintTree(body->bodies[i], indent);
+    PrintTree(tree, body->bodies[i], depth + 1);
   }
-  indent.pop_back();
-  indent.pop_back();
-  tree += indent + "</body>\n";
-  return tree;
+  PrintIndent(tree, depth);
+  tree << "</body>\n";
 }
 
 
 
 uint64_t mjCModel::Signature() {
-  std::string tree = "\n" + PrintTree(bodies_[0]);
+  std::stringstream tree;
+  tree << "\n";
+  PrintTree(tree, bodies_[0]);
   for (unsigned int i = 0; i < flexes_.size(); ++i) {
-    tree += "<flex/>\n";
+    tree << "<flex/>\n";
   }
   for (unsigned int i = 0; i < meshes_.size(); ++i) {
-    tree += "<mesh/>\n";
+    tree << "<mesh/>\n";
   }
   for (unsigned int i = 0; i < skins_.size(); ++i) {
-    tree += "<skin/>\n";
+    tree << "<skin/>\n";
   }
   for (unsigned int i = 0; i < hfields_.size(); ++i) {
-    tree += "<heightfield/>\n";
+    tree << "<heightfield/>\n";
   }
   for (unsigned int i = 0; i < textures_.size(); ++i) {
-    tree += "<texture/>\n";
+    tree << "<texture/>\n";
   }
   for (unsigned int i = 0; i < materials_.size(); ++i) {
-    tree += "<material/>\n";
+    tree << "<material/>\n";
   }
   for (unsigned int i = 0; i < pairs_.size(); ++i) {
-    tree += "<pair/>\n";
+    tree << "<pair/>\n";
   }
   for (unsigned int i = 0; i < excludes_.size(); ++i) {
-    tree += "<exclude/>\n";
+    tree << "<exclude/>\n";
   }
   for (unsigned int i = 1; i < equalities_.size(); ++i) {
-    tree += "<equality/>\n";
+    tree << "<equality/>\n";
   }
   for (unsigned int i = 0; i < tendons_.size(); ++i) {
-    tree += "<tendon/>\n";
+    tree << "<tendon/>\n";
   }
   for (unsigned int i = 0; i < actuators_.size(); ++i) {
-    tree += "<actuator/>\n";
+    tree << "<actuator/>\n";
   }
   for (unsigned int i = 0; i < sensors_.size(); ++i) {
-    tree += "<sensor>" + std::to_string(sensors_[i]->spec.type) + "<sensor/>\n";
+    tree << "<sensor>" << std::to_string(sensors_[i]->spec.type) << "<sensor/>\n";
   }
   for (unsigned int i = 0; i < keys_.size(); ++i) {
-    tree += "<key/>\n";
+    tree << "<key/>\n";
   }
-  return mj_hashString(tree.c_str(), UINT64_MAX);
+  return mj_hashString(tree.str().c_str(), UINT64_MAX);
 }
 
 

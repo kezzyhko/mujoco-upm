@@ -29,7 +29,7 @@ set(MUJOCO_DEP_VERSION_lodepng
 
 project(
   mujoco_simulate
-  VERSION 3.3.7
+  VERSION 3.4.0
   DESCRIPTION "MuJoCo simulate binaries"
   HOMEPAGE_URL "https://mujoco.org"
 )
@@ -186,6 +186,13 @@ if(SIMULATE_BUILD_EXECUTABLE)
   endif()
 
   if (MUJOCO_WITH_USD)
+    # pxr/usd/tf/hashset.h might include deprecated headers so disable this check
+    # when compiling with USD enabled.
+    target_compile_options(
+         simulate
+         PRIVATE -Wno-deprecated
+    )
+
     target_link_libraries(
       simulate
       mujoco::usd::mjcf

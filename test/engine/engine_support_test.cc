@@ -17,9 +17,11 @@
 #include "src/engine/engine_core_util.h"
 #include "src/engine/engine_support.h"
 
+#include <cstring>
 #include <limits>
 #include <random>
 #include <string>
+#include <string_view>
 #include <vector>
 
 #include <gmock/gmock.h>
@@ -35,6 +37,7 @@ using ::testing::ContainsRegex;  // NOLINT
 using ::testing::DoubleNear;
 using ::testing::Eq;
 using ::testing::MatchesRegex;
+using ::testing::Ne;
 using ::testing::NotNull;
 using ::testing::Pointwise;
 
@@ -742,6 +745,117 @@ TEST_F(SupportTest, GetSetStateStepEqual) {
   mj_deleteModel(model);
 }
 
+TEST_F(SupportTest, CopyState) {
+  const std::string xml_path = GetTestDataFilePath(kDefaultModel);
+  mjModel* m = mj_loadXML(xml_path.c_str(), nullptr, nullptr, 0);
+
+  mjData* src = mj_makeData(m);
+  mjData* dst = mj_makeData(m);
+
+  // init both datas to default
+  mj_resetData(m, src);
+  mj_resetData(m, dst);
+
+  // modify d_src
+  src->time = 1.23;
+  for (int i=0; i < m->nq; ++i) src->qpos[i] = i*0.1;
+  for (int i=0; i < m->nv; ++i) src->qvel[i] = i*0.2;
+  for (int i=0; i < m->na; ++i) src->act[i] = i*0.3;
+  for (int i=0; i < m->nu; ++i) src->ctrl[i] = i*0.4;
+
+  for (int i=0; i < m->neq; ++i) src->eq_active[i] = 1 - m->eq_active0[i];
+
+  // check that states differ
+  EXPECT_NE(src->time, dst->time);
+  EXPECT_THAT(AsVector(src->qpos, m->nq), Ne(AsVector(dst->qpos, m->nq)));
+  EXPECT_THAT(AsVector(src->ctrl, m->nu), Ne(AsVector(dst->ctrl, m->nu)));
+
+  // copy state with signature
+  int signature = mjSTATE_FULLPHYSICS | mjSTATE_EQ_ACTIVE;
+  mj_copyState(m, src, dst, signature);
+
+  // check copied components
+  EXPECT_EQ(dst->time, src->time);
+  EXPECT_EQ(AsVector(dst->qpos, m->nq), AsVector(src->qpos, m->nq));
+  EXPECT_EQ(AsVector(dst->qvel, m->nv), AsVector(src->qvel, m->nv));
+  EXPECT_EQ(AsVector(dst->act, m->na), AsVector(src->act, m->na));
+  EXPECT_EQ(AsVector(dst->eq_active, m->neq), AsVector(src->eq_active, m->neq));
+
+  // check non-copied components (CTRL not in signature)
+  EXPECT_THAT(AsVector(dst->ctrl, m->nu), Ne(AsVector(src->ctrl, m->nu)));
+  EXPECT_EQ(AsVector(dst->ctrl, m->nu), vector<mjtNum>(m->nu, 0.0));
+
+  mj_deleteData(src);
+  mj_deleteData(dst);
+  mj_deleteModel(m);
+}
+
+TEST_F(SupportTest, ExtractState) {
+  const std::string xml_path = GetTestDataFilePath(kDefaultModel);
+  mjModel* model = mj_loadXML(xml_path.c_str(), nullptr, nullptr, 0);
+  mjData* data = mj_makeData(model);
+
+  // make distribution using seed
+  std::mt19937_64 rng;
+  rng.seed(3);
+  std::normal_distribution<double> dist(0, .01);
+
+  // set controls and applied joint forces to random values
+  for (int i=0; i < model->nu; i++) data->ctrl[i] = dist(rng);
+  for (int i=0; i < model->nv; i++) data->qfrc_applied[i] = dist(rng);
+  for (int i=0; i < model->neq; i++) data->eq_active[i] = dist(rng) > 0;
+
+  // take one step
+  mj_step(model, data);
+
+  // take a state that will be used as src
+  int srcsig = mjSTATE_TIME | mjSTATE_QPOS | mjSTATE_QVEL | mjSTATE_CTRL;
+  int srcsize = mj_stateSize(model, srcsig);
+  vector<mjtNum> srcstate(srcsize);
+  mj_getState(model, data, srcstate.data(), srcsig);
+
+  // extract a subset consisting of only a single bit in srcsig
+  int dstsig1 = mjSTATE_CTRL;
+  int dstsize1 = mj_stateSize(model, dstsig1);
+  EXPECT_LT(dstsize1, srcsize);
+  EXPECT_EQ(dstsize1, model->nu);
+  vector<mjtNum> dststate1(dstsize1);
+  mj_extractState(model, srcstate.data(), srcsig, dststate1.data(), dstsig1);
+  EXPECT_EQ(dststate1, AsVector(data->ctrl, model->nu));
+
+  // extract a subset consisting of multiple non-consecutive bits in srcsig
+  int dstsig2 = mjSTATE_QPOS | mjSTATE_CTRL;
+  int dstsize2 = mj_stateSize(model, dstsig2);
+  EXPECT_LT(dstsize2, srcsize);
+  EXPECT_EQ(dstsize2, model->nq + model->nu);
+  vector<mjtNum> dststate2(dstsize2);
+  mj_extractState(model, srcstate.data(), srcsig, dststate2.data(), dstsig2);
+  EXPECT_EQ(AsVector(dststate2.data(), model->nq),
+            AsVector(data->qpos, model->nq));
+  EXPECT_EQ(AsVector(dststate2.data() + model->nq, model->nu),
+            AsVector(data->ctrl, model->nu));
+
+  // test that an error is correctly raised if dstsig is not a subset of srcsig
+  static int error_count;
+  static char last_error_msg[128];
+  error_count = 0;
+  last_error_msg[0] = '\0';
+  auto* error_handler = +[](const char* msg) {
+    std::strncpy(last_error_msg, msg, sizeof(last_error_msg));
+    ++error_count;
+  };
+  auto* old_mju_user_error = mju_user_error;
+  mju_user_error = error_handler;
+  mj_extractState(model, nullptr, srcsig, nullptr, mjSTATE_QFRC_APPLIED);
+  mju_user_error = old_mju_user_error;
+  EXPECT_EQ(error_count, 1);
+  EXPECT_EQ(std::string_view(last_error_msg),
+            "mj_extractState: dstsig is not a subset of srcsig");
+
+  mj_deleteData(data);
+  mj_deleteModel(model);
+}
+
 using InertiaTest = MujocoTest;
 
 static const char* const kInertiaPath = "engine/testdata/inertia.xml";
@@ -912,7 +1026,7 @@ TEST_F(InertiaTest, FullM) {
   mj_deleteModel(m);
 }
 
-static constexpr char GeomDistanceTestingModel[] = R"(
+static constexpr char GeomDistanceTestingModel1[] = R"(
 <mujoco>
   <option>
     <flag nativeccd="enable"/>
@@ -931,10 +1045,19 @@ static constexpr char GeomDistanceTestingModel[] = R"(
 </mujoco>
 )";
 
+static constexpr char GeomDistanceTestingModel2[] = R"(
+<mujoco>
+  <worldbody>
+    <geom type="sphere" size=".1"/>
+    <geom type="ellipsoid" size=".1 .1 .1" pos="0 0 1"/>
+  </worldbody>
+</mujoco>
+)";
+
 TEST_F(SupportTest, GeomDistance) {
   char error[1024];
   mjModel* model =
-      LoadModelFromString(GeomDistanceTestingModel, error, sizeof(error));
+      LoadModelFromString(GeomDistanceTestingModel1, error, sizeof(error));
   ASSERT_THAT(model, NotNull()) << error;
   mjData* data = mj_makeData(model);
   mj_kinematics(model, data);
@@ -974,15 +1097,41 @@ TEST_F(SupportTest, GeomDistance) {
   EXPECT_THAT(mj_geomDistance(model, data, 3, 1, distmax, fromto),
               DoubleNear(0.7, eps));
   EXPECT_THAT(fromto, Pointwise(DoubleNear(eps),
-                                vector<mjtNum>{0, 0, .8, 0, 0, .1}));
+                                vector<mjtNum>{0, 0, .1, 0, 0, .8}));
 
   // mesh-sphere (far distmax)
   distmax = 1.0;
   EXPECT_THAT(mj_geomDistance(model, data, 3, 1, distmax, fromto),
               DoubleNear(0.7, eps));
   EXPECT_THAT(fromto, Pointwise(DoubleNear(eps),
-                                vector<mjtNum>{0, 0, .8, 0, 0, .1}));
+                                vector<mjtNum>{0, 0, .1, 0, 0, .8}));
 
+  mj_deleteData(data);
+  mj_deleteModel(model);
+}
+
+TEST_F(SupportTest, GeomDistanceFromToFlipped) {
+  mjtNum distmax = 10.0;
+  char error[1024];
+  mjModel* model =
+      LoadModelFromString(GeomDistanceTestingModel2, error, sizeof(error));
+  ASSERT_THAT(model, NotNull()) << error;
+  mjData* data = mj_makeData(model);
+  mj_kinematics(model, data);
+
+  mjtNum fromto01[6];
+  mjtNum fromto10[6];
+
+  for (int flag : {0, (int)mjDSBL_NATIVECCD}) {
+    model->opt.disableflags = flag;
+    mj_geomDistance(model, data, 0, 1, distmax, fromto01);
+    mj_geomDistance(model, data, 1, 0, distmax, fromto10);
+    mjtNum fromto10flipped[6] = {fromto10[3], fromto10[4], fromto10[5],
+                                 fromto10[0], fromto10[1], fromto10[2]};
+
+    EXPECT_THAT(AsVector(fromto10flipped, 6),
+                Pointwise(DoubleNear(1.0e-12), fromto01));
+  }
   mj_deleteData(data);
   mj_deleteModel(model);
 }

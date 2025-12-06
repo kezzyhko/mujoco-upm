@@ -24,6 +24,7 @@ import sys
 
 sys.path.insert(0, os.path.abspath('../'))
 sys.path.append(os.path.abspath('ext'))
+sys.path.insert(0, os.path.abspath('../mjx/mujoco/mjx/third_party'))
 
 from sphinxcontrib import katex  # pylint: disable=g-import-not-at-top
 from sphinxcontrib import youtube  # pylint: disable=g-import-not-at-top,unused-import
@@ -45,6 +46,7 @@ extensions = [
     'sphinx.ext.autodoc',
     'sphinx.ext.napoleon',
     'sphinx.ext.viewcode',
+    'sphinx.ext.extlinks',
     'sphinxcontrib.bibtex',
     'sphinxcontrib.katex',
     'sphinxcontrib.youtube',
@@ -56,6 +58,17 @@ extensions = [
     'sphinx_toolbox.sidebar_links',
     'mujoco_include',
 ]
+
+napoleon_custom_sections = [('warp only fields', 'attributes')]
+
+# Links to GitHub issues and pull requests.
+extlinks = {
+    'issue': (
+        'https://github.com/google-deepmind/mujoco/issues/%s',
+        'issue #%s',
+    ),
+    'pr': ('https://github.com/google-deepmind/mujoco/pull/%s', 'PR #%s'),
+}
 
 # MuJoCo Warp documentation
 napoleon_google_docstring = True

@@ -1378,25 +1378,27 @@ TEST_F(XMLWriterTest, WriteReadCompare) {
       if (p.path().extension() == ext) {
         std::string xml = p.path().string();
 
-        // if file is meant to fail, skip it
-        if (absl::StrContains(p.path().string(), "malformed_") ||
-            // exclude files that are too slow to load
-            absl::StrContains(p.path().string(), "cow") ||
-            absl::StrContains(p.path().string(), "gmsh_") ||
-            absl::StrContains(p.path().string(), "shark_") ||
-            absl::StrContains(p.path().string(), "spheremesh") ||
-            // exclude files that fail the comparison test
-            absl::StrContains(p.path().string(), "tactile") ||
-            absl::StrContains(p.path().string(), "makemesh") ||
-            absl::StrContains(p.path().string(), "many_dependencies") ||
-            absl::StrContains(p.path().string(), "usd") ||
-            absl::StrContains(p.path().string(), "torus_maxhull") ||
-            absl::StrContains(p.path().string(), "fitmesh_") ||
-            absl::StrContains(p.path().string(), "lengthrange") ||
-            absl::StrContains(p.path().string(), "hfield_xml") ||
-            absl::StrContains(p.path().string(), "fromto_convex") ||
-            absl::StrContains(p.path().string(), "cube_skin") ||
-            absl::StrContains(p.path().string(), "cube_3x3x3")) {
+
+        if (  // if file is meant to fail, skip it
+              absl::StrContains(p.path().string(), "malformed_") ||
+              absl::StrContains(p.path().string(), "_fail") ||
+              // exclude files that are too slow to load
+              absl::StrContains(p.path().string(), "cow") ||
+              absl::StrContains(p.path().string(), "gmsh_") ||
+              absl::StrContains(p.path().string(), "shark_") ||
+              absl::StrContains(p.path().string(), "perf") ||
+              // exclude files that fail the comparison test
+              absl::StrContains(p.path().string(), "tactile") ||
+              absl::StrContains(p.path().string(), "makemesh") ||
+              absl::StrContains(p.path().string(), "many_dependencies") ||
+              absl::StrContains(p.path().string(), "usd") ||
+              absl::StrContains(p.path().string(), "torus_maxhull") ||
+              absl::StrContains(p.path().string(), "fitmesh_") ||
+              absl::StrContains(p.path().string(), "lengthrange") ||
+              absl::StrContains(p.path().string(), "hfield_xml") ||
+              absl::StrContains(p.path().string(), "fromto_convex") ||
+              absl::StrContains(p.path().string(), "cube_skin") ||
+              absl::StrContains(p.path().string(), "cube_3x3x3")) {
           continue;
         }
         // load model
@@ -1417,6 +1419,8 @@ TEST_F(XMLWriterTest, WriteReadCompare) {
         auto abs_path = p.path();
         mjSpec* stemp = mj_parseXMLString(SaveAndReadXml(s).c_str(), 0,
                                           error.data(), error.size());
+        ASSERT_THAT(stemp, NotNull())
+            << "Failed to load " << xml.c_str() << ": " << error.data();
         mjs_setString(stemp->modelfiledir,
                       abs_path.remove_filename().string().c_str());
         mjModel* mtemp = mj_compile(stemp, nullptr);
