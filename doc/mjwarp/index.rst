@@ -28,6 +28,15 @@ MJWarp is developed and maintained as a joint effort by `NVIDIA <https://nvidia.
    - MJWarp is mostly feature complete but requires performance optimization, documentation, and testing.
    - The intended audience during Beta are physics engine enthusiasts and learning framework integrators.
 
+.. _MJW_tutorial:
+
+Tutorial notebook
+=================
+
+The MJWarp basics are covered in a
+`tutorial
+notebook <https://colab.research.google.com/github/google-deepmind/mujoco_warp/blob/main/notebooks/tutorial.ipynb>`__.
+
 .. _MJW_install:
 
 Installation
@@ -440,6 +449,11 @@ Orientations are represented as unit quaternions and follow :ref:`MuJoCo's conve
   operations and instead implements quaternion routines that follow MuJoCo's conventions. Please see
   `math.py <https://github.com/google-deepmind/mujoco_warp/blob/main/mujoco_warp/_src/math.py>`__ for the
   implementations.
+
+**Does MJWarp have a named access API / bind?**
+
+No. Updates for this feature are tracked in this
+`GitHub issue <https://github.com/google-deepmind/mujoco_warp/issues/884>`__.
 
 Compilation
 -----------
