@@ -56,7 +56,7 @@
 namespace mujoco::studio {
 
 static constexpr platform::Window::Config kWindowConfig = {
-#ifdef EMSCRIPTEN
+#if defined(__EMSCRIPTEN__)
     .render_config = platform::Window::RenderConfig::kFilamentWebGL,
 #elif defined(USE_FILAMENT_VULKAN)
     .render_config = platform::Window::RenderConfig::kFilamentVulkan,
@@ -195,34 +195,36 @@ void App::LoadModel(std::string data, ContentType type) {
   // Delete the existing mjModel and mjData.
   ClearModel();
 
-  char err[1000] = "";
-  if (type == ContentType::kFilepath) {
-    // Store the file path as the model name. Note that we use this model name
-    // to perform reload operations.
-    model_name_ = std::move(data);
-    if (model_name_.ends_with(".mjb")) {
-      model_ = mj_loadModel(model_name_.c_str(), 0);
-    } else if (model_name_.ends_with(".xml")) {
-      spec_ = mj_parseXML(model_name_.c_str(), nullptr, err, sizeof(err));
+  if (!data.empty()) {
+    char err[1000] = "";
+    if (type == ContentType::kFilepath) {
+      // Store the file path as the model name. Note that we use this model name
+      // to perform reload operations.
+      model_name_ = std::move(data);
+      if (model_name_.ends_with(".mjb")) {
+        model_ = mj_loadModel(model_name_.c_str(), 0);
+      } else if (model_name_.ends_with(".xml")) {
+        spec_ = mj_parseXML(model_name_.c_str(), nullptr, err, sizeof(err));
+        if (spec_ && err[0] == 0) {
+          model_ = mj_compile(spec_, nullptr);
+        }
+      } else {
+        error_ = "Unknown model file type; expected .mjb or .xml.";
+      }
+    } else if (type == ContentType::kModelXml) {
+      model_name_ = "[xml]";
+      spec_ = mj_parseXMLString(data.c_str(), nullptr, err, sizeof(err));
       if (spec_ && err[0] == 0) {
         model_ = mj_compile(spec_, nullptr);
       }
-    } else {
-      error_ = "Unknown model file type; expected .mjb or .xml.";
+    } else if (type == ContentType::kModelMjb) {
+      model_name_ = "[mjb]";
+      model_ = mj_loadModelBuffer(data.data(), data.size());
     }
-  } else if (type == ContentType::kModelXml) {
-    model_name_ = "[xml]";
-    spec_ = mj_parseXMLString(data.c_str(), nullptr, err, sizeof(err));
-    if (spec_ && err[0] == 0) {
-      model_ = mj_compile(spec_, nullptr);
-    }
-  } else if (type == ContentType::kModelMjb) {
-    model_name_ = "[mjb]";
-    model_ = mj_loadModelBuffer(data.data(), data.size());
-  }
 
-  if (err[0]) {
-    error_ = err;
+    if (err[0]) {
+      error_ = err;
+    }
   }
 
   // If no mjModel was loaded, load an empty mjModel.
@@ -740,7 +742,7 @@ void App::LoadSettings() {
   if (!ini_path_.empty()) {
     std::string settings = platform::LoadText(ini_path_);
     if (!settings.empty()) {
-      ui_.FromDict(platform::ReadIniSection(settings, "[Simulate][Data]"));
+      ui_.FromDict(platform::ReadIniSection(settings, "[Studio][UX]"));
       ImGui::LoadIniSettingsFromMemory(settings.data(), settings.size());
     }
   }
@@ -749,7 +751,7 @@ void App::LoadSettings() {
 void App::SaveSettings() {
   if (!ini_path_.empty()) {
     std::string settings = ImGui::SaveIniSettingsToMemory();
-    platform::AppendIniSection(settings, "[Simulate][Data]", ui_.ToDict());
+    platform::AppendIniSection(settings, "[Studio][UX]", ui_.ToDict());
     platform::SaveText(settings, ini_path_);
   }
 }
@@ -910,6 +912,10 @@ void App::BuildGui() {
   }
 
   ImGuiIO& io = ImGui::GetIO();
+  if (tmp_.first_frame) {
+    LoadSettings();
+    tmp_.first_frame = false;
+  }
   if (io.WantSaveIniSettings) {
     SaveSettings();
     io.WantSaveIniSettings = false;
@@ -920,6 +926,7 @@ void App::SetupTheme(platform::GuiTheme theme) {
   if (!tmp_.style_editor) {
     platform::SetupTheme(theme);
     ui_.theme = theme;
+    ImGui::GetIO().WantSaveIniSettings = true;
   }
 }
 
@@ -1745,11 +1752,13 @@ std::vector<const char*> App::GetCameraNames() {
 
 App::UiState::Dict App::UiState::ToDict() const {
   return {
+    {"theme", std::to_string(static_cast<int>(theme))},
   };
 }
 
 void App::UiState::FromDict(const Dict& dict) {
   *this = UiState();
+  theme = ReadIniValue(dict, "theme", theme);
 }
 
 int App::LoadAssetCallback(const char* path, void* user_data,
