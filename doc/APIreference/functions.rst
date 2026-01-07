@@ -1076,7 +1076,7 @@ This function is triggered automatically if the following sensors are present in
 It is also triggered for :ref:`user sensors<sensor-user>` of :ref:`stage<sensor-user-needstage>` "acc".
 
 The computed force arrays ``cfrc_int`` and ``cfrc_ext`` currently suffer from a know bug, they do not take into account
-the effect of spatial tendons, see :github:issue:`832`.
+the effect of spatial tendons, see :issue:`832`.
 
 .. _mj_collision:
 
@@ -1359,12 +1359,6 @@ Add file to VFS. The directory argument is optional and can be NULL or empty. Re
 
 *Nullable:* ``directory``
 
-
-.. Assetcache:
-
-The asset cache is a mechanism for caching assets (e.g. textures, meshes, etc.) to avoid repeated slow recompilation.
-The following methods provide way to control the capacity of the cache or to disable it altogether.
-
 .. _mj_addBufferVFS:
 
 `mj_addBufferVFS <#mj_addBufferVFS>`__
@@ -1391,6 +1385,59 @@ Delete file from VFS, return 0: success, -1: not found in VFS.
 .. mujoco-include:: mj_deleteVFS
 
 Delete all files from VFS and deallocates VFS internal memory.
+
+.. _Assetcache:
+
+Asset cache
+^^^^^^^^^^^
+
+The asset cache is a mechanism for caching assets (e.g. textures, meshes, etc.) to avoid repeated slow recompilation.
+The following methods provide way to control the capacity of the cache or to disable it altogether.
+
+.. _mj_getCacheSize:
+
+`mj_getCacheSize <#mj_getCacheSize>`__
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+.. mujoco-include:: mj_getCacheSize
+
+Get the current size of the asset cache in bytes.
+
+.. _mj_getCacheCapacity:
+
+`mj_getCacheCapacity <#mj_getCacheCapacity>`__
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+.. mujoco-include:: mj_getCacheCapacity
+
+Get the capacity of the asset cache in bytes.
+
+.. _mj_setCacheCapacity:
+
+`mj_setCacheCapacity <#mj_setCacheCapacity>`__
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+.. mujoco-include:: mj_setCacheCapacity
+
+Set the capacity of the asset cache in bytes (0 to disable); returns the new capacity.
+
+.. _mj_getCache:
+
+`mj_getCache <#mj_getCache>`__
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+.. mujoco-include:: mj_getCache
+
+Get the internal asset cache used by the compiler.
+
+.. _mj_clearCache:
+
+`mj_clearCache <#mj_clearCache>`__
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+.. mujoco-include:: mj_clearCache
+
+Clear the asset cache.
 
 .. _Initialization:
 

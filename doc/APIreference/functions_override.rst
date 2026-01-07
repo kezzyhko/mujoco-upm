@@ -25,8 +25,7 @@ Add file to VFS. The directory argument is optional and can be NULL or empty. Re
 
 *Nullable:* ``directory``
 
-
-.. Assetcache:
+.. _Assetcache:
 
 The asset cache is a mechanism for caching assets (e.g. textures, meshes, etc.) to avoid repeated slow recompilation.
 The following methods provide way to control the capacity of the cache or to disable it altogether.
@@ -170,7 +169,7 @@ This function is triggered automatically if the following sensors are present in
 It is also triggered for :ref:`user sensors<sensor-user>` of :ref:`stage<sensor-user-needstage>` "acc".
 
 The computed force arrays ``cfrc_int`` and ``cfrc_ext`` currently suffer from a know bug, they do not take into account
-the effect of spatial tendons, see :github:issue:`832`.
+the effect of spatial tendons, see :issue:`832`.
 
 .. _mj_constraintUpdate:
 
