@@ -30,12 +30,21 @@ General
   attribute. In this case, the sensor will cast multiple ray, one for each pixel.
 - Rangefinder sensors can now now report various kinds of information besides ray distances, including surface normals.
   See :ref:`rangefinder<sensor-rangefinder>` for details.
+- Cameras now have an :ref:`output<body-camera-output>` attribute, parsed into the ``mjModel.cam_output`` bitfield.
+  Unused by the renderer, it serves as a convenient location to store a camera's supported output types.
 - Non-breaking ABI changes:
 
   - The type of the ``sig`` (signature) argument of :ref:`mj_stateSize` and related functions has been changed from
     ``unsigned int`` to ``int``. Before this change, invalid negative arguments passed to this function would result in
     a silent implicit cast, now negativity will trigger an error.
   - Added a :ref:`depth<mjtRndFlag>` rendering flag.
+
+- :doc:`OpenUSD <OpenUSD/index>`:
+
+  - Parsing has been moved out of experimental into a mjpDecoder plugin. (documentation pending)
+  - OpenUSD can now be built with the `third_party_deps/openusd` <https://github.com/google-deepmind/mujoco/tree/main/cmake/third_party_deps/openusd> CMake utility project.
+  - ``USD_DIR`` is no longer used by the MuJoCo CMake project, instead use ``pxr_DIR`` if you have a pre-built USD library.
+  - Users no longer have to set ``PXR_PLUGINPATH_NAME`` environment variable, MuJoCo should load USD plugins automatically.
 
 MJX
 ^^^
