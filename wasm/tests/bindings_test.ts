@@ -17,7 +17,7 @@ import 'jasmine';
 import {MainModule, MjContact, MjContactVec, MjData, MjLROpt, MjModel,
 MjOption, MjsGeom, MjSolverStat, MjSpec, MjStatistic, MjTimerStat, MjvCamera,
 MjvFigure, MjvGeom, MjvGLCamera, MjvLight, MjvOption, MjvPerturb, MjvScene,
-MjWarningStat, MjVFS} from '../dist/mujoco_wasm.js';
+MjWarningStat, MjVFS, Uint8Buffer} from '../dist/mujoco_wasm.js';
 
 import loadMujoco from '../dist/mujoco_wasm.js'
 
@@ -2139,5 +2139,125 @@ describe('MuJoCo WASM Bindings', () => {
         unlinkXMLFile(tempXmlFilename);
       }
     });
+  });
+
+  it('should save model to buffer', () => {
+    assertExists(model);
+    const modelSize = mujoco.mj_sizeModel(model);
+    const buffer = new mujoco.Uint8Buffer(Number(modelSize));
+    try {
+      mujoco.mj_saveModel(model, null, buffer);
+      // Test the first 3 byte values of the buffer.
+      expect(buffer.GetView()[0]).toBe(49);
+      expect(buffer.GetView()[1]).toBe(212);
+      expect(buffer.GetView()[2]).toBe(0);
+    } finally {
+      buffer.delete();
+    }
+  });
+
+  it('should save model to file', () => {
+    assertExists(model);
+    const filename = '/tmp/test.mjb';
+    const modelSize = mujoco.mj_sizeModel(model);
+    const buffer = new mujoco.Uint8Buffer(Number(modelSize));
+    try {
+      mujoco.mj_saveModel(model, filename, null);
+      const fileContent =
+          (mujoco as any).FS.readFile(filename, {encoding: 'binary'});
+
+      mujoco.mj_saveModel(model, null, buffer);
+      const bufferContent = buffer.GetView();
+
+      expect(fileContent.length).toBe(bufferContent.length);
+      expect(fileContent).toEqual(bufferContent);
+    } finally {
+      buffer.delete();
+      unlinkXMLFile(filename);
+    }
+  });
+
+  it('should load and save a model with assets to binary', () => {
+    const xmlContent = `
+    <mujoco model="test_binary_save">
+      <asset>
+        <mesh file="cube.obj"/>
+      </asset>
+      <worldbody>
+        <geom type="mesh" mesh="cube"/>
+      </worldbody>
+    </mujoco>`;
+    const cube1 = `
+    v -1 -1  1
+    v  1 -1  1
+    v -1  1  1
+    v  1  1  1
+    v -1  1 -1
+    v  1  1 -1
+    v -1 -1 -1
+    v  1 -1 -1`;
+    const xmlFilename = '/tmp/binary_test.xml';
+    const objFilename = '/tmp/cube.obj';
+    const mjbFilename = '/tmp/binary_test.mjb';
+
+    writeXMLFile(xmlFilename, xmlContent);
+    writeXMLFile(objFilename, cube1);
+
+    let model: MjModel|null = null;
+    let binaryModel: MjModel|null = null;
+    let vfs: MjVFS|null = null;
+
+    try {
+      model = mujoco.MjModel.mj_loadXML(xmlFilename);
+      assertExists(model);
+
+      mujoco.mj_saveModel(model, mjbFilename, null);
+
+      vfs = new mujoco.MjVFS();
+      vfs.addBuffer(objFilename, new TextEncoder().encode(cube1));
+      binaryModel = mujoco.MjModel.mj_loadBinary(mjbFilename, vfs);
+      assertExists(binaryModel);
+
+      expect(mujoco.mj_sizeModel(binaryModel))
+          .toEqual(mujoco.mj_sizeModel(model));
+      expect(binaryModel.nbody).toEqual(model!.nbody);
+      expect(binaryModel.nq).toEqual(model!.nq);
+      expect(binaryModel.nv).toEqual(model!.nv);
+      expect(binaryModel.njnt).toEqual(model!.njnt);
+      expect(binaryModel.nmesh).toEqual(model!.nmesh);
+    } finally {
+      model?.delete();
+      binaryModel?.delete();
+      vfs?.delete();
+      unlinkXMLFile(xmlFilename);
+      unlinkXMLFile(objFilename);
+      unlinkXMLFile(mjbFilename);
+    }
+  });
+
+  // Corresponds to bindings_test.py:test_mj_saveModel
+  it('should save and load a model from binary', () => {
+    const mjbFilename = '/tmp/saved_model.mjb';
+    let binaryModel: MjModel|null = null;
+    let vfs: MjVFS|null = null;
+    try {
+      mujoco.mj_saveModel(model!, mjbFilename, null);
+      const bufSize = mujoco.mj_sizeModel(model!);
+
+      vfs = new mujoco.MjVFS();
+      binaryModel = mujoco.MjModel.mj_loadBinary(mjbFilename, vfs);
+      assertExists(binaryModel);
+
+      expect(mujoco.mj_sizeModel(binaryModel)).toEqual(bufSize);
+      expect(binaryModel.nbody).toEqual(model!.nbody);
+      expect(binaryModel.nq).toEqual(model!.nq);
+      expect(binaryModel.nv).toEqual(model!.nv);
+      expect(binaryModel.njnt).toEqual(model!.njnt);
+      expect(binaryModel.nmesh).toEqual(model!.nmesh);
+    } finally {
+      binaryModel?.delete();
+      vfs?.delete();
+      unlinkXMLFile(mjbFilename);
+    }
   });
 });
