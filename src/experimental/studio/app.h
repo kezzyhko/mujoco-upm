@@ -39,7 +39,22 @@ namespace mujoco::studio {
 // Owns, updates, and renders a MuJoCo simulation.
 class App {
  public:
-  App(int width, int height, std::string ini_path);
+  // Configuration/initialization options for the application.
+  struct Config {
+    // The original width and height of the window.
+    int width = 0;
+    int height = 0;
+
+    // The path to the ini file containing the user settings.
+    std::string ini_path;
+
+    // By default, we render directly to the window surface. However, in some
+    // cases, we may want to render to an (offscreen) texture and blit the
+    // texture to the window surface.
+    bool offscreen_mode = false;
+  };
+
+  explicit App(Config config);
 
   // Loads an empty mjModel.
   void InitEmptyModel();
@@ -104,8 +119,6 @@ class App {
     bool style_editor = false;
     bool imgui_demo = false;
     bool implot_demo = false;
-    bool modal_open = false;
-    bool load_popup = false;
 
     // Controls.
     bool perturb_active = false;
@@ -129,18 +142,19 @@ class App {
     std::vector<platform::PipState> pips;
 
     // File dialogs.
+    enum FileDialog {
+      FileDialog_None,
+      FileDialog_Load,
+      FileDialog_SaveXml,
+      FileDialog_SaveMjb,
+      FileDialog_PrintModel,
+      FileDialog_PrintData,
+      FileDialog_SaveScreenshot,
+      NumFileDialogs,
+    };
+    FileDialog file_dialog = FileDialog_None;
+    std::string last_path[NumFileDialogs];
     char filename[1000] = "";
-    std::string last_load_file;
-    bool save_xml_popup = false;
-    std::string last_save_xml_file;
-    bool save_mjb_popup = false;
-    std::string last_save_mjb_file;
-    bool save_screenshot_popup = false;
-    std::string last_save_screenshot_file;
-    bool print_model_popup = false;
-    std::string last_print_model_file;
-    bool print_data_popup = false;
-    std::string last_print_data_file;
   };
 
   // Requests that the model be loaded from the given file at the next update.
@@ -212,6 +226,7 @@ class App {
   mjSpec* spec_ = nullptr;
   mjModel* model_ = nullptr;
   mjData* data_ = nullptr;
+  std::vector<std::byte> pixels_;
 
   mjvCamera camera_;
   mjvPerturb perturb_;

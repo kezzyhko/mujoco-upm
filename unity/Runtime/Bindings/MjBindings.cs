@@ -4940,6 +4940,10 @@ public unsafe struct mjData_ {
   public int nbody_awake;
   public int nparent_awake;
   public int nv_awake;
+  public byte flg_energypos;
+  public byte flg_energyvel;
+  public byte flg_subtreevel;
+  public byte flg_rnepost;
   public double time;
   public fixed double energy[2];
   public void* buffer;
@@ -5561,6 +5565,9 @@ public unsafe struct mjModel_ {
   public int* flex_texcoordadr;
   public int* flex_nodebodyid;
   public int* flex_vertbodyid;
+  public int* flex_vertedgeadr;
+  public int* flex_vertedgenum;
+  public int* flex_vertedge;
   public int* flex_edge;
   public int* flex_edgeflap;
   public int* flex_elem;
@@ -5571,6 +5578,7 @@ public unsafe struct mjModel_ {
   public int* flex_evpair;
   public double* flex_vert;
   public double* flex_vert0;
+  public double* flex_vertmetric;
   public double* flex_node;
   public double* flex_node0;
   public double* flexedge_length0;

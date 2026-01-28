@@ -2766,6 +2766,30 @@ STRUCTS: Mapping[str, StructDecl] = dict([
                  array_extent=('nflexvert',),
              ),
              StructFieldDecl(
+                 name='flex_vertedgeadr',
+                 type=PointerType(
+                     inner_type=ValueType(name='int'),
+                 ),
+                 doc='first edge address',
+                 array_extent=('nflexvert',),
+             ),
+             StructFieldDecl(
+                 name='flex_vertedgenum',
+                 type=PointerType(
+                     inner_type=ValueType(name='int'),
+                 ),
+                 doc='number of edges',
+                 array_extent=('nflexvert',),
+             ),
+             StructFieldDecl(
+                 name='flex_vertedge',
+                 type=PointerType(
+                     inner_type=ValueType(name='int'),
+                 ),
+                 doc='edge indices',
+                 array_extent=('nflexedge', 2),
+             ),
+             StructFieldDecl(
                  name='flex_edge',
                  type=PointerType(
                      inner_type=ValueType(name='int'),
@@ -2844,6 +2868,14 @@ STRUCTS: Mapping[str, StructDecl] = dict([
                  ),
                  doc='vertex positions in qpos0 on [0, 1]^d',
                  array_extent=('nflexvert', 3),
+             ),
+             StructFieldDecl(
+                 name='flex_vertmetric',
+                 type=PointerType(
+                     inner_type=ValueType(name='mjtNum'),
+                 ),
+                 doc='inverse of reference shape matrix',
+                 array_extent=('nflexvert', 4),
              ),
              StructFieldDecl(
                  name='flex_node',
@@ -5298,6 +5330,26 @@ STRUCTS: Mapping[str, StructDecl] = dict([
                  name='nv_awake',
                  type=ValueType(name='int'),
                  doc='number of awake dofs',
+             ),
+             StructFieldDecl(
+                 name='flg_energypos',
+                 type=ValueType(name='mjtByte'),
+                 doc='has mj_energyPos been called',
+             ),
+             StructFieldDecl(
+                 name='flg_energyvel',
+                 type=ValueType(name='mjtByte'),
+                 doc='has mj_energyVel been called',
+             ),
+             StructFieldDecl(
+                 name='flg_subtreevel',
+                 type=ValueType(name='mjtByte'),
+                 doc='has mj_subtreeVel been called',
+             ),
+             StructFieldDecl(
+                 name='flg_rnepost',
+                 type=ValueType(name='mjtByte'),
+                 doc='has mj_rnePostConstraint been called',
              ),
              StructFieldDecl(
                  name='time',

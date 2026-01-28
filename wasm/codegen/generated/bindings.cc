@@ -4486,6 +4486,15 @@ struct MjModel {
   emscripten::val flex_vertbodyid() const {
     return emscripten::val(emscripten::typed_memory_view(ptr_->nflexvert, ptr_->flex_vertbodyid));
   }
+  emscripten::val flex_vertedgeadr() const {
+    return emscripten::val(emscripten::typed_memory_view(ptr_->nflexvert, ptr_->flex_vertedgeadr));
+  }
+  emscripten::val flex_vertedgenum() const {
+    return emscripten::val(emscripten::typed_memory_view(ptr_->nflexvert, ptr_->flex_vertedgenum));
+  }
+  emscripten::val flex_vertedge() const {
+    return emscripten::val(emscripten::typed_memory_view(ptr_->nflexedge * 2, ptr_->flex_vertedge));
+  }
   emscripten::val flex_edge() const {
     return emscripten::val(emscripten::typed_memory_view(ptr_->nflexedge * 2, ptr_->flex_edge));
   }
@@ -4515,6 +4524,9 @@ struct MjModel {
   }
   emscripten::val flex_vert0() const {
     return emscripten::val(emscripten::typed_memory_view(ptr_->nflexvert * 3, ptr_->flex_vert0));
+  }
+  emscripten::val flex_vertmetric() const {
+    return emscripten::val(emscripten::typed_memory_view(ptr_->nflexvert * 4, ptr_->flex_vertmetric));
   }
   emscripten::val flex_node() const {
     return emscripten::val(emscripten::typed_memory_view(ptr_->nflexnode * 3, ptr_->flex_node));
@@ -6192,6 +6204,30 @@ struct MjData {
   }
   void set_nv_awake(int value) {
     ptr_->nv_awake = value;
+  }
+  mjtByte flg_energypos() const {
+    return ptr_->flg_energypos;
+  }
+  void set_flg_energypos(mjtByte value) {
+    ptr_->flg_energypos = value;
+  }
+  mjtByte flg_energyvel() const {
+    return ptr_->flg_energyvel;
+  }
+  void set_flg_energyvel(mjtByte value) {
+    ptr_->flg_energyvel = value;
+  }
+  mjtByte flg_subtreevel() const {
+    return ptr_->flg_subtreevel;
+  }
+  void set_flg_subtreevel(mjtByte value) {
+    ptr_->flg_subtreevel = value;
+  }
+  mjtByte flg_rnepost() const {
+    return ptr_->flg_rnepost;
+  }
+  void set_flg_rnepost(mjtByte value) {
+    ptr_->flg_rnepost = value;
   }
   mjtNum time() const {
     return ptr_->time;
@@ -11063,6 +11099,10 @@ EMSCRIPTEN_BINDINGS(mujoco_bindings) {
     .property("flexvert_J", &MjData::flexvert_J)
     .property("flexvert_length", &MjData::flexvert_length)
     .property("flexvert_xpos", &MjData::flexvert_xpos)
+    .property("flg_energypos", &MjData::flg_energypos, &MjData::set_flg_energypos, reference())
+    .property("flg_energyvel", &MjData::flg_energyvel, &MjData::set_flg_energyvel, reference())
+    .property("flg_rnepost", &MjData::flg_rnepost, &MjData::set_flg_rnepost, reference())
+    .property("flg_subtreevel", &MjData::flg_subtreevel, &MjData::set_flg_subtreevel, reference())
     .property("geom_xmat", &MjData::geom_xmat)
     .property("geom_xpos", &MjData::geom_xpos)
     .property("iLD", &MjData::iLD)
@@ -11389,6 +11429,10 @@ EMSCRIPTEN_BINDINGS(mujoco_bindings) {
     .property("flex_vert0", &MjModel::flex_vert0)
     .property("flex_vertadr", &MjModel::flex_vertadr)
     .property("flex_vertbodyid", &MjModel::flex_vertbodyid)
+    .property("flex_vertedge", &MjModel::flex_vertedge)
+    .property("flex_vertedgeadr", &MjModel::flex_vertedgeadr)
+    .property("flex_vertedgenum", &MjModel::flex_vertedgenum)
+    .property("flex_vertmetric", &MjModel::flex_vertmetric)
     .property("flex_vertnum", &MjModel::flex_vertnum)
     .property("flexedge_J_colind", &MjModel::flexedge_J_colind)
     .property("flexedge_J_rowadr", &MjModel::flexedge_J_rowadr)

@@ -735,54 +735,17 @@ void mj_sensorPos(const mjModel* m, mjData* d) {
             }
           }
 
-          // write sensordata for this sensor and all subsequent sensors with identical signature
-          int write_sensor = 1;
-          while (write_sensor) {
-            // write geom distance
-            if (type == mjSENS_GEOMDIST) {
-              d->sensordata[adr] = dist;
+          // write sensordata
+          if (type == mjSENS_GEOMDIST) {
+            d->sensordata[adr] = dist;
+          } else if (type == mjSENS_GEOMNORMAL) {
+            mjtNum normal[3] = {fromto[3]-fromto[0], fromto[4]-fromto[1], fromto[5]-fromto[2]};
+            if (normal[0] || normal[1] || normal[2]) {
+              mju_normalize3(normal);
             }
-
-            // write distance normal
-            else if (type == mjSENS_GEOMNORMAL) {
-              mjtNum normal[3] = {fromto[3]-fromto[0], fromto[4]-fromto[1], fromto[5]-fromto[2]};
-              if (normal[0] || normal[1] || normal[2]) {
-                mju_normalize3(normal);
-              }
-              mju_copy3(d->sensordata + adr, normal);
-            }
-
-            // write distance fromto
-            else {
-              mju_copy(d->sensordata + adr, fromto, 6);
-            }
-
-            // if this is the last sensor, break
-            if (i+1 == nsensor) {
-              break;
-            }
-
-            // type of the next sensor
-            mjtSensor type_next = m->sensor_type[i+1];
-
-            // check if signature of next sensor matches this sensor
-            write_sensor = (type_next == mjSENS_GEOMDIST   ||
-                            type_next == mjSENS_GEOMNORMAL ||
-                            type_next == mjSENS_GEOMFROMTO)   &&
-                           m->sensor_objtype[i+1] == objtype  &&
-                           m->sensor_objid[i+1]   == objid    &&
-                           m->sensor_reftype[i+1] == reftype  &&
-                           m->sensor_refid[i+1]   == refid    &&
-                           m->sensor_cutoff[i+1]  == cutoff;
-
-            // if signature matches, increment external loop variable i
-            if (write_sensor) {
-              i++;
-
-              // update adr and type, everything else is the same
-              adr = m->sensor_adr[i];
-              type = type_next;
-            }
+            mju_copy3(d->sensordata + adr, normal);
+          } else {  // mjSENS_GEOMFROMTO
+            mju_copy(d->sensordata + adr, fromto, 6);
           }
         }
         break;
@@ -857,7 +820,6 @@ void mj_sensorVel(const mjModel* m, mjData* d) {
   int sleep_filter = mjENABLED(mjENBL_SLEEP) && d->nbody_awake < m->nbody;
 
   // process sensors matching stage
-  int subtreeVel = 0;
   for (int i=0; i < m->nsensor; i++) {
     // skip sensor plugins -- these are handled after builtin sensor types
     if (m->sensor_type[i] == mjSENS_PLUGIN) {
@@ -878,16 +840,12 @@ void mj_sensorVel(const mjModel* m, mjData* d) {
       reftype = m->sensor_reftype[i];
       adr = m->sensor_adr[i];
 
-      // call mj_subtreeVel when first relevant sensor is encountered
-      if (subtreeVel == 0 &&
+      // call mj_subtreeVel for sensors that need it (unless already computed)
+      if (!d->flg_subtreevel &&
           (type == mjSENS_SUBTREELINVEL ||
            type == mjSENS_SUBTREEANGMOM ||
            type == mjSENS_USER)) {
-        // compute subtree_linvel, subtree_angmom
         mj_subtreeVel(m, d);
-
-        // mark computed
-        subtreeVel = 1;
       }
 
       // process according to type
@@ -1016,13 +974,10 @@ void mj_sensorVel(const mjModel* m, mjData* d) {
         if (!plugin->compute) {
           mjERROR("`compute` is null for plugin at slot %d", slot);
         }
-        if (subtreeVel == 0) {
-          // compute subtree_linvel, subtree_angmom
-          // TODO(b/247107630): add a flag to allow plugin to specify whether it actually needs this
+        // compute subtree_linvel, subtree_angmom (unless already computed)
+        // TODO(b/247107630): add a flag to allow plugin to specify whether it actually needs this
+        if (!d->flg_subtreevel) {
           mj_subtreeVel(m, d);
-
-          // mark computed
-          subtreeVel = 1;
         }
         plugin->compute(m, d, i, mjPLUGIN_SENSOR);
       }
@@ -1050,7 +1005,6 @@ void mj_sensorAcc(const mjModel* m, mjData* d) {
   int sleep_filter = mjENABLED(mjENBL_SLEEP) && d->nbody_awake < m->nbody;
 
   // process sensors matching stage
-  int rnePost = 0;
   for (int i=0; i < m->nsensor; i++) {
     // skip sleeping sensor
     if (sleep_filter && mj_sleepState(m, d, mjOBJ_SENSOR, i) == mjS_ASLEEP) {
@@ -1069,18 +1023,15 @@ void mj_sensorAcc(const mjModel* m, mjData* d) {
       objid = m->sensor_objid[i];
       adr = m->sensor_adr[i];
 
-      // call mj_rnePostConstraint when first relevant sensor is encountered
-      if (rnePost == 0  && (type == mjSENS_ACCELEROMETER ||
-                            type == mjSENS_FORCE         ||
-                            type == mjSENS_TORQUE        ||
-                            type == mjSENS_FRAMELINACC   ||
-                            type == mjSENS_FRAMEANGACC   ||
-                            type == mjSENS_USER)) {
-        // compute cacc, cfrc_int, cfrc_ext
+      // call mj_rnePostConstraint for sensors that need it (unless already computed)
+      if (!d->flg_rnepost &&
+          (type == mjSENS_ACCELEROMETER ||
+           type == mjSENS_FORCE         ||
+           type == mjSENS_TORQUE        ||
+           type == mjSENS_FRAMELINACC   ||
+           type == mjSENS_FRAMEANGACC   ||
+           type == mjSENS_USER)) {
         mj_rnePostConstraint(m, d);
-
-        // mark computed
-        rnePost = 1;
       }
 
       // process according to type
@@ -1550,14 +1501,9 @@ void mj_sensorAcc(const mjModel* m, mjData* d) {
         if (!plugin->compute) {
           mjERROR("`compute` is null for plugin at slot %d", slot);
         }
-        if (rnePost == 0) {
-          // compute cacc, cfrc_int, cfrc_ext
-          // TODO(b/247107630): add a flag to allow plugin to specify whether it actually needs this
-          mj_rnePostConstraint(m, d);
-
-          // mark computed
-          rnePost = 1;
-        }
+        // compute cacc, cfrc_int, cfrc_ext (function handles early return)
+        // TODO(b/247107630): add a flag to allow plugin to specify whether it actually needs this
+        mj_rnePostConstraint(m, d);
         plugin->compute(m, d, i, mjPLUGIN_SENSOR);
       }
     }
@@ -1672,6 +1618,9 @@ void mj_energyPos(const mjModel* m, mjData* d) {
       }
     }
   }
+
+  // mark as computed
+  d->flg_energypos = 1;
 }
 
 
@@ -1685,4 +1634,7 @@ void mj_energyVel(const mjModel* m, mjData* d) {
   d->energy[1] = 0.5*mju_dot(vec, d->qvel, m->nv);
 
   mj_freeStack(d);
+
+  // mark as computed
+  d->flg_energyvel = 1;
 }
