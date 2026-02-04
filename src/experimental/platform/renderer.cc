@@ -23,6 +23,7 @@
 #if defined(MUJOCO_RENDERER_CLASSIC_OPENGL)
 #include <imgui.h>
 #include <backends/imgui_impl_opengl3.h>
+#include "experimental/platform/egl_utils.h"
 #else
 #include "experimental/filament/render_context_filament.h"
 #include "experimental/platform/plugin.h"
@@ -32,11 +33,19 @@ namespace mujoco::platform {
 
 Renderer::Renderer(void* native_window) : native_window_(native_window) {
 #ifdef MUJOCO_RENDERER_CLASSIC_OPENGL
-  ImGui_ImplOpenGL3_Init();
+  if (native_window == nullptr) {
+    graphics_api_context_ = CreateEglContext();
+  }
+  if (ImGui::GetCurrentContext()) {
+    ImGui_ImplOpenGL3_Init();
+  }
 #endif
 }
 
-Renderer::~Renderer() { Deinit(); }
+Renderer::~Renderer() {
+  Deinit();
+  graphics_api_context_.reset();
+}
 
 void Renderer::Init(const mjModel* model) {
   Deinit();
@@ -82,6 +91,17 @@ void Renderer::Render(const mjModel* model, mjData* data,
     return;
   }
 
+  mjvCamera default_cam;
+  if (camera == nullptr) {
+    mjv_defaultCamera(&default_cam);
+    camera = &default_cam;
+  }
+  mjvOption default_opt;
+  if (vis_option == nullptr) {
+    mjv_defaultOption(&default_opt);
+    vis_option = &default_opt;
+  }
+
   mjv_updateScene(model, data, vis_option, perturb, camera, mjCAT_ALL,
                   &scene_);
 
@@ -110,9 +130,11 @@ void Renderer::Render(const mjModel* model, mjData* data,
   // The filament backend knows how to renders the ImGui draw data. For the
   // classic backend, we need to render the ImGui draw data ourselves.
   #ifdef MUJOCO_RENDERER_CLASSIC_OPENGL
-    ImGui_ImplOpenGL3_NewFrame();
-    ImGui::Render();
-    ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
+    if (ImGui::GetCurrentContext()) {
+      ImGui_ImplOpenGL3_NewFrame();
+      ImGui::Render();
+      ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
+    }
   #endif
 
   if (render_to_texture) {
@@ -184,7 +206,6 @@ RendererBackend Renderer::GetBackend() {
   #error "Unsupported renderer backend."
 #endif
 }
-
 }  // namespace mujoco::platform
 
 #if !defined(MUJOCO_RENDERER_CLASSIC_OPENGL)
