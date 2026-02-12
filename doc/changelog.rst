@@ -8,6 +8,10 @@ Upcoming version (not yet released)
 Significant new features
 ^^^^^^^^^^^^^^^^^^^^^^^^
 
+- Added new System Identification toolbox (Python), see
+  `README <https://github.com/google-deepmind/mujoco/blob/main/python/mujoco/sysid/README.md>`__ for details.
+  Contribution by :github:user:`kevinzakka`, :github:user:`aftersomemath`, :github:user:`jonathanembleyriches`,
+  :github:user:`qiayuanl`, :github:user:`spjardim` and :github:user:`gizemozd`.
 - Actuators and sensors now support arbitrary delays via history buffers, and sensors values can be computed at
   intervals larger than the simulation timestep. Using a delay or interval introduces a new ``mjData.history`` variable
   to the :ref:`Physics state<siPhysicsState>`. See :ref:`Delays<CDelay>` for details.
@@ -73,6 +77,9 @@ General
 
    - Removed ``getdir`` from the ``mjpResourceProvider`` struct. All Resource Providers now use the same shared
      implementation.
+   - When combining the ``margin`` and ``gap`` :ref:`parameters<CContact>` of two geoms to obtain the parameters
+     of a contact, the respective values are now **summed** rather than than taking the maximum. This allows geom
+     margins to be a proper "inflation" of the geom.
 
 - Camera frustum visualization is now triggered by setting :ref:`resolution<body-camera-resolution>` to values larger
   than 1. Relatedly, frustum visualization also works for :ref:`orthographic<body-camera-projection>` cameras.
@@ -122,6 +129,8 @@ Documentation
 
 Bug fixes
 ^^^^^^^^^
+- Fixed a bug in :ref:`implicit integrator<geIntegrators>` derivatives where actuator velocity derivatives were
+  incorrectly computed when the force was clamped by :ref:`forcerange<actuator-general-forcerange>`.
 - Fixed a bug in :ref:`implicit integrator<geIntegrators>` derivatives where actuator velocity derivatives did not
   account for the :ref:`actearly<actuator-general-actearly>` flag.
 - Multi threaded mesh processing, enabled by the :ref:`usethread<compiler-usethread>` compiler flag (on by default), was
