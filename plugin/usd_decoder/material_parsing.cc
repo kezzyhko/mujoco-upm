@@ -12,35 +12,26 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include "experimental/usd/material_parsing.h"
+#include "material_parsing.h"
 
-#include <cstddef>
-#include <cstdint>
 #include <cstdio>
-#include <memory>
+#include <filesystem>
 #include <optional>
 #include <string>
-#include <vector>
 
-#include "lodepng.h"
 #include <mujoco/mujoco.h>
 #include <pxr/base/gf/vec3f.h>
 #include <pxr/base/gf/vec4f.h>
 #include <pxr/base/tf/staticData.h>
 #include <pxr/base/tf/staticTokens.h>
 #include <pxr/base/tf/token.h>
-#include <pxr/usd/ar/asset.h>
-#include <pxr/usd/ar/resolvedPath.h>
-#include <pxr/usd/ar/resolver.h>
 #include <pxr/usd/usd/prim.h>
 #include <pxr/usd/usdShade/input.h>
 #include <pxr/usd/usdShade/material.h>
 #include <pxr/usd/usdShade/shader.h>
 #include <pxr/usd/usdShade/types.h>
 #include <pxr/usd/usdShade/udimUtils.h>
-
-namespace mujoco {
-namespace usd {
+#include <pxr/usd/usdShade/utils.h>
 
 // Using to satisfy TF_DEFINE_PRIVATE_TOKENS macro below and avoid operating in
 // PXR_NS.
@@ -127,106 +118,59 @@ ResolvedShaderInput<T> ReadUsdUVTexture(mjSpec* spec,
     texture->colorspace = mjtColorSpace::mjCOLORSPACE_AUTO;
   }
 
-  pxr::ArResolver& resolver = pxr::ArGetResolver();
   pxr::SdfAssetPath resolved_texture_asset_path;
+
   if (auto file_input = shader.GetInput(kTokens->file)) {
-    file_input.Get(&resolved_texture_asset_path);
+    // Use GetValueProducingAttributes to follow all connections including
+    // material interfaces.
+    auto value_attrs =
+        pxr::UsdShadeUtils::GetValueProducingAttributes(file_input);
+    for (const auto& attr : value_attrs) {
+      if (attr.Get(&resolved_texture_asset_path) &&
+          !resolved_texture_asset_path.GetAssetPath().empty()) {
+        break;
+      }
+    }
   } else {
     mju_error("UsdUVTexture missing inputs:file.");
     return out;
   }
 
-  std::string resolved_texture_path =
-      resolved_texture_asset_path.GetResolvedPath();
+  // Use the resolved path from USD, fall back to asset path if not resolved
+  std::string resolved_path_str = resolved_texture_asset_path.GetResolvedPath();
+  if (resolved_path_str.empty()) {
+    resolved_path_str = resolved_texture_asset_path.GetAssetPath();
+  }
 
-  if (pxr::UsdShadeUdimUtils::IsUdimIdentifier(resolved_texture_path)) {
+  if (resolved_path_str.empty()) {
+    mju_warning("UsdUVTexture %s: No texture file path specified.",
+                shader.GetPath().GetAsString().c_str());
+    return out;
+  }
+
+  if (pxr::UsdShadeUdimUtils::IsUdimIdentifier(resolved_path_str)) {
     mju_error("MuJoCo does not support UDIM textures: %s",
-              resolved_texture_path.c_str());
+              resolved_path_str.c_str());
     return out;
   }
 
-  auto extension = resolver.GetExtension(resolved_texture_path);
-  if (extension != "png") {
-    mju_error("MuJoCo USD Parsing only supports PNG textures: %s",
-              resolved_texture_path.c_str());
+  if (!std::filesystem::exists(resolved_path_str)) {
+    mju_warning(
+        "USD decoder only supports assets that are available on the file "
+        "system. Could not open: %s",
+        resolved_path_str.c_str());
     return out;
   }
 
-  FILE* fp = fopen(resolved_texture_path.c_str(), "r");
-  if (fp) {
-    mjs_setString(texture->content_type, "image/png");
-    mjs_setString(texture->file, resolved_texture_path.c_str());
-    out.sampler = texture;
-    return out;
-  }
-
-  std::shared_ptr<pxr::ArAsset> texture_asset =
-      resolver.OpenAsset(pxr::ArResolvedPath(resolved_texture_path));
-
-  size_t texture_size = texture_asset->GetSize();
-
-  uint32_t width, height;
-  std::vector<unsigned char> image;
-  lodepng::State state;
-  if (nchannels == 3) {
-    state.info_raw.colortype = LCT_RGB;
-  } else if (nchannels == 1) {
-    state.info_raw.colortype = LCT_GREY;
-  } else {
-    mju_error("MuJoCo USD Parsing only supports 1 or 3 channel textures.");
-    return out;
-  }
-
-  unsigned error = lodepng::decode(
-      image, width, height, state,
-      reinterpret_cast<const unsigned char*>(texture_asset->GetBuffer().get()),
-      texture_size);
-
-  // check for errors
-  if (error) {
-    mju_error("LodePNG error %u: %s", error, lodepng_error_text(error));
-    return out;
-  }
-
-  texture->width = width;
-  texture->height = height;
   texture->nchannel = nchannels;
-  mjs_setBuffer(texture->data, image.data(), image.size());
-
+  mjs_setString(texture->file, resolved_path_str.c_str());
   out.sampler = texture;
   return out;
 }
 
-// Given an input to a shader, attempts to bake the shader and it's inputs
-// into a singular value or texture sampler (ResolvedShaderInput).
-template <typename T>
-ResolvedShaderInput<T> ReadShaderInput(
-    mjSpec* spec, const pxr::UsdShadeConnectableAPI source,
-    const pxr::TfToken source_name,
-    const pxr::UsdShadeAttributeType source_type) {
-  ResolvedShaderInput<T> out;
-  pxr::UsdShadeShader shader(source.GetPrim());
-  pxr::TfToken shader_id = GetShaderId(shader);
-  if (shader_id == kTokens->UsdUVTexture) {
-    unsigned nchannels = -1;
-    if (source_name == kTokens->rgb) {
-      nchannels = 3;
-    } else if (source_name == kTokens->r) {
-      nchannels = 1;
-    } else {
-      mju_error("Unsupported texture channel: %s", source_name.GetText());
-      return out;
-    }
-
-    return ReadUsdUVTexture<T>(spec, shader, nchannels);
-  } else {
-    mju_warning("Unsupported shader type: %s", shader_id.GetText());
-  }
-
-  return out;
-}
-
 // Reads UsdShadeInput as a value of type T or a texture sampler.
+// Uses GetValueProducingAttributes to follow all connections including
+// material interfaces.
 template <typename T>
 ResolvedShaderInput<T> ReadShaderInput(mjSpec* spec, pxr::UsdShadeInput input) {
   ResolvedShaderInput<T> out;
@@ -234,14 +178,44 @@ ResolvedShaderInput<T> ReadShaderInput(mjSpec* spec, pxr::UsdShadeInput input) {
     return out;
   }
 
-  pxr::UsdShadeConnectableAPI source;
-  pxr::TfToken source_name;
-  pxr::UsdShadeAttributeType source_type;
-  if (input.GetConnectedSource(&source, &source_name, &source_type)) {
-    out = ReadShaderInput<T>(spec, source, source_name, source_type);
-  } else {
-    out.value = ReadInput<T>(input);
+  // GetValueProducingAttributes follows connections recursively, including
+  // through material interfaces, and returns the attributes that produce
+  // values.
+  auto value_attrs = pxr::UsdShadeUtils::GetValueProducingAttributes(input);
+
+  for (const auto& attr : value_attrs) {
+    // Check if this attribute belongs to a UsdUVTexture shader (for textures)
+    pxr::UsdPrim prim = attr.GetPrim();
+    pxr::UsdShadeShader shader(prim);
+    if (shader) {
+      pxr::TfToken shader_id = GetShaderId(shader);
+      if (shader_id == kTokens->UsdUVTexture) {
+        // Determine channel count from the output name
+        pxr::TfToken attr_name = attr.GetBaseName();
+        unsigned nchannels = 3;  // default
+        if (attr_name == kTokens->rgb) {
+          nchannels = 3;
+        } else if (attr_name == kTokens->r) {
+          nchannels = 1;
+        }
+        out = ReadUsdUVTexture<T>(spec, shader, nchannels);
+        if (out.sampler.has_value()) {
+          return out;
+        }
+      }
+      // For other shader types, fall through to try reading as a value
+    }
+
+    // Try to read as a direct value
+    out.value = ReadInput<T>(pxr::UsdShadeInput(attr));
+    if (out.value.has_value()) {
+      return out;
+    }
   }
+
+  // If no value-producing attributes found, try reading the input directly
+  // (for non-connected inputs with authored values)
+  out.value = ReadInput<T>(input);
   return out;
 }
 
@@ -311,5 +285,3 @@ mjsMaterial* ParseMaterial(mjSpec* spec,
 
   return mj_mat;
 }
-}  // namespace usd
-}  // namespace mujoco
