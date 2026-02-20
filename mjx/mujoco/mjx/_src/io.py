@@ -1111,7 +1111,7 @@ def _put_data_jax(
   impl_fields['actuator_moment'] = moment
 
   # convert ten_J to dense matrix
-  if mujoco.mj_isSparse(m):
+  if m.ntendon:
     ten_J = np.zeros((m.ntendon, m.nv))
     mujoco.mju_sparse2dense(
         ten_J,
@@ -1120,8 +1120,6 @@ def _put_data_jax(
         d.ten_J_rowadr,
         d.ten_J_colind,
     )
-  elif m.ntendon:
-    ten_J = d.ten_J.reshape((m.ntendon, m.nv))
   else:
     ten_J = np.zeros((m.ntendon, m.nv))
   impl_fields['ten_J'] = ten_J
@@ -1945,6 +1943,7 @@ def set_state(
 def create_render_context(
     mjm: mujoco.MjModel,
     nworld: int,
+    devices: Optional[Sequence[str]] = None,
     **kwargs,
 ):
   """Creates a render context.
@@ -1955,6 +1954,9 @@ def create_render_context(
       because Warp creates arrays of size nworld that are not exposed
       to JAX. Thus we cannot use JAX transforms like vmap with the
       render context.
+    devices: optional list of device names (e.g. ['cuda:0', 'cuda:1']).
+      If provided, rendering workloads are sharded across these devices.
+      By default, devices is None and the default device from wp.get_device(None) is used.
     **kwargs: forwarded to the render context constructor.
 
   Returns:
@@ -1962,4 +1964,6 @@ def create_render_context(
   """
   _check_warp_installed()
   from mujoco.mjx.warp import io as mjxw_io  # pylint: disable=g-import-not-at-top  # pytype: disable=import-error
-  return mjxw_io.create_render_context(mjm, nworld=nworld, **kwargs)
+  return mjxw_io.create_render_context(
+      mjm, nworld=nworld, devices=devices, **kwargs
+  )
