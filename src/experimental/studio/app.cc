@@ -23,6 +23,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <filesystem>
+#include <functional>
 #include <memory>
 #include <span>
 #include <string>
@@ -84,6 +85,7 @@ static constexpr const char* ICON_PREV_FRAME = platform::ICON_FA_CARET_LEFT;
 static constexpr const char* ICON_NEXT_FRAME = platform::ICON_FA_CARET_RIGHT;
 static constexpr const char* ICON_CURR_FRAME = platform::ICON_FA_FAST_FORWARD;
 static constexpr const char* ICON_SPEED = platform::ICON_FA_TACHOMETER;
+static constexpr const char* ICON_DELETE = platform::ICON_FA_TRASH_CAN;
 
 // UI labels for mjtLabel.
 static constexpr const char* kLabelNames[] = {
@@ -132,6 +134,13 @@ void App::ClearModel() {
   step_error_ = "";
 }
 
+void App::Recompile() {
+  mj_recompile(model_holder_->spec(), model_holder_->vfs(),
+               model_holder_->model(), model_holder_->data());
+  const int state_size = mj_stateSize(model(), mjSTATE_INTEGRATION);
+  history_.Init(state_size);
+}
+
 void App::RequestModelLoad(std::string model_file) {
   pending_load_ = std::move(model_file);
 }
@@ -139,6 +148,7 @@ void App::RequestModelLoad(std::string model_file) {
 void App::RequestModelReload() {
   if (model_kind_ == kModelFromFile) {
     pending_load_ = model_path_;
+    preserve_camera_on_load_ = true;
   }
 }
 
@@ -189,6 +199,16 @@ void App::OnModelLoaded(std::string filename, ModelKind model_kind) {
   const int state_size = mj_stateSize(model, mjSTATE_INTEGRATION);
   history_.Init(state_size);
 
+  if (!preserve_camera_on_load_) {
+    const int model_cam = model->vis.global.cameraid;
+    if (model_cam >= 0 && model_cam < model->ncam) {
+      ui_.camera_idx = platform::SetCamera(model, &camera_, model_cam);
+    } else {
+      mjv_defaultFreeCamera(model, &camera_);
+    }
+  }
+  preserve_camera_on_load_ = false;
+
   // Initialize the speed based on the model's default real-time setting.
   float min_error = FLT_MAX;
   const float desired = mju_log(100 * model->vis.global.realtime);
@@ -201,7 +221,7 @@ void App::OnModelLoaded(std::string filename, ModelKind model_kind) {
     }
   }
 
-  platform::ForEachModelPlugin([&](platform::ModelPlugin* plugin) {
+  platform::ForEachPlugin<platform::ModelPlugin>([&](auto* plugin) {
     if (plugin->post_model_loaded) {
       plugin->post_model_loaded(plugin, model_path_.c_str());
     }
@@ -245,7 +265,7 @@ void App::UpdatePhysics() {
   }
 
   bool stepped = false;
-  platform::ForEachModelPlugin([&](platform::ModelPlugin* plugin) {
+  platform::ForEachPlugin<platform::ModelPlugin>([&](auto* plugin) {
     if (plugin->do_update) {
       if (plugin->do_update(plugin, model(), data())) {
         stepped = true;
@@ -365,8 +385,25 @@ void App::ProcessPendingLoads() {
     }
   }
 
+  if (spec_op_) {
+    spec_op_();
+    spec_op_ = nullptr;
+  }
+
+  // Allow plugins to edit the spec as well.
+  platform::ForEachPlugin<platform::SpecEditorPlugin>([&](auto* plugin) {
+    if (plugin->pre_compile) {
+      if (plugin->pre_compile(plugin, spec(), model(), data(), &camera_)) {
+        Recompile();
+        if (plugin->post_compile) {
+          plugin->post_compile(plugin, spec(), model(), data());
+        }
+      };
+    }
+  });
+
   // Check plugins to see if we need to load a new model.
-  platform::ForEachModelPlugin([&](platform::ModelPlugin* plugin) {
+  platform::ForEachPlugin<platform::ModelPlugin>([&](auto* plugin) {
     if (plugin->get_model_to_load) {
       char model_name[1000] = "";
       char content_type[1000] = "";
@@ -380,6 +417,19 @@ void App::ProcessPendingLoads() {
       }
     }
   });
+}
+
+void App::SpecDeleteSelectedElement() {
+  spec_op_ = [this]() {
+    mjs_delete(spec(), tmp_.element);
+    if (tmp_.element->elemtype == mjOBJ_BODY &&
+        perturb_.select == tmp_.element_id) {
+      mjv_defaultPerturb(&perturb_);
+    }
+    tmp_.element = nullptr;
+    tmp_.element_id = -1;
+    Recompile();
+  };
 }
 
 void App::HandleWindowEvents() {
@@ -474,15 +524,28 @@ void App::HandleMouseEvents() {
       perturb_.flexselect = picked.flex;
       perturb_.skinselect = picked.skin;
 
+      // Select the corresponding element in the spec.
+      tmp_.element = nullptr;
+      tmp_.element_id = -1;
+      if (has_spec()) {
+        mjsElement* element = mjs_firstElement(spec(), mjOBJ_BODY);
+        while (element) {
+          if (mjs_getId(element) == picked.body) {
+            tmp_.element = element;
+            tmp_.element_id = picked.body;
+            break;
+          }
+          element = mjs_nextElement(spec(), element);
+        }
+      }
+
       // Compute the local position of the selected object in the world.
       mjtNum tmp[3];
       mju_sub3(tmp, picked.point, data()->xpos + 3 * picked.body);
       mju_mulMatTVec(perturb_.localpos, data()->xmat + 9 * picked.body, tmp, 3,
                      3);
     } else {
-      perturb_.select = 0;
-      perturb_.flexselect = -1;
-      perturb_.skinselect = -1;
+      mjv_defaultPerturb(&perturb_);
     }
   }
 
@@ -571,6 +634,8 @@ void App::HandleKeyboardEvents() {
     }
   } else if (ImGui_IsChordJustPressed(ImGuiKey_Backspace)) {
     ResetPhysics();
+  } else if (ImGui_IsChordJustPressed(ImGuiKey_Delete)) {
+    SpecDeleteSelectedElement();
   } else if (ImGui_IsChordJustPressed(ImGuiKey_PageUp)) {
     SelectParentPerturb(model(), perturb_);
   } else if (ImGui_IsChordJustPressed(ImGuiKey_F1)) {
@@ -661,60 +726,65 @@ void App::HandleKeyboardEvents() {
     ToggleFlag(vis_options_.geomgroup[4]);
   } else if (ImGui_IsChordJustPressed(ImGuiKey_5)) {
     ToggleFlag(vis_options_.geomgroup[5]);
-  } else if (has_model()) {
-    if (ImGui_IsChordJustPressed(ImGuiKey_Escape)) {
-      ui_.camera_idx =
-          platform::SetCamera(model(), &camera_, platform::kTumbleCameraIdx);
-    } else if (ImGui_IsChordJustPressed(ImGuiKey_LeftBracket)) {
-      ui_.camera_idx =
-          platform::SetCamera(model(), &camera_, ui_.camera_idx - 1);
-    } else if (ImGui_IsChordJustPressed(ImGuiKey_RightBracket)) {
-      ui_.camera_idx =
-          platform::SetCamera(model(), &camera_, ui_.camera_idx + 1);
+  } else if (has_model() && ImGui_IsChordJustPressed(ImGuiKey_Escape)) {
+    ui_.camera_idx =
+        platform::SetCamera(model(), &camera_, platform::kTumbleCameraIdx);
+  } else if (has_model() && ImGui_IsChordJustPressed(ImGuiKey_LeftBracket)) {
+    ui_.camera_idx = platform::SetCamera(model(), &camera_, ui_.camera_idx - 1);
+  } else if (has_model() && ImGui_IsChordJustPressed(ImGuiKey_RightBracket)) {
+    ui_.camera_idx = platform::SetCamera(model(), &camera_, ui_.camera_idx + 1);
+  // WASD camera controls for free camera.
+  } else if (is_freecam_wasd &&
+             (ImGui::IsKeyDown(ImGuiKey_W) || ImGui::IsKeyDown(ImGuiKey_S) ||
+              ImGui::IsKeyDown(ImGuiKey_A) || ImGui::IsKeyDown(ImGuiKey_D) ||
+              ImGui::IsKeyDown(ImGuiKey_Q) || ImGui::IsKeyDown(ImGuiKey_E))) {
+    bool moved = false;
+
+    // Move (dolly) forward/backward using W and S keys.
+    if (ImGui::IsKeyDown(ImGuiKey_W)) {
+      MoveCamera(platform::CameraMotion::TRUCK_DOLLY, 0, tmp_.cam_speed);
+      moved = true;
+    } else if (ImGui::IsKeyDown(ImGuiKey_S)) {
+      MoveCamera(platform::CameraMotion::TRUCK_DOLLY, 0, -tmp_.cam_speed);
+      moved = true;
     }
 
-    // WASD camera controls for free camera.
-    if (is_freecam_wasd) {
-      bool moved = false;
+    // Strafe (truck) left/right using A and D keys.
+    if (ImGui::IsKeyDown(ImGuiKey_A)) {
+      MoveCamera(platform::CameraMotion::TRUCK_DOLLY, -tmp_.cam_speed, 0);
+      moved = true;
+    } else if (ImGui::IsKeyDown(ImGuiKey_D)) {
+      MoveCamera(platform::CameraMotion::TRUCK_DOLLY, tmp_.cam_speed, 0);
+      moved = true;
+    }
 
-      // Move (dolly) forward/backward using W and S keys.
-      if (ImGui::IsKeyDown(ImGuiKey_W)) {
-        MoveCamera(platform::CameraMotion::TRUCK_DOLLY, 0, tmp_.cam_speed);
-        moved = true;
-      } else if (ImGui::IsKeyDown(ImGuiKey_S)) {
-        MoveCamera(platform::CameraMotion::TRUCK_DOLLY, 0, -tmp_.cam_speed);
-        moved = true;
+    // Move (pedestal) up/down using Q and E keys.
+    if (ImGui::IsKeyDown(ImGuiKey_Q)) {
+      MoveCamera(platform::CameraMotion::TRUCK_PEDESTAL, 0, tmp_.cam_speed);
+      moved = true;
+    } else if (ImGui::IsKeyDown(ImGuiKey_E)) {
+      MoveCamera(platform::CameraMotion::TRUCK_PEDESTAL, 0, -tmp_.cam_speed);
+      moved = true;
+    }
+
+    if (moved) {
+      tmp_.cam_speed += 0.001f;
+
+      const float max_speed = ImGui::GetIO().KeyShift ? 0.1 : 0.01f;
+      if (tmp_.cam_speed > max_speed) {
+        tmp_.cam_speed = max_speed;
       }
-
-      // Strafe (truck) left/right using A and D keys.
-      if (ImGui::IsKeyDown(ImGuiKey_A)) {
-        MoveCamera(platform::CameraMotion::TRUCK_DOLLY, -tmp_.cam_speed, 0);
-        moved = true;
-      } else if (ImGui::IsKeyDown(ImGuiKey_D)) {
-        MoveCamera(platform::CameraMotion::TRUCK_DOLLY, tmp_.cam_speed, 0);
-        moved = true;
-      }
-
-      // Move (pedestal) up/down using Q and E keys.
-      if (ImGui::IsKeyDown(ImGuiKey_Q)) {
-        MoveCamera(platform::CameraMotion::TRUCK_PEDESTAL, 0, tmp_.cam_speed);
-        moved = true;
-      } else if (ImGui::IsKeyDown(ImGuiKey_E)) {
-        MoveCamera(platform::CameraMotion::TRUCK_PEDESTAL, 0, -tmp_.cam_speed);
-        moved = true;
-      }
-
-      if (moved) {
-        tmp_.cam_speed += 0.001f;
-
-        const float max_speed = ImGui::GetIO().KeyShift ? 0.1 : 0.01f;
-        if (tmp_.cam_speed > max_speed) {
-          tmp_.cam_speed = max_speed;
+    } else {
+      tmp_.cam_speed = 0.001f;
+    }
+  } else {
+    platform::ForEachPlugin<platform::KeyHandlerPlugin>([&](auto* plugin) {
+      if (plugin->key_chord && plugin->on_key_pressed) {
+        if (ImGui_IsChordJustPressed(plugin->key_chord)) {
+          plugin->on_key_pressed(plugin);
         }
-      } else {
-        tmp_.cam_speed = 0.001f;
       }
-    }
+    });
   }
 }
 
@@ -727,7 +797,7 @@ void App::LoadSettings() {
 
       platform::KeyValues plugin_names =
           platform::ReadIniSection(settings, "[Studio][Plugins]");
-      platform::ForEachGuiPlugin([&](platform::GuiPlugin* plugin) {
+      platform::ForEachPlugin<platform::GuiPlugin>([&](auto* plugin) {
         auto it = plugin_names.find(plugin->name);
         if (it != plugin_names.end()) {
           plugin->active = std::stoi(it->second) != 0;
@@ -743,7 +813,7 @@ void App::SaveSettings() {
     platform::AppendIniSection(settings, "[Studio][UX]", ui_.ToDict());
 
     platform::KeyValues plugin_names;
-    platform::ForEachGuiPlugin([&](platform::GuiPlugin* plugin) {
+    platform::ForEachPlugin<platform::GuiPlugin>([&](auto* plugin) {
       plugin_names[plugin->name] = std::to_string((int)plugin->active);
     });
     platform::AppendIniSection(settings, "[Studio][Plugins]", plugin_names);
@@ -923,7 +993,7 @@ void App::BuildGui() {
     ImGui::End();
   }
 
-  platform::ForEachGuiPlugin([](platform::GuiPlugin* plugin) {
+  platform::ForEachPlugin<platform::GuiPlugin>([](auto* plugin) {
     if (!plugin->update) {
       return;
     }
@@ -1077,7 +1147,8 @@ void App::SpecExplorerGui() {
   const ImGuiTreeNodeFlags flags =
       ImGuiTreeNodeFlags_SpanAvailWidth | ImGuiTreeNodeFlags_Framed;
 
-  auto display_group = [this](mjtObj type, const std::string& prefix) {
+  auto display_group = [this](mjtObj type, const std::string& prefix,
+                              std::function<void()> delete_callback = {}) {
     mjsElement* element = mjs_firstElement(spec(), type);
     while (element) {
       const int id = mjs_getId(element);
@@ -1088,9 +1159,21 @@ void App::SpecExplorerGui() {
         label = "(" + prefix + " " + std::to_string(id) + ")";
       }
 
-      if (ImGui::Selectable(label.c_str(), false)) {
+      const bool selected = (tmp_.element == element);
+      if (ImGui::Selectable(label.c_str(), selected,
+                            ImGuiSelectableFlags_AllowOverlap)) {
         tmp_.element = element;
         tmp_.element_id = id;
+      }
+
+      if (selected && delete_callback) {
+        // Right-align the delete button.
+        const float button_width = ImGui::CalcTextSize(ICON_DELETE).x +
+                                   ImGui::GetStyle().FramePadding.x * 2.0f;
+        ImGui::SameLine(ImGui::GetWindowContentRegionMax().x - button_width);
+        if (ImGui::SmallButton(ICON_DELETE)) {
+          delete_callback();
+        }
       }
 
       element = mjs_nextElement(spec(), element);
@@ -1098,30 +1181,7 @@ void App::SpecExplorerGui() {
   };
 
   if (ImGui::TreeNodeEx("Bodies", flags)) {
-    // We don't use `display_group` here because we do additional selection
-    // logic tied to the `perturb_` field.
-    mjsElement* element = mjs_firstElement(spec(), mjOBJ_BODY);
-    while (element) {
-      const int id = mjs_getId(element);
-
-      const mjString* name = mjs_getName(element);
-      std::string label = *name;
-      if (label.empty()) {
-        label = "(Body " + std::to_string(id) + ")";
-      }
-
-      if (ImGui::Selectable(label.c_str(), (id == perturb_.select),
-                            ImGuiSelectableFlags_AllowDoubleClick)) {
-        tmp_.element = element;
-        tmp_.element_id = id;
-      }
-      if (ImGui::IsItemHovered() &&
-          ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left)) {
-        perturb_.select = id;
-      }
-
-      element = mjs_nextElement(spec(), element);
-    }
+    display_group(mjOBJ_BODY, "Body", [this] { SpecDeleteSelectedElement(); });
     ImGui::TreePop();
   }
 
@@ -1134,6 +1194,13 @@ void App::SpecExplorerGui() {
     display_group(mjOBJ_SITE, "Site");
     ImGui::TreePop();
   }
+
+  // If we selected a body, then select the same body for the perturb object.
+  if (tmp_.element && tmp_.element->elemtype == mjOBJ_BODY &&
+      perturb_.select != tmp_.element_id) {
+    mjv_defaultPerturb(&perturb_);
+    perturb_.select = tmp_.element_id;
+  }
 }
 
 void App::PropertiesGui() {
@@ -1142,22 +1209,31 @@ void App::PropertiesGui() {
     return;
   }
 
+  if (ImGui::BeginTable("##PropertiesHeader", 2)) {
+    ImGui::TableSetupColumn("", ImGuiTableColumnFlags_WidthStretch);
+    ImGui::TableSetupColumn("", ImGuiTableColumnFlags_WidthFixed, 20);
+    ImGui::TableNextColumn();
+    ImGui::Text("%s", mju_type2Str(tmp_.element->elemtype));
+    ImGui::TableNextColumn();
+    if (tmp_.element->elemtype == mjOBJ_BODY) {
+      if (ImGui::SmallButton(ICON_DELETE)) {
+        SpecDeleteSelectedElement();
+      }
+    }
+    ImGui::EndTable();
+  }
+  ImGui::Separator();
+
   switch (tmp_.element->elemtype) {
     case mjOBJ_BODY:
-      ImGui::Text("Body");
-      ImGui::Separator();
       platform::BodyPropertiesGui(model(), data(), tmp_.element,
                                   tmp_.element_id);
       break;
     case mjOBJ_JOINT:
-      ImGui::Text("Joint");
-      ImGui::Separator();
       platform::JointPropertiesGui(model(), data(), tmp_.element,
                                    tmp_.element_id);
       break;
     case mjOBJ_SITE:
-      ImGui::Text("Site");
-      ImGui::Separator();
       platform::SitePropertiesGui(model(), data(), tmp_.element,
                                   tmp_.element_id);
       break;
