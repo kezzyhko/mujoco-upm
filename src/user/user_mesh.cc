@@ -34,7 +34,6 @@
 
 #include <mujoco/mjspec.h>
 #include "user/user_api.h"
-#include <TriangleMeshDistance/include/tmd/TriangleMeshDistance.h>
 
 #ifdef MUJOCO_TINYOBJLOADER_IMPL
 #define TINYOBJLOADER_IMPLEMENTATION
@@ -780,52 +779,7 @@ void mjCMesh::TryCompile(const mjVFS* vfs) {
 
     // compute sdf coefficients
     if (!plugin.active) {
-      tmd::TriangleMeshDistance sdf(vert_.data(), nvert(), face_.data(), nface());
-
-      std::vector<double> coeffs(octree_.NumVerts());
-      std::vector<bool> processed(octree_.NumVerts(), false);
-      std::deque<int> queue;
-
-      if (octree_.NumNodes() > 0) {
-        queue.push_back(0);  // start traversal from the root node
-      }
-
-      while (!queue.empty()) {
-        int node_idx = queue.front();
-        queue.pop_front();
-
-        for (int j = 0; j < 8; ++j) {
-          int vert_id = octree_.VertId(node_idx, j);
-          if (processed[vert_id]) {
-            continue;
-          }
-          if (octree_.Hang(vert_id).empty()) {
-            coeffs[vert_id] = sdf.signed_distance(octree_.Vert(vert_id)).distance;
-          } else {
-            double sum_coeff = 0;
-            for (int dep_id : octree_.Hang(vert_id)) {
-              sum_coeff += coeffs[dep_id];
-              if (!processed[dep_id]) {
-                throw mjCError(this, "sdf coefficient computation failed");
-              }
-            }
-            coeffs[vert_id] = sum_coeff / octree_.Hang(vert_id).size();
-          }
-          processed[vert_id] = true;
-        }
-
-        for (int child_idx : octree_.Children(node_idx)) {
-          if (child_idx != -1) {
-            queue.push_back(child_idx);
-          }
-        }
-      }
-
-      for (int i = 0; i < octree_.NumNodes(); ++i) {
-        for (int j = 0; j < 8; j++) {
-            octree_.AddCoeff(i, j, coeffs[octree_.VertId(i, j)]);
-        }
-      }
+      octree_.ComputeSdfCoeffs(vert_.data(), nvert(), face_.data(), nface());
     }
   }
 
@@ -4099,6 +4053,88 @@ void mjCFlex::ResolveReferences(const mjCModel* m) {
 }
 
 
+std::string mjCFlex::ComputeStiffnessCacheKey() const {
+  std::size_t hash = 0;
+  auto combine = [&hash](std::size_t v) {
+    hash ^= v + 0x9e3779b9 + (hash << 6) + (hash >> 2);
+  };
+
+  combine(std::hash<double>{}(young));
+  combine(std::hash<double>{}(poisson));
+  combine(std::hash<int>{}(order_));
+
+  // compute bounding box from vertex positions
+  if (!vert_.empty()) {
+    double minx = vert_[0], maxx = vert_[0];
+    double miny = vert_[1], maxy = vert_[1];
+    double minz = vert_[2], maxz = vert_[2];
+    for (std::size_t i = 3; i < vert_.size(); i += 3) {
+      minx = std::min(minx, vert_[i]);
+      maxx = std::max(maxx, vert_[i]);
+      miny = std::min(miny, vert_[i + 1]);
+      maxy = std::max(maxy, vert_[i + 1]);
+      minz = std::min(minz, vert_[i + 2]);
+      maxz = std::max(maxz, vert_[i + 2]);
+    }
+    combine(std::hash<double>{}(maxx - minx));
+    combine(std::hash<double>{}(maxy - miny));
+    combine(std::hash<double>{}(maxz - minz));
+  }
+
+  for (std::size_t i = 0; i < vert_.size(); i += std::max(1, (int)vert_.size()/100)) {
+    combine(std::hash<double>{}(vert_[i]));
+  }
+
+  for (std::size_t i = 0; i < shell.size(); i += std::max(1, (int)shell.size()/50)) {
+    combine(std::hash<int>{}(shell[i]));
+  }
+
+  return "flex_stiffness:" + std::to_string(hash);
+}
+
+
+bool mjCFlex::LoadCachedStiffness() {
+  mjCCache* cache = reinterpret_cast<mjCCache*>(mj_getCache()->impl_);
+  if (!cache) return false;
+
+  std::string key = ComputeStiffnessCacheKey();
+
+  auto load_fn = [this](const void* data) {
+    const auto* cached = static_cast<const std::vector<double>*>(data);
+    stiffness = *cached;
+    return true;
+  };
+
+  mjResource dummy_resource{};
+  dummy_resource.name = const_cast<char*>(key.c_str());
+  dummy_resource.timestamp[0] = '\0';
+
+  return cache->PopulateData(key, &dummy_resource, load_fn);
+}
+
+
+void mjCFlex::CacheStiffness() {
+  mjCCache* cache = reinterpret_cast<mjCCache*>(mj_getCache()->impl_);
+  if (!cache || stiffness.empty()) return;
+
+  std::string key = ComputeStiffnessCacheKey();
+
+  auto* cached = new std::vector<double>(stiffness);
+
+  std::size_t size = sizeof(*cached) + sizeof(double) * stiffness.size();
+
+  std::shared_ptr<const void> cached_data(cached, [](const void* data) {
+    delete static_cast<const std::vector<double>*>(data);
+  });
+
+  mjResource dummy_resource{};
+  dummy_resource.name = const_cast<char*>(key.c_str());
+  dummy_resource.timestamp[0] = '\0';
+
+  cache->Insert("", key, &dummy_resource, cached_data, size);
+}
+
+
 // compiler
 void mjCFlex::Compile(const mjVFS* vfs) {
   CopyFromSpec();
@@ -4341,7 +4377,6 @@ void mjCFlex::Compile(const mjVFS* vfs) {
       if (min_size > nelem) {
         throw mjCError(this, "Trilinear dofs are require at least %d elements", "", min_size);
       }
-      ComputeLinearStiffness(stiffness, nodexpos.data(), young, poisson, order_);
     }
 
     // geometrically nonlinear elasticity
@@ -4390,6 +4425,16 @@ void mjCFlex::Compile(const mjVFS* vfs) {
 
   // create shell fragments and element-vertex collision pairs
   CreateShellPair();
+
+  // compute linear stiffness for interpolated elements (cached)
+  bool stiffness_cached = false;
+  if (young > 0 && interpolated) {
+    stiffness_cached = LoadCachedStiffness();
+  }
+
+  if (!stiffness_cached && young > 0 && interpolated) {
+    ComputeLinearStiffness(stiffness, nodexpos.data(), young, poisson, order_);
+  }
 
   // create bounding volume hierarchy
   CreateBVH();

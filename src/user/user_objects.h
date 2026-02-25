@@ -301,6 +301,10 @@ class mjCOctree : public mjCOctree_ {
     face_.clear();
   }
   void AddCoeff(int n, int v, double coeff) { node_[n].coeff[v] = coeff; }
+  double Coeff(int n, int v) const { return node_[n].coeff[v]; }
+
+  // compute SDF coefficients at octree vertices using triangle mesh distance
+  void ComputeSdfCoeffs(const double* vert, int nvert, const int* face, int nface);
 
  private:
   void Make(std::vector<Triangle>& elements);
@@ -988,6 +992,9 @@ class mjCFlex_ : public mjCBase {
   std::vector<int> spec_elem_;
   std::vector<float> spec_texcoord_;
   std::vector<int> spec_elemtexcoord_;
+
+  // caching
+  std::vector<double> cached_stiffness_;   // cached stiffness matrix
 };
 
 class mjCFlex: public mjCFlex_, private mjsFlex {
@@ -1036,6 +1043,11 @@ class mjCFlex: public mjCFlex_, private mjsFlex {
   std::vector<double> node0_;             // node Cartesian positions
 
   int order_ = 0;                         // interpolation order
+
+  // stiffness caching
+  std::string ComputeStiffnessCacheKey() const;
+  bool LoadCachedStiffness();
+  void CacheStiffness();
 };
 
 
