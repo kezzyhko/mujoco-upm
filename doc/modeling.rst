@@ -301,7 +301,7 @@ We begin by explaining the constraint impedance :math:`d`.
    at rest. Impedance is set using the :at:`solimp` attribute.
 
 Recall that :math:`d` must lie between 0 and 1; internally MuJoCo clamps it to the range [:ref:`mjMINIMP mjMAXIMP
-<glNumeric>`] which is currently set to [0.0001 0.9999]. It causes the solver to interpolate between the unforced
+<glNumericEngine>`] which is currently set to [0.0001 0.9999]. It causes the solver to interpolate between the unforced
 acceleration :math:`\au` and reference acceleration :math:`\ar`. The user can set :math:`d` to a constant, or
 take advantage of its interpolating property and make it position-dependent, i.e., a function of the constraint
 violation :math:`r`. Position-dependent impedance can be used to model soft contact layers around objects, or define
@@ -1712,7 +1712,7 @@ dedicated section :ref:`therein<MjxPerformance>`.
 1. :ref:`Timestep<option-timestep>`: Try to increase the simulation timestep. As explained at the end of the
    :ref:`Numerical Integration<geIntegration>` section, the timestep is the single most important parameter in any
    model. The default value is chosen for stability rather than efficiency, and can often be increased. At some point,
-   increasing it further will cause diveregence, so the optimal timestep is the largest timestep at which divergence
+   increasing it further will cause divergence, so the optimal timestep is the largest timestep at which divergence
    never happens or is very rare. The actual value is model-dependent.
 2. :ref:`Integrator<option-integrator>`: Choose your integrator according to the recommendations at the end of the
    :ref:`Numerical Integration<geIntegration>` section. The default recommended choice is the ``implicitfast``
