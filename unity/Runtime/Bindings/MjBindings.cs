@@ -112,7 +112,7 @@ public const int mjMAXLINEPNT = 1001;
 public const int mjMAXPLANEGRID = 200;
 public const bool THIRD_PARTY_MUJOCO_MJXMACRO_H_ = true;
 public const bool THIRD_PARTY_MUJOCO_MUJOCO_H_ = true;
-public const int mjVERSION_HEADER = 3005001;
+public const int mjVERSION_HEADER = 3006000;
 
 
 // ------------------------------------Enums------------------------------------
@@ -288,7 +288,8 @@ public enum mjtEq : int{
   mjEQ_TENDON = 3,
   mjEQ_FLEX = 4,
   mjEQ_FLEXVERT = 5,
-  mjEQ_DISTANCE = 6,
+  mjEQ_FLEXSTRAIN = 6,
+  mjEQ_DISTANCE = 7,
 }
 public enum mjtWrap : int{
   mjWRAP_NONE = 0,
