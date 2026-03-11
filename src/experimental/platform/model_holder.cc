@@ -78,7 +78,7 @@ void ModelHolder::PostInit() {
   if (spec_ && !model_) {
     model_ = mj_compile(spec_, &vfs_);
     if (!model_) {
-      SetLoadError("Error compiling model from spec.");
+      SetLoadError(mjs_getError(spec_));
       return;
     }
   }
@@ -135,6 +135,24 @@ void ModelHolder::InitFromBuffer(std::span<const std::byte> buffer,
 void ModelHolder::SetLoadError(std::string_view error) {
   strncpy(error_, error.data(), sizeof(error_) - 1);
   error_[sizeof(error_) - 1] = 0;
+}
+
+mjSpec* ModelHolder::ReleaseSpec() {
+  mjSpec* spec = spec_;
+  spec_ = nullptr;
+  return spec;
+}
+
+mjData* ModelHolder::ReleaseData() {
+  mjData* data = data_;
+  data_ = nullptr;
+  return data;
+}
+
+mjModel* ModelHolder::ReleaseModel() {
+  mjModel* model = model_;
+  model_ = nullptr;
+  return model;
 }
 
 }  // namespace mujoco::platform

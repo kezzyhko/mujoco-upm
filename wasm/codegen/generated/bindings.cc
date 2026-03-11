@@ -3934,6 +3934,12 @@ struct MjModel {
   void set_ntendon(int value) {
     ptr_->ntendon = static_cast<mjtSize>(value);
   }
+  int nJten() const {
+    return static_cast<int>(ptr_->nJten);
+  }
+  void set_nJten(int value) {
+    ptr_->nJten = static_cast<mjtSize>(value);
+  }
   int nwrap() const {
     return static_cast<int>(ptr_->nwrap);
   }
@@ -5118,6 +5124,15 @@ struct MjModel {
   }
   emscripten::val tendon_treeid() const {
     return emscripten::val(emscripten::typed_memory_view(ptr_->ntendon * 2, ptr_->tendon_treeid));
+  }
+  emscripten::val ten_J_rownnz() const {
+    return emscripten::val(emscripten::typed_memory_view(ptr_->ntendon, ptr_->ten_J_rownnz));
+  }
+  emscripten::val ten_J_rowadr() const {
+    return emscripten::val(emscripten::typed_memory_view(ptr_->ntendon, ptr_->ten_J_rowadr));
+  }
+  emscripten::val ten_J_colind() const {
+    return emscripten::val(emscripten::typed_memory_view(ptr_->nJten, ptr_->ten_J_colind));
   }
   emscripten::val tendon_limited() const {
     return emscripten::val(emscripten::typed_memory_view(ptr_->ntendon, ptr_->tendon_limited));
@@ -6643,17 +6658,8 @@ struct MjData {
   emscripten::val ten_wrapnum() const {
     return emscripten::val(emscripten::typed_memory_view(model->ntendon, ptr_->ten_wrapnum));
   }
-  emscripten::val ten_J_rownnz() const {
-    return emscripten::val(emscripten::typed_memory_view(model->ntendon, ptr_->ten_J_rownnz));
-  }
-  emscripten::val ten_J_rowadr() const {
-    return emscripten::val(emscripten::typed_memory_view(model->ntendon, ptr_->ten_J_rowadr));
-  }
-  emscripten::val ten_J_colind() const {
-    return emscripten::val(emscripten::typed_memory_view(model->ntendon * model->nv, ptr_->ten_J_colind));
-  }
   emscripten::val ten_J() const {
-    return emscripten::val(emscripten::typed_memory_view(model->ntendon * model->nv, ptr_->ten_J));
+    return emscripten::val(emscripten::typed_memory_view(model->nJten, ptr_->ten_J));
   }
   emscripten::val ten_length() const {
     return emscripten::val(emscripten::typed_memory_view(model->ntendon, ptr_->ten_length));
@@ -8323,9 +8329,18 @@ MjSpec::~MjSpec() {
 mjSpec *MjSpec::get() const { return ptr_; }
 void MjSpec::set(mjSpec *ptr) { ptr_ = ptr; }
 
-std::unique_ptr<MjModel> mj_loadXML_wrapper(std::string filename) {
+std::unique_ptr<MjModel> mj_loadXML_wrapper_1(std::string filename) {
   char error[1000];
   mjModel *model = mj_loadXML(filename.c_str(), nullptr, error, sizeof(error));
+  if (!model) {
+    mju_error("Loading error: %s\n", error);
+  }
+  return std::unique_ptr<MjModel>(new MjModel(model));
+}
+
+std::unique_ptr<MjModel> mj_loadXML_wrapper_2(std::string filename, const MjVFS& vfs) {
+  char error[1000];
+  mjModel *model = mj_loadXML(filename.c_str(), vfs.get(), error, sizeof(error));
   if (!model) {
     mju_error("Loading error: %s\n", error);
   }
@@ -9653,6 +9668,14 @@ std::optional<MjsElement> mjs_firstElement_wrapper(MjSpec& s, mjtObj type) {
   return MjsElement(result);
 }
 
+std::optional<MjsCompiler> mjs_getCompiler_wrapper(MjsElement& element) {
+  mjsCompiler* result = mjs_getCompiler(element.get());
+  if (result == nullptr) {
+    return std::nullopt;
+  }
+  return MjsCompiler(result);
+}
+
 std::optional<MjsDefault> mjs_getDefault_wrapper(MjsElement& element) {
   mjsDefault* result = mjs_getDefault(element.get());
   if (result == nullptr) {
@@ -10853,6 +10876,7 @@ EMSCRIPTEN_BINDINGS(mujoco_bindings) {
     .value("mjEQ_TENDON", mjEQ_TENDON)
     .value("mjEQ_FLEX", mjEQ_FLEX)
     .value("mjEQ_FLEXVERT", mjEQ_FLEXVERT)
+    .value("mjEQ_FLEXSTRAIN", mjEQ_FLEXSTRAIN)
     .value("mjEQ_DISTANCE", mjEQ_DISTANCE);
   enum_<mjtEvent>("mjtEvent")
     .value("mjEVENT_NONE", mjEVENT_NONE)
@@ -11535,9 +11559,6 @@ EMSCRIPTEN_BINDINGS(mujoco_bindings) {
     .property("subtree_com", &MjData::subtree_com)
     .property("subtree_linvel", &MjData::subtree_linvel)
     .property("ten_J", &MjData::ten_J)
-    .property("ten_J_colind", &MjData::ten_J_colind)
-    .property("ten_J_rowadr", &MjData::ten_J_rowadr)
-    .property("ten_J_rownnz", &MjData::ten_J_rownnz)
     .property("ten_length", &MjData::ten_length)
     .property("ten_velocity", &MjData::ten_velocity)
     .property("ten_wrapadr", &MjData::ten_wrapadr)
@@ -11575,8 +11596,9 @@ EMSCRIPTEN_BINDINGS(mujoco_bindings) {
     .property("useexisting", &MjLROpt::useexisting, &MjLROpt::set_useexisting, reference())
     .property("uselimit", &MjLROpt::uselimit, &MjLROpt::set_uselimit, reference());
   emscripten::class_<MjModel>("MjModel")
-    .class_function("mj_loadXML", &mj_loadXML_wrapper, take_ownership())
-    .class_function("mj_loadBinary", &mj_loadModel_wrapper, take_ownership())
+    .class_function("mj_loadXML", emscripten::select_overload<std::unique_ptr<MjModel>(std::string)>(&mj_loadXML_wrapper_1))
+    .class_function("mj_loadXML", emscripten::select_overload<std::unique_ptr<MjModel>(std::string, const MjVFS&)>(&mj_loadXML_wrapper_2))
+    .class_function("mj_loadModel", &mj_loadModel_wrapper)
     .constructor<const MjModel &>()
     // Binds the functions on MjModel that return accessors.
     #define X_ACCESSOR(NAME, Name, OBJTYPE, field_name, nfield) \
@@ -11897,6 +11919,7 @@ EMSCRIPTEN_BINDINGS(mujoco_bindings) {
     .property("nJfe", &MjModel::nJfe, &MjModel::set_nJfe, reference())
     .property("nJfv", &MjModel::nJfv, &MjModel::set_nJfv, reference())
     .property("nJmom", &MjModel::nJmom, &MjModel::set_nJmom, reference())
+    .property("nJten", &MjModel::nJten, &MjModel::set_nJten, reference())
     .property("nM", &MjModel::nM, &MjModel::set_nM, reference())
     .property("na", &MjModel::na, &MjModel::set_na, reference())
     .property("name_actuatoradr", &MjModel::name_actuatoradr)
@@ -12083,6 +12106,9 @@ EMSCRIPTEN_BINDINGS(mujoco_bindings) {
     .property("skin_vertadr", &MjModel::skin_vertadr)
     .property("skin_vertnum", &MjModel::skin_vertnum)
     .property("stat", &MjModel::stat, reference())
+    .property("ten_J_colind", &MjModel::ten_J_colind)
+    .property("ten_J_rowadr", &MjModel::ten_J_rowadr)
+    .property("ten_J_rownnz", &MjModel::ten_J_rownnz)
     .property("tendon_actfrclimited", &MjModel::tendon_actfrclimited)
     .property("tendon_actfrcrange", &MjModel::tendon_actfrcrange)
     .property("tendon_adr", &MjModel::tendon_adr)
@@ -13173,6 +13199,7 @@ EMSCRIPTEN_BINDINGS(mujoco_bindings) {
   function("mjs_findSpec", &mjs_findSpec_wrapper);
   function("mjs_firstChild", &mjs_firstChild_wrapper);
   function("mjs_firstElement", &mjs_firstElement_wrapper);
+  function("mjs_getCompiler", &mjs_getCompiler_wrapper);
   function("mjs_getDefault", &mjs_getDefault_wrapper);
   function("mjs_getError", &mjs_getError_wrapper);
   function("mjs_getFrame", &mjs_getFrame_wrapper);

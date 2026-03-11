@@ -34,7 +34,6 @@
 
 #include <mujoco/mjspec.h>
 #include "user/user_api.h"
-#include <TriangleMeshDistance/include/tmd/TriangleMeshDistance.h>
 
 #ifdef MUJOCO_TINYOBJLOADER_IMPL
 #define TINYOBJLOADER_IMPLEMENTATION
@@ -471,10 +470,10 @@ void mjCMesh::CacheMesh(mjCCache* cache, const mjResource* resource) {
   if (szgraph_) {
     mesh->graph_ = (int*)mju_malloc(szgraph_*sizeof(int));
     std::copy(graph_, graph_ + szgraph_, mesh->graph_);
+    mesh->polygons_ = polygons_;
+    mesh->polygon_normals_ = polygon_normals_;
+    mesh->polygon_map_ = polygon_map_;
   }
-  mesh->polygons_ = polygons_;
-  mesh->polygon_normals_ = polygon_normals_;
-  mesh->polygon_map_ = polygon_map_;
   mesh->surface_ = surface_;
   mesh->volume_ = volume_;
   mesh->material_ = material_;
@@ -503,7 +502,7 @@ void mjCMesh::CacheMesh(mjCCache* cache, const mjResource* resource) {
                      + (sizeof(int) * szgraph_)
                      + (sizeof(int) * npolygonvert())
                      + (sizeof(double) * polygon_normals_.size())
-                     + (sizeof(int) * npolygonmap())
+                     + (sizeof(int) * (szgraph_ ? npolygonmap() : 0))
                      + (sizeof(double) * 18)
                      + (sizeof(int) * ncenter)
                      + tree_.Size()
@@ -613,55 +612,75 @@ void mjCMesh::ProcessVertices(const std::vector<float>& vert, bool remove_repeat
   }
 }
 
-bool mjCMesh::IsObj(std::string_view filename, std::string_view ct) {
-  std::string asset_type = GetAssetContentType(filename, ct);
-  return asset_type == "model/obj";
-}
 
-bool mjCMesh::IsSTL(std::string_view filename, std::string_view ct) {
-  std::string asset_type = GetAssetContentType(filename, ct);
-  return asset_type == "model/stl";
-}
+
 
 bool mjCMesh::IsMSH(std::string_view filename, std::string_view ct) {
   std::string asset_type = GetAssetContentType(filename, ct);
   return asset_type == "model/vnd.mujoco.msh";
 }
 
-bool mjCMesh::IsObj() const {
-  return content_type_ == "model/obj";
-}
 
-bool mjCMesh::IsSTL() const {
-  return content_type_ == "model/stl";
-}
+
 
 bool mjCMesh::IsMSH() const {
   return content_type_ == "model/vnd.mujoco.msh";
 }
 
+// load mesh using decoder plugin
+void mjCMesh::LoadFromDecoder(mjResource* resource, bool remove_repeated) {
+  const mjpDecoder* decoder = mjp_findDecoder(resource, content_type_.c_str());
+  if (!decoder) {
+    throw mjCError(this, "no decoder found for mesh file '%s'", resource->name);
+  }
+  mjSpec* mesh_spec = decoder->decode(resource, nullptr);
+  if (!mesh_spec) {
+    throw mjCError(this, "decoder failed for mesh file '%s'", resource->name);
+  }
+  mjsElement* elem = mjs_firstElement(mesh_spec, mjOBJ_MESH);
+  if (elem) {
+    mjsMesh* src_mesh = mjs_asMesh(elem);
+    if (src_mesh) {
+      normal_.assign(src_mesh->usernormal->begin(), src_mesh->usernormal->end());
+      texcoord_.assign(src_mesh->usertexcoord->begin(), src_mesh->usertexcoord->end());
+      face_.assign(src_mesh->userface->begin(), src_mesh->userface->end());
+      facenormal_.assign(src_mesh->userfacenormal->begin(), src_mesh->userfacenormal->end());
+      facetexcoord_.assign(src_mesh->userfacetexcoord->begin(), src_mesh->userfacetexcoord->end());
+
+      // correct winding order for left-handed coordinate systems
+      bool righthand = scale[0] * scale[1] * scale[2] > 0;
+      if (!righthand) {
+        for (size_t i = 0; i < face_.size(); i += 3) {
+          std::swap(face_[i + 1], face_[i + 2]);
+        }
+        for (size_t i = 0; i < facenormal_.size(); i += 3) {
+          std::swap(facenormal_[i + 1], facenormal_[i + 2]);
+        }
+        for (size_t i = 0; i < facetexcoord_.size(); i += 3) {
+          std::swap(facetexcoord_[i + 1], facetexcoord_[i + 2]);
+        }
+      }
+
+      std::vector<float> vert(src_mesh->uservert->begin(), src_mesh->uservert->end());
+      mj_deleteSpec(mesh_spec);
+      ProcessVertices(vert, remove_repeated);
+      return;
+    }
+  }
+  mj_deleteSpec(mesh_spec);
+}
 
 
 // load mesh from resource; throw error on failure
 void mjCMesh::LoadFromResource(mjResource* resource, bool remove_repeated) {
   // set content type from resource name
   std::string asset_type = GetAssetContentType(resource->name, content_type_);
-  if (asset_type.empty()) {
-    if (!content_type_.empty()) {
-      throw mjCError(this, "invalid content type: '%s'", content_type_.c_str());
-    }
-    throw mjCError(this, "unknown or unsupported mesh file: '%s'", resource->name);
-  }
   content_type_ = asset_type;
 
-  if (IsSTL()) {
-    LoadSTL(resource);
-  } else if (IsObj()) {
-    LoadOBJ(resource, remove_repeated);
-  } else if (IsMSH()) {
+  if (IsMSH()) {
     LoadMSH(resource, remove_repeated);
   } else {
-    throw mjCError(this, "unsupported mesh type: '%s'", asset_type.c_str());
+    LoadFromDecoder(resource, remove_repeated);
   }
 }
 
@@ -780,52 +799,7 @@ void mjCMesh::TryCompile(const mjVFS* vfs) {
 
     // compute sdf coefficients
     if (!plugin.active) {
-      tmd::TriangleMeshDistance sdf(vert_.data(), nvert(), face_.data(), nface());
-
-      std::vector<double> coeffs(octree_.NumVerts());
-      std::vector<bool> processed(octree_.NumVerts(), false);
-      std::deque<int> queue;
-
-      if (octree_.NumNodes() > 0) {
-        queue.push_back(0);  // start traversal from the root node
-      }
-
-      while (!queue.empty()) {
-        int node_idx = queue.front();
-        queue.pop_front();
-
-        for (int j = 0; j < 8; ++j) {
-          int vert_id = octree_.VertId(node_idx, j);
-          if (processed[vert_id]) {
-            continue;
-          }
-          if (octree_.Hang(vert_id).empty()) {
-            coeffs[vert_id] = sdf.signed_distance(octree_.Vert(vert_id)).distance;
-          } else {
-            double sum_coeff = 0;
-            for (int dep_id : octree_.Hang(vert_id)) {
-              sum_coeff += coeffs[dep_id];
-              if (!processed[dep_id]) {
-                throw mjCError(this, "sdf coefficient computation failed");
-              }
-            }
-            coeffs[vert_id] = sum_coeff / octree_.Hang(vert_id).size();
-          }
-          processed[vert_id] = true;
-        }
-
-        for (int child_idx : octree_.Children(node_idx)) {
-          if (child_idx != -1) {
-            queue.push_back(child_idx);
-          }
-        }
-      }
-
-      for (int i = 0; i < octree_.NumNodes(); ++i) {
-        for (int j = 0; j < 8; j++) {
-            octree_.AddCoeff(i, j, coeffs[octree_.VertId(i, j)]);
-        }
-      }
+      octree_.ComputeSdfCoeffs(vert_.data(), nvert(), face_.data(), nface(), tree_);
     }
   }
 
@@ -1055,83 +1029,6 @@ void mjCMesh::FitGeom(mjCGeom* geom, double center[3]) {
 }
 
 
-
-// load OBJ mesh
-void mjCMesh::LoadOBJ(mjResource* resource, bool remove_repeated) {
-  tinyobj::ObjReader objReader;
-  const void* bytes = nullptr;
-
-  int buffer_sz = mju_readResource(resource, &bytes);
-  if (buffer_sz < 0) {
-    throw mjCError(this, "could not read OBJ file '%s'", resource->name);
-  }
-
-  // TODO(etom): support .mtl files?
-  const char* buffer = (const char*) bytes;
-  objReader.ParseFromString(std::string(buffer, buffer_sz), std::string());
-
-  if (!objReader.Valid()) {
-    throw mjCError(this, "could not parse OBJ file '%s'", resource->name);
-  }
-
-  const auto& attrib = objReader.GetAttrib();
-  normal_ = attrib.normals;
-  texcoord_ = attrib.texcoords;
-  facenormal_.clear();
-  facetexcoord_.clear();
-
-  if (!objReader.GetShapes().empty()) {
-    const auto& mesh = objReader.GetShapes()[0].mesh;
-    bool righthand = scale[0] * scale[1] * scale[2] > 0;
-
-    // iterate over mesh faces
-    std::vector<tinyobj::index_t> face_indices;
-    for (int face = 0, idx = 0; idx < mesh.indices.size();) {
-      int nfacevert = mesh.num_face_vertices[face];
-      if (nfacevert < 3 || nfacevert > 4) {
-        throw mjCError(
-            this, "only tri or quad meshes are supported for OBJ (file '%s')",
-            resource->name);
-      }
-
-      face_indices.push_back(mesh.indices[idx]);
-      face_indices.push_back(mesh.indices[idx + (righthand == 1 ? 1 : 2)]);
-      face_indices.push_back(mesh.indices[idx + (righthand == 1 ? 2 : 1)]);
-
-      if (nfacevert == 4) {
-        face_indices.push_back(mesh.indices[idx]);
-        face_indices.push_back(mesh.indices[idx + (righthand == 1 ? 2 : 3)]);
-        face_indices.push_back(mesh.indices[idx + (righthand == 1 ? 3 : 2)]);
-      }
-      idx += nfacevert;
-      ++face;
-    }
-
-    // for each vertex, store index, normal, and texcoord
-    for (const auto& mesh_index : face_indices) {
-      face_.push_back(mesh_index.vertex_index);
-
-      if (!normal_.empty()) {
-        facenormal_.push_back(mesh_index.normal_index);
-      }
-
-      if (!texcoord_.empty()) {
-        facetexcoord_.push_back(mesh_index.texcoord_index);
-      }
-    }
-  }
-
-  // flip the second texcoord
-  for (int i=0; i < texcoord_.size()/2; i++) {
-    texcoord_[2*i+1] = 1-texcoord_[2*i+1];
-  }
-
-  // copy vertex data
-  ProcessVertices(attrib.vertices, remove_repeated);
-}
-
-
-
 // load mesh from cached asset, return true on success
 bool mjCMesh::LoadCachedMesh(mjCCache *cache, const mjResource* resource) {
   auto process_mesh = [&](const void* data) {
@@ -1177,9 +1074,13 @@ bool mjCMesh::LoadCachedMesh(mjCCache *cache, const mjResource* resource) {
       }
     }
 
-    polygons_ = mesh->polygons_;
-    polygon_normals_ = mesh->polygon_normals_;
-    polygon_map_ = mesh->polygon_map_;
+    if (szgraph_) {
+      polygons_ = mesh->polygons_;
+      polygon_normals_ = mesh->polygon_normals_;
+      polygon_map_ = mesh->polygon_map_;
+    } else {
+      polygon_map_.resize(nvert());
+    }
     surface_ = mesh->surface_;
     volume_ = mesh->volume_;
     std::copy(mesh->boxsz_, mesh->boxsz_ + 3, boxsz_);
@@ -1204,77 +1105,6 @@ bool mjCMesh::LoadCachedMesh(mjCCache *cache, const mjResource* resource) {
 }
 
 
-
-// load STL binary mesh
-void mjCMesh::LoadSTL(mjResource* resource) {
-  bool righthand = scale[0] * scale[1] * scale[2] > 0;
-
-  // get file data in buffer
-  char* buffer = 0;
-  int buffer_sz = mju_readResource(resource, (const void**)&buffer);
-
-  // still not found
-  if (buffer_sz < 0) {
-    throw mjCError(this, "could not read STL file '%s'", resource->name);
-  } else if (!buffer_sz) {
-    throw mjCError(this, "STL file '%s' is empty", resource->name);
-  }
-
-  // make sure there is enough data for header
-  if (buffer_sz < 84) {
-    throw mjCError(this, "invalid header in STL file '%s'", resource->name);
-  }
-
-  // get number of triangles, check bounds
-  int nfaces = 0;
-  ReadFromBuffer(&nfaces, buffer + 80);
-  if (nfaces < 1 || nfaces > 200000) {
-    throw mjCError(this,
-                   "number of faces should be between 1 and 200000 in STL file '%s';"
-                   " perhaps this is an ASCII file?", resource->name);
-  }
-
-  // check remaining buffer size
-  if (nfaces*50 != buffer_sz-84) {
-    throw mjCError(this,
-                   "STL file '%s' has wrong size; perhaps this is an ASCII file?",
-                   resource->name);
-  }
-
-  // assign stl data pointer
-  const char* stl = buffer + 84;
-
-  // allocate face and vertex data
-  face_.assign(3*nfaces, 0);
-  std::vector<float> vert;
-
-  // add vertices and faces, including repeated for now
-  for (int i=0; i < nfaces; i++) {
-    for (int j=0; j < 3; j++) {
-      // read vertex coordinates
-      float v[3];
-      ReadFromBuffer(&v, stl + 50*i + 12*(j + 1));
-
-      // check if vertex can be cast to an int safely
-      if (fabs(v[0]) > pow(2, 30) || fabs(v[1]) > pow(2, 30) || fabs(v[2]) > pow(2, 30)) {
-        throw mjCError(this, "vertex in STL file '%s' exceed maximum bounds", resource->name);
-      }
-
-      // add vertex address in face; change order if scale makes it lefthanded
-      if (righthand || j == 0) {
-        face_[3*i + j] = vert.size() / 3;
-      } else {
-        face_[3*i + 3 - j] = vert.size() / 3;
-      }
-
-      // add vertex data
-      vert.push_back(v[0]);
-      vert.push_back(v[1]);
-      vert.push_back(v[2]);
-    }
-  }
-  ProcessVertices(vert, true);
-}
 
 
 
@@ -1440,7 +1270,8 @@ double mjCMesh::ComputeSurfaceArea(double CoM[3], const double facecen[3]) const
 void mjCMesh::ApplyTransformations() {
   // translate
   if (refpos[0] != 0 || refpos[1] != 0 || refpos[2] != 0) {
-    for (int i = 0; i < nvert(); i++) {
+    int nv = nvert();
+    for (int i = 0; i < nv; i++) {
       vert_[3*i + 0] -= refpos[0];
       vert_[3*i + 1] -= refpos[1];
       vert_[3*i + 2] -= refpos[2];
@@ -1597,7 +1428,11 @@ void mjCMesh::Process() {
     }
   }
 
-  MakePolygons();
+  if (szgraph_) {
+    MakePolygons();
+  } else {
+    polygon_map_.resize(nvert());
+  }
 
   // user offset, rotation, scaling
   ApplyTransformations();
@@ -1781,7 +1616,8 @@ void mjCMesh::Rotate(double quat[4]) {
   double neg[4] = {quat[0], -quat[1], -quat[2], -quat[3]};
   double mat[9];
   mjuu_quat2mat(mat, neg);
-  for (int i = 0; i < nvert(); i++) {
+  int nv = nvert();
+  for (int i = 0; i < nv; i++) {
     mjuu_mulvecmat(&vert_[3*i], &vert_[3*i], mat);
 
     // axis-aligned bounding box
@@ -1803,6 +1639,9 @@ void mjCMesh::Rotate(double quat[4]) {
     }
   }
 }
+
+
+
 void mjCMesh::CheckInitialMesh() const {
   if (vert_.size() < 12) {
     throw mjCError(this, "at least 4 vertices required");
@@ -1822,7 +1661,7 @@ void mjCMesh::CheckInitialMesh() const {
 
   // check texcoord size if no face texcoord indices are given
   if (!texcoord_.empty() && texcoord_.size() != 2 * nvert() &&
-      facetexcoord_.empty() && !IsObj()) {
+      facetexcoord_.empty() && content_type_ != "model/obj") {
     throw mjCError(this,
         "texcoord must be 2*nv if face texcoord indices are not provided in an OBJ file");
   }
@@ -1833,8 +1672,9 @@ void mjCMesh::CheckInitialMesh() const {
   }
 
   // check vertices exist
-  for (int i = 0; i < face_.size(); i++) {
-    if (face_[i] >= nvert() || face_[i] < 0) {
+  int nv = nvert(), nf = face_.size();
+  for (int i = 0; i < nf; i++) {
+    if (face_[i] >= nv || face_[i] < 0) {
       throw mjCError(this, "in face %d, vertex index %d does not exist",
                      nullptr, i / 3, face_[i]);
     }
@@ -2737,17 +2577,17 @@ class MeshPolygon {
  public:
   // constructors (need starting face)
   MeshPolygon(const double v1[3], const double v2[3], const double v3[3],
-              int v1i, int v2i, int v3i);
+              int v1i, int v2i, int v3i, double theta, double phi);
   MeshPolygon() = delete;
   MeshPolygon(const MeshPolygon&) = delete;
   MeshPolygon& operator=(const MeshPolygon&) = delete;
+  MeshPolygon(MeshPolygon&&) = default;
+  MeshPolygon& operator=(MeshPolygon&&) = default;
 
-  void InsertFace(int v1, int v2, int v3);          // insert a face into the polygon
-  std::vector<std::vector<int>> Paths() const;      // return trace of the polygons
-  const double* Normal() const { return normal_; }  // return the normal of the polygon
-
-  // return the ith component of the normal of the polygon
-  double Normal(int i) const { return normal_[i]; }
+  void InsertFace(int v1, int v2, int v3);           // insert a face into the polygon
+  std::vector<std::vector<int>> Paths() const;       // return trace of the polygons
+  const double* Normal() const { return normal_; }   // return the normal of the polygon
+  double Normal(int i) const { return normal_[i]; }  // return the i-th component of the normal
 
  private:
   std::vector<std::pair<int, int>> edges_;
@@ -2760,40 +2600,46 @@ class MeshPolygon {
   void CombineIslands(int& island1, int& island2);
 };
 
+bool MeshPolygonKey(std::pair<double, double>& angles, const double v1[3], const double v2[3],
+                    const double v3[3], double angle_tol) {
+  double diff12[3] = {v2[0] - v1[0], v2[1] - v1[1], v2[2] - v1[2]};
+  double diff13[3] = {v3[0] - v1[0], v3[1] - v1[1], v3[2] - v1[2]};
+  double normal[3], norm;
 
-
-MeshPolygon::MeshPolygon(const double v1[3], const double v2[3], const double v3[3],
-                         int v1i, int v2i, int v3i) {
-  mjuu_makenormal(normal_, v1, v2, v3);
-  edges_ = {{v1i, v2i}, {v2i, v3i}, {v3i, v1i}};
-  nisland_ = 1;
-  islands_ = {0, 0, 0};
-}
-
-
-
-// comparison operator for std::set
-bool PolygonCmp(const MeshPolygon& p1, const MeshPolygon& p2)  {
-  const double* n1 = p1.Normal();
-  const double* n2 = p2.Normal();
-  double dot3 = n1[0] * n2[0] + n1[1] * n2[1] + n1[2] * n2[2];
-
-  // TODO(kylebayes): The tolerance should be a parameter set the user, as it should be optimized
-  // from mesh to mesh.
-  if (dot3 > 0.99999872) {
+  mjuu_crossvec(normal, diff12, diff13);
+  if ((norm = std::sqrt(mjuu_dot3(normal, normal))) < mjMINVAL) {
     return false;
   }
 
-  if (std::abs(n1[0] - n2[0]) > mjMINVAL) {
-    return n1[0] > n2[0];
+  // atan2 is sensitive to sign of 0.0, adding 0.0 to enforcing only positive 0.0
+  normal[0] = (normal[0] / norm) + 0.0;
+  normal[1] = (normal[1] / norm) + 0.0;
+  normal[2] = (normal[2] / norm) + 0.0;
+  double rtheta = 0.0, rphi = 0.0;
+
+  // clamp normal to be in valid range for acos
+  if (std::abs(normal[2]) > 1.0 - 1e-7) {
+    if (normal[2] < 0) rphi = std::round(mjPI / angle_tol);
+    angles = std::make_pair(rtheta, rphi);
+    return true;
   }
-  if (std::abs(n1[1] - n2[1]) > mjMINVAL) {
-    return n1[1] > n2[1];
-  }
-  if (std::abs(n1[2] - n2[2]) > mjMINVAL) {
-    return n1[2] > n2[2];
-  }
-  return false;
+  // rounded azimuthal and polar angles
+  rtheta = std::round(std::atan2(normal[1], normal[0]) / angle_tol);
+  rphi = std::round(std::acos(normal[2]) / angle_tol);
+  angles = std::make_pair(rtheta, rphi);
+  return true;
+}
+
+
+MeshPolygon::MeshPolygon(const double v1[3], const double v2[3], const double v3[3],
+                         int v1i, int v2i, int v3i, double theta, double phi) {
+  normal_[0] = std::cos(theta) * std::sin(phi);
+  normal_[1] = std::sin(theta) * std::sin(phi);
+  normal_[2] = std::cos(phi);
+
+  edges_ = {{v1i, v2i}, {v2i, v3i}, {v3i, v1i}};
+  nisland_ = 1;
+  islands_ = {0, 0, 0};
 }
 
 
@@ -2892,8 +2738,8 @@ void MeshPolygon::InsertFace(int v1, int v2, int v3) {
 
 
 // return the transverse vertices of the polygon, multiple paths possible if not connected
-std::vector<std::vector<int> > MeshPolygon::Paths() const {
-  std::vector<std::vector<int> > paths;
+std::vector<std::vector<int>> MeshPolygon::Paths() const {
+  std::vector<std::vector<int>> paths;
   // shortcut if polygon is just a triangular face
   if (edges_.size() == 3) {
     return {{edges_[0].first, edges_[1].first, edges_[2].first}};
@@ -2945,46 +2791,55 @@ std::vector<std::vector<int> > MeshPolygon::Paths() const {
 
 
 
+// hash function for std::pair
+struct PairHash {
+  template <class T1, class T2>
+  std::size_t operator() (const std::pair<T1, T2>& pair) const {
+    return std::hash<T1>()(pair.first) ^ std::hash<T2>()(pair.second);
+  }
+};
+
+
+
 // merge coplanar mesh triangular faces into polygonal sides to represent the geometry of the mesh
 void mjCMesh::MakePolygons() {
-  std::set<MeshPolygon, decltype(PolygonCmp)*> polygons(PolygonCmp);
+  constexpr double kAngleTol = 0.01;
+  std::unordered_map<std::pair<double, double>, MeshPolygon, PairHash> mesh_polygons;
   polygons_.clear();
   polygon_normals_.clear();
   polygon_map_.clear();
+  polygon_map_.resize(nvert());
 
-  // initialize polygon map
-  for (int i = 0; i < nvert(); i++) {
-    polygon_map_.push_back(std::vector<int>());
-  }
-
-  // use graph data if available
-  int *faces, nfaces;
-  if (graph_) {
-    nfaces = graph_[1];
-    faces = GraphFaces();
-  } else {
-    nfaces = nface();
-    faces = face_.data();
-  }
+  // we need a convex mesh, so we use graph faces
+  int *faces = GraphFaces();
+  int nfaces = graph_[1];
 
   // process each face
   for (int i = 0; i < nfaces; i++) {
-    double* v1 = &vert_[3*faces[3*i + 0]];
-    double* v2 = &vert_[3*faces[3*i + 1]];
-    double* v3 = &vert_[3*faces[3*i + 2]];
+    int vi1 = faces[3*i + 0];
+    int vi2 = faces[3*i + 1];
+    int vi3 = faces[3*i + 2];
+    double* v1 = &vert_[3*vi1];
+    double* v2 = &vert_[3*vi2];
+    double* v3 = &vert_[3*vi3];
 
-    MeshPolygon face(v1, v2, v3, faces[3*i + 0], faces[3*i + 1], faces[3*i + 2]);
-    auto it = polygons.find(face);
-    if (it == polygons.end()) {
-      polygons.emplace(v1, v2, v3, faces[3*i + 0], faces[3*i + 1], faces[3*i + 2]);
+    std::pair<double, double> key;
+    if (!MeshPolygonKey(key, v1, v2, v3, kAngleTol)) {
+      continue;
+    }
+    auto it = mesh_polygons.find(key);
+    if (it == mesh_polygons.end()) {
+      double theta = kAngleTol * key.first;
+      double phi = kAngleTol * key.second;
+      mesh_polygons.emplace(key, MeshPolygon(v1, v2, v3, vi1, vi2, vi3, theta, phi));
     } else {
-      MeshPolygon& p = const_cast<MeshPolygon&>(*it);
-      p.InsertFace(faces[3*i + 0], faces[3*i + 1], faces[3*i + 2]);
+      it->second.InsertFace(vi1, vi2, vi3);
     }
   }
 
-  for (const auto& polygon : polygons) {
-    std::vector<std::vector<int> > paths = polygon.Paths();
+  for (const auto& pair : mesh_polygons) {
+    const MeshPolygon& polygon = pair.second;
+    std::vector<std::vector<int>> paths = polygon.Paths();
 
     // separate the polygons if they were grouped together
     for (const auto& path : paths) {
@@ -3433,15 +3288,6 @@ void mjCSkin::LoadSKN(mjResource* resource) {
 
 
 //-------------------------- nonlinear elasticity --------------------------------------------------
-
-// hash function for std::pair
-struct PairHash
-{
-  template <class T1, class T2>
-  std::size_t operator() (const std::pair<T1, T2>& pair) const {
-    return std::hash<T1>()(pair.first) ^ std::hash<T2>()(pair.second);
-  }
-};
 
 // simplex connectivity
 constexpr int eledge[3][6][2] = {{{ 0,  1}, {-1, -1}, {-1, -1},
@@ -4030,6 +3876,7 @@ void mjCFlex::PointToLocal() {
 
 
 void mjCFlex::NameSpace(const mjCModel* m) {
+  mjCBase::NameSpace(m);
   for (auto& name : spec_vertbody_) {
     name = m->prefix + name + m->suffix;
   }
@@ -4096,6 +3943,88 @@ void mjCFlex::ResolveReferences(const mjCModel* m) {
       throw mjCError(this, "unknown body '%s' in flex", nodebody.c_str());
     }
   }
+}
+
+
+std::string mjCFlex::ComputeStiffnessCacheKey() const {
+  std::size_t hash = 0;
+  auto combine = [&hash](std::size_t v) {
+    hash ^= v + 0x9e3779b9 + (hash << 6) + (hash >> 2);
+  };
+
+  combine(std::hash<double>{}(young));
+  combine(std::hash<double>{}(poisson));
+  combine(std::hash<int>{}(order_));
+
+  // compute bounding box from vertex positions
+  if (!vert_.empty()) {
+    double minx = vert_[0], maxx = vert_[0];
+    double miny = vert_[1], maxy = vert_[1];
+    double minz = vert_[2], maxz = vert_[2];
+    for (std::size_t i = 3; i < vert_.size(); i += 3) {
+      minx = std::min(minx, vert_[i]);
+      maxx = std::max(maxx, vert_[i]);
+      miny = std::min(miny, vert_[i + 1]);
+      maxy = std::max(maxy, vert_[i + 1]);
+      minz = std::min(minz, vert_[i + 2]);
+      maxz = std::max(maxz, vert_[i + 2]);
+    }
+    combine(std::hash<double>{}(maxx - minx));
+    combine(std::hash<double>{}(maxy - miny));
+    combine(std::hash<double>{}(maxz - minz));
+  }
+
+  for (std::size_t i = 0; i < vert_.size(); i += std::max(1, (int)vert_.size()/100)) {
+    combine(std::hash<double>{}(vert_[i]));
+  }
+
+  for (std::size_t i = 0; i < shell.size(); i += std::max(1, (int)shell.size()/50)) {
+    combine(std::hash<int>{}(shell[i]));
+  }
+
+  return "flex_stiffness:" + std::to_string(hash);
+}
+
+
+bool mjCFlex::LoadCachedStiffness() {
+  mjCCache* cache = reinterpret_cast<mjCCache*>(mj_getCache()->impl_);
+  if (!cache) return false;
+
+  std::string key = ComputeStiffnessCacheKey();
+
+  auto load_fn = [this](const void* data) {
+    const auto* cached = static_cast<const std::vector<double>*>(data);
+    stiffness = *cached;
+    return true;
+  };
+
+  mjResource dummy_resource{};
+  dummy_resource.name = const_cast<char*>(key.c_str());
+  dummy_resource.timestamp[0] = '\0';
+
+  return cache->PopulateData(key, &dummy_resource, load_fn);
+}
+
+
+void mjCFlex::CacheStiffness() {
+  mjCCache* cache = reinterpret_cast<mjCCache*>(mj_getCache()->impl_);
+  if (!cache || stiffness.empty()) return;
+
+  std::string key = ComputeStiffnessCacheKey();
+
+  auto* cached = new std::vector<double>(stiffness);
+
+  std::size_t size = sizeof(*cached) + sizeof(double) * stiffness.size();
+
+  std::shared_ptr<const void> cached_data(cached, [](const void* data) {
+    delete static_cast<const std::vector<double>*>(data);
+  });
+
+  mjResource dummy_resource{};
+  dummy_resource.name = const_cast<char*>(key.c_str());
+  dummy_resource.timestamp[0] = '\0';
+
+  cache->Insert("", key, &dummy_resource, cached_data, size);
 }
 
 
@@ -4341,7 +4270,6 @@ void mjCFlex::Compile(const mjVFS* vfs) {
       if (min_size > nelem) {
         throw mjCError(this, "Trilinear dofs are require at least %d elements", "", min_size);
       }
-      ComputeLinearStiffness(stiffness, nodexpos.data(), young, poisson, order_);
     }
 
     // geometrically nonlinear elasticity
@@ -4390,6 +4318,16 @@ void mjCFlex::Compile(const mjVFS* vfs) {
 
   // create shell fragments and element-vertex collision pairs
   CreateShellPair();
+
+  // compute linear stiffness for interpolated elements (cached)
+  bool stiffness_cached = false;
+  if (young > 0 && interpolated) {
+    stiffness_cached = LoadCachedStiffness();
+  }
+
+  if (!stiffness_cached && young > 0 && interpolated) {
+    ComputeLinearStiffness(stiffness, nodexpos.data(), young, poisson, order_);
+  }
 
   // create bounding volume hierarchy
   CreateBVH();

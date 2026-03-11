@@ -112,7 +112,7 @@ public const int mjMAXLINEPNT = 1001;
 public const int mjMAXPLANEGRID = 200;
 public const bool THIRD_PARTY_MUJOCO_MJXMACRO_H_ = true;
 public const bool THIRD_PARTY_MUJOCO_MUJOCO_H_ = true;
-public const int mjVERSION_HEADER = 3005000;
+public const int mjVERSION_HEADER = 3006000;
 
 
 // ------------------------------------Enums------------------------------------
@@ -288,7 +288,8 @@ public enum mjtEq : int{
   mjEQ_TENDON = 3,
   mjEQ_FLEX = 4,
   mjEQ_FLEXVERT = 5,
-  mjEQ_DISTANCE = 6,
+  mjEQ_FLEXSTRAIN = 6,
+  mjEQ_DISTANCE = 7,
 }
 public enum mjtWrap : int{
   mjWRAP_NONE = 0,
@@ -4994,9 +4995,6 @@ public unsafe struct mjData_ {
   public double* bvh_aabb_dyn;
   public int* ten_wrapadr;
   public int* ten_wrapnum;
-  public int* ten_J_rownnz;
-  public int* ten_J_rowadr;
-  public int* ten_J_colind;
   public double* ten_J;
   public double* ten_length;
   public int* wrap_obj;
@@ -5347,6 +5345,7 @@ public unsafe struct mjModel_ {
   public Int64 nexclude;
   public Int64 neq;
   public Int64 ntendon;
+  public Int64 nJten;
   public Int64 nwrap;
   public Int64 nsensor;
   public Int64 nnumeric;
@@ -5711,6 +5710,9 @@ public unsafe struct mjModel_ {
   public int* tendon_group;
   public int* tendon_treenum;
   public int* tendon_treeid;
+  public int* ten_J_rownnz;
+  public int* ten_J_rowadr;
+  public int* ten_J_colind;
   public byte* tendon_limited;
   public byte* tendon_actfrclimited;
   public double* tendon_width;

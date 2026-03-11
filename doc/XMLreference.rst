@@ -1005,7 +1005,7 @@ compilation.
    This attribute specifies the maximum number of contacts that will be generated at runtime.  If the number of active
    contacts is about to exceed this value, the extra contacts are discarded and a warning is generated.  This is a
    deprecated legacy attribute which prior to version 2.3.0 affected memory allocation. It is kept for backwards
-   compatibillity and debugging purposes.
+   compatibility and debugging purposes.
 
 .. _size-nstack:
 
@@ -1249,7 +1249,7 @@ The full list of processing steps applied by the compiler to each mesh is as fol
    transformations in ``mjModel.mesh_{pos, quat, scale}``.
 #. Construct the convex hull if specified;
 #. Find the centroid of all triangle faces, and construct the union-of-pyramids representation. Triangles whose area is
-   too small (below the :ref:`mjMINVAL <glNumeric>` value of 1E-14) result in compile error;
+   too small (below the :ref:`mjMINVAL <glNumericEngine>` value of 1E-14) result in compile error;
 #. Compute the center of mass and inertia matrix of the union-of-pyramids. Use eigenvalue decomposition to find the
    principal axes of inertia. Center and align the mesh, saving the translational and rotational offsets for subsequent
    geom-related computations.
@@ -1518,7 +1518,7 @@ also known as terrain map, is a 2D matrix of elevation data. The data can be spe
   and other geoms (except for planes and other height fields which are not supported) are computed by first selecting
   the sub-grid of prisms that could collide with the geom based on its bounding box, and then using the general convex
   collider. The number of possible contacts between a height field and a geom is limited to 50
-  (:ref:`mjMAXCONPAIR <glNumeric>`); any contacts beyond that are discarded. To avoid penetration due to discarded
+  (:ref:`mjMAXCONPAIR <glNumericEngine>`); any contacts beyond that are discarded. To avoid penetration due to discarded
   contacts, the spatial features of the height field should be large compared to the geoms it collides with.
 
 .. _asset-hfield-name:
@@ -1992,7 +1992,7 @@ attribute and :el:`layer` child elements is an error.
         - opacity (alpha channel)
       * - :at:`emissive`
         - 4
-        - RGB light emmision intensity, exposure weight in 4th channel
+        - RGB light emission intensity, exposure weight in 4th channel
       * - :at:`orm`
         - 3
         - packed 3 channel [occlusion, roughness, metallic]
@@ -2263,7 +2263,8 @@ rotations as unit quaternions.
 .. _body-joint-solimpfriction:
 
 :at:`solreffriction`, :at:`solimpfriction`
-   Constraint solver parameters for simulating dry friction. See :ref:`CSolver`.
+   Constraint solver parameters for simulating dry friction.
+   See also :ref:`Friction<CSolverFriction>`.
 
 .. _body-joint-stiffness:
 
@@ -3613,7 +3614,9 @@ saving the XML:
      for the entire flex, independent of the number of vertices. The positions of the vertices are updated using
      quadratic interpolation over the bounding box. While this option requires more degrees of freedom than trilinear
      flexes, it enables curved deformation modes, while the only modes achievable for trilinear flexes are
-     strech/compression and shear.
+     strech/compression and shear. To understand the difference between the two parametrizations, see `a trilinear cube
+     <https://github.com/google-deepmind/mujoco/blob/main/model/flex/trilinear.xml>`__ and `a quadratic cube
+     <https://github.com/google-deepmind/mujoco/blob/main/model/flex/quadratic.xml>`__.
 
    Note that a higher interpolation order generally requires a smaller time step for stability, although usually not as
    large as with the "full" option and a fine mesh.
@@ -3675,7 +3678,7 @@ saving the XML:
 
    **direct** allows the user to specify the point and element data of the flexcomp directly in the XML. Note that
    flexcomp will still generate moving bodies automatically, as well as automate other settings; so it still provides
-   convenience compared to specifing the corresponding flex directly.
+   convenience compared to specifying the corresponding flex directly.
 
 .. _body-flexcomp-count:
 
@@ -3819,10 +3822,12 @@ element is used to adjust the properties of all edges in the flex.
 
 .. _flexcomp-edge-equality:
 
-:at:`equality`: :at-val:`[false, true, vert], "false"`
-   The type of equality constraint applied to this edge. If **false**, no equality constraint is applied. If **true**,
-   then edge constraints are enforced. If **vert**, an averaged constraint is used, see
-   :ref:`flexvert<equality-flexvert>`.
+:at:`equality`: :at-val:`[false, true, vert, strain], "false"`
+   The type of equality constraint applied to this edge. If :at-val:`false`, no equality constraint is applied. If
+   :at-val:`true`, then edge constraints are enforced. If :at-val:`vert`, an averaged constraint is used, see
+   :ref:`flexvert<equality-flexvert>`. if :at-val:`strain`, then a constraint is added to enforce that the invariants of
+   the strain tensor do not change; this is only equality constraint type supported for trilinear and quadratic
+   :ref:`dofs<body-flexcomp-dof>` elements and :ref:`here<equality-flexstrain>`.
 
 .. _flexcomp-edge-solref:
 .. _flexcomp-edge-solimp:
@@ -3868,7 +3873,7 @@ multiple times is allowed.
 .. _flexcomp-pin-id:
 
 :at:`id`: :at-val:`int(n), required`
-   Zero-based ids of points to pin. When the points are automatically-generaged, the user needs to understand their
+   Zero-based ids of points to pin. When the points are automatically-generated, the user needs to understand their
    layout in order to decide which points to pin. This can be done by first creating a flexcomp without any pins,
    loading it in the simulator, and showing the body labels.
 
@@ -4074,7 +4079,7 @@ friction can only be created with this element.
 
    Note that as with other :at:`solreffriction` attributes, the constraint violation is identically 0. Therefore, when
    using positive semantics :at:`solreffriction[1]` is ignored, while for negative semantics :at:`solreffriction[0]` is
-   ignored. See :ref:`CSolver` for more details.
+   ignored. See :ref:`Friction<CSolverFriction>` for more details.
 
 .. _contact-pair-margin:
 
@@ -4253,7 +4258,8 @@ The elasticity model is a `Saint Venant-Kirchhoff
 <https://en.wikipedia.org/wiki/Hyperelastic_material#Saint_Venant%E2%80%93Kirchhoff_model>`__ model discretized with
 piecewise linear finite elements, intended to simulate the compression or elongation of hyperelastic materials subjected
 to large displacements (finite rotations) and small strains, since it uses a nonlinear strain-displacement but a linear
-stress-strain relationship.. See also :ref:`deformable <CDeformable>` objects.
+stress-strain relationship. See also :ref:`deformable <CDeformable>` objects and `this model
+<https://github.com/google-deepmind/mujoco/blob/main/model/flex/floppy.xml>`__.
 
 .. _flex-elasticity-young:
 
@@ -4454,7 +4460,7 @@ be clear from the above specification.
 .. _deformable-skin-face:
 
 :at:`face`: :at-val:`int(3*nface), optional`
-   Trinagular skin faces. Each face is a triple of vertex indices, which are integers between zero and nvert-1.
+   Triangular skin faces. Each face is a triple of vertex indices, which are integers between zero and nvert-1.
 
 .. _deformable-skin-inflate:
 
@@ -4653,9 +4659,11 @@ of the other body, without any joint elements in the child body. Weld constraint
 .. _equality-weld-relpose:
 
 :at:`relpose`: :at-val:`real(7), "0 1 0 0 0 0 0"`
-   This attribute specifies the relative pose (3D position followed by 4D quaternion orientation) of body2 relative to
-   body1. If the quaternion part (i.e., last 4 components of the vector) are all zeros, as in the default setting, this
-   attribute is ignored and the relative pose is the one corresponding to the model reference pose in qpos0. The unusual
+   This attribute specifies the relative pose (3D position followed by 4D quaternion orientation) of the anchor point
+   relative to body1. The position part (first 3 components) gives the anchor coordinates in the local frame of body1,
+   and the quaternion part (last 4 components) gives the relative orientation of body2 relative to body1. If the
+   quaternion part (i.e., last 4 components of the vector) are all zeros, as in the default setting, this attribute is
+   ignored and the relative pose is the one corresponding to the model reference pose in qpos0. The unusual
    default is because all equality constraint types share the same default for their numeric parameters.
 
 .. _equality-weld-anchor:
@@ -4784,7 +4792,8 @@ This element constrains the length of one tendon to be a quartic polynomial of a
 This element constrains the lengths of all edges of a specified flex to their respective lengths in the initial model
 configuration. In this way the edges are used to maintain the shape of the deformable entity. Note that all other
 equality constraint types add a fixed number of scalar constraints, while this element adds as many scalar constraints
-as there are edges in the specified flex.
+as there are edges in the specified flex. See `this model
+<https://github.com/google-deepmind/mujoco/blob/main/model/flex/plate.xml>`__ for an example.
 
 .. _equality-flex-name:
 .. _equality-flex-class:
@@ -4808,8 +4817,9 @@ as there are edges in the specified flex.
 
 This element constrains the trace and the derminant of the strain tensor to that of the identity matrix as in Chen, Kry,
 and Vouga, "Locking-free Simulation of Isometric Thin Plates", 2019. The strain tensor is computed per triangle and
-averaged over all triangles adjacent to a vertex. This reduces the number of constraints from 2T to 2V, freeing
-V degrees of freedom to avoid locking. It is only supported for dimension 2, i.e., cloth-like flexes.
+averaged over all triangles adjacent to a vertex. This reduces the number of constraints from 2T to 2V, freeing V
+degrees of freedom to avoid locking. It is only supported for dimension 2, i.e., cloth-like flexes. See `this model
+<https://github.com/google-deepmind/mujoco/blob/main/model/flex/poncho.xml>`__ for an example.
 
 .. _equality-flexvert-name:
 .. _equality-flexvert-class:
@@ -4824,6 +4834,32 @@ V degrees of freedom to avoid locking. It is only supported for dimension 2, i.e
 
 :at:`flex`: :at-val:`string, required`
    Name of the flex whose vertices are being constrained.
+
+
+.. _equality-flexstrain:
+
+:el-prefix:`equality/` |-| **flexstrain** |*|
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+This element constrains the strain invariants of a trilinear or quadratic flex to their initial values. Specifically, it
+enforces that the trace and determinant of the deformation gradient remain constant, preserving volume and preventing
+excessive stretching. This constraint type is only supported for dimension 3 trilinear flexes (i.e., volumetric
+deformable bodies using trilinear interpolation). See `this model
+<https://github.com/google-deepmind/mujoco/blob/main/model/flex/strain.xml>`__ for an example.
+
+.. _equality-flexstrain-name:
+.. _equality-flexstrain-class:
+.. _equality-flexstrain-active:
+.. _equality-flexstrain-solref:
+.. _equality-flexstrain-solimp:
+
+:at:`name`, :at:`class`, :at:`active`, :at:`solref`, :at:`solimp`
+   Same as in :ref:`connect <equality-connect>` element.
+
+.. _equality-flexstrain-flex:
+
+:at:`flex`: :at-val:`string, required`
+   Name of the flex whose strain invariants are being constrained.
 
 
 .. _equality-distance:
@@ -4936,7 +4972,8 @@ length X, as in the clip on the right of `this example model
 .. _tendon-spatial-solimpfriction:
 
 :at:`solreffriction`, :at:`solimpfriction`
-   Constraint solver parameters for simulating dry friction in the tendon. See :ref:`CSolver`.
+   Constraint solver parameters for simulating dry friction in the tendon.
+   See also :ref:`Friction<CSolverFriction>`.
 
 .. _tendon-spatial-margin:
 
@@ -6606,7 +6643,7 @@ points (spheres) and the surface normals (arrows).
      regardless of the ray origin. If this data type is included along with either :at-val:`dist` or :at-val:`point`,
      normals will be visualized as arrows at the intersection points.
    - :at-val:`depth`: **real(1)**: The distance of the hit point from the camera plane, -1 if no surface was hit. Note
-     that this depth sematic corresponds to depth images in the computer graphics sense.
+     that this depth semantic corresponds to depth images in the computer graphics sense.
 
 .. _sensor-rangefinder-name:
 
@@ -7862,7 +7899,7 @@ See :ref:`collision-sensors` for more details about sensors of this type.
 .. _sensor-distance-cutoff:
 
 :at:`cutoff`
-   See :ref:`collision-sensors` for the sematics of this attribute, which is different than for other sensor categories.
+   See :ref:`collision-sensors` for the semantics of this attribute, which is different than for other sensor categories.
    If no collision is detected, the distance sensor returns the :at:`cutoff` value, so in this case
    :at:`cutoff` acts as a maximum clipping value, in addition to the special semantics.
 
@@ -7917,7 +7954,7 @@ See :ref:`collision-sensors` for more details about sensors of this type.
 .. _sensor-normal-cutoff:
 
 :at:`cutoff`
-   See :ref:`collision-sensors` for the sematics of this attribute, which is different than for other sensor categories.
+   See :ref:`collision-sensors` for the semantics of this attribute, which is different than for other sensor categories.
    If no collision is detected, the :ref:`normal<sensor-normal>` sensor returns (0, 0, 0), otherwise it returns a
    normalized direction vector. For this sensor, :at:`cutoff` does not lead to any clamping.
 
@@ -7973,7 +8010,7 @@ See :ref:`collision-sensors` for more details about sensors of this type.
 .. _sensor-fromto-cutoff:
 
 :at:`cutoff`
-   See :ref:`collision-sensors` for the sematics of this attribute, which is different than for other sensor categories.
+   See :ref:`collision-sensors` for the semantics of this attribute, which is different than for other sensor categories.
    If no collision is detected, the :ref:`fromto<sensor-fromto>` sensor returns 6 zeros.
    For this sensor, :at:`cutoff` does not lead to any clamping.
 
@@ -8193,7 +8230,7 @@ contribute to the sensor output. The sensor can be visualized by enabling the vi
 .. _sensor-tactile-mesh:
 
 :at:`mesh`: :at-val:`string, required`
-   Name of the mesh to associate the tactile sensor with. The mesh will be created by the sensor.
+   Name of the mesh to associate the tactile sensor with.
 
 .. _sensor-tactile-name:
 

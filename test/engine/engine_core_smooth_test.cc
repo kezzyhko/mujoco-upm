@@ -73,7 +73,6 @@ TEST_F(CoreSmoothTest, MjDataWorldBodyValuesAreInitialized) {
   mj_rnePostConstraint(model, data);
 
   {
-    MJDATA_POINTERS_PREAMBLE(model)
 #define X(type, name, d0, d1)                                                 \
     if constexpr (std::string_view(#d0) == "nbody") {                         \
       absl::Span<type> values(data->name, model->d0 * d1);                    \
@@ -155,12 +154,8 @@ TEST_F(CoreSmoothTest, FixedTendonSortedIndices) {
   mjData* data = mj_makeData(model);
   mj_fwdPosition(model, data);
 
-  int rowadr = data->ten_J_rowadr[0];
-  int* colind = data->ten_J_colind + rowadr;
-  mjtNum* J = data->ten_J + rowadr;
-
+  mjtNum* J = data->ten_J;
   EXPECT_THAT(vector<mjtNum>(J, J + 3), ElementsAre(1, 2, 3));
-  EXPECT_THAT(vector<int>(colind, colind + 3), ElementsAre(0, 1, 2));
 
   mj_deleteData(data);
   mj_deleteModel(model);
@@ -254,15 +249,11 @@ TEST_F(CoreSmoothTest, TendonArmature) {
     // add tendon inertias to M2 using outer product
     for (int j=0; j < m->ntendon; j++) {
       // get tendon Jacobian
-      if (mj_isSparse(m)) {
-        int rowadr = d->ten_J_rowadr[j];
-        int* rownnz = d->ten_J_rownnz + j;
-        int zero = 0;
-        mju_sparse2dense(ten_J.data(), d->ten_J + rowadr, 1, nv,
-                         rownnz, &zero, d->ten_J_colind + rowadr);
-      } else {
-        mju_copy(ten_J.data(), d->ten_J + j*nv, nv);
-      }
+      int rowadr = m->ten_J_rowadr[j];
+      int* rownnz = m->ten_J_rownnz + j;
+      int zero = 0;
+      mju_sparse2dense(ten_J.data(), d->ten_J + rowadr, 1, nv,
+                       rownnz, &zero, m->ten_J_colind + rowadr);
 
       // get tendon inertia only, using outer product
       mju_mulMatMat(ten_M.data(), ten_J.data(), ten_J.data(), nv, 1, nv);

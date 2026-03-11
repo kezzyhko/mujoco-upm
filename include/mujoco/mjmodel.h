@@ -161,7 +161,7 @@ typedef enum mjtTextureRole_ {    // role of texture map in rendering
   mjTEXROLE_ROUGHNESS,            // roughness
   mjTEXROLE_METALLIC,             // metallic
   mjTEXROLE_NORMAL,               // normal (bump) map
-  mjTEXROLE_OPACITY,              // transperancy
+  mjTEXROLE_OPACITY,              // opacity
   mjTEXROLE_EMISSIVE,             // light emission
   mjTEXROLE_RGBA,                 // base color, opacity
   mjTEXROLE_ORM,                  // occlusion, roughness, metallic
@@ -211,6 +211,7 @@ typedef enum mjtEq_ {             // type of equality constraint
   mjEQ_TENDON,                    // couple the lengths of two tendons with cubic
   mjEQ_FLEX,                      // fix all edge lengths of a flex
   mjEQ_FLEXVERT,                  // fix all vertex lengths of a flex
+  mjEQ_FLEXSTRAIN,                // fix strain invariants of a trilinear flex
   mjEQ_DISTANCE                   // unsupported, will cause an error if used
 } mjtEq;
 
@@ -728,6 +729,7 @@ struct mjModel_ {
   mjtSize nexclude;               // number of excluded geom pairs
   mjtSize neq;                    // number of equality constraints
   mjtSize ntendon;                // number of tendons
+  mjtSize nJten;                  // number of non-zeros in sparse ten_J matrix
   mjtSize nwrap;                  // number of wrap objects in all tendon paths
   mjtSize nsensor;                // number of sensors
   mjtSize nnumeric;               // number of numeric custom fields
@@ -1010,7 +1012,7 @@ struct mjModel_ {
   mjtNum*   flex_damping;         // Rayleigh's damping coefficient           (nflex x 1)
   mjtNum*   flex_edgestiffness;   // edge stiffness                           (nflex x 1)
   mjtNum*   flex_edgedamping;     // edge damping                             (nflex x 1)
-  int*      flex_edgeequality;    // 0: none, 1: edges, 2: vertices           (nflex x 1)
+  int*      flex_edgeequality;    // 0:none, 1:edges, 2:vertices, 3:strain    (nflex x 1)
   mjtByte*  flex_rigid;           // are all vertices in the same body        (nflex x 1)
   mjtByte*  flexedge_rigid;       // are both edge vertices in same body      (nflexedge x 1)
   mjtByte*  flex_centered;        // are all vertex coordinates (0,0,0)       (nflex x 1)
@@ -1147,6 +1149,9 @@ struct mjModel_ {
   int*      tendon_group;         // group for visibility                     (ntendon x 1)
   int*      tendon_treenum;       // number of trees along tendon's path      (ntendon x 1)
   int*      tendon_treeid;        // first two trees along tendon's path      (ntendon x 2)
+  int*      ten_J_rownnz;         // number of non-zeros in Jacobian row      (ntendon x 1)
+  int*      ten_J_rowadr;         // row start address in colind array        (ntendon x 1)
+  int*      ten_J_colind;         // column indices in sparse Jacobian        (nJten x 1)
   mjtByte*  tendon_limited;       // does tendon have length limits           (ntendon x 1)
   mjtByte*  tendon_actfrclimited; // does tendon have actuator force limits   (ntendon x 1)
   mjtNum*   tendon_width;         // width for rendering                      (ntendon x 1)

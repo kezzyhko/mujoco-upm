@@ -16,32 +16,20 @@ cmake_minimum_required(VERSION 3.16)
 
 set(MUJOCO_PLATFORM_TARGET_NAME mujoco_platform)
 
-# Determine the render configuration and dependencies based options.
-if(MUJOCO_USE_FILAMENT AND MUJOCO_USE_FILAMENT_VULKAN)
-    set(MUJOCO_PLATFORM_RENDER_CONFIG "MUJOCO_RENDERER_FILAMENT_VULKAN")
-    set(MUJOCO_PLATFORM_RENDER_DEPS "mujoco::filament")
-elseif(MUJOCO_USE_FILAMENT)
-    set(MUJOCO_PLATFORM_RENDER_CONFIG "MUJOCO_RENDERER_FILAMENT_OPENGL")
-    set(MUJOCO_PLATFORM_RENDER_DEPS "mujoco::filament")
-else()
-    set(MUJOCO_PLATFORM_RENDER_CONFIG "MUJOCO_RENDERER_CLASSIC_OPENGL")
-    set(MUJOCO_PLATFORM_RENDER_DEPS "dear_imgui_OpenGL3")
-endif()
-
 add_library(${MUJOCO_PLATFORM_TARGET_NAME} STATIC)
-
-target_compile_definitions(${MUJOCO_PLATFORM_TARGET_NAME}
-    PUBLIC
-        -D${MUJOCO_PLATFORM_RENDER_CONFIG}
-)
 
 target_sources(${MUJOCO_PLATFORM_TARGET_NAME}
     PUBLIC
         egl_utils.cc
         egl_utils.h
+        enum_utils.h
         file_dialog.h
+        graphics_mode.cc
+        graphics_mode.h
         gui.cc
         gui.h
+        gui_spec.cc
+        gui_spec.h
         helpers.cc
         helpers.h
         imgui_widgets.cc
@@ -56,16 +44,24 @@ target_sources(${MUJOCO_PLATFORM_TARGET_NAME}
         plugin.h
         renderer.cc
         renderer.h
-        renderer_backend.h
         sim_history.cc
         sim_history.h
         sim_profiler.cc
         sim_profiler.h
+        spec_editor.cc
+        spec_editor.h
         step_control.cc
         step_control.h
         window.cc
         window.h
 )
+
+if(NOT WIN32)
+  target_sources(${MUJOCO_PLATFORM_TARGET_NAME}
+      PUBLIC
+          object_launcher_plugin.cc
+  )
+endif()
 
 if(APPLE)
     set_source_files_properties(window_osx.mm PROPERTIES
@@ -78,7 +74,7 @@ elseif(UNIX AND NOT APPLE)
     target_sources(${MUJOCO_PLATFORM_TARGET_NAME} PUBLIC
         file_dialog_zenity.cc
     )
-elseif(WINDOWS)
+elseif(WIN32)
     target_sources(${MUJOCO_PLATFORM_TARGET_NAME} PUBLIC
         file_dialog_win.cc
     )
@@ -102,7 +98,10 @@ include(third_party_deps/libwebp)
 target_link_libraries(${MUJOCO_PLATFORM_TARGET_NAME}
     dear_imgui
     dear_imgui_SDL2
+    dear_imgui_OpenGL3
+    dear_imgui_stdlib
     implot
+    mujoco::filament
     webp
     SDL2::SDL2-static
     ${MUJOCO_PLATFORM_RENDER_DEPS}

@@ -199,6 +199,48 @@ TEST_F(UserModelTest, ActuatorSparsity) {
   mj_deleteModel(m);
 }
 
+TEST_F(UserModelTest, FixedTendonSparsity) {
+  static constexpr char xml[] = R"(
+  <mujoco>
+    <worldbody>
+      <body>
+        <geom size=".1"/>
+        <joint name="0"/>
+      </body>
+      <body pos="1 0 0">
+        <geom size=".1"/>
+        <joint name="1"/>
+      </body>
+      <body pos="2 0 0">
+        <geom size=".1"/>
+        <joint name="2"/>
+      </body>
+    </worldbody>
+
+    <tendon>
+      <fixed>
+        <joint coef="3" joint="2"/>
+        <joint coef="2" joint="1"/>
+        <joint coef="1" joint="0"/>
+      </fixed>
+    </tendon>
+  </mujoco>
+  )";
+  mjModel* m = LoadModelFromString(xml);
+  ASSERT_THAT(m, NotNull());
+
+  EXPECT_EQ(m->nJten, 3);
+  EXPECT_EQ(m->ten_J_rownnz[0], 3);
+  EXPECT_EQ(m->ten_J_rowadr[0], 0);
+  EXPECT_EQ(m->wrap_type[m->tendon_adr[0]], mjWRAP_JOINT);
+
+  int rowadr = m->ten_J_rowadr[0];
+  int* colind = m->ten_J_colind + rowadr;
+  EXPECT_THAT(std::vector<int>(colind, colind + 3), ElementsAre(0, 1, 2));
+
+  mj_deleteModel(m);
+}
+
 TEST_F(UserModelTest, NestedZeroMassBodiesOK) {
   static constexpr char xml[] = R"(
   <mujoco>
@@ -665,6 +707,53 @@ TEST_F(FuseStaticTest, FuseStaticForceSensorReferencedBody) {
   mjModel* m = LoadModelFromString(xml_template, error.data(), error.size());
   ASSERT_THAT(m, NotNull()) << error.data();
   EXPECT_EQ(m->nbody, 3) << "Expecting a world body and two others";
+  mj_deleteModel(m);
+}
+
+TEST_F(FuseStaticTest, FuseStaticCameraInBody) {
+  static constexpr char xml[] = R"(
+  <mujoco>
+    <compiler fusestatic="true"/>
+    <worldbody>
+      <body>
+        <joint axis="1 0 0"/>
+        <geom size="0.5"/>
+        <body pos="1 0 0">
+          <site name="site1"/>
+          <camera name="cam1"/>
+        </body>
+      </body>
+    </worldbody>
+  </mujoco>
+  )";
+  std::array<char, 1024> error;
+  mjModel* m = LoadModelFromString(xml, error.data(), error.size());
+  ASSERT_THAT(m, NotNull()) << error.data();
+  EXPECT_EQ(m->nbody, 2) << "Static body should be fused";
+  EXPECT_EQ(m->ncam, 1);
+  mj_deleteModel(m);
+}
+
+TEST_F(FuseStaticTest, FuseStaticLightInBody) {
+  static constexpr char xml[] = R"(
+  <mujoco>
+    <compiler fusestatic="true"/>
+    <worldbody>
+      <body>
+        <joint axis="1 0 0"/>
+        <geom size="0.5"/>
+        <body pos="1 0 0">
+          <light name="light1" dir="0 0 -1"/>
+        </body>
+      </body>
+    </worldbody>
+  </mujoco>
+  )";
+  std::array<char, 1024> error;
+  mjModel* m = LoadModelFromString(xml, error.data(), error.size());
+  ASSERT_THAT(m, NotNull()) << error.data();
+  EXPECT_EQ(m->nbody, 2) << "Static body should be fused";
+  EXPECT_EQ(m->nlight, 1);
   mj_deleteModel(m);
 }
 

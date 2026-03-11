@@ -44,6 +44,7 @@
 #include <mujoco/mjtnum.h>
 #include <mujoco/mujoco.h>
 #include "cc/array_safety.h"
+#include "engine/engine_core_util.h"
 #include "engine/engine_forward.h"
 #include "engine/engine_io.h"
 #include "engine/engine_name.h"
@@ -907,6 +908,7 @@ void mjCModel::ComputeSparseSizes() {
   // no dofs, quick return
   if (nv == 0) {
     nM = nD = nB = nC = 0;
+    nJten = 0;
     return;
   }
 
@@ -1084,6 +1086,37 @@ void mjCModel::ComputeSparseSizes() {
     }
   }
   nC = nOD + nv;
+
+  nJten = 0;
+  if (nv > 0) {
+    std::vector<bool> dof_bitmap(nv, false);
+    for (const auto* tendon : tendons_) {
+      if (!tendon->path.empty() &&
+          tendon->path[0]->Type() == mjWRAP_JOINT) {
+        nJten += tendon->path.size();
+        continue;
+      }
+
+      std::fill(dof_bitmap.begin(), dof_bitmap.end(), false);
+      for (const auto* wrap : tendon->path) {
+        int bodyid = GetBodyIdFromWrap(wrap);
+        if (bodyid > 0) {
+          mjCBody* b = bodies_[bodyid];
+          while (b && b->id > 0) {
+            for (const auto* jnt : b->joints) {
+              for (int k = 0; k < jnt->nv(); k++) {
+                dof_bitmap[jnt->dofadr_ + k] = true;
+              }
+            }
+            b = b->GetParent();
+          }
+        }
+      }
+      for (int j = 0; j < nv; j++) {
+        nJten += dof_bitmap[j];
+      }
+    }
+  }
 }
 
 
@@ -3171,7 +3204,46 @@ void mjCModel::CopyPlugins(mjModel* m) {
 
 
 
-// compute non-zeros in actuator_moment matrix
+// compute number of dofs for a given tendon
+int mjCModel::CountTendonDofs(const mjModel* m, int id) {
+  std::vector<bool> dof_used(m->nv, false);
+  int nv = m->nv;
+  int adr = m->tendon_adr[id];
+  int num = m->tendon_num[id];
+
+  if (m->wrap_type[adr] == mjWRAP_JOINT) {
+    return num;
+  }
+
+  std::fill(dof_used.begin(), dof_used.end(), false);
+  for (int j = 0; j < num; j++) {
+    int type = m->wrap_type[adr + j];
+    int bodyid = -1;
+    if (type == mjWRAP_SITE) {
+      bodyid = m->site_bodyid[m->wrap_objid[adr + j]];
+    } else if (type == mjWRAP_SPHERE || type == mjWRAP_CYLINDER) {
+      bodyid = m->geom_bodyid[m->wrap_objid[adr + j]];
+    }
+    if (bodyid > 0) {
+      int bid = bodyid;
+      while (bid > 0) {
+        int bdofadr = m->body_dofadr[bid];
+        int bdofnum = m->body_dofnum[bid];
+        for (int k = 0; k < bdofnum; k++) {
+          dof_used[bdofadr + k] = true;
+        }
+        bid = m->body_parentid[bid];
+      }
+    }
+  }
+
+  int count = 0;
+  for (int j = 0; j < nv; j++) {
+    count += dof_used[j];
+  }
+  return count;
+}
+
 int mjCModel::CountNJmom(const mjModel* m) {
   int nu = m->nu;
   int nv = m->nv;
@@ -3200,17 +3272,27 @@ int mjCModel::CountNJmom(const mjModel* m) {
             break;
         }
         break;
-      // TODO(taylorhowell): improve upper bounds
       case mjTRN_SLIDERCRANK:
-        count += nv;
+        {
+          int id_slider = m->actuator_trnid[2 * i + 1];
+          std::vector<int> chain(m->nv);
+          count += mj_mergeChain(m, chain.data(), m->site_bodyid[id],
+                                 m->site_bodyid[id_slider], 0);
+        }
         break;
 
       case mjTRN_TENDON:
-        count += nv;
+        count += CountTendonDofs(m, id);
         break;
 
       case mjTRN_SITE:
-        count += nv;
+        {
+          int refid = m->actuator_trnid[2 * i + 1];
+          int ref_body = refid >= 0 ? m->site_bodyid[refid] : 0;
+          std::vector<int> chain(m->nv);
+          count += mj_mergeChain(m, chain.data(), m->site_bodyid[id],
+                                 ref_body, /*flg_skipcommon=*/1);
+        }
         break;
 
       case mjTRN_BODY:
@@ -3226,7 +3308,17 @@ int mjCModel::CountNJmom(const mjModel* m) {
   return count;
 }
 
+// compute non-zeros in ten_J matrix
+int mjCModel::CountNJten(const mjModel* m) {
+  int ntendon = m->ntendon;
 
+  int count = 0;
+  for (int i = 0; i < ntendon; i++) {
+    count += CountTendonDofs(m, i);
+  }
+
+  return count;
+}
 
 // copy objects outside kinematic tree
 void mjCModel::CopyObjects(mjModel* m) {
@@ -3439,6 +3531,10 @@ void mjCModel::CopyObjects(mjModel* m) {
         }
         if (equalities_[k]->type == mjEQ_FLEXVERT) {
           m->flex_edgeequality[i] = 2;
+          break;
+        }
+        if (equalities_[k]->type == mjEQ_FLEXSTRAIN) {
+          m->flex_edgeequality[i] = 3;
           break;
         }
       }
@@ -4181,6 +4277,8 @@ void mjCModel::FuseReindex(mjCBody* body) {
   makelistid(joints_, body->joints);
   makelistid(geoms_, body->geoms);
   makelistid(sites_, body->sites);
+  makelistid(cameras_, body->cameras);
+  makelistid(lights_, body->lights);
 
   // process children recursively
   for (int i=0; i < body->bodies.size(); i++) {
@@ -4308,10 +4406,25 @@ void mjCModel::FuseStatic(void) {
       mju_error("Internal error: FuseStatic: body not found");
     }
 
-    //------------- assign geoms and sites to parent, change frames
+    //------------- assign geoms, sites, cameras, lights to parent, change frames
 
     ReassignChild(par->geoms, body->geoms, par, body);
     ReassignChild(par->sites, body->sites, par, body);
+    ReassignChild(par->cameras, body->cameras, par, body);
+
+    // lights have dir instead of quat, so handle separately
+    for (int j=0; j < body->lights.size(); j++) {
+      body->lights[j]->body = par;
+      par->lights.push_back(body->lights[j]);
+
+      // transform pos into parent frame
+      double qunit[4] = {1, 0, 0, 0};
+      changeframe(body->lights[j]->pos, qunit, body->pos, body->quat);
+
+      // rotate dir into parent frame
+      mjuu_rotVecQuat(body->lights[j]->dir, body->lights[j]->dir, body->quat);
+    }
+    body->lights.clear();
 
     //------------- remove from global body list, reduce global counts
 
@@ -4343,6 +4456,8 @@ void mjCModel::FuseStatic(void) {
     joints_.clear();
     geoms_.clear();
     sites_.clear();
+    cameras_.clear();
+    lights_.clear();
     FuseReindex(bodies_[0]);
 
     // recompute parent contype, conaffinity, and margin
@@ -5005,7 +5120,7 @@ void mjCModel::TryCompile(mjModel*& m, mjData*& d, const mjVFS* vfs) {
                nmesh, nmeshvert, nmeshnormal, nmeshtexcoord, nmeshface, nmeshgraph, nmeshpoly,
                nmeshpolyvert, nmeshpolymap, nskin, nskinvert, nskintexvert, nskinface, nskinbone,
                nskinbonevert, nhfield, nhfielddata, ntex, ntexdata, nmat, npair, nexclude,
-               neq, ntendon, nwrap, nsensor, nnumeric, nnumericdata, ntext, ntextdata,
+               neq, ntendon, nJten, nwrap, nsensor, nnumeric, nnumericdata, ntext, ntextdata,
                ntuple, ntupledata, nkey, nmocap, nplugin, npluginattr,
                nuser_body, nuser_jnt, nuser_geom, nuser_site, nuser_cam,
                nuser_tendon, nuser_actuator, nuser_sensor, nnames, npaths);
@@ -5036,6 +5151,7 @@ void mjCModel::TryCompile(mjModel*& m, mjData*& d, const mjVFS* vfs) {
 
   // compute non-zeros in actuator_moment
   m->nJmom = nJmom = CountNJmom(m);
+
 
   // scale mass
   if (compiler.settotalmass > 0) {

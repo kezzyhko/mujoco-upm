@@ -16,7 +16,7 @@
 #define MUJOCO_MUJOCO_H_
 
 // header version; should match the library version as returned by mj_version()
-#define mjVERSION_HEADER 3005000
+#define mjVERSION_HEADER 3006000
 
 // needed to define size_t, fabs and log10
 #include <stdlib.h>
@@ -1733,6 +1733,9 @@ MJAPI int mjs_makeMesh(mjsMesh* mesh, mjtMeshBuiltin builtin, double* params, in
 
 // Get spec from body.
 MJAPI mjSpec* mjs_getSpec(mjsElement* element);
+
+// Get compiler associated with element's origin spec.
+MJAPI mjsCompiler* mjs_getCompiler(mjsElement* element);
 
 // Find spec (model asset) by name.
 MJAPI mjSpec* mjs_findSpec(mjSpec* spec, const char* name);

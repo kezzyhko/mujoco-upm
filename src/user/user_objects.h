@@ -22,6 +22,7 @@
 #include <array>
 #include <deque>
 #include <functional>
+#include <map>
 #include <string>
 #include <string_view>
 #include <unordered_map>
@@ -34,10 +35,6 @@
 #include <mujoco/mjtnum.h>
 #include "user/user_cache.h"
 #include "user/user_util.h"
-#include <tiny_obj_loader.h>
-
-using face_vertices_type =
-    decltype(tinyobj::mesh_t::num_face_vertices)::value_type;
 
 // forward declarations of all mjC/X classes
 class mjCError;
@@ -200,6 +197,10 @@ class mjCBoundingVolumeHierarchy : public mjCBoundingVolumeHierarchy_ {
         + sizeof(int) * nodeid_.size() + sizeof(int) * level_.size();
   }
 
+  // query signed distance from point to mesh surface
+  double QuerySignedDistance(const double* point, const double* vert,
+                             const int* face) const;
+
  private:
   // internal class used during BVH construction, for partial sorting of bounding volumes
   struct BVElement {
@@ -275,6 +276,7 @@ struct mjCOctree_ {
   std::vector<std::vector<int>> hang_;  // hanging nodes status      (nvert x 1)
   double ipos_[3] = {0, 0, 0};
   double iquat_[4] = {1, 0, 0, 0};
+  int smoothing_iterations_ = 0;        // Laplacian smoothing iterations (0 = disabled)
 };
 
 class mjCOctree : public mjCOctree_ {
@@ -301,6 +303,15 @@ class mjCOctree : public mjCOctree_ {
     face_.clear();
   }
   void AddCoeff(int n, int v, double coeff) { node_[n].coeff[v] = coeff; }
+  double Coeff(int n, int v) const { return node_[n].coeff[v]; }
+
+  // Set number of Laplacian smoothing iterations (0 = disabled, default)
+  void SetSmoothingIterations(int iterations) { smoothing_iterations_ = iterations; }
+  int SmoothingIterations() const { return smoothing_iterations_; }
+
+  // compute SDF coefficients via BVH queries, optionally with Laplacian smoothing
+  void ComputeSdfCoeffs(const double* vert, int nvert, const int* face, int nface,
+                        const mjCBoundingVolumeHierarchy& tree);
 
  private:
   void Make(std::vector<Triangle>& elements);
@@ -988,6 +999,9 @@ class mjCFlex_ : public mjCBase {
   std::vector<int> spec_elem_;
   std::vector<float> spec_texcoord_;
   std::vector<int> spec_elemtexcoord_;
+
+  // caching
+  std::vector<double> cached_stiffness_;   // cached stiffness matrix
 };
 
 class mjCFlex: public mjCFlex_, private mjsFlex {
@@ -1036,6 +1050,11 @@ class mjCFlex: public mjCFlex_, private mjsFlex {
   std::vector<double> node0_;             // node Cartesian positions
 
   int order_ = 0;                         // interpolation order
+
+  // stiffness caching
+  std::string ComputeStiffnessCacheKey() const;
+  bool LoadCachedStiffness();
+  void CacheStiffness();
 };
 
 
@@ -1219,11 +1238,11 @@ class mjCMesh: public mjCMesh_, private mjsMesh {
   // load from OBJ, STL, or MSH file; throws mjCError on failure
   void LoadFromResource(mjResource* resource, bool remove_repeated = false);
 
-  static bool IsObj(std::string_view filename, std::string_view ct = "");
+
   static bool IsSTL(std::string_view filename, std::string_view ct = "");
   static bool IsMSH(std::string_view filename, std::string_view ct = "");
 
-  bool IsObj() const;
+
   bool IsSTL() const;
   bool IsMSH() const;
 
@@ -1240,7 +1259,7 @@ class mjCMesh: public mjCMesh_, private mjsMesh {
   void ProcessVertices(const std::vector<float>& vert, bool remove_repeated = false);
 
 
-  void LoadOBJ(mjResource* resource, bool remove_repeated);  // load mesh in wavefront OBJ format
+  void LoadFromDecoder(mjResource* resource, bool remove_repeated);  // load mesh using decoder plugin
   void LoadSTL(mjResource* resource);                        // load mesh in STL BIN format
   void LoadMSH(mjResource* resource, bool remove_repeated);  // load mesh in MSH BIN format
 

@@ -73,6 +73,7 @@ class mjCModel_ : public mjsElement {
   mjtSize nexclude;  // number of excluded body pairs
   mjtSize neq;       // number of equality constraints
   mjtSize ntendon;   // number of tendons
+  mjtSize nJten;     // number of non-zeros in sparse ten_J matrix
   mjtSize nsensor;   // number of sensors
   mjtSize nnumeric;  // number of numeric fields
   mjtSize ntext;     // number of text fields
@@ -367,7 +368,10 @@ class mjCModel : public mjCModel_, private mjSpec {
   void CopyTree(mjModel*);              // copy objects inside kinematic tree
   void FinalizeSimple(mjModel* m);      // finalize simple bodies/dofs including tendon information
   void CopyPlugins(mjModel*);           // copy plugin data
+  int CountTendonDofs(const mjModel* m, // compute number of dofs for a given tendon
+                      int id);
   int CountNJmom(const mjModel* m);     // compute number of non-zeros in actuator_moment matrix
+  int CountNJten(const mjModel* m);     // compute number of non-zeros in ten_J matrix
 
   // remove plugins that are not referenced by any object
   void RemovePlugins();
