@@ -88,7 +88,8 @@ static bool IsBehind(const mjtNum* headpos, const float* pos, const float* mat) 
 Drawable::Drawable(ObjectManager* object_mgr, const mjvGeom& geom)
     : material_(object_mgr), renderables_(object_mgr->GetEngine()) {
   if (geom.category == mjCAT_DECOR) {
-    renderables_.DisableShadows();
+    renderables_.SetCastShadows(false);
+    renderables_.SetReceiveShadows(false);
   }
 
   switch ((mjtGeom)geom.type) {
@@ -181,6 +182,7 @@ void Drawable::Update(const mjModel* model, const mjvScene* scene,
 
   SetTransform(geom);
   UpdateMaterial(geom, scene->flags[mjRND_IDCOLOR], head_pos);
+  renderables_.SetWireframe(scene->flags[mjRND_WIREFRAME]);
 }
 
 void Drawable::AddMesh(int data_id) {
@@ -345,8 +347,13 @@ void Drawable::UpdateMaterial(const mjvGeom& geom, bool use_segid_color,
   const mjModel* model = object_mgr->GetModel();
 
   float4 color = ReadFloat4(geom.rgba);
-  if (geom.type == mjGEOM_PLANE && IsBehind(headpos, geom.pos, geom.mat)) {
-    color[3] *= 0.3;
+  if (geom.type == mjGEOM_PLANE) {
+    if (IsBehind(headpos, geom.pos, geom.mat)) {
+      color[3] *= 0.3;
+      renderables_.SetReceiveShadows(false);
+    } else {
+      renderables_.SetReceiveShadows(true);
+    }
   }
 
   Material::Textures textures;
