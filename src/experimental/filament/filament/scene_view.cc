@@ -26,6 +26,7 @@
 #include <filament/Material.h>
 #include <filament/Options.h>
 #include <filament/RenderableManager.h>
+#include <filament/Renderer.h>
 #include <filament/Skybox.h>
 #include <filament/TransformManager.h>
 #include <filament/View.h>
@@ -204,6 +205,26 @@ SceneView::~SceneView() {
   engine_->destroy(scene_);
 }
 
+void SceneView::Render(filament::Renderer* renderer, DrawMode draw_mode,
+                       filament::RenderTarget* target) {
+  filament::View* view = PrepareRenderView(draw_mode);
+  filament::MultiSampleAntiAliasingOptions options =
+      view->getMultiSampleAntiAliasingOptions();
+
+  if (target) {
+    // We need to disable msaa in order to render to texture.
+    view->setMultiSampleAntiAliasingOptions({.enabled = false});
+  }
+
+  view->setRenderTarget(target);
+  renderer->render(view);
+  view->setRenderTarget(nullptr);
+
+  if (target) {
+    view->setMultiSampleAntiAliasingOptions(options);
+  }
+}
+
 filament::View* SceneView::PrepareRenderView(DrawMode mode) {
   for (auto& iter : drawables_) {
     iter->SetDrawMode(mode);
@@ -347,6 +368,8 @@ void SceneView::PrepareLights() {
 }
 
 void SceneView::UpdateScene(const mjrContext* context, const mjvScene* scene) {
+  views_[kNormalIndex]->setShadowingEnabled(scene->flags[mjRND_SHADOW]);
+
   mjtNum hpos[3], hfwd[3];
   float headpos[3], gazedir[3];
   mjv_cameraInModel(hpos, hfwd, nullptr, scene);
