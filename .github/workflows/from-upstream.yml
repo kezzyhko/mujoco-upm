@@ -4,6 +4,11 @@ on:
   schedule:
   - cron: '0 */12 * * *'
   workflow_dispatch:
+    inputs:
+      sync_test_mode:
+        description: 'Test Mode for Fork Sync'
+        type: boolean
+        default: false
 
 jobs:
   sync-with-upstream:
@@ -27,6 +32,7 @@ jobs:
         target_sync_branch: main
         upstream_pull_args: --tags
         target_branch_push_args: --tags
+        test_mode: ${{ inputs.sync_test_mode }}
     - name: Show value of 'has_new_commits'
       run: |
         echo ${{ steps.sync.outputs.has_new_commits }}
