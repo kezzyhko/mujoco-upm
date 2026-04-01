@@ -15,6 +15,7 @@
 #include "experimental/filament/filament/model_objects.h"
 
 #include <array>
+#include <memory>
 #include <utility>
 #include <vector>
 
@@ -26,7 +27,7 @@
 #include "experimental/filament/filament/buffer_util.h"
 #include "experimental/filament/filament/builtins.h"
 #include "experimental/filament/filament/model_util.h"
-#include "experimental/filament/filament/texture_util.h"
+#include "experimental/filament/filament/texture.h"
 
 
 namespace mujoco {
@@ -80,9 +81,7 @@ ModelObjects::~ModelObjects() {
     engine_->destroy(iter.vertex_buffer);
     engine_->destroy(iter.index_buffer);
   }
-  for (auto& iter : textures_) {
-    engine_->destroy(iter.second);
-  }
+  textures_.clear();
 }
 
 void ModelObjects::UploadMesh(const mjModel* model, int id) {
@@ -126,25 +125,43 @@ void ModelObjects::UploadTexture(const mjModel* model, int id) {
     mju_error("Invalid texture index: %d", id);
   }
 
-  if (auto iter = textures_.find(id); iter != textures_.end()) {
-    engine_->destroy(iter->second);
+  TextureConfig config;
+  DefaultTextureConfig(&config);
+  config.width = model->tex_width[id];
+  config.height = model->tex_height[id];
+  config.target = (mjtTexture)model->tex_type[id];
+  config.color_space = (mjtColorSpace)model->tex_colorspace[id];
+  switch (model->tex_nchannel[id]) {
+    case 1:
+      config.format = mjPIXEL_FORMAT_R8;
+      break;
+    case 3:
+      config.format = mjPIXEL_FORMAT_RGB8;
+      break;
+    case 4:
+      config.format = mjPIXEL_FORMAT_RGBA8;
+      break;
+    default:
+      mju_error("Unsupported texture format: %d", model->tex_nchannel[id]);
+      break;
+  }
+  if (config.height == 1 && model->tex_nchannel[id] == 1) {
+    config.format = mjPIXEL_FORMAT_KTX;
   }
 
-  const int texture_type = model->tex_type[id];
-  if (model->tex_height[id] == 1) {
-    const mjtByte* bytes = model->tex_data + model->tex_adr[id];
-    const int num_bytes = model->tex_width[id];
-    textures_[id] =
-        CreateKtxTexture(engine_, bytes, num_bytes, spherical_harmonics_[id]);
-  } else if (texture_type == mjTEXTURE_2D) {
-    textures_[id] = CreateTexture(engine_, model, id, TextureType::kNormal2d);
-  } else if (texture_type == mjTEXTURE_CUBE) {
-    textures_[id] = CreateTexture(engine_, model, id, TextureType::kCube);
-  } else if (texture_type == mjTEXTURE_SKYBOX) {
-    textures_[id] = CreateTexture(engine_, model, id, TextureType::kCube);
-  } else {
-    mju_error("Unsupported: Texture type: %d", texture_type);
-  }
+
+  TextureData payload;
+  DefaultTextureData(&payload);
+  payload.bytes = model->tex_data + model->tex_adr[id];
+  payload.nbytes =
+      model->tex_width[id] * model->tex_height[id] * model->tex_nchannel[id];
+  // We assume that the model has the same lifetime as the engine.
+  payload.user_data = nullptr;
+  payload.release_callback = nullptr;
+
+  auto texture = std::make_unique<Texture>(engine_, config);
+  texture->Upload(payload);
+  textures_[id] = std::move(texture);
 }
 
 void ModelObjects::UploadHeightField(const mjModel* model, int id) {
@@ -194,12 +211,12 @@ const FilamentBuffers* ModelObjects::GetShapeBuffer(ShapeType shape) const {
   return &shapes_[shape];
 }
 
-const filament::Texture* ModelObjects::GetTexture(int tex_id) const {
+const Texture* ModelObjects::GetTexture(int tex_id) const {
   auto it = textures_.find(tex_id);
-  return it != textures_.end() ? it->second : nullptr;
+  return it != textures_.end() ? it->second.get() : nullptr;
 }
 
-const filament::Texture* ModelObjects::GetTexture(int mat_id, int role) const {
+const Texture* ModelObjects::GetTexture(int mat_id, int role) const {
   if (mat_id < 0 || mat_id >= model_->nmat || role < 0 || role >= mjNTEXROLE) {
     return nullptr;
   }
@@ -210,15 +227,11 @@ const filament::Texture* ModelObjects::GetTexture(int mat_id, int role) const {
 filament::IndirectLight* ModelObjects::CreateIndirectLight(int tex_id,
                                                            float intensity) {
   filament::Texture* texture = nullptr;
+  const Texture::SphericalHarmonics* spherical_harmonics = nullptr;
   auto texture_iter = textures_.find(tex_id);
   if (texture_iter != textures_.end()) {
-    texture = texture_iter->second;
-  }
-
-  SphericalHarmonics* spherical_harmonics = nullptr;
-  auto sh_iter = spherical_harmonics_.find(tex_id);
-  if (sh_iter != spherical_harmonics_.end()) {
-    spherical_harmonics = &sh_iter->second;
+    texture = texture_iter->second->GetFilamentTexture();
+    spherical_harmonics = texture_iter->second->GetSphericalHarmonics();
   }
 
   filament::IndirectLight::Builder builder;
@@ -240,7 +253,7 @@ filament::Skybox* ModelObjects::CreateSkybox() {
   for (auto& iter : textures_) {
     const int texture_type = model_->tex_type[iter.first];
     if (texture_type == mjTEXTURE_SKYBOX) {
-      skybox_texture = iter.second;
+      skybox_texture = iter.second->GetFilamentTexture();
       break;
     }
   }
