@@ -33,7 +33,6 @@
 #include <mujoco/mujoco.h>
 #include "experimental/filament/filament/buffer_util.h"
 #include "experimental/filament/filament/texture.h"
-#include "experimental/filament/filament/vertex_util.h"
 
 namespace mujoco {
 
@@ -62,10 +61,7 @@ GuiView::~GuiView() {
   }
   auto& em = utils::EntityManager::get();
   em.destroy(renderable_);
-  for (auto& buffer : buffers_) {
-    engine_->destroy(buffer.vertex_buffer);
-    engine_->destroy(buffer.index_buffer);
-  }
+  meshes_.clear();
   for (auto& instance : instances_) {
     engine_->destroy(instance);
   }
@@ -84,12 +80,7 @@ void GuiView::ResetRenderable() {
     em.destroy(renderable_);
     renderable_ = utils::Entity();
   }
-
-  for (auto& buffer : buffers_) {
-    engine_->destroy(buffer.vertex_buffer);
-    engine_->destroy(buffer.index_buffer);
-  }
-  buffers_.clear();
+  meshes_.clear();
 }
 
 uintptr_t GuiView::UploadImage(uintptr_t tex_id, const uint8_t* pixels,
@@ -210,10 +201,14 @@ void GuiView::UpdateRenderable() {
   }
   commands->ScaleClipRects(scale);
 
+  // 2 floats for position, 2 floats for uv, 4 bytes for color.
+  constexpr size_t kExpectedVertexSize =
+      sizeof(float) * 4 + sizeof(uint8_t) * 4;
+
   int num_elements = 0;
   for (int n = 0; n < commands->CmdListsCount; ++n) {
     const ImDrawList* cmds = commands->CmdLists[n];
-    if (sizeof(GuiVertex) != sizeof(cmds->VtxBuffer.Data[0])) {
+    if (kExpectedVertexSize != sizeof(cmds->VtxBuffer.Data[0])) {
       mju_error("Invalid vertex buffer size.");
     }
     if (sizeof(uint16_t) != sizeof(cmds->IdxBuffer.Data[0])) {
@@ -275,34 +270,34 @@ void GuiView::UpdateRenderable() {
     builder.build(*engine_, renderable_);
     scene_->addEntity(renderable_);
   }
-
-  for (auto& buffer : buffers_) {
-    engine_->destroy(buffer.vertex_buffer);
-    engine_->destroy(buffer.index_buffer);
-  }
-  buffers_.clear();
+  meshes_.clear();
 
   auto ri = rm.getInstance(renderable_);
 
   int drawable_index = 0;
   for (int n = 0; n < commands->CmdListsCount; ++n) {
     const ImDrawList* cmds = commands->CmdLists[n];
-    auto vfill = [&](std::byte* dst, std::size_t size) {
-      if (size != cmds->VtxBuffer.size_in_bytes()) {
-        mju_error("Invalid vertex buffer size.");
-      }
-      std::memcpy(dst, cmds->VtxBuffer.Data, size);
-    };
-    auto ifill = [&](std::byte* dst, std::size_t size) {
-      if (size != cmds->IdxBuffer.size_in_bytes()) {
-        mju_error("Invalid index buffer size.");
-      }
-      std::memcpy(dst, cmds->IdxBuffer.Data, size);
-    };
-    buffers_.push_back(
-        {CreateIndexBuffer<uint16_t>(engine_, cmds->IdxBuffer.Size, ifill),
-         CreateVertexBuffer<GuiVertex>(engine_, cmds->VtxBuffer.Size, vfill)});
-    const mujoco::FilamentBuffers& buffer = buffers_.back();
+
+    MeshData data;
+    DefaultMeshData(&data);
+    data.nattributes = 3;
+    data.attributes[0].usage = mjVERTEX_ATTRIBUTE_POSITION;
+    data.attributes[0].type = mjVERTEX_ATTRIBUTE_TYPE_FLOAT2;
+    data.attributes[0].bytes = cmds->VtxBuffer.Data;
+    data.attributes[1].usage = mjVERTEX_ATTRIBUTE_UV;
+    data.attributes[1].type = mjVERTEX_ATTRIBUTE_TYPE_FLOAT2;
+    data.attributes[1].bytes = cmds->VtxBuffer.Data + sizeof(float) * 2;
+    data.attributes[2].usage = mjVERTEX_ATTRIBUTE_COLOR;
+    data.attributes[2].type = mjVERTEX_ATTRIBUTE_TYPE_UBYTE4;
+    data.attributes[2].bytes = cmds->VtxBuffer.Data + sizeof(float) * 4;
+    data.interleaved = true;
+    data.nvertices = cmds->VtxBuffer.Size;
+    data.nindices = cmds->IdxBuffer.Size;
+    data.indices = cmds->IdxBuffer.Data;
+    data.index_type = mjINDEX_TYPE_USHORT;
+    data.primitive_type = mjPRIM_TYPE_TRIANGLES;
+    meshes_.push_back(std::make_unique<Mesh>(engine_, data));
+    const auto& mesh = meshes_.back();
 
     int index_offset = 0;
     for (const ImDrawCmd& command : cmds->CmdBuffer) {
@@ -327,8 +322,9 @@ void GuiView::UpdateRenderable() {
       rm.setMaterialInstanceAt(
           ri, drawable_index,
           GetMaterialInstance(drawable_index, clip_rect, command.GetTexID()));
-      rm.setGeometryAt(ri, drawable_index, kTriangles, buffer.vertex_buffer,
-                       buffer.index_buffer, index_offset, command.ElemCount);
+      rm.setGeometryAt(
+          ri, drawable_index, kTriangles, mesh->GetFilamentVertexBuffer(),
+          mesh->GetFilamentIndexBuffer(), index_offset, command.ElemCount);
       rm.setBlendOrderAt(ri, drawable_index, drawable_index);
 
       index_offset += command.ElemCount;
