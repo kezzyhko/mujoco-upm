@@ -14,10 +14,10 @@ under the `mjx <https://github.com/google-deepmind/mujoco/tree/main/mjx>`__ dire
 
 MJX allows users to run MuJoCo
 on all compute hardware supported by the `XLA <https://www.tensorflow.org/xla>`__ compiler. A JAX re-implementation of
-MuJoCo (:ref:`MJX-JAX <MjxJAX>`) was added in version 3.0.0. MJX-JAX
+MuJoCo (:ref:`MJX-JAX <MjxJAX>`) is available. MJX-JAX
 `runs on <https://jax.readthedocs.io/en/latest/installation.html#supported-platforms>`__: Nvidia and AMD GPUs,
 Apple Silicon, and `Google Cloud TPUs <https://cloud.google.com/tpu>`__. A Warp implementation of MuJoCo
-(:ref:`MJX-Warp <MjxWarp>`) was added in version 3.3.5 to optimize performance specifically for NVIDIA GPUs, resolving
+(:ref:`MJX-Warp <MjxWarp>`) optimizes performance specifically for NVIDIA GPUs, resolving
 several performance bottlenecks exhibited in MJX-JAX.
 
 MJX is distributed as a separate package called ``mujoco-mjx`` on `PyPI <https://pypi.org/project/mujoco-mjx>`__.
@@ -119,14 +119,14 @@ Notice that we pass two extra arguments to ``mjx.make_data``:
 
 * ``naconmax`` defines the maximum number of contacts for all worlds combined.
 * ``njmax`` defines the maximum number of constraints per world. If you are developing a new scene, these parameters
-  should be tuned by loading them in the :ref:`viewer <MJW_Cli>` and increasing the values accordingly as overflows
+  should be tuned by loading them in the :ref:`viewer <mjwViewer>` and increasing the values accordingly as overflows
   occur. Scale ``naconmax`` by the number of environments you'll eventually need in a ``jax.vmap``!
 
 Contacts
 ~~~~~~~~
 
-Since JAX and Warp diverge in their implementations of contact buffers, contacts were moved from
-``mjx.Data.contact`` to private ``mjx.Data._impl`` in MuJoCo 3.3.5. We encourage users to read out contacts solely through
+Since JAX and Warp diverge in their implementations of contact buffers, contacts are located in the private
+``mjx.Data._impl`` instead of ``mjx.Data.contact``. We encourage users to read out contacts solely through
 :ref:`contact sensors <sensor-contact>`.
 
 For more details and examples of using MJX-Warp in the wild, see the announcement in MuJoCo Playground
@@ -426,8 +426,8 @@ solver parameters.
 Feature Parity
 ==============
 
-MJX supports most of the main simulation features of MuJoCo to be run on hardware accelerated devices. MJX will raise an exception if
-asked to copy to device an :ref:`mjModel` with field values referencing unsupported features.
+MJX supports most of the main simulation features of MuJoCo for execution on hardware-accelerated devices. MJX will
+raise an exception if asked to copy an :ref:`mjModel` to the device that references unsupported features.
 
 The following table compares feature support between MJX-Warp and MJX-JAX compared to MuJoCo:
 

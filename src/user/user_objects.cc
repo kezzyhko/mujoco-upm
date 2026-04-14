@@ -587,6 +587,7 @@ void mjCOctree::CopyCoeff(mjtNum* coeff) const {
 
 
 void mjCOctree::SetFace(const std::vector<double>& vert, const std::vector<int>& face) {
+  face_.reserve(face.size()/3);
   for (int i = 0; i < face.size(); i += 3) {
     std::array<double, 3> v0 = {vert[3*face[i+0]], vert[3*face[i+0]+1], vert[3*face[i+0]+2]};
     std::array<double, 3> v1 = {vert[3*face[i+1]], vert[3*face[i+1]+1], vert[3*face[i+1]+2]};
@@ -613,6 +614,8 @@ void mjCOctree::Make(std::vector<Triangle>& elements) {
 
 
 void mjCOctree::CreateOctree(const double aamm[6]) {
+  Clear();
+
   double aabb[6] = {(aamm[0] + aamm[3]) / 2, (aamm[1] + aamm[4]) / 2, (aamm[2] + aamm[5]) / 2,
                     (aamm[3] - aamm[0]) / 2, (aamm[4] - aamm[1]) / 2, (aamm[5] - aamm[2]) / 2};
   double box[6] = {aabb[0] - 1.1 * aabb[3], aabb[1] - 1.1 * aabb[4], aabb[2] - 1.1 * aabb[5],
@@ -5262,6 +5265,7 @@ void mjCTexture::LoadKTX(mjResource* resource, std::vector<std::byte>& image,
 
   w = buffer_sz;
   h = 1;
+  nchannel = 1;
   is_srgb = false;
 
   image.resize(buffer_sz);
@@ -7123,6 +7127,27 @@ void mjCActuator::Compile(void) {
   // find transmission target in object arrays
   ResolveReferences(model);
 
+  // check damping/armature only valid for joint and tendon transmission
+  bool has_damping = false;
+  for (int i = 0; i < mjNPOLY+1; i++) {
+    if (damping[i] != 0) {
+      has_damping = true;
+      break;
+    }
+  }
+  if (has_damping &&
+      trntype != mjTRN_JOINT && trntype != mjTRN_JOINTINPARENT && trntype != mjTRN_TENDON) {
+    throw mjCError(this,
+                   "damping requires joint or tendon transmission in actuator '%s' (id = %d)",
+                   name.c_str(), id);
+  }
+  if (armature != 0 &&
+      trntype != mjTRN_JOINT && trntype != mjTRN_JOINTINPARENT && trntype != mjTRN_TENDON) {
+    throw mjCError(this,
+                   "armature requires joint or tendon transmission in actuator '%s' (id = %d)",
+                   name.c_str(), id);
+  }
+
   // handle inheritrange
   if (gaintype == mjGAIN_FIXED && biastype == mjBIAS_AFFINE &&
       gainprm[0] == -biasprm[1] && inheritrange > 0) {
@@ -7197,20 +7222,26 @@ void mjCActuator::Compile(void) {
 
   // check and set actdim
   if (!plugin.active) {
-    if (actdim > 1 && dyntype != mjDYN_USER) {
-      throw mjCError(this, "actdim > 1 is only allowed for dyntype 'user' in actuator");
+    if (actdim > 1 && dyntype != mjDYN_USER && dyntype != mjDYN_DCMOTOR) {
+      throw mjCError(this, "actdim > 1 is only allowed for dyntype 'user' and 'dcmotor'");
     }
     if (actdim == 1 && dyntype == mjDYN_NONE) {
       throw mjCError(this, "invalid actdim 1 in stateless actuator");
     }
-    if (actdim == 0 && dyntype != mjDYN_NONE) {
+    if (actdim == 0 && dyntype != mjDYN_NONE && dyntype != mjDYN_DCMOTOR) {
       throw mjCError(this, "invalid actdim 0 in stateful actuator");
     }
   }
 
-  // set actdim
+  // set actdim to 1 if it is unset and type is standard one-activation dyntype
   if (actdim < 0) {
-    actdim = (dyntype != mjDYN_NONE);
+    actdim = (dyntype != mjDYN_NONE && dyntype != mjDYN_DCMOTOR);
+  }
+
+  // DC motor always uses actearly
+  if (dyntype == mjDYN_DCMOTOR && !actearly) {
+    throw mjCError(this, "actearly cannot be false for DC motor actuator '%s' (id = %d)",
+                   name.c_str(), id);
   }
 
   // check muscle parameters

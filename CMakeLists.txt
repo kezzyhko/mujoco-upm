@@ -29,7 +29,7 @@ set(MSVC_INCREMENTAL_DEFAULT ON)
 
 project(
   mujoco
-  VERSION 3.6.0
+  VERSION 3.7.0
   DESCRIPTION "MuJoCo Physics Simulator"
   HOMEPAGE_URL "https://mujoco.org"
 )
@@ -112,6 +112,7 @@ if(NOT EMSCRIPTEN)
 endif()
 add_subdirectory(plugin/obj_decoder)
 add_subdirectory(plugin/stl_decoder)
+
 add_subdirectory(src/engine)
 add_subdirectory(src/user)
 add_subdirectory(src/xml)
