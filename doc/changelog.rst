@@ -27,8 +27,17 @@ General
   (``jnt_stiffness``, ``dof_damping``, etc.) continue to hold the linear coefficient and are unchanged.
   The polynomial order is defined by the new constant :ref:`mjNPOLY<glNumericSizes>`. A future breaking C-API change
   may unify the linear and higher-order coefficients into a single array.
+- Added :ref:`midpoint integration<geMidpoint>` for standalone free bodies in ``implicit`` and ``implicitfast``
+  :ref:`integrators<geIntegrators>`. This applies the implicit midpoint rule to the rotational dynamics of free bodies
+  with no children, conserving kinetic energy to machine precision in the absence of external torques. The
+  :ref:`invdiscrete<option-flag-invdiscrete>` flag now also disables midpoint integration, providing an opt-out
+  mechanism.
+- Added the centripetal/Coriolis acceleration term :math:`\dot{J}v` to the constraint solver bias for
+  :ref:`connect<equality-connect>` and :ref:`weld<equality-weld>` equality constaints. This significantly improves the
+  stability of constrained mechanisms like four-bar linkages. See :ref:`Dual problem<soDual>` for details.
 
-- Introduced :ref:`mjpEncoder`, the counterpart to :ref:`mjpDecoder` for encoding of :ref:`mjSpec` and :ref:`mjModel` into :ref:`mjResource`.
+- Introduced :ref:`mjpEncoder`, the counterpart to :ref:`mjpDecoder` for encoding of :ref:`mjSpec` and :ref:`mjModel`
+  into :ref:`mjResource`.
 
   - Added :ref:`mj_encode`, :ref:`mjp_registerEncoder`, :ref:`mjp_defaultEncoder`, and :ref:`mjp_findEncoder`.
 
@@ -52,6 +61,16 @@ General
 
    - The :ref:`mjtWarning` enum value ``mjWARN_VGEOMFULL`` is removed. Exhaustion of visual geoms is now handled
      internally by the :ref:`mjvScene`.
+   - URDF parsing no longer hardcodes :ref:`strippath<compiler-strippath>` to "true". The setting is now respected and
+     the default is "false". Setting this is attribute is now the responsibility of the user.
+
+     **Migration:** Set :ref:`strippath<compiler-strippath>` to "true" in MJCF or programmatically using
+
+     .. code-block:: python
+
+       spec = mujoco.MjSpec.from_file("path/to/model.urdf")
+       spec.compiler.strippath = True
+
 
 Bug fixes
 ^^^^^^^^^

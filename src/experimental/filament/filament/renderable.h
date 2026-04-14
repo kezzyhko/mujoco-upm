@@ -12,8 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#ifndef MUJOCO_SRC_EXPERIMENTAL_FILAMENT_FILAMENT_RENDERABLES_H_
-#define MUJOCO_SRC_EXPERIMENTAL_FILAMENT_FILAMENT_RENDERABLES_H_
+#ifndef MUJOCO_SRC_EXPERIMENTAL_FILAMENT_FILAMENT_RENDERABLE_H_
+#define MUJOCO_SRC_EXPERIMENTAL_FILAMENT_FILAMENT_RENDERABLE_H_
 
 #include <cstdint>
 #include <vector>
@@ -21,22 +21,23 @@
 #include <filament/Engine.h>
 #include <filament/Scene.h>
 #include <utils/Entity.h>
+#include "experimental/filament/filament/material.h"
 #include "experimental/filament/filament/mesh.h"
 
 namespace mujoco {
 
 // Manages a collection of related filament Renderable Entities.
-class Renderables {
+class Renderable {
  public:
   // Default filament values for priority and layer mask.
   static constexpr std::uint8_t kDefaultPriority = 4;
   static constexpr std::uint8_t kDefaultLayerMask = 0x01;
 
-  Renderables(filament::Engine* engine);
-  ~Renderables() noexcept;
+  Renderable(filament::Engine* engine);
+  ~Renderable() noexcept;
 
-  Renderables(const Renderables&) = delete;
-  Renderables& operator=(const Renderables&) = delete;
+  Renderable(const Renderable&) = delete;
+  Renderable& operator=(const Renderable&) = delete;
 
   // Appends a new renderable entity built from the given mesh.
   void Append(const Mesh* mesh);
@@ -79,8 +80,11 @@ class Renderables {
   // Sets the material instance for all managed entities.
   void SetMaterialInstance(filament::MaterialInstance* material_instance);
 
-  // Returns the filament Engine managing the entities in this collection.
-  filament::Engine* GetEngine() { return engine_; }
+  // Returns the material for the renderables.
+  Material& GetMaterial();
+
+  // Returns the filament Engine managing the renderables.
+  filament::Engine* GetEngine();
 
  private:
   utils::Entity CreateEntity(const Mesh* mesh);
@@ -92,7 +96,7 @@ class Renderables {
     const Mesh* mesh = nullptr;
   };
 
-  filament::Engine* engine_ = nullptr;
+  Material material_;
   filament::Scene* assigned_scene_ = nullptr;
   filament::MaterialInstance* material_instance_ = nullptr;
   std::vector<utils::Entity> entities_;
@@ -106,4 +110,4 @@ class Renderables {
 
 }  // namespace mujoco
 
-#endif  // MUJOCO_SRC_EXPERIMENTAL_FILAMENT_FILAMENT_RENDERABLES_H_
+#endif  // MUJOCO_SRC_EXPERIMENTAL_FILAMENT_FILAMENT_RENDERABLE_H_
