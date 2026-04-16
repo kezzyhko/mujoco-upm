@@ -20,22 +20,14 @@
 #include <math/vec2.h>
 #include <math/vec3.h>
 #include <math/vec4.h>
+#include "experimental/filament/filament/draw_mode.h"
 #include "experimental/filament/filament/texture.h"
+#include "experimental/filament/filament/object_manager.h"
 
 namespace mujoco {
 
 class Material {
  public:
-  // The different methods for rendering objects. Each mode uses a different
-  // material, but all materials "share" the same textures and parameters
-  // (unless specifically noted otherwise).
-  enum DrawMode {
-    kNormal,
-    kDepth,
-    kSegmentation,
-    kNumDrawModes,
-  };
-
   // The textures that can be assigned to the drawable's material.
   struct Textures {
     const Texture* color = nullptr;
@@ -66,7 +58,7 @@ class Material {
     bool reflective = false;
   };
 
-  explicit Material(filament::Engine* engine);
+  explicit Material(ObjectManager* object_mgr);
   ~Material() noexcept;
 
   Material(const Material&) = delete;
@@ -74,9 +66,6 @@ class Material {
 
   // Assigns a material to the draw mode.
   void SetMaterial(DrawMode mode, filament::Material* material);
-
-  // Sets the fallback textures for the material.
-  void SetFallbackTextures(const Textures* fallback_textures);
 
   // Updates the parameters for the material.
   void UpdateParams(const Params& params);
@@ -91,21 +80,18 @@ class Material {
   const Textures& GetTextures() const { return textures_; }
 
   // Returns the material instance assigned to the draw mode.
-  filament::MaterialInstance* GetMaterialInstance(DrawMode mode) {
-    return instances_[mode];
-  }
+  filament::MaterialInstance* GetMaterialInstance(DrawMode mode);
 
   // Returns the filament Engine managing the material.
-  filament::Engine* GetEngine() const { return engine_; }
+  filament::Engine* GetEngine() const { return object_mgr_->GetEngine(); }
 
  private:
   // Updates the material instances based on the currently set parameters and
   // textures.
   void UpdateMaterialInstances();
 
-  filament::Engine* engine_ = nullptr;
+  ObjectManager* object_mgr_;
   filament::MaterialInstance* instances_[kNumDrawModes] = {nullptr};
-  const Textures* fallback_textures_ = nullptr;
   Params params_;
   Textures textures_;
 };
