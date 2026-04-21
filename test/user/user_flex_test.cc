@@ -1179,6 +1179,64 @@ TEST_F(UserFlexTest, EmptyCellNodePinningQuadratic) {
   mj_deleteModel(m);
 }
 
+TEST_F(UserFlexTest, EmptyCellDetectsElements) {
+  // A cube surface mesh (dim=2, 12 triangles) spanning [0,1]^3.
+  // With cellcount="6 6 6" (216 cells), only 8 corner cells contain
+  // mesh vertices.
+  //
+  // Bug: MarkEmptyCells only checked vertices, so 208/216 cells are
+  // marked empty, causing most interior nodes to be incorrectly pinned.
+  // Fix: check element AABBs to correctly identify occupied cells.
+  static constexpr char xml[] = R"(
+  <mujoco>
+  <worldbody>
+    <body name="parent">
+    <freejoint/>
+    <inertial mass="0.01" pos="0.5 0.5 0.5"
+             diaginertia="0.001 0.001 0.001"/>
+    <flexcomp name="test" type="direct" dim="2"
+              dof="trilinear" mass="1" cellcount="6 6 6"
+              point="0 0 0  1 0 0  1 1 0  0 1 0
+                     0 0 1  1 0 1  1 1 1  0 1 1"
+              element="0 1 2  0 2 3  4 6 5  4 7 6
+                       0 5 1  0 4 5  2 7 3  2 6 7
+                       0 3 7  0 7 4  1 5 6  1 6 2">
+      <contact selfcollide="none"/>
+    </flexcomp>
+    </body>
+  </worldbody>
+  </mujoco>
+  )";
+  std::array<char, 1024> error;
+  mjModel* m = LoadModelFromString(xml, error.data(), error.size());
+  ASSERT_THAT(m, NotNull()) << error.data();
+
+  // 6x6x6 trilinear grid: (6+1)^3 = 343 nodes
+  int nadr = m->flex_nodeadr[0];
+  int nnode = m->flex_nodenum[0];
+  ASSERT_EQ(nnode, 343);
+
+  // Count pinned nodes: those assigned to the parent body.
+  int parent_bid = mj_name2id(m, mjOBJ_BODY, "parent");
+  ASSERT_GT(parent_bid, 0);
+  int pinned = 0;
+  for (int n = nadr; n < nadr + nnode; n++) {
+    if (m->flex_nodebodyid[n] == parent_bid) {
+      pinned++;
+    }
+  }
+
+  // The cube surface fills the entire bounding box. The element-AABB
+  // marks all boundary cells as surface cells (152/216). The interior
+  // flood-fill finds no exterior seeds (all boundary cells are surface),
+  // so the remaining 64 cells are classified as interior (non-empty).
+  // No cells are empty → 0 nodes pinned.
+  EXPECT_EQ(pinned, 0);
+
+  mj_deleteData(mj_makeData(m));
+  mj_deleteModel(m);
+}
+
 TEST_F(UserFlexTest, TotalMassTrilinear) {
   static constexpr char xml[] = R"(
   <mujoco>
@@ -1225,6 +1283,71 @@ TEST_F(UserFlexTest, TotalMassQuadratic) {
 
   EXPECT_NEAR(total_mass, 2.0, 1e-5);
   mj_deleteModel(m);
+}
+
+TEST_F(UserFlexTest, Dof2d) {
+  // 3x3 grid with dof="2d": 9 vertices, 2 DOFs each -> nv = 18
+  static constexpr char xml_2d[] = R"(
+  <mujoco>
+  <worldbody>
+    <flexcomp name="test" type="grid" count="3 3 1" spacing=".1 .1 .1"
+              dim="2" radius=".01" dof="2d">
+      <edge equality="true"/>
+    </flexcomp>
+  </worldbody>
+  </mujoco>
+  )";
+
+  // same model with dof="full" for comparison: 9 vertices, 3 DOFs each -> nv = 27
+  static constexpr char xml_full[] = R"(
+  <mujoco>
+  <worldbody>
+    <flexcomp name="test" type="grid" count="3 3 1" spacing=".1 .1 .1"
+              dim="2" radius=".01">
+      <edge equality="true"/>
+    </flexcomp>
+  </worldbody>
+  </mujoco>
+  )";
+
+  std::array<char, 1024> error;
+
+  // load 2d model
+  mjModel* m_2d = LoadModelFromString(xml_2d, error.data(), error.size());
+  ASSERT_THAT(m_2d, NotNull()) << error.data();
+  mjData* d_2d = mj_makeData(m_2d);
+
+  // load full model
+  mjModel* m_full = LoadModelFromString(xml_full, error.data(), error.size());
+  ASSERT_THAT(m_full, NotNull()) << error.data();
+  mjData* d_full = mj_makeData(m_full);
+
+  // verify DOF counts
+  EXPECT_EQ(m_2d->nv, 18);    // 9 vertices * 2 DOFs
+  EXPECT_EQ(m_full->nv, 27);  // 9 vertices * 3 DOFs
+
+  // same number of vertices and elements
+  EXPECT_EQ(m_2d->nflexvert, m_full->nflexvert);
+  EXPECT_EQ(m_2d->nflexelem, m_full->nflexelem);
+
+  // each body has 2 DOFs in 2d mode, 3 in full mode
+  for (int i = 1; i < m_2d->nbody; i++) {
+    EXPECT_EQ(m_2d->body_dofnum[i], 2) << "body " << i;
+  }
+  for (int i = 1; i < m_full->nbody; i++) {
+    EXPECT_EQ(m_full->body_dofnum[i], 3) << "body " << i;
+  }
+
+  // simulate a few steps to make sure nothing crashes
+  for (int i = 0; i < 10; i++) {
+    mj_step(m_2d, d_2d);
+    mj_step(m_full, d_full);
+  }
+
+  mj_deleteModel(m_2d);
+  mj_deleteModel(m_full);
+  mj_deleteData(d_2d);
+  mj_deleteData(d_full);
 }
 
 }  // namespace
