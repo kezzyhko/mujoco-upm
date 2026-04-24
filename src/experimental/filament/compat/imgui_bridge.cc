@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include "experimental/filament/filament/imgui_bridge.h"
+#include "experimental/filament/compat/imgui_bridge.h"
 
 #include <cstddef>
 #include <cstdint>
@@ -23,7 +23,6 @@
 #include <imgui.h>
 #include <math/mat3.h>
 #include <math/vec3.h>
-#include <math/vec4.h>
 #include <mujoco/mujoco.h>
 #include "experimental/filament/filament/material.h"
 #include "experimental/filament/filament/mesh.h"
@@ -72,8 +71,8 @@ uintptr_t ImguiBridge::UploadImage(uintptr_t tex_id, const uint8_t* pixels,
   // new texture.
   if (texture == nullptr || texture->GetWidth() != width ||
       texture->GetHeight() != height) {
-    TextureConfig config;
-    DefaultTextureConfig(&config);
+    mjrTextureConfig config;
+    mjr_defaultTextureConfig(&config);
     config.width = width;
     config.height = height;
     config.target = mjTEXTURE_2D;
@@ -89,8 +88,8 @@ uintptr_t ImguiBridge::UploadImage(uintptr_t tex_id, const uint8_t* pixels,
   const auto callback =
       +[](void* user) { delete[] reinterpret_cast<std::byte*>(user); };
 
-  TextureData texture_data;
-  DefaultTextureData(&texture_data);
+  mjrTextureData texture_data;
+  mjr_defaultTextureData(&texture_data);
   texture_data.bytes = bytes;
   texture_data.nbytes = num_bytes;
   texture_data.user_data = bytes;
@@ -106,8 +105,8 @@ void ImguiBridge::CreateTexture(ImTextureData* data) {
     mju_error("Unsupported texture format.");
   }
 
-  TextureConfig config;
-  DefaultTextureConfig(&config);
+  mjrTextureConfig config;
+  mjr_defaultTextureConfig(&config);
   config.width = data->Width;
   config.height = data->Height;
   config.target = mjTEXTURE_2D;
@@ -127,8 +126,8 @@ void ImguiBridge::UpdateTexture(ImTextureData* data) {
     mju_error("Texture not found: %llu", data->TexID);
   }
 
-  TextureData texture_data;
-  DefaultTextureData(&texture_data);
+  mjrTextureData texture_data;
+  mjr_defaultTextureData(&texture_data);
   texture_data.bytes = data->GetPixels();
   texture_data.nbytes = data->Width * data->Height * 4;
   texture_data.user_data = nullptr;
@@ -217,16 +216,16 @@ void ImguiBridge::Update() {
   for (int n = 0; n < commands->CmdListsCount; ++n) {
     const ImDrawList* cmds = commands->CmdLists[n];
 
-    MeshData data;
-    DefaultMeshData(&data);
+    mjrMeshData data;
+    mjr_defaultMeshData(&data);
     data.nattributes = 3;
-    data.attributes[0].usage = mjVERTEX_ATTRIBUTE_POSITION;
+    data.attributes[0].usage = mjVERTEX_ATTRIBUTE_USAGE_POSITION;
     data.attributes[0].type = mjVERTEX_ATTRIBUTE_TYPE_FLOAT2;
     data.attributes[0].bytes = cmds->VtxBuffer.Data;
-    data.attributes[1].usage = mjVERTEX_ATTRIBUTE_UV;
+    data.attributes[1].usage = mjVERTEX_ATTRIBUTE_USAGE_UV;
     data.attributes[1].type = mjVERTEX_ATTRIBUTE_TYPE_FLOAT2;
     data.attributes[1].bytes = cmds->VtxBuffer.Data + sizeof(float) * 2;
-    data.attributes[2].usage = mjVERTEX_ATTRIBUTE_COLOR;
+    data.attributes[2].usage = mjVERTEX_ATTRIBUTE_USAGE_COLOR;
     data.attributes[2].type = mjVERTEX_ATTRIBUTE_TYPE_UBYTE4;
     data.attributes[2].bytes = cmds->VtxBuffer.Data + sizeof(float) * 4;
     data.interleaved = true;
@@ -234,7 +233,7 @@ void ImguiBridge::Update() {
     data.nindices = cmds->IdxBuffer.Size;
     data.indices = cmds->IdxBuffer.Data;
     data.index_type = mjINDEX_TYPE_USHORT;
-    data.primitive_type = mjPRIM_TYPE_TRIANGLES;
+    data.primitive_type = mjMESH_PRIMITIVE_TYPE_TRIANGLES;
     meshes_.push_back(std::make_unique<Mesh>(scene_view_->GetEngine(), data));
 
     const Mesh* mesh = meshes_.back().get();
@@ -247,10 +246,12 @@ void ImguiBridge::Update() {
       auto& renderable = renderables_[renderable_index];
       renderable->SetMesh(mesh, index_offset, command.ElemCount);
 
-      MaterialTextures textures;
+      mjrMaterialTextures textures;
+      mjr_defaultMaterialTextures(&textures);
       textures.color = textures_[command.GetTexID()].get();
 
-      MaterialParams properties;
+      mjrMaterialParams properties;
+      mjr_defaultMaterialParams(&properties);
       properties.scissor[0] = command.ClipRect.x;
       properties.scissor[1] = height - command.ClipRect.w;
       properties.scissor[2] = command.ClipRect.z - command.ClipRect.x;
@@ -276,11 +277,11 @@ void ImguiBridge::Update() {
 
 void ImguiBridge::PrepareRenderables(int count) {
   while (renderables_.size() < count) {
-    RenderableParams config;
-    DefaultRenderableParams(&config);
-    config.shading_model = ShadingModel::Ux;
+    mjrRenderableParams params;
+    mjr_defaultRenderableParams(&params);
+    params.shading_model = mjSHADING_MODEL_UX;
     auto& r = renderables_.emplace_back(
-        std::make_unique<Renderable>(object_mgr_, config));
+        std::make_unique<Renderable>(object_mgr_, params));
     r->SetCastShadows(false);
     r->SetReceiveShadows(false);
     r->SetBlendOrder(static_cast<std::uint16_t>(renderables_.size()));
