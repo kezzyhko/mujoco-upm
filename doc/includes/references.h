@@ -494,8 +494,9 @@ typedef enum mjtDisableBit_ {     // disable default feature bitflags
   mjDSBL_AUTORESET    = 1<<16,    // automatic reset when numerical issues are detected
   mjDSBL_NATIVECCD    = 1<<17,    // native convex collision detection
   mjDSBL_ISLAND       = 1<<18,    // constraint island discovery
+  mjDSBL_MULTICCD     = 1<<19,    // multiple CCD contact points
 
-  mjNDISABLE          = 19        // number of disable flags
+  mjNDISABLE          = 20        // number of disable flags
 } mjtDisableBit;
 typedef enum mjtEnableBit_ {      // enable optional feature bitflags
   mjENBL_OVERRIDE     = 1<<0,     // override contact parameters
@@ -503,10 +504,9 @@ typedef enum mjtEnableBit_ {      // enable optional feature bitflags
   mjENBL_FWDINV       = 1<<2,     // record solver statistics
   mjENBL_INVDISCRETE  = 1<<3,     // discrete-time inverse dynamics
                                   // experimental features:
-  mjENBL_MULTICCD     = 1<<4,     // multi-point convex collision detection
-  mjENBL_SLEEP        = 1<<5,     // sleeping
+  mjENBL_SLEEP        = 1<<4,     // sleeping
 
-  mjNENABLE           = 6         // number of enable flags
+  mjNENABLE           = 5         // number of enable flags
 } mjtEnableBit;
 typedef enum mjtJoint_ {          // type of degree of freedom
   mjJNT_FREE          = 0,        // global position and orientation (quat)       (7)
@@ -1040,6 +1040,7 @@ struct mjModel_ {
   mjtSize nflexedge;              // number of edges in all flexes
   mjtSize nflexelem;              // number of elements in all flexes
   mjtSize nflexelemdata;          // number of element vertex ids in all flexes
+  mjtSize nflexstiffness;         // number of stiffness parameters in all flexes
   mjtSize nflexelemedge;          // number of element edge ids in all flexes
   mjtSize nflexshelldata;         // number of shell fragment vertex ids in all flexes
   mjtSize nflexevpair;            // number of element-vertex pairs in all flexes
@@ -1314,6 +1315,8 @@ struct mjModel_ {
   int*      flex_matid;           // material id for rendering                (nflex x 1)
   int*      flex_group;           // group for visibility                     (nflex x 1)
   int*      flex_interp;          // interpolation (0: vertex, 1: nodes)      (nflex x 1)
+  int*      flex_bandwidth;       // precomputed solver bandwidth             (nflex x 1)
+  int*      flex_cellnum;         // finite cell num per dimension            (nflex x 3)
   int*      flex_nodeadr;         // first node address                       (nflex x 1)
   int*      flex_nodenum;         // number of nodes                          (nflex x 1)
   int*      flex_vertadr;         // first vertex address                     (nflex x 1)
@@ -1323,6 +1326,7 @@ struct mjModel_ {
   int*      flex_elemadr;         // first element address                    (nflex x 1)
   int*      flex_elemnum;         // number of elements                       (nflex x 1)
   int*      flex_elemdataadr;     // first element vertex id address          (nflex x 1)
+  int*      flex_stiffnessadr;    // stiffness matrix address                 (nflex x 1)
   int*      flex_elemedgeadr;     // first element edge id address            (nflex x 1)
   int*      flex_shellnum;        // number of shells                         (nflex x 1)
   int*      flex_shelldataadr;    // first shell data address                 (nflex x 1)
@@ -1351,7 +1355,7 @@ struct mjModel_ {
   mjtNum*   flexedge_invweight0;  // edge inv. weight in qpos0                (nflexedge x 1)
   mjtNum*   flex_radius;          // radius around primitive element          (nflex x 1)
   mjtNum*   flex_size;            // vertex bounding box half sizes in qpos0  (nflex x 3)
-  mjtNum*   flex_stiffness;       // finite element stiffness matrix          (nflexelem x 21)
+  mjtNum*   flex_stiffness;       // finite element stiffness matrix          (nflexstiffness x 1)
   mjtNum*   flex_bending;         // bending stiffness                        (nflexedge x 17)
   mjtNum*   flex_damping;         // Rayleigh's damping coefficient           (nflex x 1)
   mjtNum*   flex_edgestiffness;   // edge stiffness                           (nflex x 1)
@@ -2254,6 +2258,8 @@ typedef struct mjsFlex_ {          // flex specification
   double damping;                  // Rayleigh's damping
   double thickness;                // thickness (2D only)
   int elastic2d;                   // 2D passive forces; 0: none, 1: bending, 2: stretching, 3: both
+  int cellcount[3];                // grid cell count for finite cell method
+  int order;                       // interpolation order (1: trilinear, 2: quadratic)
 
   // mesh properties
   mjStringVec* nodebody;           // node body names
@@ -3155,6 +3161,8 @@ int mj_unmountVFS(mjVFS* vfs, const char* filename);
 int mj_addFileVFS(mjVFS* vfs, const char* directory, const char* filename);
 int mj_addBufferVFS(mjVFS* vfs, const char* name, const void* buffer, int nbuffer);
 int mj_deleteFileVFS(mjVFS* vfs, const char* filename);
+int mj_containsBufferVFS(mjVFS* vfs, const char* name);
+int mj_containsFileVFS(mjVFS* vfs, const char* directory, const char* filename);
 void mj_deleteVFS(mjVFS* vfs);
 size_t mj_getCacheSize(const mjCache* cache);
 size_t mj_getCacheCapacity(const mjCache* cache);
@@ -3266,6 +3274,7 @@ void mj_passive(const mjModel* m, mjData* d);
 void mj_subtreeVel(const mjModel* m, mjData* d);
 void mj_rne(const mjModel* m, mjData* d, int flg_acc, mjtNum* result);
 void mj_rnePostConstraint(const mjModel* m, mjData* d);
+int mj_maxContact(const mjModel* m, int g1, int g2, int has_margin);
 void mj_collision(const mjModel* m, mjData* d);
 void mj_makeConstraint(const mjModel* m, mjData* d);
 void mj_island(const mjModel* m, mjData* d);

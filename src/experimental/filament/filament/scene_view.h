@@ -27,8 +27,8 @@
 #include <filament/View.h>
 #include <mujoco/mujoco.h>
 #include "experimental/filament/filament/color_grading_options.h"
+#include "experimental/filament/filament/draw_mode.h"
 #include "experimental/filament/filament/light.h"
-#include "experimental/filament/filament/material.h"
 #include "experimental/filament/filament/renderable.h"
 #include "experimental/filament/filament/render_target.h"
 
@@ -53,10 +53,9 @@ class SceneView {
   void RemoveFromScene(filament::Skybox* skybox);
 
   // Parameters for rendering the scene.
-  using DrawMode = Material::DrawMode;
   struct RenderRequest {
     // The draw mode (e.g. normal, depth, segmentation) to render.
-    DrawMode draw_mode = DrawMode::kNormal;
+    DrawMode draw_mode = DrawMode::Color;
     // The target viewport for the rendered image.
     mjrRect viewport;
     // The camera from which to render the scene.
@@ -70,6 +69,18 @@ class SceneView {
 
   // Returns the filament Engine managing the scene.
   filament::Engine* GetEngine() const { return engine_; }
+
+  // Enables/disables shadows for the default render view.
+  void EnableShadows();
+  void DisableShadows();
+
+  // Enables/disables reflections for the default render view.
+  void EnableReflections();
+  void DisableReflections();
+
+  // Enables/disables post processing for the default render view.
+  void EnablePostProcessing();
+  void DisablePostProcessing();
 
   // Returns the underlying filament View that is used for normal rendering.
   // Callers can update rendering settings (e.g. post processing) directly.
@@ -92,8 +103,7 @@ class SceneView {
   filament::Camera* camera_ = nullptr;
   filament::ColorGrading* color_grading_ = nullptr;
   ColorGradingOptions color_grading_options_;
-  std::array<filament::View*, DrawMode::kNumDrawModes> views_;
-  DrawMode active_mode_ = DrawMode::kNumDrawModes;
+  std::array<filament::View*, kNumDrawModes> views_;
 
   // Scene objects.
   std::unordered_set<Light*> lights_;
@@ -105,6 +115,7 @@ class SceneView {
   filament::Camera* reflect_camera_ = nullptr;
 
   // The list of reflective renderables and their corresponding render targets.
+  bool reflections_enabled_ = true;
   std::vector<Renderable*> reflectives_;
   std::vector<std::unique_ptr<RenderTarget>> reflect_targets_;
 };

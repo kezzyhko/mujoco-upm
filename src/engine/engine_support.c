@@ -43,8 +43,8 @@
 
 //-------------------------- Constants -------------------------------------------------------------
 
- #define mjVERSION 3007000
-#define mjVERSIONSTRING "3.7.0"
+ #define mjVERSION 3008000
+#define mjVERSIONSTRING "3.8.0"
 
 // names of disable flags
 const char* mjDISABLESTRING[mjNDISABLE] = {
@@ -66,7 +66,8 @@ const char* mjDISABLESTRING[mjNDISABLE] = {
   "Eulerdamp",
   "AutoReset",
   "NativeCCD",
-  "Island"
+  "Island",
+  "MultiCCD"
 };
 
 
@@ -76,7 +77,6 @@ const char* mjENABLESTRING[mjNENABLE] = {
   "Energy",
   "Fwdinv",
   "InvDiscrete",
-  "MultiCCD",
   "Sleep"
 };
 
@@ -420,17 +420,11 @@ void mj_mulM2(const mjModel* m, const mjData* d, mjtNum* res, const mjtNum* vec)
 void mj_addM(const mjModel* m, mjData* d, mjtNum* dst,
              int* rownnz, int* rowadr, int* colind) {
   int nv = m->nv;
+
   // sparse
   if (rownnz && rowadr && colind) {
-    mj_markStack(d);
-    mjtNum* buf_val = mjSTACKALLOC(d, nv, mjtNum);
-    int* buf_ind = mjSTACKALLOC(d, nv, int);
-
-    mju_addToMatSparse(dst, rownnz, rowadr, colind, nv,
-      d->M, m->M_rownnz, m->M_rowadr, m->M_colind,
-      buf_val, buf_ind);
-
-    mj_freeStack(d);
+    mju_addToMatSparse(dst, rownnz, rowadr, colind, nv, d->M,
+                       m->M_rownnz, m->M_rowadr, m->M_colind);
   }
 
   // dense
@@ -526,6 +520,7 @@ void mj_xfrcAccumulate(const mjModel* m, mjData* d, mjtNum* qfrc) {
 // returns the smallest distance between two geoms (using nativeccd)
 static mjtNum mj_geomDistanceCCD(const mjModel* m, mjData* d, int g1, int g2,
                                  mjtNum distmax, mjtNum fromto[6]) {
+  mj_markStack(d);
   mjCCDConfig config;
   mjCCDStatus status;
 
@@ -534,12 +529,14 @@ static mjtNum mj_geomDistanceCCD(const mjModel* m, mjData* d, int g1, int g2,
   config.tolerance = m->opt.ccd_tolerance;
   config.max_contacts = 1;        // want contacts
   config.dist_cutoff = distmax;   // want geom distances
+  config.buffer = mj_stackAllocByte(d, mjc_ccdSize(config.max_iterations), sizeof(mjtNum));
 
   mjCCDObj obj1, obj2;
   mjc_initCCDObj(&obj1, m, d, g1, 0);
   mjc_initCCDObj(&obj2, m, d, g2, 0);
 
   mjtNum dist = mjc_ccd(&config, &status, &obj1, &obj2);
+  mj_freeStack(d);
 
   // witness points are only computed if dist <= distmax
   if (fromto && status.nx > 0) {
