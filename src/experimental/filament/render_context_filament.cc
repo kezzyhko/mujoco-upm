@@ -63,6 +63,12 @@ void mjr_defaultMeshData(mjrMeshData* data) {
   std::memset(data, 0, sizeof(mjrMeshData));
 }
 
+void mjr_defaultSceneParams(mjrSceneParams* params) {
+  params->enable_post_processing = true;
+  params->enable_reflections = true;
+  params->enable_shadows = true;
+}
+
 void mjr_defaultLightParams(mjrLightParams* params) {
   params->type = mjLIGHT_POINT;
   params->texture = nullptr;
@@ -110,6 +116,7 @@ void mjr_defaultRenderableParams(mjrRenderableParams* params) {
 }
 
 void mjr_defaultRenderTargetConfig(mjrRenderTargetConfig* config) {
+  memset(config, 0, sizeof(mjrRenderTargetConfig));
   config->color_format = mjPIXEL_FORMAT_RGBA8;
   config->depth_format = mjPIXEL_FORMAT_DEPTH32F;
 }
