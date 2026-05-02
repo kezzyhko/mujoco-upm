@@ -1371,6 +1371,14 @@ void mj_RungeKutta(const mjModel* m, mjData* d, int N) {
 }
 
 
+// return 1 if flex f needs implicit interp treatment
+static int flexInterp_active(const mjModel* m, int f) {
+  return m->flex_interp[f] && !m->flex_rigid[f] &&
+         m->flex_edgeequality[f] != 3 &&
+         m->flex_stiffness[m->flex_stiffnessadr[f]] != 0;
+}
+
+
 // context for flex interp reduced banded factorization/solve
 typedef struct {
   mjtNum* H;              // banded Cholesky-factored matrix (ndof x nband)
@@ -1425,7 +1433,7 @@ static FlexInterpContext flexInterp_factor(const mjModel* m, mjData* d, int nv) 
   // count flex DOFs
   int ndof = 0;
   for (int f=0; f < m->nflex; f++) {
-    if (m->flex_interp[f]) {
+    if (flexInterp_active(m, f)) {
       flexInterp_collect(m, f, chain_dofs, seen_dof, &ndof);
     }
   }
@@ -1442,7 +1450,7 @@ static FlexInterpContext flexInterp_factor(const mjModel* m, mjData* d, int nv) 
   int cnt = 0;
   mju_fillInt(seen_dof, 0, nv);
   for (int f=0; f < m->nflex; f++) {
-    if (m->flex_interp[f]) {
+    if (flexInterp_active(m, f)) {
       int nodenum = m->flex_nodenum[f];
       int nodeadr = m->flex_nodeadr[f];
       for (int n=0; n < nodenum; n++) {
@@ -1481,7 +1489,7 @@ static FlexInterpContext flexInterp_factor(const mjModel* m, mjData* d, int nv) 
   // get precomputed bandwidth
   int bandwidth = 0;
   for (int f=0; f < m->nflex; f++) {
-    if (m->flex_interp[f]) {
+    if (flexInterp_active(m, f)) {
       if (m->flex_bandwidth[f] > bandwidth) {
         bandwidth = m->flex_bandwidth[f];
       }
@@ -1597,16 +1605,75 @@ static void flexInterp_solve(const mjModel* m, mjData* d, const FlexInterpContex
 
 
 // return 1 if free joint is eligible for midpoint quaternion integration:
-//   standalone 6-DOF tree with no children
-static int midpoint_eligible(const mjModel* m, int jnt) {
-  if (m->jnt_type[jnt] == mjJNT_FREE) {
-    int body = m->jnt_bodyid[jnt];
-    int treeid = m->dof_treeid[m->jnt_dofadr[jnt]];
-    return m->tree_dofnum[treeid] == 6 &&
-           m->body_subtreemass[body] == m->body_mass[body];
+//   standalone 6-DOF tree with no children, awake, and unconstrained
+static int midpoint_eligible(const mjModel* m, const mjData* d, int jnt) {
+  if (m->jnt_type[jnt] != mjJNT_FREE) {
+    return 0;
   }
 
-  return 0;
+  int body = m->jnt_bodyid[jnt];
+  int adr = m->jnt_dofadr[jnt];
+  int tree = m->dof_treeid[adr];
+
+  // must be standalone 6-DOF tree with no children
+  if (m->tree_dofnum[tree] != 6 ||
+      m->body_subtreemass[body] != m->body_mass[body]) {
+    return 0;
+  }
+
+  // must be awake
+  if (!d->tree_awake[tree]) {
+    return 0;
+  }
+
+  // must be unconstrained
+  if (d->nefc) {
+    // islands enabled: O(1) lookup
+    if (!mjDISABLED(mjDSBL_ISLAND)) {
+      if (d->dof_island[adr] >= 0) {
+        return 0;
+      }
+    }
+
+    // islands disabled: check if any constraint involves this tree
+    else {
+      for (int c=0; c < d->nefc; c++) {
+        int type = d->efc_type[c];
+        int id = d->efc_id[c];
+
+        // contact: check if either geom belongs to this body
+        if (type == mjCNSTR_CONTACT_FRICTIONLESS ||
+            type == mjCNSTR_CONTACT_PYRAMIDAL ||
+            type == mjCNSTR_CONTACT_ELLIPTIC) {
+          int g1 = d->contact[id].geom[0];
+          int g2 = d->contact[id].geom[1];
+          if (g1 >= 0 && m->geom_bodyid[g1] == body) return 0;
+          if (g2 >= 0 && m->geom_bodyid[g2] == body) return 0;
+        }
+
+        // connect or weld: check if either body is this body
+        else if (type == mjCNSTR_EQUALITY &&
+                 (m->eq_type[id] == mjEQ_CONNECT || m->eq_type[id] == mjEQ_WELD)) {
+          int b1 = m->eq_obj1id[id];
+          int b2 = m->eq_obj2id[id];
+          if (m->eq_objtype[id] == mjOBJ_SITE) {
+            b1 = m->site_bodyid[b1];
+            b2 = m->site_bodyid[b2];
+          }
+          if (b1 == body || b2 == body) return 0;
+        }
+
+        // tendon limit or friction: check first two trees
+        else if (type == mjCNSTR_LIMIT_TENDON || type == mjCNSTR_FRICTION_TENDON) {
+          if (m->tendon_treeid[2*id] == tree ||
+              m->tendon_treeid[2*id+1] == tree) return 0;
+        }
+      }
+    }
+  }
+
+  // otherwise eligible
+  return 1;
 }
 
 
@@ -1904,10 +1971,10 @@ void mj_implicitSkip(const mjModel* m, mjData* d, int skipfactor) {
     mju_add(qfrc, d->qfrc_smooth, d->qfrc_constraint, nv);
   }
 
-  // check for flex_interp
+  // check for flex_interp that needs implicit treatment
   int has_flex_interp = 0;
   for (int f=0; f < m->nflex; f++) {
-    if (m->flex_interp[f]) {
+    if (flexInterp_active(m, f)) {
       has_flex_interp = 1;
       break;
     }
@@ -1980,11 +2047,12 @@ void mj_implicitSkip(const mjModel* m, mjData* d, int skipfactor) {
   // count and list joints of free bodies eligible for midpoint integration
   int nfree = 0;
   int* free_jntid = NULL;
-  if (!mjENABLED(mjENBL_INVDISCRETE)) {
+  if (!mjENABLED(mjENBL_INVDISCRETE) &&
+      m->opt.integrator == mjINT_IMPLICITFAST &&
+      m->opt.density == 0 && m->opt.viscosity == 0) {
     free_jntid = mjSTACKALLOC(d, m->njnt, int);
     for (int j=0; j < m->njnt; j++) {
-      // add to list if eligible and awake
-      if (midpoint_eligible(m, j) && d->tree_awake[m->dof_treeid[m->jnt_dofadr[j]]]) {
+      if (midpoint_eligible(m, d, j)) {
         free_jntid[nfree++] = j;
       }
     }
