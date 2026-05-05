@@ -159,7 +159,7 @@ const mat4f& Renderable::GetTransform() const {
   return transform_;
 }
 
-void Renderable::SetMeshes(std::span<const Mesh*> meshes,
+void Renderable::SetMeshes(std::span<const mjrMesh*> meshes,
                            GetTransformFn get_transform_fn) {
   if (!parts_.empty()) {
     mju_error("Cannot set meshes for renderable with multiple parts.");
@@ -168,7 +168,7 @@ void Renderable::SetMeshes(std::span<const Mesh*> meshes,
   get_transform_fn_ = get_transform_fn;
   for (int i = 0; i < meshes.size(); ++i) {
     Part& part = parts_.emplace_back();
-    part.mesh = meshes[i];
+    part.mesh = Mesh::downcast(meshes[i]);
     part.elem_offset = 0;
     part.elem_count = part.mesh->GetFilamentIndexBuffer()->getIndexCount();
     InitPartEntity(part);
@@ -383,8 +383,7 @@ ObjectManager::MaterialType Renderable::GetColorMaterialType() const {
     } else {
       return ObjectManager::kPhongColor;
     }
-  } else if (color_texture->GetFilamentTexture()->getTarget() ==
-              filament::Texture::Sampler::SAMPLER_CUBEMAP) {
+  } else if (color_texture->GetTarget() == mjTEXTURE_CUBE) {
     if (material_params_.color[3] < 1.0f) {
       return ObjectManager::kPhongCubeFade;
     } else if (material_params_.reflective) {
