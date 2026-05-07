@@ -26,7 +26,6 @@
 #include <math/vec4.h>
 #include <math/TVecHelpers.h>
 #include <mujoco/mujoco.h>
-#include "experimental/filament/compat/imgui_bridge.h"
 #include "experimental/filament/compat/model_objects.h"
 #include "experimental/filament/compat/scene_geom_util.h"
 #include "experimental/filament/filament/filament_context.h"
@@ -253,7 +252,7 @@ void SceneBridge::PrepareLights() {
   mjrf_setSceneSkybox(scene_.get(), model_objects_->GetSkyboxTexture());
 }
 
-mat4 CalculateClipFromWorld(const mjrRect& viewport, const mjvGLCamera& cam) {
+mat4 CalculateClipFromWorld(const mjrRect& viewport, const mjrCamera& cam) {
   const float3 cam_pos(cam.pos[0], cam.pos[1], cam.pos[2]);
   const float3 cam_fwd(cam.forward[0], cam.forward[1], cam.forward[2]);
   const float3 cam_up(cam.up[0], cam.up[1], cam.up[2]);
@@ -283,6 +282,13 @@ mat4 CalculateClipFromWorld(const mjrRect& viewport, const mjvGLCamera& cam) {
 void SceneBridge::Update(const mjrRect& viewport, const mjvScene* scene) {
   mjrf_setSceneShadowsEnabled(scene_.get(), scene->flags[mjRND_SHADOW]);
   mjrf_setSceneReflectionsEnabled(scene_.get(), scene->flags[mjRND_REFLECTION]);
+  if (scene->flags[mjRND_SEGMENT]) {
+    draw_mode_ = mjDRAW_MODE_SEGMENTATION;
+  } else if (scene->flags[mjRND_DEPTH]) {
+    draw_mode_ = mjDRAW_MODE_DEPTH;
+  } else {
+    draw_mode_ = mjDRAW_MODE_COLOR;
+  }
 
   mjtNum hpos[3], hfwd[3];
   float headpos[3], gazedir[3];
@@ -290,9 +296,8 @@ void SceneBridge::Update(const mjrRect& viewport, const mjvScene* scene) {
   mju_n2f(headpos, hpos, 3);
   mju_n2f(gazedir, hfwd, 3);
 
-  const mjvGLCamera gl_camera =
-      mjv_averageCamera(scene->camera, scene->camera + 1);
-  clip_from_world_ = CalculateClipFromWorld(viewport, gl_camera);
+  camera_ = mjv_averageCamera(scene->camera, scene->camera + 1);
+  clip_from_world_ = CalculateClipFromWorld(viewport, camera_);
 
   // Remove all drawables from previous render and prepare new ones.
   for (auto& iter : renderables_) {
@@ -302,9 +307,9 @@ void SceneBridge::Update(const mjrRect& viewport, const mjvScene* scene) {
   for (int i = 0; i < scene->ngeom; ++i) {
     const mjvGeom* geom = scene->geoms + i;
 
-    if (geom->label[0] != 0) {
+    if (draw_text_callback_ && geom->label[0] != 0) {
       if (auto pos = ClipFromWorld(ReadFloat3(geom->pos))) {
-        DrawTextAt(geom->label, pos->x, pos->y, pos->z);
+        draw_text_callback_(geom->label, pos->x, pos->y, pos->z);
       }
     }
 
@@ -361,4 +366,15 @@ void SceneBridge::UploadTexture(const mjModel* model, int id) {
 void SceneBridge::UploadHeightField(const mjModel* model, int id) {
   model_objects_->UploadHeightField(model, id);
 }
+
+void SceneBridge::SetDrawTextFunction(DrawTextAtFn fn) {
+  draw_text_callback_ = std::move(fn);
+}
+
+mjrScene* SceneBridge::GetScene() const { return scene_.get(); }
+
+mjrCamera SceneBridge::GetCamera() const { return camera_; }
+
+mjrDrawMode SceneBridge::GetDrawMode() const { return draw_mode_; }
+
 }  // namespace mujoco
