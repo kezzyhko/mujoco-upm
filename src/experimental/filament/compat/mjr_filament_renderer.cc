@@ -18,18 +18,14 @@
 #include <cstdint>
 #include <memory>
 
-#include <math/mathfwd.h>
-#include <math/vec4.h>
 #include <mujoco/mjmodel.h>
 #include <mujoco/mjvisualize.h>
 #include <mujoco/mujoco.h>
 #include "experimental/filament/compat/imgui_bridge.h"
-#include "experimental/filament/compat/imgui_editor.h"
 #include "experimental/filament/compat/scene_bridge.h"
 #include "experimental/filament/filament/filament_context.h"
-#include "experimental/filament/filament/model_util.h"
-#include "experimental/filament/render_context_filament.h"
 #include "experimental/filament/render_context_filament_cpp.h"
+#include "experimental/filament/render_context_filament.h"
 
 namespace mujoco {
 
@@ -58,15 +54,13 @@ void MjrFilamentRenderer::Render(const mjrRect& viewport,
     reqs[0].scene = scene_bridge_->GetScene();
     reqs[0].draw_mode = scene_bridge_->GetDrawMode();
     reqs[0].camera = scene_bridge_->GetCamera();
-    reqs[0].width = viewport.width;
-    reqs[0].height = viewport.height;
+    reqs[0].viewport = viewport;
 
     mjr_defaultRenderRequest(&reqs[1]);
     reqs[1].scene = imgui_bridge_->GetScene();
     reqs[1].draw_mode = mjDRAW_MODE_COLOR;
     reqs[1].camera = imgui_bridge_->GetCamera(viewport.width, viewport.height);
-    reqs[1].width = viewport.width;
-    reqs[1].height = viewport.height;
+    reqs[1].viewport = viewport;
     filament_context_->Render(reqs);
   }
 }
@@ -99,15 +93,13 @@ void MjrFilamentRenderer::ReadPixels(mjrRect viewport, unsigned char* rgb,
   reqs[0].scene = scene_bridge_->GetScene();
   reqs[0].draw_mode = scene_bridge_->GetDrawMode();
   reqs[0].camera = scene_bridge_->GetCamera();
-  reqs[0].width = viewport.width;
-  reqs[0].height = viewport.height;
+  reqs[0].viewport = viewport;
 
   mjr_defaultRenderRequest(&reqs[1]);
   reqs[1].scene = imgui_bridge_->GetScene();
   reqs[1].draw_mode = mjDRAW_MODE_COLOR;
   reqs[1].camera = imgui_bridge_->GetCamera(viewport.width, viewport.height);
-  reqs[1].width = viewport.width;
-  reqs[1].height = viewport.height;
+  reqs[1].viewport = viewport;
 
   if (rgb) {
     mjrRenderTargetConfig config;
@@ -185,6 +177,15 @@ uintptr_t MjrFilamentRenderer::UploadGuiImage(uintptr_t tex_id,
   return imgui_bridge_->UploadImage(tex_id, pixels, width, height, bpp);
 }
 
-void MjrFilamentRenderer::UpdateGui() { DrawGui(scene_bridge_.get()); }
+double MjrFilamentRenderer::GetFrameRate() const {
+  mjrFrameStats stats;
+  mjr_defaultFrameStats(&stats);
+  filament_context_->GetFrameStats(0, &stats);
+  return stats.frame_rate;
+}
+
+void MjrFilamentRenderer::UpdateGui() {
+  mjrf_DEBUG_drawImguiEditor(scene_bridge_->GetScene());
+}
 
 }  // namespace mujoco

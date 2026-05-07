@@ -16,25 +16,22 @@
 
 #include <memory>
 #include <optional>
+#include <string>
 #include <string_view>
 #include <utility>
 
 #include <math/TMatHelpers.h>
 #include <math/mat4.h>
 #include <math/mathfwd.h>
+#include <math/TVecHelpers.h>
 #include <math/vec3.h>
 #include <math/vec4.h>
-#include <math/TVecHelpers.h>
 #include <mujoco/mujoco.h>
 #include "experimental/filament/compat/model_objects.h"
 #include "experimental/filament/compat/scene_geom_util.h"
-#include "experimental/filament/filament/filament_context.h"
-#include "experimental/filament/filament/object_manager.h"
-#include "experimental/filament/filament/math_util.h"
-#include "experimental/filament/filament/model_util.h"
-#include "experimental/filament/filament/scene_view.h"
-#include "experimental/filament/render_context_filament.h"
+#include "experimental/filament/filament_util.h"
 #include "experimental/filament/render_context_filament_cpp.h"
+#include "experimental/filament/render_context_filament.h"
 
 namespace mujoco {
 
@@ -44,19 +41,24 @@ using filament::math::mat3;
 using filament::math::mat4;
 
 static UniquePtr<mjrTexture> CreateFallbackIndirectLightTexture(
-    mjrfContext* ctx, std::string_view filename = "") {
-  if (filename.empty()) {
-    filename = ObjectManager::kDefaultEnvironmentLight;
+    mjrfContext* ctx) {
+  const std::string filename = ResolveFilamentAssetPath("ibl.ktx");
+  mjResource* resource =
+      mju_openResource("", filename.c_str(), nullptr, nullptr, 0);
+  if (!resource) {
+    mju_error("Failed to open resource: %s", filename.c_str());
   }
-
-  std::unique_ptr<ObjectManager::Asset> asset =
-      FilamentContext::downcast(ctx)->GetObjectManager()->LoadAsset(filename);
+  const void* bytes = nullptr;
+  const int nbytes = mju_readResource(resource, &bytes);
+  if (bytes == nullptr || nbytes <= 0) {
+    mju_error("Failed to read resource: %s", filename.c_str());
+  }
 
   mjrTextureConfig config;
   mjr_defaultTextureConfig(&config);
   config.width = 1;
   config.height = 1;
-  config.target = mjTEXTURE_CUBE;
+  config.sampler_type = mjTEXTURE_CUBE;
   config.format = mjPIXEL_FORMAT_KTX;
   config.color_space = mjCOLORSPACE_AUTO;
 
@@ -64,12 +66,12 @@ static UniquePtr<mjrTexture> CreateFallbackIndirectLightTexture(
 
   mjrTextureData payload;
   mjr_defaultTextureData(&payload);
-  payload.bytes = asset->GetBytes().data();
-  payload.nbytes = asset->GetBytes().size();
+  payload.bytes = bytes;
+  payload.nbytes = nbytes;
   payload.release_callback = +[](void* user_data) {
-    delete static_cast<ObjectManager::Asset*>(user_data);
+    mju_closeResource((mjResource*)user_data);
   };
-  payload.user_data = asset.release();
+  payload.user_data = resource;
 
   mjrf_setTextureData(texture.get(), &payload);
   return texture;
@@ -116,31 +118,6 @@ SceneBridge::~SceneBridge() {
     mjrf_removeRenderableFromScene(scene_.get(), iter.get());
   }
   renderables_.clear();
-}
-
-void SceneBridge::SetEnvironmentLight(std::string_view filename,
-                                      float intensity) {
-  for (auto& light : lights_) {
-    if (mjrf_getLightType(light.get()) == mjLIGHT_IMAGE) {
-      mjrf_removeLightFromScene(scene_.get(), light.get());
-      light.reset();
-      break;
-    }
-  }
-  if (fallback_ibl_) {
-    mjrf_removeLightFromScene(scene_.get(), fallback_ibl_.get());
-    fallback_ibl_.reset();
-  }
-
-  fallback_ibl_texture_ = CreateFallbackIndirectLightTexture(ctx_, filename);
-
-  mjrLightParams params;
-  mjr_defaultLightParams(&params);
-  params.type = mjLIGHT_IMAGE;
-  params.texture = fallback_ibl_texture_.get();
-  params.intensity = intensity;
-  fallback_ibl_ = CreateLight(ctx_, params);
-  mjrf_addLightToScene(scene_.get(), fallback_ibl_.get());
 }
 
 std::optional<float3> SceneBridge::ClipFromWorld(const float3& pos) const{

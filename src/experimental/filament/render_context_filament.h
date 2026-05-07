@@ -119,7 +119,7 @@ typedef enum mjrGraphicsApi_ {  // backend graphics API to use
 typedef std::uint64_t mjrFrameHandle;
 
 // Bring some legacy mjt types into the mjr namespace.
-typedef mjtTexture mjrTextureTarget;
+typedef mjtTexture mjrSamplerType;
 typedef mjtColorSpace mjrColorSpace;
 typedef mjtLightType mjrLightType;
 typedef mjvGLCamera mjrCamera;
@@ -191,7 +191,7 @@ struct mjrTextureConfig {
   int height;
 
   // The target of the texture (e.g. 2D, cube, etc.)
-  mjrTextureTarget target;
+  mjrSamplerType sampler_type;
 
   // The format of the pixels in the texture (e.g. RGB8, RGBA8, KTX, etc.)
   mjrPixelFormat format;
@@ -370,9 +370,8 @@ struct mjrRenderRequest {
   // The camera from which to render the scene.
   mjrCamera camera;
 
-  // The dimensions of the output image.
-  int width;
-  int height;
+  // The viewport into which to render the image.
+  mjrRect viewport;
 
   // The render target into which to render the image. If nullptr, the image
   // will be rendered to the window (as previously configured in
@@ -405,6 +404,15 @@ struct mjrReadPixelsRequest {
 
 // Initializes the mjrReadPixelsRequest to default values.
 void mjr_defaultReadPixelsRequest(mjrReadPixelsRequest* request);
+
+// Information about a single frame of rendering.
+struct mjrFrameStats {
+  // The frame rate of the renderer, in frames per second.
+  double frame_rate;
+};
+
+// Initializes the mjrFrameStats to default values.
+void mjr_defaultFrameStats(mjrFrameStats* stats);
 
 // Configuration parameters for the filament rendering context.
 struct mjrFilamentConfig {
@@ -477,8 +485,8 @@ int mjrf_getTextureWidth(const mjrTexture* texture);
 // Returns the height of the texture.
 int mjrf_getTextureHeight(const mjrTexture* texture);
 
-// Returns the target type of the texture.
-mjrTextureTarget mjrf_getTextureTarget(const mjrTexture* texture);
+// Returns the sampler type of the texture.
+mjrSamplerType mjrf_getSamplerType(const mjrTexture* texture);
 
 // Enables or disables the light.
 void mjrf_setLightEnabled(mjrLight* light, bool enabled);
@@ -499,6 +507,12 @@ mjrLightType mjrf_getLightType(const mjrLight* light);
 // Sets the mesh of the renderable.
 void mjrf_setRenderableMesh(mjrRenderable* renderable, const mjrMesh* mesh,
                             int elem_offset, int elem_count);
+
+// Sets the mesh of the renderable to a built-in mesh based on the geom type.
+// Note: using the same parameters (nstack, nslice, nquad) will have better
+// performance as the internal mesh data can be shared across renderables.
+void mjrf_setRenderableGeomMesh(mjrRenderable* renderable, mjtGeom type,
+                                int nstack, int nslice, int nquad);
 
 // Sets the material properties and textures of the renderable.
 void mjrf_setRenderableMaterial(mjrRenderable* renderable,
@@ -555,6 +569,15 @@ mjrFrameHandle mjrf_render(mjrfContext* ctx, const mjrRenderRequest* req,
 
 // Waits for the rendering to complete for the given frame handle.
 void mjrf_waitForFrame(mjrfContext* ctx, mjrFrameHandle frame);
+
+// Returns the stats for the given frame but updating the given `stats_out`.
+void mjrf_getFrameStats(mjrfContext* ctx, mjrFrameHandle frame,
+                        mjrFrameStats* stats_out);
+
+// Draws an ImGui editor for the given scene, exposing filament-specific
+// settings.
+void mjrf_DEBUG_drawImguiEditor(mjrScene* scene);
+
 
 // Legacy API, to be deprecated.
 

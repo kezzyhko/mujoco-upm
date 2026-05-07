@@ -145,6 +145,10 @@ void mjr_defaultReadPixelsRequest(mjrReadPixelsRequest* request) {
   memset(request, 0, sizeof(mjrReadPixelsRequest));
 }
 
+void mjr_defaultFrameStats(mjrFrameStats* stats) {
+  memset(stats, 0, sizeof(mjrFrameStats));
+}
+
 mjrfContext* mjrf_createContext(const mjrFilamentConfig* config) {
   return new mujoco::FilamentContext(config);
 }
@@ -154,7 +158,8 @@ void mjrf_destroyContext(mjrfContext* ctx) {
 }
 
 mjrTexture* mjrf_createTexture(mjrfContext* ctx, const mjrTextureConfig* cfg) {
-  return new mujoco::Texture(mujoco::FilamentContext::downcast(ctx), *cfg);
+  return new mujoco::Texture(
+      mujoco::FilamentContext::downcast(ctx)->GetEngine(), *cfg);
 }
 
 void mjrf_destroyTexture(mjrTexture* texture) {
@@ -162,7 +167,8 @@ void mjrf_destroyTexture(mjrTexture* texture) {
 }
 
 mjrMesh* mjrf_createMesh(mjrfContext* ctx, const mjrMeshData* data) {
-  return new mujoco::Mesh(mujoco::FilamentContext::downcast(ctx), *data);
+  return new mujoco::Mesh(mujoco::FilamentContext::downcast(ctx)->GetEngine(),
+                          *data);
 }
 
 void mjrf_destroyMesh(mjrMesh* mesh) { delete mujoco::Mesh::downcast(mesh); }
@@ -195,14 +201,13 @@ void mjrf_destroyRenderable(mjrRenderable* renderable) {
 
 mjrRenderTarget* mjrf_createRenderTarget(mjrfContext* ctx,
                                          const mjrRenderTargetConfig* config) {
-  return new mujoco::RenderTarget(mujoco::FilamentContext::downcast(ctx),
-                                  *config);
+  return new mujoco::RenderTarget(
+      mujoco::FilamentContext::downcast(ctx)->GetEngine(), *config);
 }
 
 void mjrf_destroyRenderTarget(mjrRenderTarget* render_target) {
   delete mujoco::RenderTarget::downcast(render_target);
 }
-
 
 void mjrf_setTextureData(mjrTexture* texture, const mjrTextureData* data) {
   mujoco::Texture::downcast(texture)->Upload(*data);
@@ -216,8 +221,8 @@ int mjrf_getTextureHeight(const mjrTexture* texture) {
   return mujoco::Texture::downcast(texture)->GetHeight();
 }
 
-mjrTextureTarget mjrf_getTextureTarget(const mjrTexture* texture) {
-  return mujoco::Texture::downcast(texture)->GetTarget();
+mjrSamplerType mjrf_getSamplerType(const mjrTexture* texture) {
+  return mujoco::Texture::downcast(texture)->GetSamplerType();
 }
 
 void mjrf_setLightEnabled(mjrLight* light, bool enabled) {
@@ -253,6 +258,12 @@ void mjrf_setRenderableMesh(mjrRenderable* renderable, const mjrMesh* mesh,
       ->SetMesh(mujoco::Mesh::downcast(mesh), elem_offset, elem_count);
 }
 
+void mjrf_setRenderableGeomMesh(mjrRenderable* renderable, mjtGeom type,
+                                int nstack, int nslice, int nquad) {
+  mujoco::Renderable::downcast(renderable)->SetGeomMesh(type, nstack, nslice,
+                                                        nquad);
+}
+
 void mjrf_setRenderableMaterial(mjrRenderable* renderable,
                                 const mjrMaterialParams* params,
                                 const mjrMaterialTextures* textures) {
@@ -264,9 +275,9 @@ void mjrf_setRenderableTransform(mjrRenderable* renderable,
                                  const float rotation[9], const float size[3]) {
   const filament::math::float3 fposition{position[0], position[1], position[2]};
   const filament::math::float3 fsize{size[0], size[1], size[2]};
-  const filament::math::mat3f frotation{rotation[0], rotation[1], rotation[2],
-                                        rotation[3], rotation[4], rotation[5],
-                                        rotation[6], rotation[7], rotation[8]};
+  const filament::math::mat3f frotation{rotation[0], rotation[3], rotation[6],
+                                        rotation[1], rotation[4], rotation[7],
+                                        rotation[2], rotation[5], rotation[8]};
   mujoco::Renderable::downcast(renderable)
       ->SetTransform({fposition, frotation, fsize});
 }
@@ -346,6 +357,11 @@ mjrFrameHandle mjrf_render(mjrfContext* ctx, const mjrRenderRequest* req,
 
 void mjrf_waitForFrame(mjrfContext* ctx, mjrFrameHandle frame) {
   mujoco::FilamentContext::downcast(ctx)->WaitForFrame(frame);
+}
+
+void mjrf_getFrameStats(mjrfContext* ctx, mjrFrameHandle frame,
+                        mjrFrameStats* stats_out) {
+  mujoco::FilamentContext::downcast(ctx)->GetFrameStats(frame, stats_out);
 }
 
 // Legacy API, to be deprecated.

@@ -35,16 +35,15 @@
 #include <math/mat4.h>
 #include <math/mathfwd.h>
 #include <math/scalar.h>
+#include <math/TVecHelpers.h>
 #include <math/vec3.h>
 #include <math/vec4.h>
-#include <math/TVecHelpers.h>
 #include <utils/EntityManager.h>
 #include <mujoco/mujoco.h>
+#include "experimental/filament/filament_util.h"
 #include "experimental/filament/filament/color_grading_options.h"
 #include "experimental/filament/filament/filament_context.h"
 #include "experimental/filament/filament/light.h"
-#include "experimental/filament/filament/math_util.h"
-#include "experimental/filament/filament/model_util.h"
 #include "experimental/filament/filament/render_target.h"
 #include "experimental/filament/filament/renderable.h"
 #include "experimental/filament/filament/texture.h"
@@ -308,7 +307,8 @@ void SceneView::AddReflectiveRenderable(Renderable* renderable) {
 
     config.color_format = mjPIXEL_FORMAT_RGBA8;
     config.depth_format = mjPIXEL_FORMAT_DEPTH32F;
-    reflect_targets_.push_back(std::make_unique<RenderTarget>(ctx_, config));
+    reflect_targets_.push_back(
+        std::make_unique<RenderTarget>(ctx_->GetEngine(), config));
   }
 
   // Prepare a render target for the reflective renderable.
@@ -486,7 +486,7 @@ void SceneView::Configure(const mjModel* model) {
 void DoRender(filament::Renderer* renderer, const mjrRenderRequest& request) {
   SceneView::RenderRequest scene_view_request;
   scene_view_request.draw_mode = request.draw_mode;
-  scene_view_request.viewport = {0, 0, request.width, request.height};
+  scene_view_request.viewport = request.viewport;
   scene_view_request.camera = request.camera;
   SceneView* scene_view = SceneView::downcast(request.scene);
   scene_view->Render(renderer, scene_view_request);
@@ -499,7 +499,7 @@ void DoReadPixels(filament::Renderer* renderer,
 
   SceneView::RenderRequest scene_view_request;
   scene_view_request.draw_mode = request.draw_mode;
-  scene_view_request.viewport = {0, 0, request.width, request.height};
+  scene_view_request.viewport = request.viewport;
   scene_view_request.camera = request.camera;
   scene_view_request.target = render_target;
   SceneView* scene_view = SceneView::downcast(request.scene);
