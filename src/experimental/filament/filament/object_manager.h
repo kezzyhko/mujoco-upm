@@ -38,6 +38,8 @@ class ObjectManager {
   ObjectManager(filament::Engine* engine);
   ~ObjectManager();
 
+  // The different filament::Materials that are loaded and managed by the
+  // ObjectManager.
   enum MaterialType {
     kPbr,
     kPbrPacked,
@@ -56,13 +58,9 @@ class ObjectManager {
     kUnlitSegmentation,
     kUnlitDecor,
     kUnlitDepth,
-    kUnlitLine,
     kUnlitUi,
     kNumMaterials,
   };
-
-  // Returns the filament Engine that owns the assets.
-  filament::Engine* GetEngine() const { return engine_; }
 
   // Returns the Material of the given type.
   filament::Material* GetMaterial(MaterialType type) const;
@@ -70,11 +68,13 @@ class ObjectManager {
   // Returns the fallback Texture with the given role.
   const filament::Texture* GetFallbackTexture(mjtTextureRole role) const;
 
-  // Returns the built-in mesh collection with the given parameters.
+  // Returns the built-in mesh collection with the given dimensions. For
+  // performance reasons, you should consider always using the same dimensions
+  // in order to reuse the same meshes.
   Builtins* GetBuiltins(int nstack, int nslice, int nquad);
 
-  // The default environment light to use if no environment light is specified.
-  static constexpr const char* kDefaultEnvironmentLight = "ibl.ktx";
+  // Returns the filament Engine that owns the assets.
+  filament::Engine* GetEngine() const { return engine_; }
 
   ObjectManager(const ObjectManager&) = delete;
   ObjectManager& operator=(const ObjectManager&) = delete;
