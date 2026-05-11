@@ -2,13 +2,62 @@
 Changelog
 =========
 
+Version 3.8.1 (May 11, 2026)
+----------------------------
+
+General
+^^^^^^^
+1. Added island support for the :ref:`PGS solver<soAlgorithms>`.
+2. The :ref:`PGS solver<soAlgorithms>` now iterates over constraints in pseudo-random order, improving performance by
+   ~20%.
+3. Added support for :ref:`elastic2d<flex-elasticity-elastic2d>` for trilinear and quadratic flex
+   :ref:`dofs<body-flexcomp-dof>`.
+4. :ref:`Midpoint integration<geMidpoint>` is now restricted to the ``implicitfast``
+   :ref:`integrator<geIntegrators>` and is disabled when fluid forces are active
+   (nonzero :ref:`density<option-density>` or :ref:`viscosity<option-viscosity>`).
+   Midpoint integration treats external forces as zero-order-hold constants, which causes
+   energy gain in the presence of contacts and in fluid media.
+5. Added :ref:`mjs_getOriginSpec`, returning the spec that originally defined an element, prior to attachment. This is
+   in contrast to :ref:`mjs_getSpec` which returns the spec currently owning the element. If the element is not the
+   result of an attach operation, the functions are identical.
+6. Added :ref:`mju_sym2dense`, converting a lower-triangular, implicitly symmetric CSR matrix to a dense symmetric
+   matrix. The inertia matrix ``mjData.M`` is an example of such a matrix.
+
+.. admonition:: Future breaking API changes
+   :class: warning
+
+   7. The introduction of :ref:`mju_sym2dense` is a step towards the removal of the legacy-format ``mjData.qM`` in favor
+      of the CSR-format ``mjData.M``. This removal will involve a future breaking change to :ref:`mj_fullM` (which
+      currently accepts a ``qM``-like matrix as an argument). To prevent a future breakage, replace
+      ``mj_fullM(m, dst, d->qM)``  with
+      |br| ``mju_sym2dense(dst, d->M, m->nv, m->M_rownnz, m->M_rowadr, m->M_colind)``.
+
+
+Bug fixes
+^^^^^^^^^
+
+8. Fixed default for multiccd in :doc:`mjcPhysics <OpenUSD/mjcPhysics>`.
+
+Python
+^^^^^^
+
+9. Added ``MjSpec.encode`` method, wrapping :ref:`mj_encode`.
+10. Added ``mujoco.MjVfs`` Python binding to interact with the Virtual File System directly from Python.
+    See :ref:`Virtual File System <PyVFS>` for usage details.
+
+    .. warning::
+       The previous way of passing assets via a dictionary mapping asset names to bytes is **deprecated** and will be
+       removed in an upcoming release. You cannot specify both the ``assets`` dictionary and the ``vfs`` argument at the
+       same time. ``MjVfs`` should be used as a drop-in replacement.
+
+
 Version 3.8.0 (April 24, 2026)
 ------------------------------
 
 General
 ^^^^^^^
 1. Added support for Python 3.14.
-2. Added :ref:`multi-cell support<body-flexcomp-cellnum>` for trilinear and quadratic flexes. Note that the implicit
+2. Added :ref:`multi-cell support<body-flexcomp-cellcount>` for trilinear and quadratic flexes. Note that the implicit
    integrator uses a dense solver for the flex degrees of freedom, which can be slow for multi-cell flexes.
 3. Refactored ``strain`` flex :ref:`equality constraints<flexcomp-edge-equality>` to be instantiated per cell instead of
    per flex object, reducing the number of degrees of freedom per constraint row. The equality can be associated with a
@@ -17,7 +66,7 @@ General
    colliding two geoms.
 5. Added ``mj_containsBufferVFS`` and ``mj_containsFileVFS`` to check for existence of buffers and files in VFS.
 
-  .. admonition:: Breaking API changes
+.. admonition:: Breaking API changes
    :class: attention
 
    6. The :ref:`multiccd<coMultiCCD>` option (multiple contacts returned from the convex collision detection pipeline)

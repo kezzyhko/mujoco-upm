@@ -105,6 +105,7 @@ class App {
     int camera_idx = platform::kTumbleCameraIdx;
     int key_idx = 0;
     platform::GuiTheme theme = platform::GuiTheme::kLight;
+    float font_scale = 1.0f;
 
     using Dict = std::unordered_map<std::string, std::string>;
     Dict ToDict() const;
@@ -119,8 +120,7 @@ class App {
     // Windows.
     bool help = false;
     bool stats = false;
-    bool chart_solver = false;
-    bool chart_performance = false;
+    bool profiler = false;
     bool picture_in_picture = false;
     bool options_panel = true;
     bool inspector_panel = true;
@@ -173,9 +173,6 @@ class App {
 
   // Requests that the currently loaded model be reloaded at the next update.
   void RequestModelReload();
-
-  // Clears the currently loaded model and all associated state.
-  void ClearModel();
 
   // Recompiles the spec, updating the model and data.
   void Recompile();

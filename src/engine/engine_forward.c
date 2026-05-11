@@ -953,7 +953,7 @@ static void solve_threaded(const mjModel* m, mjData* d, int flg_Newton) {
 // compute efc_b, efc_force, qfrc_constraint; update qacc
 void mj_fwdConstraint(const mjModel* m, mjData* d) {
   TM_START;
-  int nv = m->nv, nefc = d->nefc, nisland = d->nisland;
+  int nv = m->nv, nefc = d->nefc, nisland = d->nisland, nidof;
 
   // always clear qfrc_constraint
   mju_zero(d->qfrc_constraint, nv);
@@ -970,50 +970,69 @@ void mj_fwdConstraint(const mjModel* m, mjData* d) {
   mj_mulJacVec(m, d, d->efc_b, d->qacc_smooth);
   mju_subFrom(d->efc_b, d->efc_aref, nefc);
 
+  // check for invalid solver type
+  if (m->opt.solver != mjSOL_PGS && m->opt.solver != mjSOL_CG && m->opt.solver != mjSOL_NEWTON) {
+    mjERROR("unknown solver type %d", m->opt.solver);
+  }
+
   // warmstart solver
   warmstart(m, d);
   mju_zeroInt(d->solver_niter, mjNISLAND);
 
   // check if islands are supported
-  int islands_supported = !mjDISABLED(mjDSBL_ISLAND)    &&
-                          nisland > 0                   &&
-                          m->opt.noslip_iterations == 0 &&
-                          (m->opt.solver == mjSOL_CG || m->opt.solver == mjSOL_NEWTON);
+  int islands_supported = !mjDISABLED(mjDSBL_ISLAND) && nisland > 0;
 
   // run solver over constraint islands
   if (islands_supported) {
-    int nidof = d->nidof;
-
-    // copy inputs to islands (vel+acc deps, pos-dependent already copied in mj_island)
-    mju_gather(d->ifrc_smooth,     d->qfrc_smooth,     d->map_idof2dof, nidof);
-    mju_gather(d->ifrc_constraint, d->qfrc_constraint, d->map_idof2dof, nidof);
-    mju_gather(d->iacc_smooth,     d->qacc_smooth,     d->map_idof2dof, nidof);
-    mju_gather(d->iacc,            d->qacc,            d->map_idof2dof, nidof);
-    mju_gather(d->iefc_force,      d->efc_force,       d->map_iefc2efc, nefc);
-    mju_gather(d->iefc_aref,       d->efc_aref,        d->map_iefc2efc, nefc);
-
-    // solve per island, with or without threads
-    if (!d->threadpool) {
-      // no threadpool, loop over islands
+    switch ((mjtSolver) m->opt.solver) {
+    case mjSOL_PGS:
       for (int island=0; island < nisland; island++) {
-        if (m->opt.solver == mjSOL_NEWTON) {
-          mj_solNewton_island(m, d, island, m->opt.iterations);
-        } else {
-          mj_solCG_island(m, d, island, m->opt.iterations);
-        }
+        mj_solPGS_island(m, d, island, m->opt.iterations);
       }
-    } else {
-      // have threadpool, solve using threads
-      solve_threaded(m, d, m->opt.solver == mjSOL_NEWTON);
+      break;
+
+    case mjSOL_CG:
+    case mjSOL_NEWTON:
+      // copy inputs to islands (vel+acc deps, pos-dependent already copied in mj_island)
+      nidof = d->nidof;
+      mju_gather(d->ifrc_smooth,     d->qfrc_smooth,     d->map_idof2dof, nidof);
+      mju_gather(d->ifrc_constraint, d->qfrc_constraint, d->map_idof2dof, nidof);
+      mju_gather(d->iacc_smooth,     d->qacc_smooth,     d->map_idof2dof, nidof);
+      mju_gather(d->iacc,            d->qacc,            d->map_idof2dof, nidof);
+      mju_gather(d->iefc_force,      d->efc_force,       d->map_iefc2efc, nefc);
+      mju_gather(d->iefc_aref,       d->efc_aref,        d->map_iefc2efc, nefc);
+
+      // solve per island, with or without threads
+      if (!d->threadpool) {
+        // no threadpool, loop over islands
+        for (int island=0; island < nisland; island++) {
+          if (m->opt.solver == mjSOL_NEWTON) {
+            mj_solNewton_island(m, d, island, m->opt.iterations);
+          } else {
+            mj_solCG_island(m, d, island, m->opt.iterations);
+          }
+        }
+      } else {
+        // have threadpool, solve using threads
+        solve_threaded(m, d, m->opt.solver == mjSOL_NEWTON);
+      }
+
+      // copy back solver outputs (scatter dofs since ni <= nv)
+      mju_scatter(d->qacc,            d->iacc,            d->map_idof2dof, nidof);
+      mju_scatter(d->qfrc_constraint, d->ifrc_constraint, d->map_idof2dof, nidof);
+      mju_gather(d->efc_force, d->iefc_force, d->map_efc2iefc, nefc);
+      break;
     }
 
-    // copy back solver outputs (scatter dofs since ni <= nv)
-    mju_scatter(d->qacc,            d->iacc,            d->map_idof2dof, nidof);
-    mju_scatter(d->qfrc_constraint, d->ifrc_constraint, d->map_idof2dof, nidof);
-    mju_gather(d->efc_force, d->iefc_force, d->map_efc2iefc, nefc);
+    // run noslip solver per island if enabled
+    if (m->opt.noslip_iterations > 0) {
+      for (int island=0; island < nisland; island++) {
+        mj_solNoSlip_island(m, d, island, m->opt.noslip_iterations);
+      }
+    }
   }
 
-  // run solver over all constraints
+  // run solver over all constraints (monolithic)
   else {
     switch ((mjtSolver) m->opt.solver) {
     case mjSOL_PGS:                     // PGS
@@ -1027,15 +1046,17 @@ void mj_fwdConstraint(const mjModel* m, mjData* d) {
     case mjSOL_NEWTON:                  // Newton
       mj_solNewton(m, d, m->opt.iterations);
       break;
+    }
 
-    default:
-      mjERROR("unknown solver type %d", m->opt.solver);
+    // run noslip solver if enabled
+    if (m->opt.noslip_iterations > 0) {
+      mj_solNoSlip(m, d, m->opt.noslip_iterations);
     }
   }
 
-  // run noslip solver if enabled
-  if (m->opt.noslip_iterations > 0) {
-    mj_solNoSlip(m, d, m->opt.noslip_iterations);
+  // dual solvers: map efc_force to joint space (always monolithic)
+  if (m->opt.solver == mjSOL_PGS || m->opt.noslip_iterations > 0) {
+    mj_dualFinish(m, d);
   }
 
   TM_END(mjTIMER_CONSTRAINT);
@@ -1350,6 +1371,14 @@ void mj_RungeKutta(const mjModel* m, mjData* d, int N) {
 }
 
 
+// return 1 if flex f needs implicit interp treatment
+static int flexInterp_active(const mjModel* m, int f) {
+  return m->flex_interp[f] && !m->flex_rigid[f] &&
+         m->flex_edgeequality[f] != 3 &&
+         m->flex_stiffness[m->flex_stiffnessadr[f]] != 0;
+}
+
+
 // context for flex interp reduced banded factorization/solve
 typedef struct {
   mjtNum* H;              // banded Cholesky-factored matrix (ndof x nband)
@@ -1404,7 +1433,7 @@ static FlexInterpContext flexInterp_factor(const mjModel* m, mjData* d, int nv) 
   // count flex DOFs
   int ndof = 0;
   for (int f=0; f < m->nflex; f++) {
-    if (m->flex_interp[f]) {
+    if (flexInterp_active(m, f)) {
       flexInterp_collect(m, f, chain_dofs, seen_dof, &ndof);
     }
   }
@@ -1421,7 +1450,7 @@ static FlexInterpContext flexInterp_factor(const mjModel* m, mjData* d, int nv) 
   int cnt = 0;
   mju_fillInt(seen_dof, 0, nv);
   for (int f=0; f < m->nflex; f++) {
-    if (m->flex_interp[f]) {
+    if (flexInterp_active(m, f)) {
       int nodenum = m->flex_nodenum[f];
       int nodeadr = m->flex_nodeadr[f];
       for (int n=0; n < nodenum; n++) {
@@ -1460,7 +1489,7 @@ static FlexInterpContext flexInterp_factor(const mjModel* m, mjData* d, int nv) 
   // get precomputed bandwidth
   int bandwidth = 0;
   for (int f=0; f < m->nflex; f++) {
-    if (m->flex_interp[f]) {
+    if (flexInterp_active(m, f)) {
       if (m->flex_bandwidth[f] > bandwidth) {
         bandwidth = m->flex_bandwidth[f];
       }
@@ -1576,16 +1605,75 @@ static void flexInterp_solve(const mjModel* m, mjData* d, const FlexInterpContex
 
 
 // return 1 if free joint is eligible for midpoint quaternion integration:
-//   standalone 6-DOF tree with no children
-static int midpoint_eligible(const mjModel* m, int jnt) {
-  if (m->jnt_type[jnt] == mjJNT_FREE) {
-    int body = m->jnt_bodyid[jnt];
-    int treeid = m->dof_treeid[m->jnt_dofadr[jnt]];
-    return m->tree_dofnum[treeid] == 6 &&
-           m->body_subtreemass[body] == m->body_mass[body];
+//   standalone 6-DOF tree with no children, awake, and unconstrained
+static int midpoint_eligible(const mjModel* m, const mjData* d, int jnt) {
+  if (m->jnt_type[jnt] != mjJNT_FREE) {
+    return 0;
   }
 
-  return 0;
+  int body = m->jnt_bodyid[jnt];
+  int adr = m->jnt_dofadr[jnt];
+  int tree = m->dof_treeid[adr];
+
+  // must be standalone 6-DOF tree with no children
+  if (m->tree_dofnum[tree] != 6 ||
+      m->body_subtreemass[body] != m->body_mass[body]) {
+    return 0;
+  }
+
+  // must be awake
+  if (!d->tree_awake[tree]) {
+    return 0;
+  }
+
+  // must be unconstrained
+  if (d->nefc) {
+    // islands enabled: O(1) lookup
+    if (!mjDISABLED(mjDSBL_ISLAND)) {
+      if (d->dof_island[adr] >= 0) {
+        return 0;
+      }
+    }
+
+    // islands disabled: check if any constraint involves this tree
+    else {
+      for (int c=0; c < d->nefc; c++) {
+        int type = d->efc_type[c];
+        int id = d->efc_id[c];
+
+        // contact: check if either geom belongs to this body
+        if (type == mjCNSTR_CONTACT_FRICTIONLESS ||
+            type == mjCNSTR_CONTACT_PYRAMIDAL ||
+            type == mjCNSTR_CONTACT_ELLIPTIC) {
+          int g1 = d->contact[id].geom[0];
+          int g2 = d->contact[id].geom[1];
+          if (g1 >= 0 && m->geom_bodyid[g1] == body) return 0;
+          if (g2 >= 0 && m->geom_bodyid[g2] == body) return 0;
+        }
+
+        // connect or weld: check if either body is this body
+        else if (type == mjCNSTR_EQUALITY &&
+                 (m->eq_type[id] == mjEQ_CONNECT || m->eq_type[id] == mjEQ_WELD)) {
+          int b1 = m->eq_obj1id[id];
+          int b2 = m->eq_obj2id[id];
+          if (m->eq_objtype[id] == mjOBJ_SITE) {
+            b1 = m->site_bodyid[b1];
+            b2 = m->site_bodyid[b2];
+          }
+          if (b1 == body || b2 == body) return 0;
+        }
+
+        // tendon limit or friction: check first two trees
+        else if (type == mjCNSTR_LIMIT_TENDON || type == mjCNSTR_FRICTION_TENDON) {
+          if (m->tendon_treeid[2*id] == tree ||
+              m->tendon_treeid[2*id+1] == tree) return 0;
+        }
+      }
+    }
+  }
+
+  // otherwise eligible
+  return 1;
 }
 
 
@@ -1883,10 +1971,10 @@ void mj_implicitSkip(const mjModel* m, mjData* d, int skipfactor) {
     mju_add(qfrc, d->qfrc_smooth, d->qfrc_constraint, nv);
   }
 
-  // check for flex_interp
+  // check for flex_interp that needs implicit treatment
   int has_flex_interp = 0;
   for (int f=0; f < m->nflex; f++) {
-    if (m->flex_interp[f]) {
+    if (flexInterp_active(m, f)) {
       has_flex_interp = 1;
       break;
     }
@@ -1959,11 +2047,12 @@ void mj_implicitSkip(const mjModel* m, mjData* d, int skipfactor) {
   // count and list joints of free bodies eligible for midpoint integration
   int nfree = 0;
   int* free_jntid = NULL;
-  if (!mjENABLED(mjENBL_INVDISCRETE)) {
+  if (!mjENABLED(mjENBL_INVDISCRETE) &&
+      m->opt.integrator == mjINT_IMPLICITFAST &&
+      m->opt.density == 0 && m->opt.viscosity == 0) {
     free_jntid = mjSTACKALLOC(d, m->njnt, int);
     for (int j=0; j < m->njnt; j++) {
-      // add to list if eligible and awake
-      if (midpoint_eligible(m, j) && d->tree_awake[m->dof_treeid[m->jnt_dofadr[j]]]) {
+      if (midpoint_eligible(m, d, j)) {
         free_jntid[nfree++] = j;
       }
     }

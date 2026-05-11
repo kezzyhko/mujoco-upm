@@ -15,40 +15,19 @@
 #ifndef MUJOCO_SRC_EXPERIMENTAL_FILAMENT_COMPAT_MODEL_OBJECTS_H_
 #define MUJOCO_SRC_EXPERIMENTAL_FILAMENT_COMPAT_MODEL_OBJECTS_H_
 
-#include <array>
-#include <memory>
 #include <unordered_map>
-#include <vector>
 
-#include <filament/Engine.h>
-#include <filament/IndirectLight.h>
-#include <filament/Skybox.h>
 #include <mujoco/mjmodel.h>
 #include <mujoco/mujoco.h>
-#include "experimental/filament/filament/mesh.h"
-#include "experimental/filament/filament/texture.h"
+#include "experimental/filament/render_context_filament.h"
+#include "experimental/filament/render_context_filament_cpp.h"
 
 namespace mujoco {
 
-// Creates and owns various filament objects based on the data in a mjrContext.
+// Creates and owns various filament objects based on the mjModel.
 class ModelObjects {
  public:
-  ModelObjects(const mjModel* model, filament::Engine* engine);
-  ~ModelObjects();
-
-  enum ShapeType {
-    kLine,
-    kLineBox,
-    kPlane,
-    kTriangle,
-    kBox,
-    kSphere,
-    kCone,
-    kDisk,
-    kDome,
-    kTube,
-    kNumShapes,
-  };
+  ModelObjects(const mjModel* model, mjrfContext* ctx);
 
   void UploadMesh(const mjModel* model, int id);
 
@@ -58,20 +37,13 @@ class ModelObjects {
 
   void CreateSkinFlexMesh(const mjvScene* scene, const mjvGeom& geom);
 
-  // Returns the filament engine used by the ModelObjects to create filament
-  // objects.
-  filament::Engine* GetEngine() const { return engine_; }
-
   // Returns the cached instance of a filament object created from the mjModel.
-  const Mesh* GetShapeBuffer(ShapeType shape) const;
-  const Mesh* GetMeshBuffer(int data_id) const;
-  const Mesh* GetHeightFieldBuffer(int hfield_id) const;
-  const Mesh* GetFlexSkinGeomMesh(int geom_id) const;
-  const Texture* GetTexture(int tex_id) const;
-  const Texture* GetTexture(int mat_id, int role) const;
-
-  filament::Skybox* CreateSkybox();
-  filament::IndirectLight* CreateIndirectLight(int tex_id, float intensity);
+  const mjrMesh* GetMeshBuffer(int data_id) const;
+  const mjrMesh* GetHeightFieldBuffer(int hfield_id) const;
+  const mjrMesh* GetFlexSkinGeomMesh(int geom_id) const;
+  const mjrTexture* GetTexture(int tex_id) const;
+  const mjrTexture* GetTexture(int mat_id, int role) const;
+  const mjrTexture* GetSkyboxTexture() const;
 
   float GetSpecularMultiplier() const { return specular_multiplier_; }
   float GetShininessMultiplier() const { return shininess_multiplier_; }
@@ -84,15 +56,12 @@ class ModelObjects {
 
  private:
   const mjModel* model_ = nullptr;
-  filament::Engine* engine_ = nullptr;
-  std::vector<filament::Skybox*> skyboxes_;
-  std::vector<filament::IndirectLight*> indirect_lights_;
-  std::array<std::unique_ptr<Mesh>, kNumShapes> shapes_;
-  std::unordered_map<int, std::unique_ptr<Mesh>> meshes_;
-  std::unordered_map<int, std::unique_ptr<Mesh>> convex_hulls_;
-  std::unordered_map<int, std::unique_ptr<Mesh>> height_fields_;
-  std::unordered_map<int, std::unique_ptr<Mesh>> dynamic_meshes_;
-  std::unordered_map<int, std::unique_ptr<Texture>> textures_;
+  mjrfContext* ctx_ = nullptr;
+  std::unordered_map<int, UniquePtr<mjrMesh>> meshes_;
+  std::unordered_map<int, UniquePtr<mjrMesh>> convex_hulls_;
+  std::unordered_map<int, UniquePtr<mjrMesh>> height_fields_;
+  std::unordered_map<int, UniquePtr<mjrMesh>> dynamic_meshes_;
+  std::unordered_map<int, UniquePtr<mjrTexture>> textures_;
   float specular_multiplier_ = 0.2f;
   float shininess_multiplier_ = 0.1f;
   float emissive_multiplier_ = 0.3f;

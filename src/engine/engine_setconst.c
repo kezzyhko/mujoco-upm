@@ -447,6 +447,8 @@ static void makeFlexSparse(mjModel* m, mjData* d) {
   mju_zeroInt(m->flex_vertedge, 2 * m->nflexedge);
   mju_zeroInt(m->flex_vertedge, 2 * m->nflexedge);
   mju_zero(m->flex_vertmetric, 4 * m->nflexvert);
+  mju_zeroInt(m->flexedge_J_colind, m->nJfe);
+  mju_zeroInt(m->flexvert_J_colind, 2 * m->nJfv);
   int current_adj_offset = 0;
 
   // compute lengths and Jacobians of edges
@@ -1307,7 +1309,7 @@ static void setStat(mjModel* m, mjData* d) {
   if (m->nv) {
     m->stat.meaninertia = 0;
     for (int i=0; i < m->nv; i++) {
-      m->stat.meaninertia += d->qM[m->dof_Madr[i]];
+      m->stat.meaninertia += d->M[m->M_rowadr[i] + m->M_rownnz[i] - 1];
     }
     m->stat.meaninertia /= m->nv;
   }

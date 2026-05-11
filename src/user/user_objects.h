@@ -270,6 +270,7 @@ struct OctreeTask {
 struct mjCOctree_ {
   int nnode_ = 0;
   int nvert_ = 0;
+  int max_depth_ = 6;                   // max octree depth (default 6)
   std::vector<OctNode> node_;
   std::vector<Triangle> face_;          // mesh faces                (nmeshface x 3)
   std::vector<Point> vert_;             // octree vertices           (nvert x 3)
@@ -307,6 +308,10 @@ class mjCOctree : public mjCOctree_ {
   }
   void AddCoeff(int n, int v, double coeff) { node_[n].coeff[v] = coeff; }
   double Coeff(int n, int v) const { return node_[n].coeff[v]; }
+
+  // Set max octree depth (default 6)
+  void SetMaxDepth(int depth) { max_depth_ = depth; }
+  int MaxDepth() const { return max_depth_; }
 
   // Set number of Laplacian smoothing iterations (0 = disabled, default)
   void SetSmoothingIterations(int iterations) { smoothing_iterations_ = iterations; }
@@ -531,7 +536,7 @@ class mjCBody : public mjCBody_, private mjsBody {
   // API for accessing objects
   int NumObjects(mjtObj type);
   mjCBase* GetObject(mjtObj type, int id);
-  mjCBase* FindObject(mjtObj type, std::string name, bool recursive = true);
+  mjCBase* FindObject(mjtObj type, const std::string& name, bool recursive = true) const;
 
   // Propagate suffix and prefix to the whole tree
   void NameSpace(const mjCModel* m);
@@ -556,7 +561,7 @@ class mjCBody : public mjCBody_, private mjsBody {
   // returns nullptr if the next child is not found or if `child` is the last element, returns
   // the next child after the input `child` otherwise
   mjsElement* NextChild(const mjsElement* child, mjtObj type = mjOBJ_UNKNOWN,
-                        bool recursive = false);
+                        bool recursive = false) const;
 
   // reset keyframe references for allowing self-attach
   void ForgetKeyframes() const;
@@ -1050,12 +1055,17 @@ class mjCFlex: public mjCFlex_, private mjsFlex {
   void Compile(const mjVFS* vfs);         // compiler
   void CreateBVH(void);                   // create flex BVH
   void CreateShellPair(void);             // create shells and evpairs
+  void ComputeCellEmpty(const double* vpos, const int* elems,  // identify cells
+                        int nv, int ne, int fdim,              // with no mesh content
+                        const double* bbox = nullptr);         // optional precomputed bbox
 
   std::vector<double> vert0_;             // vertex positions in [0, 1]^d in the bounding box
   std::vector<double> node0_;             // node Cartesian positions
 
   // compute unrotated node positions for stiffness computation
-  std::vector<double> ComputeUnrotatedNodePositions(const std::vector<double>& nodexpos) const;
+  // optionally outputs the grid rotation matrix R0 (stored as rows)
+  std::vector<double> ComputeUnrotatedNodePositions(
+      const std::vector<double>& nodexpos, double* R0_out = nullptr) const;
 
   // stiffness caching
   std::string ComputeStiffnessCacheKey() const;
@@ -1206,6 +1216,7 @@ class mjCMesh: public mjCMesh_, private mjsMesh {
 
   // octree
   const mjCOctree& octree() { return octree_; }
+  mjCOctree& mutable_octree() { return octree_; }
 
   void Compile(const mjVFS* vfs);                   // compiler
   double* GetPosPtr();                              // get position

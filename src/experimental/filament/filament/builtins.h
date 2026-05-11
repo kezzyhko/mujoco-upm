@@ -20,19 +20,37 @@
 #include <filament/Engine.h>
 #include "experimental/filament/filament/mesh.h"
 
-// Generates buffers for built-in shapes.
 namespace mujoco {
 
-std::unique_ptr<Mesh> CreateLine(filament::Engine* engine);
-std::unique_ptr<Mesh> CreatePlane(filament::Engine* engine, int nquad);
-std::unique_ptr<Mesh> CreateTriangle(filament::Engine* engine);
-std::unique_ptr<Mesh> CreateBox(filament::Engine* engine, int nquad);
-std::unique_ptr<Mesh> CreateLineBox(filament::Engine* engine);
-std::unique_ptr<Mesh> CreateSphere(filament::Engine* engine, int nstack, int nslice);
-std::unique_ptr<Mesh> CreateTube(filament::Engine* engine, int nstack, int nslice);
-std::unique_ptr<Mesh> CreateDisk(filament::Engine* engine, int nslice);
-std::unique_ptr<Mesh> CreateDome(filament::Engine* engine, int nstack, int nslice);
-std::unique_ptr<Mesh> CreateCone(filament::Engine* engine, int nstack, int nslice);
+// A collection of meshes that "built in" to the renderer.
+class Builtins {
+ public:
+  Builtins(filament::Engine* engine, int nstack, int nslice, int nquad);
+
+  // Returns a mesh for the corresponding built-in shape.
+  const Mesh* Line();
+  const Mesh* LineBox();
+  const Mesh* Plane();
+  const Mesh* Triangle();
+  const Mesh* Box();
+  const Mesh* Sphere();
+  const Mesh* Cone();
+  const Mesh* Disk();
+  const Mesh* Dome();
+  const Mesh* Tube();
+
+ private:
+  std::unique_ptr<Mesh> line_;
+  std::unique_ptr<Mesh> line_box_;
+  std::unique_ptr<Mesh> plane_;
+  std::unique_ptr<Mesh> triangle_;
+  std::unique_ptr<Mesh> box_;
+  std::unique_ptr<Mesh> sphere_;
+  std::unique_ptr<Mesh> cone_;
+  std::unique_ptr<Mesh> disk_;
+  std::unique_ptr<Mesh> dome_;
+  std::unique_ptr<Mesh> tube_;
+};
 
 }  // namespace mujoco
 

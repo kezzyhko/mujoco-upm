@@ -16,37 +16,22 @@
 
 #include <memory>
 #include <optional>
+#include <string>
 #include <string_view>
 #include <utility>
 
-#include <filament/ColorGrading.h>
-#include <filament/IndirectLight.h>
-#include <filament/LightManager.h>
-#include <filament/Material.h>
-#include <filament/Options.h>
-#include <filament/Renderer.h>
-#include <filament/RenderableManager.h>
-#include <filament/RenderTarget.h>
-#include <filament/Skybox.h>
-#include <filament/View.h>
 #include <math/TMatHelpers.h>
 #include <math/mat4.h>
 #include <math/mathfwd.h>
+#include <math/TVecHelpers.h>
 #include <math/vec3.h>
 #include <math/vec4.h>
-#include <math/TVecHelpers.h>
 #include <mujoco/mujoco.h>
-#include "experimental/filament/compat/imgui_bridge.h"
 #include "experimental/filament/compat/model_objects.h"
 #include "experimental/filament/compat/scene_geom_util.h"
-#include "experimental/filament/filament/color_grading_options.h"
-#include "experimental/filament/filament/light.h"
-#include "experimental/filament/filament/math_util.h"
-#include "experimental/filament/filament/model_util.h"
-#include "experimental/filament/filament/object_manager.h"
-#include "experimental/filament/filament/renderable.h"
-#include "experimental/filament/filament/scene_view.h"
-#include "experimental/filament/filament/texture.h"
+#include "experimental/filament/filament_util.h"
+#include "experimental/filament/render_context_filament_cpp.h"
+#include "experimental/filament/render_context_filament.h"
 
 namespace mujoco {
 
@@ -55,112 +40,58 @@ using filament::math::float4;
 using filament::math::mat3;
 using filament::math::mat4;
 
-static std::unique_ptr<Texture> CreateFallbackIndirectLightTexture(
-    ObjectManager* object_mgr, std::string_view filename = "") {
-  if (filename.empty()) {
-    filename = ObjectManager::kDefaultEnvironmentLight;
+static UniquePtr<mjrTexture> CreateFallbackIndirectLightTexture(
+    mjrfContext* ctx) {
+  const std::string filename = ResolveFilamentAssetPath("ibl.ktx");
+  mjResource* resource =
+      mju_openResource("", filename.c_str(), nullptr, nullptr, 0);
+  if (!resource) {
+    mju_error("Failed to open resource: %s", filename.c_str());
   }
-
-  std::unique_ptr<ObjectManager::Asset> asset = object_mgr->LoadAsset(filename);
+  const void* bytes = nullptr;
+  const int nbytes = mju_readResource(resource, &bytes);
+  if (bytes == nullptr || nbytes <= 0) {
+    mju_error("Failed to read resource: %s", filename.c_str());
+  }
 
   mjrTextureConfig config;
   mjr_defaultTextureConfig(&config);
   config.width = 1;
   config.height = 1;
-  config.target = mjTEXTURE_CUBE;
+  config.sampler_type = mjTEXTURE_CUBE;
   config.format = mjPIXEL_FORMAT_KTX;
   config.color_space = mjCOLORSPACE_AUTO;
 
-  auto texture = std::make_unique<Texture>(object_mgr->GetEngine(), config);
+  auto texture = CreateTexture(ctx, config);
 
   mjrTextureData payload;
   mjr_defaultTextureData(&payload);
-  payload.bytes = asset->GetBytes().data();
-  payload.nbytes = asset->GetBytes().size();
+  payload.bytes = bytes;
+  payload.nbytes = nbytes;
   payload.release_callback = +[](void* user_data) {
-    delete static_cast<ObjectManager::Asset*>(user_data);
+    mju_closeResource((mjResource*)user_data);
   };
-  payload.user_data = asset.release();
+  payload.user_data = resource;
 
-  texture->Upload(payload);
+  mjrf_setTextureData(texture.get(), &payload);
   return texture;
 }
 
-SceneBridge::SceneBridge(ObjectManager* object_mgr, const mjModel* model)
-    : object_mgr_(object_mgr) {
-  scene_view_ = std::make_unique<SceneView>(object_mgr_->GetEngine());
-  model_objects_ =
-      std::make_unique<ModelObjects>(model, object_mgr_->GetEngine());
+SceneBridge::SceneBridge(mjrfContext* ctx, const mjModel* model)
+    : ctx_(ctx) {
+  mjrSceneParams params;
+  mjr_defaultSceneParams(&params);
+  params.layer_mask = mjCAT_ALL;
+  params.reflection_layer_mask = mjCAT_DYNAMIC | mjCAT_STATIC;
+  scene_ = CreateScene(ctx_, params);
+  model_objects_ = std::make_unique<ModelObjects>(model, ctx_);
 
-  // Configure options for the normal view.
-  auto cg = scene_view_->GetColorGradingOptions();
-  cg.exposure = ReadElement(model, "filament.out.exposure", cg.exposure);
-  cg.contrast = ReadElement(model, "filament.out.contrast", cg.contrast);
-  cg.vibrance = ReadElement(model, "filament.out.vibrance", cg.vibrance);
-  cg.saturation = ReadElement(model, "filament.out.saturation", cg.saturation);
-  cg.temperature = ReadElement(model, "filament.out.temperature", cg.temperature);
-  cg.tint = ReadElement(model, "filament.out.tint", cg.tint);
-
-  auto tone_mapping =
-      ReadElement<std::string_view>(model, "filament.out.tone_mapping");
-  if (tone_mapping == "aces") {
-    cg.tone_mapper = ToneMapperType::kACES;
-  } else if (tone_mapping == "aces_legacy") {
-    cg.tone_mapper = ToneMapperType::kACESLegacy;
-  } else if (tone_mapping == "filmic") {
-    cg.tone_mapper = ToneMapperType::kFilmic;
-  } else if (tone_mapping == "linear") {
-    cg.tone_mapper = ToneMapperType::kLinear;
-  } else if (tone_mapping == "pbr_neutral") {
-    cg.tone_mapper = ToneMapperType::kPBRNeutral;
-  }
-  scene_view_->SetColorGradingOptions(cg);
-
-  filament::View* fview = scene_view_->GetDefaultRenderView();
-  auto ao = fview->getAmbientOcclusionOptions();
-  ao.enabled = ReadElement(model, "filament.ao.enabled", true);
-  ao.bentNormals = ReadElement(model, "filament.ao.bent_normals", false);
-  ao.ssct.enabled = ReadElement(model, "filament.ao.ssct", ao.ssct.enabled);
-  ao.quality = filament::QualityLevel::ULTRA;
-  ao.lowPassFilter = filament::QualityLevel::ULTRA;
-  ao.upsampling = filament::QualityLevel::ULTRA;
-  ao.bilateralThreshold = 0.5f;
-  fview->setAmbientOcclusionOptions(ao);
-
-  auto msaa = fview->getMultiSampleAntiAliasingOptions();
-  msaa.enabled = ReadElement(model, "filament.msaa.enabled", true);
-  fview->setMultiSampleAntiAliasingOptions(msaa);
+  mjrf_configureSceneFromModel(scene_.get(), model);
 
   default_shadow_map_size_ = ReadElement(
       model, "filament.shadows.map_size", default_shadow_map_size_);
   default_vsm_blur_width_ = ReadElement(
       model, "filament.shadows.vsm_blur_width", default_vsm_blur_width_);
-
-  auto shadow_type = fview->getShadowType();
-  shadow_type = ReadElement(model, "filament.shadows.type", shadow_type);
-  fview->setShadowType(shadow_type);
-
-  auto fog_opts = fview->getFogOptions();
-  fog_opts.enabled =
-      ReadElement(model, "filament.fog.enabled", fog_opts.enabled);
-  fog_opts.color = ReadElement(model, "filament.fog.color", fog_opts.color);
-  fog_opts.distance = ReadElement(
-      model, "filament.fog.distance", fog_opts.distance);
-  fog_opts.density = ReadElement(
-      model, "filament.fog.density", fog_opts.density);
-  fog_opts.cutOffDistance = ReadElement(
-      model, "filament.fog.cutOffDistance", fog_opts.cutOffDistance);
-  fog_opts.maximumOpacity = ReadElement(
-      model, "filament.fog.maximumOpacity", fog_opts.maximumOpacity);
-  fog_opts.height = ReadElement(model, "filament.fog.height", fog_opts.height);
-  fog_opts.heightFalloff = ReadElement(
-      model, "filament.fog.heightFalloff", fog_opts.heightFalloff);
-  fog_opts.inScatteringStart = ReadElement(
-      model, "filament.fog.inScatteringStart", fog_opts.inScatteringStart);
-  fog_opts.inScatteringSize = ReadElement(
-      model, "filament.fog.inScatteringSize", fog_opts.inScatteringSize);
-  fview->setFogOptions(fog_opts);
-
   fallback_head_light_intensity_ =
       ReadElement(model, "filament.fallback.head_light_intensity",
                   fallback_head_light_intensity_);
@@ -176,43 +107,17 @@ SceneBridge::SceneBridge(ObjectManager* object_mgr, const mjModel* model)
 
 SceneBridge::~SceneBridge() {
   for (auto& iter : lights_) {
-    scene_view_->RemoveFromScene(iter.get());
+    mjrf_removeLightFromScene(scene_.get(), iter.get());
   }
   lights_.clear();
   if (fallback_ibl_) {
-    scene_view_->RemoveFromScene(fallback_ibl_.get());
+    mjrf_removeLightFromScene(scene_.get(), fallback_ibl_.get());
   }
   fallback_ibl_.reset();
   for (auto& iter : renderables_) {
-    scene_view_->RemoveFromScene(iter.get());
+    mjrf_removeRenderableFromScene(scene_.get(), iter.get());
   }
   renderables_.clear();
-}
-
-void SceneBridge::SetEnvironmentLight(std::string_view filename,
-                                      float intensity) {
-  for (auto& light : lights_) {
-    if (light->GetType() == mjLIGHT_IMAGE) {
-      scene_view_->RemoveFromScene(light.get());
-      light.reset();
-      break;
-    }
-  }
-  if (fallback_ibl_) {
-    scene_view_->RemoveFromScene(fallback_ibl_.get());
-    fallback_ibl_.reset();
-  }
-
-  fallback_ibl_texture_ =
-      CreateFallbackIndirectLightTexture(object_mgr_, filename);
-
-  mjrLightParams params;
-  mjr_defaultLightParams(&params);
-  params.type = mjLIGHT_IMAGE;
-  params.texture = fallback_ibl_texture_.get();
-  params.intensity = intensity;
-  fallback_ibl_ = std::make_unique<Light>(object_mgr_->GetEngine(), params);
-  scene_view_->AddToScene(fallback_ibl_.get());
 }
 
 std::optional<float3> SceneBridge::ClipFromWorld(const float3& pos) const{
@@ -224,7 +129,6 @@ std::optional<float3> SceneBridge::ClipFromWorld(const float3& pos) const{
 }
 
 void SceneBridge::PrepareLights() {
-  filament::Engine* engine = object_mgr_->GetEngine();
   const mjModel* model = model_objects_->GetModel();
 
   bool has_image_based_light = false;
@@ -238,8 +142,8 @@ void SceneBridge::PrepareLights() {
       params.type = mjLIGHT_IMAGE;
       params.texture = model_objects_->GetTexture(model->light_texid[i]);
       params.intensity = model->light_intensity[i];
-      auto light_obj = std::make_unique<Light>(engine, params);
-      scene_view_->AddToScene(light_obj.get());
+      auto light_obj = CreateLight(ctx_, params);
+      mjrf_addLightToScene(scene_.get(), light_obj.get());
       lights_.emplace_back(std::move(light_obj));
       has_image_based_light = true;
     } else {
@@ -259,11 +163,8 @@ void SceneBridge::PrepareLights() {
         params.spot_cone_angle = model->light_cutoff[i];
       }
 
-      auto light_obj = std::make_unique<Light>(engine, params);
-#ifndef __EMSCRIPTEN__
-      // TODO(b/458045799): Re-enable when lights work on glinux and chromebook.
-      scene_view_->AddToScene(light_obj.get());
-#endif
+      auto light_obj = CreateLight(ctx_, params);
+      mjrf_addLightToScene(scene_.get(), light_obj.get());
       lights_.emplace_back(std::move(light_obj));
     }
   }
@@ -282,24 +183,20 @@ void SceneBridge::PrepareLights() {
     params.cast_shadows = 0;
     params.intensity = 0.0f;
     params.spot_cone_angle = 90.0f;
-    auto light_obj = std::make_unique<Light>(engine, params);
-#ifndef __EMSCRIPTEN__
-    // TODO(b/458045799): Re-enable when lights work on glinux and chromebook.
-    scene_view_->AddToScene(light_obj.get());
-#endif
+    auto light_obj = CreateLight(ctx_, params);
+    mjrf_addLightToScene(scene_.get(), light_obj.get());
     lights_.emplace_back(std::move(light_obj));
   }
 
   if (!has_image_based_light && total_light_intensity > 0.0f) {
     // Create a black indirect light to ensure that the skybox is
     // oriented to respect mujoco's Z-up convention.
-    filament::Engine* engine = object_mgr_->GetEngine();
     mjrLightParams params;
     mjr_defaultLightParams(&params);
     params.type = mjLIGHT_IMAGE;
     params.intensity = 10.0f;
-    fallback_ibl_ = std::make_unique<Light>(engine, params);
-    scene_view_->AddToScene(fallback_ibl_.get());
+    fallback_ibl_ = CreateLight(ctx_, params);
+    mjrf_addLightToScene(scene_.get(), fallback_ibl_.get());
   }
 
   // There are no "physical" lights in the scene which means we're likely
@@ -307,35 +204,32 @@ void SceneBridge::PrepareLights() {
   // default environment light and set the light intensity ourselves.
   if (total_light_intensity == 0.0f) {
     // Create a fallback environment light.
-    fallback_ibl_texture_ = CreateFallbackIndirectLightTexture(object_mgr_);
+    fallback_ibl_texture_ = CreateFallbackIndirectLightTexture(ctx_);
 
     mjrLightParams params;
     mjr_defaultLightParams(&params);
     params.type = mjLIGHT_IMAGE;
     params.texture = fallback_ibl_texture_.get();
     params.intensity = fallback_environment_light_intensity_;
-    fallback_ibl_ = std::make_unique<Light>(engine, params);
-    scene_view_->AddToScene(fallback_ibl_.get());
+    fallback_ibl_ = CreateLight(ctx_, params);
+    mjrf_addLightToScene(scene_.get(), fallback_ibl_.get());
 
     // Distribute the fallback scene light intensity among the lights.
     const float intensity = fallback_scene_light_intensity_ / lights_.size();
     for (auto& light : lights_) {
       if (light) {
         const bool is_headlight = (light == lights_.back());
-        light->SetIntensity(is_headlight ? fallback_head_light_intensity_
-                                         : intensity);
+        mjrf_setLightIntensity(light.get(),
+                               is_headlight ? fallback_head_light_intensity_
+                                            : intensity);
       }
     }
   }
 
-  filament::Skybox* skybox = model_objects_->CreateSkybox();
-  if (skybox) {
-    scene_view_->AddToScene(skybox);
-  }
+  mjrf_setSceneSkybox(scene_.get(), model_objects_->GetSkyboxTexture());
 }
 
-filament::math::mat4 CalculateClipFromWorld(const mjrRect& viewport,
-                                            const mjvGLCamera& cam) {
+mat4 CalculateClipFromWorld(const mjrRect& viewport, const mjrCamera& cam) {
   const float3 cam_pos(cam.pos[0], cam.pos[1], cam.pos[2]);
   const float3 cam_fwd(cam.forward[0], cam.forward[1], cam.forward[2]);
   const float3 cam_up(cam.up[0], cam.up[1], cam.up[2]);
@@ -363,15 +257,14 @@ filament::math::mat4 CalculateClipFromWorld(const mjrRect& viewport,
 }
 
 void SceneBridge::Update(const mjrRect& viewport, const mjvScene* scene) {
-  if (scene->flags[mjRND_SHADOW]) {
-    scene_view_->EnableShadows();
+  mjrf_setSceneShadowsEnabled(scene_.get(), scene->flags[mjRND_SHADOW]);
+  mjrf_setSceneReflectionsEnabled(scene_.get(), scene->flags[mjRND_REFLECTION]);
+  if (scene->flags[mjRND_SEGMENT]) {
+    draw_mode_ = mjDRAW_MODE_SEGMENTATION;
+  } else if (scene->flags[mjRND_DEPTH]) {
+    draw_mode_ = mjDRAW_MODE_DEPTH;
   } else {
-    scene_view_->DisableShadows();
-  }
-  if (scene->flags[mjRND_REFLECTION]) {
-    scene_view_->EnableReflections();
-  } else {
-    scene_view_->DisableReflections();
+    draw_mode_ = mjDRAW_MODE_COLOR;
   }
 
   mjtNum hpos[3], hfwd[3];
@@ -380,21 +273,20 @@ void SceneBridge::Update(const mjrRect& viewport, const mjvScene* scene) {
   mju_n2f(headpos, hpos, 3);
   mju_n2f(gazedir, hfwd, 3);
 
-  const mjvGLCamera gl_camera =
-      mjv_averageCamera(scene->camera, scene->camera + 1);
-  clip_from_world_ = CalculateClipFromWorld(viewport, gl_camera);
+  camera_ = mjv_averageCamera(scene->camera, scene->camera + 1);
+  clip_from_world_ = CalculateClipFromWorld(viewport, camera_);
 
   // Remove all drawables from previous render and prepare new ones.
   for (auto& iter : renderables_) {
-    scene_view_->RemoveFromScene(iter.get());
+    mjrf_removeRenderableFromScene(scene_.get(), iter.get());
   }
   renderables_.clear();
   for (int i = 0; i < scene->ngeom; ++i) {
     const mjvGeom* geom = scene->geoms + i;
 
-    if (geom->label[0] != 0) {
+    if (draw_text_callback_ && geom->label[0] != 0) {
       if (auto pos = ClipFromWorld(ReadFloat3(geom->pos))) {
-        DrawTextAt(geom->label, pos->x, pos->y, pos->z);
+        draw_text_callback_(geom->label, pos->x, pos->y, pos->z);
       }
     }
 
@@ -402,10 +294,10 @@ void SceneBridge::Update(const mjrRect& viewport, const mjvScene* scene) {
       model_objects_->CreateSkinFlexMesh(scene, *geom);
     }
 
-    std::unique_ptr<Renderable> renderable = CreateGeomRenderable(
-        *geom, scene, object_mgr_, model_objects_.get(), headpos);
+    UniquePtr<mjrRenderable> renderable = CreateGeomRenderable(
+        *geom, scene, ctx_, model_objects_.get(), headpos);
 
-    scene_view_->AddToScene(renderable.get());
+    mjrf_addRenderableToScene(scene_.get(), renderable.get());
     renderables_.push_back(std::move(renderable));
   }
 
@@ -421,16 +313,15 @@ void SceneBridge::Update(const mjrRect& viewport, const mjvScene* scene) {
       headpos[2] -= gazedir[2] * 0.05f;
 
       // The headlight is always the "back" light.
-      std::unique_ptr<Light>& light = lights_.back();
-      light->SetColor(ReadFloat3(scene_light.diffuse));
-      light->SetTransform(ReadFloat3(headpos), ReadFloat3(gazedir));
+      UniquePtr<mjrLight>& light = lights_.back();
+      mjrf_setLightColor(light.get(), scene_light.diffuse);
+      mjrf_setLightTransform(light.get(), headpos, gazedir);
       continue;
     } else if (scene_light.id < lights_.size() - 1) {
-      std::unique_ptr<Light>& light = lights_[scene_light.id];
+      UniquePtr<mjrLight>& light = lights_[scene_light.id];
       if (light) {
-        light->SetColor(ReadFloat3(scene_light.diffuse));
-        light->SetTransform(ReadFloat3(scene_light.pos),
-                            ReadFloat3(scene_light.dir));
+        mjrf_setLightColor(light.get(), scene_light.diffuse);
+        mjrf_setLightTransform(light.get(), scene_light.pos, scene_light.dir);
       }
     } else {
       mju_error("Unexpected light id: %d", scene_light.id);
@@ -438,11 +329,7 @@ void SceneBridge::Update(const mjrRect& viewport, const mjvScene* scene) {
   }
 
   // Enable/disable the headlight based on whether or not it's in the scene.
-  if (headlight_enabled) {
-    lights_.back()->Enable();
-  } else {
-    lights_.back()->Disable();
-  }
+  mjrf_setLightEnabled(lights_.back().get(), headlight_enabled);
 }
 
 void SceneBridge::UploadMesh(const mjModel* model, int id) {
@@ -456,4 +343,15 @@ void SceneBridge::UploadTexture(const mjModel* model, int id) {
 void SceneBridge::UploadHeightField(const mjModel* model, int id) {
   model_objects_->UploadHeightField(model, id);
 }
+
+void SceneBridge::SetDrawTextFunction(DrawTextAtFn fn) {
+  draw_text_callback_ = std::move(fn);
+}
+
+mjrScene* SceneBridge::GetScene() const { return scene_.get(); }
+
+mjrCamera SceneBridge::GetCamera() const { return camera_; }
+
+mjrDrawMode SceneBridge::GetDrawMode() const { return draw_mode_; }
+
 }  // namespace mujoco

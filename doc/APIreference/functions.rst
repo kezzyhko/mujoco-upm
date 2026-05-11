@@ -3982,6 +3982,15 @@ Convert matrix from dense to sparse.
 
 Convert matrix from sparse to dense.
 
+.. _mju_sym2dense:
+
+`mju_sym2dense <#mju_sym2dense>`__
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+.. mujoco-include:: mju_sym2dense
+
+Convert lower-triangular symmetric CSR matrix to full dense matrix.
+
 .. _Quaternions:
 
 Quaternions
@@ -4773,6 +4782,16 @@ Find and get utilities
 .. mujoco-include:: mjs_getSpec
 
 Get spec from body.
+
+.. _mjs_getOriginSpec:
+
+`mjs_getOriginSpec <#mjs_getOriginSpec>`__
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+.. mujoco-include:: mjs_getOriginSpec
+
+get spec that originally defined an element
+contrary to mjs_getSpec, this does not change after attachment
 
 .. _mjs_getCompiler:
 

@@ -20,61 +20,35 @@
 #include <math/vec3.h>
 #include <utils/Entity.h>
 #include <mujoco/mujoco.h>
-#include "experimental/filament/filament/texture.h"
+#include "experimental/filament/filament/filament_context.h"
+#include "experimental/filament/render_context_filament.h"
 
 namespace mujoco {
 
-typedef mjtLightType mjrLightType;
-
-// Configuration parameters for a light.
-struct mjrLightParams {
-  // The type of light (e.g. spot, point, directional, etc.)
-  mjrLightType type;
-  // The texture to use for image lights.
-  const Texture* texture;
-  // The color of the light.
-  float color[3];
-  // The intensity of the light, in candela.
-  float intensity;
-  // Whether or not the light casts shadows.
-  mjtByte cast_shadows;
-  // The range/distance in which the light is effective, in meters.
-  float range;
-  // The angle of the spot light cone, in degrees.
-  float spot_cone_angle;
-  // The radius of the bulb used for soft shadows.
-  float bulb_radius;
-  // The size of the shadow map.
-  int shadow_map_size;
-  // Blur width for EL VSM.
-  float vsm_blur_width;
-};
-
-void mjr_defaultLightParams(mjrLightParams* params);
-
-// Manages the filament Entities for a single mjvLight.
-class Light {
+// Wrapper around both a "normal" filament Light Entity and a filament
+// IndirectLight.
+class Light : public mjrLight {
  public:
-  Light(filament::Engine* engine, const mjrLightParams& params);
+  Light(FilamentContext* ctx, const mjrLightParams& params);
   ~Light() noexcept;
 
   Light(const Light&) = delete;
   Light& operator=(const Light&) = delete;
 
-  // Adds the filament light Entities to the given filament Scene.
+  // Adds this light to the filament Scene.
   void AddToScene(filament::Scene* scene);
 
-  // Removes the filament light Entities from the given filament Scene.
+  // Removes this light from the filament Scene.
   void RemoveFromScene(filament::Scene* scene);
 
-  // Updates the light's position/rotation.
+  // Updates this light's position and rotation.
   void SetTransform(filament::math::float3 position,
                     filament::math::float3 direction);
 
-  // Sets the color of the light.
+  // Sets the color of this light.
   void SetColor(const filament::math::float3& color);
 
-  // Sets the intensity of the light in candela.
+  // Sets the intensity of this light, in candela.
   void SetIntensity(float intensity);
 
   // Returns the type of the light.
@@ -84,12 +58,19 @@ class Light {
   void Enable();
   void Disable();
 
+  static Light* downcast(mjrLight* light) {
+    return static_cast<Light*>(light);
+  }
+  static const Light* downcast(const mjrLight* light) {
+    return static_cast<const Light*>(light);
+  }
+
  private:
   filament::Engine* engine_ = nullptr;
   filament::IndirectLight* ibl_ = nullptr;
   utils::Entity entity_;
-  bool enabled_ = true;
   mjrLightParams params_;
+  bool enabled_ = true;
 };
 
 }  // namespace mujoco

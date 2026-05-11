@@ -113,7 +113,7 @@ public const int mjMAXLINEPNT = 1001;
 public const int mjMAXPLANEGRID = 200;
 public const bool THIRD_PARTY_MUJOCO_MJXMACRO_H_ = true;
 public const bool THIRD_PARTY_MUJOCO_MUJOCO_H_ = true;
-public const int mjVERSION_HEADER = 3008000;
+public const int mjVERSION_HEADER = 3008001;
 
 
 // ------------------------------------Enums------------------------------------
@@ -963,6 +963,7 @@ public unsafe struct mjModel_ {
   public UInt64 nflexelem;
   public UInt64 nflexelemdata;
   public UInt64 nflexstiffness;
+  public UInt64 nflexbending;
   public UInt64 nflexelemedge;
   public UInt64 nflexshelldata;
   public UInt64 nflexevpair;
@@ -1213,6 +1214,7 @@ public unsafe struct mjModel_ {
   public int* flex_elemdataadr;
   public int* flex_stiffnessadr;
   public int* flex_elemedgeadr;
+  public int* flex_bendingadr;
   public int* flex_shellnum;
   public int* flex_shelldataadr;
   public int* flex_evpairadr;
@@ -7511,6 +7513,9 @@ public static unsafe extern int mju_dense2sparse(double* res, double* mat, int n
 
 [DllImport("mujoco", CallingConvention = CallingConvention.Cdecl)]
 public static unsafe extern void mju_sparse2dense(double* res, double* mat, int nr, int nc, int* rownnz, int* rowadr, int* colind);
+
+[DllImport("mujoco", CallingConvention = CallingConvention.Cdecl)]
+public static unsafe extern void mju_sym2dense(double* res, double* mat, int n, int* rownnz, int* rowadr, int* colind);
 
 [DllImport("mujoco", CallingConvention = CallingConvention.Cdecl)]
 public static unsafe extern void mju_rotVecQuat(double* res, double* vec, double* quat);

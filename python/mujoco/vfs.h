@@ -12,25 +12,35 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#ifndef MUJOCO_SRC_EXPERIMENTAL_FILAMENT_FILAMENT_DRAW_MODE_H_
-#define MUJOCO_SRC_EXPERIMENTAL_FILAMENT_FILAMENT_DRAW_MODE_H_
+#ifndef MUJOCO_PYTHON_VFS_H_
+#define MUJOCO_PYTHON_VFS_H_
 
-namespace mujoco {
+#include <memory>
 
-// The different modes that can be used to render the scene.
-enum class DrawMode {
-  // Render the scene with "normal" colors and lighting.
-  Color,
-  // Render the scene as a grayscale depth map.
-  Depth,
-  // Render each object with a unique, uniform (flat) color regardless of
-  // lighting and texture.
-  Segmentation,
+#include <mujoco/mujoco.h>
+
+namespace mujoco::python {
+
+class MjVfs {
+ public:
+  MjVfs() : vfs_(new mjVFS) { mj_defaultVFS(vfs_.get()); }
+
+  void Close() { vfs_.reset(); }
+
+  mjVFS* get() const { return vfs_.get(); }
+
+  bool is_open() const { return vfs_ != nullptr; }
+
+ private:
+  struct VfsDeleter {
+    void operator()(mjVFS* vfs) const {
+      mj_deleteVFS(vfs);
+      delete vfs;
+    }
+  };
+  std::unique_ptr<mjVFS, VfsDeleter> vfs_;
 };
 
-static constexpr int kNumDrawModes = 3;
+}  // namespace mujoco::python
 
-}  // namespace mujoco
-
-
-#endif  // MUJOCO_SRC_EXPERIMENTAL_FILAMENT_FILAMENT_DRAW_MODE_H_
+#endif  // MUJOCO_PYTHON_VFS_H_

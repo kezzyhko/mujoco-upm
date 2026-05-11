@@ -32,7 +32,8 @@
 #include <math/vec3.h>
 #include <math/vec4.h>
 #include <mujoco/mujoco.h>
-#include "experimental/filament/filament/math_util.h"
+#include "experimental/filament/filament_util.h"
+#include "experimental/filament/render_context_filament.h"
 
 namespace mujoco {
 
@@ -99,11 +100,6 @@ int FillSequence(std::byte* buffer, std::size_t num_bytes) {
     ptr[i] = i;
   }
   return num;
-}
-
-// Initializes the mjrMeshData to default values.
-void mjr_defaultMeshData(mjrMeshData* data) {
-  std::memset(data, 0, sizeof(mjrMeshData));
 }
 
 Mesh::Mesh(filament::Engine* engine, const mjrMeshData& data)
@@ -262,7 +258,7 @@ void Mesh::BuildIndexBuffer(const mjrMeshData& data) {
     return;
   }
 
-  const int element_size = data.index_type == mjINDEX_TYPE_USHORT
+  const int element_size = data.index_type == mjINDEX_TYPE_U16
                                 ? sizeof(uint16_t)
                                 : sizeof(uint32_t);
   const int num_bytes = data.nindices * element_size;
@@ -277,7 +273,7 @@ void Mesh::BuildIndexBuffer(const mjrMeshData& data) {
       delete[] sequence;
     });
 
-    if (data.index_type == mjINDEX_TYPE_USHORT) {
+    if (data.index_type == mjINDEX_TYPE_U16) {
       FillSequence<uint16_t>(sequence, num_bytes);
     } else {
       FillSequence<uint32_t>(sequence, num_bytes);
@@ -287,7 +283,7 @@ void Mesh::BuildIndexBuffer(const mjrMeshData& data) {
 
   filament::IndexBuffer::Builder ib_builder;
   ib_builder.indexCount(data.nindices);
-  ib_builder.bufferType(data.index_type == mjINDEX_TYPE_USHORT
+  ib_builder.bufferType(data.index_type == mjINDEX_TYPE_U16
                             ? filament::IndexBuffer::IndexType::USHORT
                             : filament::IndexBuffer::IndexType::UINT);
   index_buffer_ = ib_builder.build(*engine_);

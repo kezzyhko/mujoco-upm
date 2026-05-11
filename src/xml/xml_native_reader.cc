@@ -1553,7 +1553,7 @@ void mjXReader::OneFlex(XMLElement* elem, mjsFlex* flex) {
       flex->internal = (n == 1);
     }
     MapValue(cont, "selfcollide", &flex->selfcollide, flexself_map, 5);
-    if (MapValue(cont, "passive", &flex->passive, bool_map, 2)) {
+    if (MapValue(cont, "passive", &n, bool_map, 2)) {
       flex->passive = (n == 1);
     }
     ReadAttrInt(cont, "activelayers", &flex->activelayers);
@@ -2883,11 +2883,8 @@ void mjXReader::OneFlexcomp(XMLElement* elem, mjsBody* body, const mjVFS* vfs) {
   }
 
   // check errors
-  if (dflex.elastic2d >= 2 && fcomp.equality) {
-    throw mjXError(elem, "elasticity and edge constraints cannot both be present");
-  }
-  if (fcomp.equality == 3 && dflex.young > 0) {
-    throw mjXError(elem, "strain constraint and elasticity (young) cannot both be present");
+  if (dflex.elastic2d != 1 && fcomp.equality && dflex.young > 0) {
+    throw mjXError(elem, "flex constraints and elasticity (young) cannot both be present");
   }
 
   // contact

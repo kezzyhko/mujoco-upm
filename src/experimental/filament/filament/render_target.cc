@@ -27,17 +27,17 @@
 #include <filament/Texture.h>
 #include <mujoco/mujoco.h>
 #include "experimental/filament/filament/texture.h"
+#include "experimental/filament/render_context_filament.h"
 
 namespace mujoco {
 
-void mjr_defaultRenderTargetConfig(mjrRenderTargetConfig* config) {
-  config->color_format = mjPIXEL_FORMAT_RGBA8;
-  config->depth_format = mjPIXEL_FORMAT_DEPTH32F;
-}
-
 RenderTarget::RenderTarget(filament::Engine* engine,
                            const mjrRenderTargetConfig& config)
-    : engine_(engine), config_(config) {}
+    : engine_(engine), config_(config) {
+  if (config_.width > 0 && config_.height > 0) {
+    Prepare(config_.width, config_.height);
+  }
+}
 
 RenderTarget::~RenderTarget() noexcept {
   Destroy();
@@ -50,13 +50,18 @@ void RenderTarget::Prepare(int width, int height) {
   Destroy();
   width_ = width;
   height_ = height;
+  if (width_ <= 0 || height_ <= 0) {
+    width_ = 0;
+    height_ = 0;
+    return;
+  }
 
   mjrTextureConfig color_config;
   mjr_defaultTextureConfig(&color_config);
   Texture::InternalFlags color_flags;
   color_config.width = width;
   color_config.height = height;
-  color_config.target = mjTEXTURE_2D;
+  color_config.sampler_type = mjTEXTURE_2D;
   color_config.format = config_.color_format;
   color_config.color_space = mjCOLORSPACE_LINEAR;
   color_config.format = mjPIXEL_FORMAT_RGB8;
@@ -68,7 +73,7 @@ void RenderTarget::Prepare(int width, int height) {
   Texture::InternalFlags depth_flags;
   depth_config.width = width;
   depth_config.height = height;
-  depth_config.target = mjTEXTURE_2D;
+  depth_config.sampler_type = mjTEXTURE_2D;
   depth_config.format = config_.depth_format;
   depth_config.color_space = mjCOLORSPACE_LINEAR;
   depth_config.format = mjPIXEL_FORMAT_DEPTH32F;

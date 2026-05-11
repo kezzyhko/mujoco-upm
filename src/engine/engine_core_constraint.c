@@ -391,6 +391,18 @@ static void mj_addConstraint(const mjModel* m, mjData* d,
         mju_copy(J + adr[nefc+i], jac + i*NV, NV);
       }
     }
+
+    // set J row supernodes; 1: next row has same pattern, 0: different pattern
+
+    // cross-boundary: does previous row have same pattern?
+    if (nefc > 0 && NV == nnz[nefc-1] &&
+        (NV == 0 || mju_compare(ind + adr[nefc], ind + adr[nefc-1], NV))) {
+      d->efc_J_rowsuper[nefc-1] = 1;
+    }
+
+    // within-constraint: consecutive rows always share same pattern
+    mju_fillInt(d->efc_J_rowsuper + nefc, 1, size-1);
+    d->efc_J_rowsuper[nefc+size-1] = 0;
   }
 
   // all rows empty: skip constraint
@@ -706,11 +718,12 @@ void mj_instantiateEquality(const mjModel* m, mjData* d) {
       break;
 
     case mjEQ_FLEXSTRAIN: {
-      // each constraint represents a single cell; cell index in eq_data
+      // each constraint represents a single element (3D cell or 2D face)
       int f = id[0];
       int nodenum = m->flex_nodenum[f];
-      int order = m->flex_interp[f];
-      order = order < 0 ? -order : order;
+      int interp = m->flex_interp[f];
+      int order = interp < 0 ? -interp : interp;
+      int shell_mode = (interp < 0);
 
       // skip if not interpolated (order == 0 or no nodes)
       if (!order || !nodenum) {
@@ -722,60 +735,93 @@ void mj_instantiateEquality(const mjModel* m, mjData* d) {
         mjERROR("flex strain constraints only support order 1 and 2, got %d", order);
       }
 
-      int npc = (order+1)*(order+1)*(order+1);
+      int cx = m->flex_cellnum[3*f+0];
       int cy = m->flex_cellnum[3*f+1];
       int cz = m->flex_cellnum[3*f+2];
       int nstart = m->flex_nodeadr[f];
       int* bodyid = m->flex_nodebodyid + nstart;
 
-      // read cell index from eq_data
-      int ci = (int)data[0];
-      int cj = (int)data[1];
-      int ck = (int)data[2];
+      // nodes per element and element index
+      int npe;
+      int elem_idx;
+      if (shell_mode) {
+        npe = (order+1) * (order+1);
+        elem_idx = (int)data[0];  // face element index
+      } else {
+        npe = (order+1) * (order+1) * (order+1);
+        int ci = (int)data[0];
+        int cj = (int)data[1];
+        int ck = (int)data[2];
+        elem_idx = ci * cy * cz + cj * cz + ck;
+      }
 
       mj_markStack(d);
 
-      // get cell node indices
+      // get element node indices
       int gindices[125];  // max npc = 125 for quadratic
-      mju_flexGatherCellState(order, cy, cz, ci, cj, ck,
-                              NULL, NULL, NULL, NULL, NULL, NULL, gindices, NULL);
+      if (shell_mode) {
+        mju_flexGatherFaceState(order, cx, cy, cz, elem_idx,
+                                NULL, NULL, NULL, NULL, NULL, NULL, gindices, NULL);
+      } else {
+        int ci = (int)data[0], cj = (int)data[1], ck = (int)data[2];
+        mju_flexGatherCellState(order, cy, cz, ci, cj, ck,
+                                NULL, NULL, NULL, NULL, NULL, NULL, gindices, NULL);
+      }
 
-      // compute positions only for cell nodes (npc << nodenum)
-      mjtNum* xpos_c = mjSTACKALLOC(d, 3*npc, mjtNum);
-      mjtNum* refpos_c = mjSTACKALLOC(d, 3*npc, mjtNum);
-      for (int n = 0; n < npc; n++) {
+      // compute positions only for element nodes (npe << nodenum)
+      mjtNum* xpos_e = mjSTACKALLOC(d, 3*npe, mjtNum);
+      mjtNum* refpos_e = mjSTACKALLOC(d, 3*npe, mjtNum);
+      for (int n = 0; n < npe; n++) {
         int gn = gindices[n];
         if (m->flex_centered[f] ||
             (m->flex_node[3*(gn + nstart)+0] == 0 &&
              m->flex_node[3*(gn + nstart)+1] == 0 &&
              m->flex_node[3*(gn + nstart)+2] == 0)) {
-          mju_copy3(xpos_c + 3*n, d->xpos + 3*bodyid[gn]);
+          mju_copy3(xpos_e + 3*n, d->xpos + 3*bodyid[gn]);
         } else {
-          mju_mulMatVec3(xpos_c + 3*n, d->xmat + 9*bodyid[gn], m->flex_node + 3*(gn + nstart));
-          mju_addTo3(xpos_c + 3*n, d->xpos + 3*bodyid[gn]);
+          mju_mulMatVec3(xpos_e + 3*n, d->xmat + 9*bodyid[gn], m->flex_node + 3*(gn + nstart));
+          mju_addTo3(xpos_e + 3*n, d->xpos + 3*bodyid[gn]);
         }
-        mju_copy3(refpos_c + 3*n, m->flex_node0 + 3*(gn + nstart));
+        mju_copy3(refpos_e + 3*n, m->flex_node0 + 3*(gn + nstart));
       }
 
-      // compute corotational quaternion from cell-local positions
-      mjtNum cell_quat[4] = {1, 0, 0, 0};
-      {
+      // compute corotational quaternion
+      mjtNum elem_quat[4] = {1, 0, 0, 0};
+      if (shell_mode) {
+        // determine face normal axis from elem_idx
+        int face_sizes[6] = {cy*cz, cy*cz, cx*cz, cx*cz, cx*cy, cx*cy};
+        int face_normals[6] = {0, 0, 1, 1, 2, 2};
+        int cumul = 0, normal_axis = 0;
+        for (int ff = 0; ff < 6; ff++) {
+          if (elem_idx < cumul + face_sizes[ff]) {
+            normal_axis = face_normals[ff];
+            break;
+          }
+          cumul += face_sizes[ff];
+        }
+        int na0 = (normal_axis + 1) % 3;
+        int na1 = (normal_axis + 2) % 3;
+
+        // compute corotational rotation from 2D deformation gradient at face center
+        mjtNum p[2] = {.5, .5};
+        mju_flexInterpRotation2D(order, xpos_e, npe, na0, na1, normal_axis, p, elem_quat);
+      } else {
         mjtNum center[3] = {0.5, 0.5, 0.5};
         mjtNum mat[9];
-        mju_defGradient(mat, center, xpos_c, order);
-        mju_mat2Rot(cell_quat, mat);
-        mju_negQuat(cell_quat, cell_quat);
+        mju_defGradient(mat, center, xpos_e, order);
+        mju_mat2Rot(elem_quat, mat);
+        mju_negQuat(elem_quat, elem_quat);
       }
 
-      // build per-cell sparse chain and node Jacobians
-      int* cell_chain = mjSTACKALLOC(d, nv, int);
-      int cell_nnz = 0;
-      mjtNum* cell_node_jac = cell_pos_and_jac(m, d, f, npc, gindices, nv, xpos_c, cell_chain,
-                                               &cell_nnz);
+      // build per-element sparse chain and node Jacobians
+      int* elem_chain = mjSTACKALLOC(d, nv, int);
+      int elem_nnz = 0;
+      mjtNum* elem_node_jac = cell_pos_and_jac(m, d, f, npe, gindices, nv, xpos_e, elem_chain,
+                                               &elem_nnz);
 
 
-      mjtNum* strain_jac = mjSTACKALLOC(d, cell_nnz, mjtNum);
-      mjtNum* dSdx_local = mjSTACKALLOC(d, 3*npc, mjtNum);
+      mjtNum* strain_jac = mjSTACKALLOC(d, elem_nnz, mjtNum);
+      mjtNum* dSdx_local = mjSTACKALLOC(d, 3*npe, mjtNum);
 
       // for dense mode: allocate and zero a dense Jacobian buffer once
       mjtNum* dense_jac = NULL;
@@ -785,58 +831,60 @@ void mj_instantiateEquality(const mjModel* m, mjData* d) {
       }
 
       // read eigenmode data from flex_stiffness
-      int ndof_cell = 3 * npc;
-      int cell_idx = ci * m->flex_cellnum[3*f+1] * m->flex_cellnum[3*f+2]
-                   + cj * m->flex_cellnum[3*f+2] + ck;
-      const mjtNum* k_cell = m->flex_stiffness + m->flex_stiffnessadr[f]
-                           + cell_idx * ndof_cell * ndof_cell;
-      int neig = (int)k_cell[0];
+      int ndof_elem = 3 * npe;
+      int stiffnessadr = m->flex_stiffnessadr[f];
+      int neig = 0;
+      const mjtNum* k_elem = NULL;
+      if (stiffnessadr >= 0) {
+        k_elem = m->flex_stiffness + stiffnessadr
+               + elem_idx * ndof_elem * ndof_elem;
+        neig = (int)k_elem[0];
+      }
 
       // compute displacement in corotational frame
-      mjtNum* displ_c = mjSTACKALLOC(d, ndof_cell, mjtNum);
-      for (int n = 0; n < npc; n++) {
-        // rotate xpos_c to corotational frame
+      mjtNum* displ_e = mjSTACKALLOC(d, ndof_elem, mjtNum);
+      for (int n = 0; n < npe; n++) {
+        // rotate xpos_e to corotational frame
         mjtNum xrot[3];
-        mju_rotVecQuat(xrot, xpos_c + 3*n, cell_quat);
-        displ_c[3*n + 0] = xrot[0] - refpos_c[3*n + 0];
-        displ_c[3*n + 1] = xrot[1] - refpos_c[3*n + 1];
-        displ_c[3*n + 2] = xrot[2] - refpos_c[3*n + 2];
+        mju_rotVecQuat(xrot, xpos_e + 3*n, elem_quat);
+        displ_e[3*n + 0] = xrot[0] - refpos_e[3*n + 0];
+        displ_e[3*n + 1] = xrot[1] - refpos_e[3*n + 1];
+        displ_e[3*n + 2] = xrot[2] - refpos_e[3*n + 2];
       }
 
       // compute inverse quaternion for rotating eigenvectors to world frame
-      mjtNum cell_quat_inv[4];
-      mju_negQuat(cell_quat_inv, cell_quat);
+      mjtNum elem_quat_inv[4];
+      mju_negQuat(elem_quat_inv, elem_quat);
 
       // loop over eigenmodes
       for (int eig = 0; eig < neig; eig++) {
-        const mjtNum* eigvec = k_cell + 1 + eig * ndof_cell;
+        const mjtNum* eigvec = k_elem + 1 + eig * ndof_elem;
 
         // constraint residual: dot product of scaled eigenvector with displacement
         mjtNum residual = 0;
-        for (int j = 0; j < ndof_cell; j++) {
-          residual += eigvec[j] * displ_c[j];
+        for (int j = 0; j < ndof_elem; j++) {
+          residual += eigvec[j] * displ_e[j];
         }
         cpos[0] = residual;
 
         // rotate eigenvector to world frame for Jacobian
-        // dSdx_local[3*n+c] = Σ_d R_inv[c][d] * eigvec[3*n+d]
-        for (int n = 0; n < npc; n++) {
-          mju_rotVecQuat(dSdx_local + 3*n, eigvec + 3*n, cell_quat_inv);
+        for (int n = 0; n < npe; n++) {
+          mju_rotVecQuat(dSdx_local + 3*n, eigvec + 3*n, elem_quat_inv);
         }
 
-        // contract with cell_node_jac to get sparse Jacobian
-        cell_strain_jacobian(npc, cell_nnz, dSdx_local, cell_node_jac, strain_jac);
+        // contract with elem_node_jac to get sparse Jacobian
+        cell_strain_jacobian(npe, elem_nnz, dSdx_local, elem_node_jac, strain_jac);
 
         if (issparse) {
           mj_addConstraint(m, d, strain_jac, cpos, 0, 0, 1, mjCNSTR_EQUALITY, i,
-                           cell_nnz, cell_chain);
+                           elem_nnz, elem_chain);
         } else {
-          for (int k = 0; k < cell_nnz; k++) {
-            dense_jac[cell_chain[k]] = strain_jac[k];
+          for (int k = 0; k < elem_nnz; k++) {
+            dense_jac[elem_chain[k]] = strain_jac[k];
           }
           mj_addConstraint(m, d, dense_jac, cpos, 0, 0, 1, mjCNSTR_EQUALITY, i, 0, NULL);
-          for (int k = 0; k < cell_nnz; k++) {
-            dense_jac[cell_chain[k]] = 0;
+          for (int k = 0; k < elem_nnz; k++) {
+            dense_jac[elem_chain[k]] = 0;
           }
         }
       }
@@ -1131,7 +1179,7 @@ static inline int mj_addConstraintCount(const mjModel* m, int size, int NV) {
 }
 
 
-// frictional dofs and tendons
+// frictional DOFs and tendons
 // count_only: count constraints and Jacobian nonzeros without instantiating
 static int mj_instantiateFriction(const mjModel* m, mjData* d, int count_only, int* nnz) {
   int nv = m->nv, issparse = mj_isSparse(m);
@@ -1153,7 +1201,7 @@ static int mj_instantiateFriction(const mjModel* m, mjData* d, int count_only, i
     jac = mjSTACKALLOC(d, nv, mjtNum);
   }
 
-  // find frictional dofs
+  // find frictional DOFs
   for (int i=0; i < nv; i++) {
     // no friction loss: skip
     if (!m->dof_frictionloss[i]) {
@@ -1674,36 +1722,56 @@ void mj_diagApprox(const mjModel* m, mjData* d) {
         break;
 
       case mjEQ_FLEXSTRAIN: {
-        // strain constraints: per-cell, use avg inv weight of cell's npc nodes
+        // strain constraints: use avg inv weight of element's nodes
         int flex_id = m->eq_obj1id[id];
         int nstart = m->flex_nodeadr[flex_id];
-        int order = m->flex_interp[flex_id];
-        order = order < 0 ? -order : order;
-        int npc = (order+1)*(order+1)*(order+1);
+        int interp = m->flex_interp[flex_id];
+        int order = interp < 0 ? -interp : interp;
+        int is_shell = (interp < 0);
 
-        // per-cell constraint count
-        int nquad = order + 1;
-        int ngauss = nquad * nquad * nquad;
-        int nconstraint = (order == 1) ? (2 + 3 * ngauss) : (6 * ngauss);
-
-        // get cell index from eq_data
-        int eq_id = d->efc_id[i];
-        int ci_cell = (int)m->eq_data[mjNEQDATA*eq_id + 0];
-        int cj_cell = (int)m->eq_data[mjNEQDATA*eq_id + 1];
-        int ck_cell = (int)m->eq_data[mjNEQDATA*eq_id + 2];
+        int cx = m->flex_cellnum[3*flex_id+0];
         int cy = m->flex_cellnum[3*flex_id+1];
         int cz = m->flex_cellnum[3*flex_id+2];
 
+        // nodes per element
+        int npe;
+        int elem_idx;
+        if (is_shell) {
+          npe = (order+1) * (order+1);
+          elem_idx = (int)m->eq_data[mjNEQDATA*id + 0];
+        } else {
+          npe = (order+1) * (order+1) * (order+1);
+          int ci_cell = (int)m->eq_data[mjNEQDATA*id + 0];
+          int cj_cell = (int)m->eq_data[mjNEQDATA*id + 1];
+          int ck_cell = (int)m->eq_data[mjNEQDATA*id + 2];
+          elem_idx = ci_cell * cy * cz + cj_cell * cz + ck_cell;
+        }
+
+        // read neig from flex_stiffness
+        int ndof_elem = 3 * npe;
+        const mjtNum* k_elem = m->flex_stiffness + m->flex_stiffnessadr[flex_id]
+                             + elem_idx * ndof_elem * ndof_elem;
+        int nconstraint = (int)k_elem[0];
+
+        // get element node indices
         int gindices[125];
-        mju_flexGatherCellState(order, cy, cz, ci_cell, cj_cell, ck_cell,
-                                NULL, NULL, NULL, NULL, NULL, NULL, gindices, NULL);
+        if (is_shell) {
+          mju_flexGatherFaceState(order, cx, cy, cz, elem_idx,
+                                  NULL, NULL, NULL, NULL, NULL, NULL, gindices, NULL);
+        } else {
+          int ci_cell = (int)m->eq_data[mjNEQDATA*id + 0];
+          int cj_cell = (int)m->eq_data[mjNEQDATA*id + 1];
+          int ck_cell = (int)m->eq_data[mjNEQDATA*id + 2];
+          mju_flexGatherCellState(order, cy, cz, ci_cell, cj_cell, ck_cell,
+                                  NULL, NULL, NULL, NULL, NULL, NULL, gindices, NULL);
+        }
 
         mjtNum avg_invweight = 0;
-        for (int n = 0; n < npc; n++) {
+        for (int n = 0; n < npe; n++) {
           int bodyid = m->flex_nodebodyid[nstart + gindices[n]];
           avg_invweight += m->body_invweight0[2*bodyid];
         }
-        avg_invweight /= npc;
+        avg_invweight /= npe;
         for (int c = 0; c < nconstraint; c++) {
           dA[i++] = avg_invweight;
         }
@@ -2296,37 +2364,59 @@ static int mj_ne(const mjModel* m, mjData* d, int* nnz) {
       break;
 
     case mjEQ_FLEXSTRAIN: {
-      // per-cell strain constraints: each equality is one cell
+      // per-element strain constraints: each equality is one cell or face
       int f = id[0];
-      int order = m->flex_interp[f];
-      order = order < 0 ? -order : order;
+      int interp = m->flex_interp[f];
+      int order = interp < 0 ? -interp : interp;
+      int is_shell = (interp < 0);
       if (!order || !m->flex_nodenum[f]) {
         break;
       }
-      int npc = (order+1)*(order+1)*(order+1);
 
-      // read eigenmode count from flex_stiffness
-      int ndof_cell = 3 * npc;
-      int ci_cell = (int)m->eq_data[mjNEQDATA*i + 0];
-      int cj_cell = (int)m->eq_data[mjNEQDATA*i + 1];
-      int ck_cell = (int)m->eq_data[mjNEQDATA*i + 2];
+      int cx = m->flex_cellnum[3*f+0];
       int cy = m->flex_cellnum[3*f+1];
       int cz = m->flex_cellnum[3*f+2];
-      int cell_idx = ci_cell * cy * cz + cj_cell * cz + ck_cell;
-      const mjtNum* k_cell = m->flex_stiffness + m->flex_stiffnessadr[f]
-                           + cell_idx * ndof_cell * ndof_cell;
-      size = (int)k_cell[0];  // neig stored as first element
+
+      int npe;
+      int elem_idx;
+      if (is_shell) {
+        npe = (order+1) * (order+1);
+        elem_idx = (int)m->eq_data[mjNEQDATA*i + 0];
+      } else {
+        npe = (order+1) * (order+1) * (order+1);
+        int ci_cell = (int)m->eq_data[mjNEQDATA*i + 0];
+        int cj_cell = (int)m->eq_data[mjNEQDATA*i + 1];
+        int ck_cell = (int)m->eq_data[mjNEQDATA*i + 2];
+        elem_idx = ci_cell * cy * cz + cj_cell * cz + ck_cell;
+      }
+
+      // read eigenmode count from flex_stiffness
+      int ndof_elem = 3 * npe;
+      size = 0;
+      if (m->flex_stiffnessadr[f] >= 0) {
+        const mjtNum* k_elem = m->flex_stiffness + m->flex_stiffnessadr[f]
+                             + elem_idx * ndof_elem * ndof_elem;
+        size = (int)k_elem[0];  // neig stored as first element
+      }
 
       if (nnz) {
-        // get the npc node body IDs for this cell
+        // get element node body IDs
         int gindices[125];
-        mju_flexGatherCellState(order, cy, cz, ci_cell, cj_cell, ck_cell,
-                                NULL, NULL, NULL, NULL, NULL, NULL, gindices, NULL);
+        if (is_shell) {
+          mju_flexGatherFaceState(order, cx, cy, cz, elem_idx,
+                                  NULL, NULL, NULL, NULL, NULL, NULL, gindices, NULL);
+        } else {
+          int ci_cell = (int)m->eq_data[mjNEQDATA*i + 0];
+          int cj_cell = (int)m->eq_data[mjNEQDATA*i + 1];
+          int ck_cell = (int)m->eq_data[mjNEQDATA*i + 2];
+          mju_flexGatherCellState(order, cy, cz, ci_cell, cj_cell, ck_cell,
+                                  NULL, NULL, NULL, NULL, NULL, NULL, gindices, NULL);
+        }
         int nstart = m->flex_nodeadr[f];
-        for (int n = 0; n < npc; n++) {
+        for (int n = 0; n < npe; n++) {
           cell_bodies[n] = m->flex_nodebodyid[nstart + gindices[n]];
         }
-        NV = mj_jacSumCount(m, d, chain, npc, cell_bodies);  // npc nodes only
+        NV = mj_jacSumCount(m, d, chain, npe, cell_bodies);
         NV = size * NV;
       }
       break;
@@ -2577,18 +2667,13 @@ void mj_makeConstraint(const mjModel* m, mjData* d) {
     return;
   }
 
-  // transpose sparse Jacobian, make row supernodes
-  if (mj_isSparse(m)) {
-#ifdef mjUSEAVX
-    // compute supernodes of J; used by mju_mulMatVecSparse_avx
-    mju_superSparse(d->nefc, d->efc_J_rowsuper,
-                    d->efc_J_rownnz, d->efc_J_rowadr, d->efc_J_colind);
-#else
-  #ifdef MEMORY_SANITIZER
-    // tell msan to treat the entire J rowsuper as uninitialized
-    __msan_allocated_memory(d->efc_J_rowsuper, d->nefc);
-  #endif  // MEMORY_SANITIZER
-#endif  // mjUSEAVX
+  // accumulate J row supernodes (reverse cumsum of 0/1 flags set at assembly time)
+  if (mj_isSparse(m) && d->nefc) {
+    for (int r=d->nefc-2; r >= 0; r--) {
+      if (d->efc_J_rowsuper[r]) {
+        d->efc_J_rowsuper[r] += d->efc_J_rowsuper[r+1];
+      }
+    }
   }
 
   // compute diagApprox
@@ -2634,35 +2719,43 @@ void mj_projectConstraint(const mjModel* m, mjData* d) {
 
     B_rowadr[0] = 0;
     for (int r=0; r < nefc; r++) {
-      int nnz = 0;  // nonzeros in row r of B
-
-      // traverse row r of J in reverse, count unique nonzeros
-      int start = d->efc_J_rowadr[r];
-      int end = start + d->efc_J_rownnz[r];
-      for (int i=end-1; i >= start; i--) {
-        int j = d->efc_J_colind[i];
-
-        // if dof j is marked, it was already counted by a child dof: skip it
-        if (marker[j] == r) {
-          continue;
-        }
-
-        // traverse row j of C, marking new unique nonzeros
-        int nnzC = m->M_rownnz[j];
-        int adrC = m->M_rowadr[j];
-        for (int k=0; k < nnzC; k++) {
-          int c = m->M_colind[adrC + k];
-          if (marker[c] != r) {
-            marker[c] = r;
-            nnz++;
-          }
-        }
+      // supernode: same sparsity as previous row
+      if (r > 0 && d->efc_J_rowsuper[r-1] > 0) {
+        B_rownnz[r] = B_rownnz[r-1];
       }
 
-      // update rownnz and rowadr
-      B_rownnz[r] = nnz;
+      // first row in supernode block: full chain traversal
+      else {
+        int nnz = 0;
+
+        // traverse row r of J in reverse, count unique nonzeros
+        int start = d->efc_J_rowadr[r];
+        int end = start + d->efc_J_rownnz[r];
+        for (int i=end-1; i >= start; i--) {
+          int j = d->efc_J_colind[i];
+
+          // if dof j is marked, it was already counted by a child dof: skip it
+          if (marker[j] == r) {
+            continue;
+          }
+
+          // traverse row j of M, marking new unique nonzeros
+          int nnzM = m->M_rownnz[j];
+          int adrM = m->M_rowadr[j];
+          for (int k=0; k < nnzM; k++) {
+            int c = m->M_colind[adrM + k];
+            if (marker[c] != r) {
+              marker[c] = r;
+              nnz++;
+            }
+          }
+        }
+        B_rownnz[r] = nnz;
+      }
+
+      // update rowadr
       if (r < nefc - 1) {
-        B_rowadr[r+1] = B_rowadr[r] + nnz;
+        B_rowadr[r+1] = B_rowadr[r] + B_rownnz[r];
       }
     }
 
@@ -2677,42 +2770,67 @@ void mj_projectConstraint(const mjModel* m, mjData* d) {
     int* B_colind = mjSTACKALLOC(d, nB, int);
 
     for (int r=0; r < nefc; r++) {
-      // init row
-      int end = B_rowadr[r] + B_rownnz[r];
-      int adrJ = d->efc_J_rowadr[r];
-      int remainJ = d->efc_J_rownnz[r];
-      int nnzB = 0;
+      // supernode: copy column indices, only update values from J
+      if (r > 0 && d->efc_J_rowsuper[r-1] > 0) {
+        int prevAdr = B_rowadr[r-1];
+        int adrB = B_rowadr[r];
+        int nnzB = B_rownnz[r];
+        mju_copyInt(B_colind + adrB, B_colind + prevAdr, nnzB);
+        mju_zero(B + adrB, nnzB);
 
-      // complete chain in reverse
-      while (1) {
-        // get previous dof in src and dst
-        int prev_src = (remainJ > 0 ? d->efc_J_colind[adrJ + remainJ - 1] : -1);
-        int prev_dst = (nnzB > 0 ? m->dof_parentid[B_colind[end - nnzB]] : -1);
-
-        // both finished: break
-        if (prev_src < 0 && prev_dst < 0) {
-          break;
-        }
-
-        // add src
-        else if (prev_src >= prev_dst) {
-          nnzB++;
-          remainJ--;
-          B_colind[end - nnzB] = prev_src;
-          B[end - nnzB] = d->efc_J[adrJ + remainJ];
-        }
-
-        // add dst
-        else {
-          nnzB++;
-          B_colind[end - nnzB] = prev_dst;
-          B[end - nnzB] = 0;
+        // copy J values into correct positions
+        int adrJ = d->efc_J_rowadr[r];
+        int jnnz = d->efc_J_rownnz[r];
+        int bi = 0, ji = 0;
+        while (ji < jnnz && bi < nnzB) {
+          if (B_colind[adrB+bi] == d->efc_J_colind[adrJ+ji]) {
+            B[adrB+bi] = d->efc_J[adrJ+ji];
+            bi++;
+            ji++;
+          } else {
+            bi++;
+          }
         }
       }
 
-      // compare with B_rownnz: SHOULD NOT OCCUR
-      if (nnzB != B_rownnz[r]) {
-        mjERROR("pre and post-count of B_rownnz are not equal on row %d", r);
+      // first row in supernode block: full chain completion
+      else {
+        int end = B_rowadr[r] + B_rownnz[r];
+        int adrJ = d->efc_J_rowadr[r];
+        int remainJ = d->efc_J_rownnz[r];
+        int nnzB = 0;
+
+        // complete chain in reverse
+        while (1) {
+          // get previous dof in src and dst
+          int prev_src = (remainJ > 0 ? d->efc_J_colind[adrJ + remainJ - 1] : -1);
+          int prev_dst = (nnzB > 0 ? m->dof_parentid[B_colind[end - nnzB]] : -1);
+
+          // both finished: break
+          if (prev_src < 0 && prev_dst < 0) {
+            break;
+          }
+
+          // add src
+          else if (prev_src >= prev_dst) {
+            nnzB++;
+            remainJ--;
+            B_colind[end - nnzB] = prev_src;
+            B[end - nnzB] = d->efc_J[adrJ + remainJ];
+          }
+
+          // add dst
+          else {
+            nnzB++;
+            B_colind[end - nnzB] = prev_dst;
+            B[end - nnzB] = 0;
+          }
+        }
+
+        // compare with B_rownnz: SHOULD NOT OCCUR
+        if (nnzB != B_rownnz[r]) {
+          mjERROR("pre and post-count of B_rownnz are not equal on row %d", r);
+        }
       }
     }
 
@@ -2744,9 +2862,8 @@ void mj_projectConstraint(const mjModel* m, mjData* d) {
       }
     }
 
-    // construct B supernodes
-    int* B_rowsuper = mjSTACKALLOC(d, nefc, int);
-    mju_superSparse(nefc, B_rowsuper, B_rownnz, B_rowadr, B_colind);
+    // B supernodes are identical to J supernodes
+    const int* B_rowsuper = d->efc_J_rowsuper;
 
     // construct B transposed
     int* BT_rownnz = mjSTACKALLOC(d, nv, int);

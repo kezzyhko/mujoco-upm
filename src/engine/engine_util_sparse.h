@@ -46,6 +46,10 @@ MJAPI int mju_dense2sparse(mjtNum* res, const mjtNum* mat, int nr, int nc,
 MJAPI void mju_sparse2dense(mjtNum* res, const mjtNum* mat, int nr, int nc, const int* rownnz,
                             const int* rowadr, const int* colind);
 
+// convert lower-triangular symmetric CSR matrix to full dense matrix
+MJAPI void mju_sym2dense(mjtNum* res, const mjtNum* mat, int n,
+                         const int* rownnz, const int* rowadr, const int* colind);
+
 // res[row, :] = mat[row, :]
 void mju_copySparse(mjtNum* res, const mjtNum* mat, const int* rownnz, const int* rowadr,
                     const int* row, int nrow);
@@ -158,12 +162,24 @@ MJAPI void mju_sqrMatTDSparseNumeric(
 // precompute res_rowadr for mju_sqrMatTDSparse using uncompressed memory
 MJAPI void mju_sqrMatTDUncompressedInit(int* res_rowadr, int nc);
 
+// extract a single block of a dense matrix
+void mju_block(mjtNum* res, const mjtNum* mat, int nc_mat, int nc_res, int nr,
+               const int* perm_r, const int* perm_c);
+
 // block-diagonalize a dense matrix
-MJAPI void mju_blockDiag(mjtNum* res, const mjtNum* mat,
-                         int nc_mat, int nc_res, int nb,
+MJAPI void mju_blockDiag(mjtNum* res, const mjtNum* mat, int nc_mat, int nc_res, int nb,
                          const int* perm_r, const int* perm_c,
                          const int* block_nr, const int* block_nc,
                          const int* block_r, const int* block_c);
+
+// extract a single block of a sparse matrix
+void mju_blockSparse(
+  mjtNum* res, int* res_rownnz, int* res_rowadr, int* res_colind,
+  const mjtNum* mat, const int* rownnz, const int* rowadr, const int* colind,
+  int nr,
+  const int* perm_r, const int* perm_c,
+  int col_offset, int res_offset,
+  mjtNum* res2, const mjtNum* mat2);
 
 // block-diagonalize a sparse matrix
 MJAPI void mju_blockDiagSparse(

@@ -24,6 +24,7 @@
 #include <image/Ktx1Bundle.h>
 #include <ktxreader/Ktx1Reader.h>
 #include <mujoco/mujoco.h>
+#include "experimental/filament/render_context_filament.h"
 
 namespace mujoco {
 
@@ -34,7 +35,8 @@ static bool IsCompressed(const mjrTextureConfig& config) {
 }
 
 static bool IsCubeMap(const mjrTextureConfig& config) {
-  return config.target == mjTEXTURE_CUBE || config.target == mjTEXTURE_SKYBOX;
+  return config.sampler_type == mjTEXTURE_CUBE ||
+         config.sampler_type == mjTEXTURE_SKYBOX;
 }
 
 static int GetFaceHeight(const mjrTextureConfig& config) {
@@ -108,14 +110,6 @@ static filament::Texture::InternalFormat GetTextureInternalFormat(
         return filament::Texture::InternalFormat::UNUSED;
     }
   }
-}
-
-void mjr_defaultTextureData(mjrTextureData* data) {
-  std::memset(data, 0, sizeof(mjrTextureData));
-}
-
-void mjr_defaultTextureConfig(mjrTextureConfig* config) {
-  std::memset(config, 0, sizeof(mjrTextureConfig));
 }
 
 Texture::Texture(filament::Engine* engine, const mjrTextureConfig& config,

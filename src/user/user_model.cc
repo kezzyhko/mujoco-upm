@@ -1195,6 +1195,7 @@ void mjCModel::Clear() {
   nflexelem = 0;
   nflexelemdata = 0;
   nflexstiffness = 0;
+  nflexbending = 0;
   nflexelemedge = 0;
   nflexshelldata = 0;
   nflexevpair = 0;
@@ -1407,7 +1408,7 @@ mjCBase* mjCModel::GetObject(mjtObj type, int id) {
 
 
 template <class T>
-static mjsElement* GetNext(std::vector<T*>& list, mjsElement* child) {
+static mjsElement* GetNext(const std::vector<T*>& list, const mjsElement* child) {
   if (!child) {
     if (list.empty()) {
       return nullptr;
@@ -1427,7 +1428,7 @@ static mjsElement* GetNext(std::vector<T*>& list, mjsElement* child) {
 
 
 // next object of specified type
-mjsElement* mjCModel::NextObject(mjsElement* object, mjtObj type) {
+mjsElement* mjCModel::NextObject(const mjsElement* object, mjtObj type) const {
   if (type == mjOBJ_UNKNOWN) {
     if (!object) {
       throw mjCError(nullptr, "type must be specified if no element is given");
@@ -1518,7 +1519,7 @@ mjCBody* mjCModel::GetWorld() {
 
 
 // find default class name in array
-mjCDef* mjCModel::FindDefault(string name) {
+mjCDef* mjCModel::FindDefault(const string& name) const {
   for (int i=0; i < (int)defaults_.size(); i++) {
     if (defaults_[i]->name == name) {
       return defaults_[i];
@@ -1696,13 +1697,13 @@ mjSpec* mjCModel::FindSpec(std::string name) const {
 
 
 // find spec by mjsCompiler pointer
-mjSpec* mjCModel::FindSpec(const mjsCompiler* compiler_) {
+mjSpec* mjCModel::FindSpec(const mjsCompiler* compiler_) const {
   if (compiler_ == &spec.compiler) {
-    return &spec;
+    return &const_cast<mjCModel*>(this)->spec;
   }
 
-  if (compiler2spec_.find(compiler_) != compiler2spec_.end()) {
-    return compiler2spec_[compiler_];
+  if (auto it = compiler2spec_.find(compiler_); it != compiler2spec_.end()) {
+    return it->second;
   }
 
   for (auto s : specs_) {
@@ -2178,7 +2179,6 @@ void mjCModel::SetSizes() {
   }
   nbvh = nbvhstatic + nbvhdynamic;
 
-  int extra_stiffness_size = 0;
   // flex counts
   for (int i=0; i < nflex; i++) {
     nflexnode += flexes_[i]->nnode;
@@ -2190,14 +2190,8 @@ void mjCModel::SetSizes() {
     nflexshelldata += (int)flexes_[i]->shell.size();
     nflexevpair += (int)flexes_[i]->evpair.size()/2;
     nflextexcoord += (flexes_[i]->HasTexcoord() ? flexes_[i]->get_texcoord().size()/2 : 0);
-    if (flexes_[i]->spec.order != 0) {
-      int npc = (int)pow(flexes_[i]->spec.order + 1, 3);
-      int ndof_cell = 3 * npc;
-      int ncells = flexes_[i]->spec.cellcount[0] *
-                   flexes_[i]->spec.cellcount[1] *
-                   flexes_[i]->spec.cellcount[2];
-      extra_stiffness_size += ncells * ndof_cell * ndof_cell;
-    }
+    nflexstiffness += flexes_[i]->stiffness.size();
+    nflexbending += flexes_[i]->bending.size();
     if (flexes_[i]->interpolated || flexes_[i]->rigid) {
       continue;
     }
@@ -2247,9 +2241,6 @@ void mjCModel::SetSizes() {
       }
     }
   }
-  // TODO: This can be compacted further when we update mjwarp to not rely on
-  // 21*elem_adr for non-interpolated flexes.
-  nflexstiffness = nflexelem * 21 + extra_stiffness_size;
 
   // mesh counts
   for (int i=0; i < nmesh; i++) {
@@ -3334,6 +3325,7 @@ int mjCModel::CountNJten(const mjModel* m) {
 // copy objects outside kinematic tree
 void mjCModel::CopyObjects(mjModel* m) {
   mjtSize adr, bone_adr, vert_adr, node_adr, normal_adr, face_adr, texcoord_adr, oct_adr;
+  mjtSize stiffness_adr, bending_adr;
   mjtSize edge_adr, elem_adr, elemdata_adr, elemedge_adr, shelldata_adr, evpair_adr;
   mjtSize bonevert_adr, graph_adr, data_adr, bvh_adr;
   mjtSize poly_adr, polymap_adr, polyvert_adr;
@@ -3448,8 +3440,8 @@ void mjCModel::CopyObjects(mjModel* m) {
   shelldata_adr = 0;
   evpair_adr = 0;
   texcoord_adr = 0;
-  int standard_stiffness_size = 21 * m->nflexelem;
-  int current_extra_stiffness_adr = standard_stiffness_size;
+  stiffness_adr = 0;
+  bending_adr = 0;
   for (int i=0; i < nflex; i++) {
     // get pointer
     mjCFlex* pfl = flexes_[i];
@@ -3472,35 +3464,19 @@ void mjCModel::CopyObjects(mjModel* m) {
     mjuu_copyvec(m->flex_rgba + 4 * i, pfl->rgba, 4);
 
     // elasticity
-    if (pfl->spec.order == 0) {
-      m->flex_stiffnessadr[i] = 21 * elem_adr;
+    if (pfl->stiffness.empty()) {
+      m->flex_stiffnessadr[i] = -1;
     } else {
-      m->flex_stiffnessadr[i] = current_extra_stiffness_adr;
-      int npc = (int)pow(pfl->spec.order + 1, 3);
-      int ndof_cell = 3 * npc;
-      int ncells = pfl->spec.cellcount[0] * pfl->spec.cellcount[1] * pfl->spec.cellcount[2];
-      current_extra_stiffness_adr += ncells * ndof_cell * ndof_cell;
-    }
-
-    if (!pfl->stiffness.empty()) {
+      m->flex_stiffnessadr[i] = stiffness_adr;
       mjuu_copyvec(m->flex_stiffness + m->flex_stiffnessadr[i],
                    pfl->stiffness.data(), pfl->stiffness.size());
-    } else {
-      int stiff_size;
-      if (pfl->spec.order == 0) {
-        stiff_size = 21 * pfl->nelem;
-      } else {
-        int npc = (int)pow(pfl->spec.order + 1, 3);
-        int ndof_cell = 3 * npc;
-        int ncells = pfl->spec.cellcount[0] * pfl->spec.cellcount[1] * pfl->spec.cellcount[2];
-        stiff_size = ncells * ndof_cell * ndof_cell;
-      }
-      mjuu_zerovec(m->flex_stiffness + m->flex_stiffnessadr[i], stiff_size);
     }
-    if (!pfl->bending.empty()) {
-      mjuu_copyvec(m->flex_bending + 17 * edge_adr, pfl->bending.data(), pfl->bending.size());
+    if (pfl->bending.empty()) {
+      m->flex_bendingadr[i] = -1;
     } else {
-      mjuu_zerovec(m->flex_bending + 17 * edge_adr, 17 * pfl->nedge);
+      m->flex_bendingadr[i] = bending_adr;
+      mjuu_copyvec(m->flex_bending + m->flex_bendingadr[i],
+                   pfl->bending.data(), pfl->bending.size());
     }
     m->flex_damping[i] = (mjtNum)pfl->damping;
 
@@ -3574,7 +3550,8 @@ void mjCModel::CopyObjects(mjModel* m) {
     }
 
     if (!pfl->rigid && m->flex_edgeequality[i] == 0 &&
-        !pfl->edgestiffness && !pfl->edgedamping && !pfl->damping) {
+        !pfl->edgestiffness && !pfl->edgedamping && !pfl->damping &&
+        pfl->bending.empty()) {
       mju_warning("flex '%s' is not rigid and has no equality constraints "
                   "or passive forces", pfl->name.c_str());
     }
@@ -3629,8 +3606,8 @@ void mjCModel::CopyObjects(mjModel* m) {
       memcpy(m->flex_nodebodyid + node_adr, pfl->nodebodyid.data(), pfl->nnode*sizeof(int));
     }
 
-    // set interpolation type, only two types for now
-    m->flex_interp[i] = pfl->spec.order;
+    // set interpolation type: positive = volumetric, negative = shell mode
+    m->flex_interp[i] = pfl->spec.elastic2d ? -pfl->spec.order : pfl->spec.order;
 
     // set cell count for multi-cell finite cell method
     m->flex_cellnum[3*i+0] = pfl->spec.cellcount[0];
@@ -3673,6 +3650,8 @@ void mjCModel::CopyObjects(mjModel* m) {
     evpair_adr += (int)pfl->evpair.size()/2;
     texcoord_adr += (int)pfl->texcoord_.size()/2;
     bvh_adr += pfl->tree.Nbvh();
+    stiffness_adr += pfl->stiffness.size();
+    bending_adr += pfl->bending.size();
   }
 
   // skins
@@ -5181,13 +5160,13 @@ void mjCModel::TryCompile(mjModel*& m, mjData*& d, const mjVFS* vfs) {
   mj_makeModel(&m,
                nq, nv, nu, na, nbody, nbvh, nbvhstatic, nbvhdynamic, noct, njnt, ntree, nM, nB, nC,
                nD, ngeom, nsite, ncam, nlight, nflex, nflexnode, nflexvert, nflexedge, nflexelem,
-               nflexelemdata, nflexstiffness, nflexelemedge, nflexshelldata, nflexevpair,
-               nflextexcoord, nJfe, nJfv, nmesh, nmeshvert, nmeshnormal, nmeshtexcoord, nmeshface,
-               nmeshgraph, nmeshpoly, nmeshpolyvert, nmeshpolymap, nskin, nskinvert, nskintexvert,
-               nskinface, nskinbone, nskinbonevert, nhfield, nhfielddata, ntex, ntexdata, nmat,
-               npair, nexclude, neq, ntendon, nJten, nwrap, nsensor, nnumeric, nnumericdata, ntext,
-               ntextdata, ntuple, ntupledata, nkey, nmocap, nplugin, npluginattr,
-               nuser_body, nuser_jnt, nuser_geom, nuser_site, nuser_cam,
+               nflexelemdata, nflexstiffness, nflexbending, nflexelemedge, nflexshelldata,
+               nflexevpair, nflextexcoord, nJfe, nJfv, nmesh, nmeshvert, nmeshnormal, nmeshtexcoord,
+               nmeshface, nmeshgraph, nmeshpoly, nmeshpolyvert, nmeshpolymap, nskin, nskinvert,
+               nskintexvert, nskinface, nskinbone, nskinbonevert, nhfield, nhfielddata, ntex,
+               ntexdata, nmat, npair, nexclude, neq, ntendon, nJten, nwrap, nsensor, nnumeric,
+               nnumericdata, ntext, ntextdata, ntuple, ntupledata, nkey, nmocap, nplugin,
+               npluginattr, nuser_body, nuser_jnt, nuser_geom, nuser_site, nuser_cam,
                nuser_tendon, nuser_actuator, nuser_sensor, nnames, npaths);
   if (!m) {
     throw mjCError(0, "could not create mjModel");
