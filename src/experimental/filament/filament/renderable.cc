@@ -31,7 +31,6 @@
 #include <mujoco/mujoco.h>
 #include "experimental/filament/filament_util.h"
 #include "experimental/filament/filament/builtins.h"
-#include "experimental/filament/filament/filament_context.h"
 #include "experimental/filament/filament/material.h"
 #include "experimental/filament/filament/mesh.h"
 #include "experimental/filament/filament/object_manager.h"
@@ -49,8 +48,10 @@ using filament::math::mat4f;
 static constexpr float kArrowScale = 1.f / 6.f;
 static constexpr float kArrowHeadSize = 1.75f;
 
-Renderable::Renderable(FilamentContext* ctx, const mjrRenderableParams& params)
-    : object_mgr_(ctx->GetObjectManager()), params_(params) {
+Renderable::Renderable(filament::Engine* engine,
+                       const mjrRenderableParams& params,
+                       ObjectManager* object_mgr)
+    : object_mgr_(object_mgr), params_(params) {
   mjr_defaultMaterial(&material_);
 }
 
@@ -77,6 +78,11 @@ void Renderable::SetMesh(const Mesh* mesh, int elem_offset, int elem_count) {
   if (mesh == nullptr) {
     mju_error("Cannot set mesh to nullptr.");
   }
+
+  // We use MESH, even though it could be any mesh-like geom type, e.g.
+  // heightfields, flex, skin, sdf, etc.
+  geom_type_ = mjGEOM_MESH;
+
   filament::VertexBuffer* vertex_buffer = mesh->GetFilamentVertexBuffer();
   if (vertex_buffer == nullptr) {
     mju_error("Invalid (null) vertex buffer.");
@@ -234,6 +240,10 @@ void Renderable::AssignMaterial(mjrDrawMode mode,
   }
   if (material) {
     instances_[index] = material->createInstance();
+    if (geom_type_ == mjGEOM_PLANE || geom_type_ == mjGEOM_TRIANGLE) {
+      instances_[index]->setCullingMode(
+          filament::MaterialInstance::CullingMode::NONE);
+    }
   }
 }
 
@@ -407,6 +417,7 @@ ObjectManager::MaterialType Renderable::GetColorMaterialType() const {
 
 void Renderable::SetGeomMesh(mjtGeom type, int nstack, int nslice, int nquad) {
   Builtins* builtins = object_mgr_->GetBuiltins(nstack, nslice, nquad);
+  geom_type_ = type;
 
   switch (type) {
     case mjGEOM_PLANE:
