@@ -64,8 +64,9 @@ jobs:
 
     - name: Install 7z tool
       run: |
-        wget https://www.7-zip.org/a/7z2408-linux-x64.tar.xz
-        tar -xJf 7z2408-linux-x64.tar.xz
+        LATEST_VER=$(wget -qO- https://7-zip.org | grep -oP '7-Zip \K[0-9.]+' | head -n 1 | tr -d '.')
+        wget https://www.7-zip.org/a/7z${LATEST_VER}-linux-x64.tar.xz
+        tar -xJf 7z${LATEST_VER}-linux-x64.tar.xz
         ls
         stat ./7zz
 
