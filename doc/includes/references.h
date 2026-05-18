@@ -191,6 +191,7 @@ struct mjData_ {
   int     nl;                // number of limit constraints
   int     nefc;              // number of constraints
   int     nJ;                // number of non-zeros in constraint Jacobian
+  int     nY;                // number of non-zeros in constraint inverse inertia square root
   int     nA;                // number of non-zeros in constraint inverse inertia matrix
   int     nisland;           // number of detected constraint islands
   int     nidof;             // number of dofs in all islands
@@ -445,8 +446,12 @@ struct mjData_ {
   mjtNum* iefc_R;            // inverse constraint mass                          (nefc x 1)
 
   // computed by mj_projectConstraint (PGS solver)
+  int*    efc_Y_rownnz;      // number of non-zeros in Y row                     (nefc x 1)
+  int*    efc_Y_rowadr;      // row start address in Y colind array              (nefc x 1)
+  int*    efc_Y_colind;      // column indices in sparse Y                       (nY x 1)
+  mjtNum* efc_Y;             // whitened Jacobian Y = J*M^(-1/2)                 (nY x 1)
   int*    efc_AR_rownnz;     // number of non-zeros in AR                        (nefc x 1)
-  int*    efc_AR_rowadr;     // row start address in colind array                (nefc x 1)
+  int*    efc_AR_rowadr;     // row start address in AR colind array             (nefc x 1)
   int*    efc_AR_colind;     // column indices in sparse AR                      (nA x 1)
   mjtNum* efc_AR;            // J*inv(M)*J' + R                                  (nA x 1)
 
@@ -503,10 +508,10 @@ typedef enum mjtEnableBit_ {      // enable optional feature bitflags
   mjENBL_ENERGY       = 1<<1,     // energy computation
   mjENBL_FWDINV       = 1<<2,     // record solver statistics
   mjENBL_INVDISCRETE  = 1<<3,     // discrete-time inverse dynamics
-                                  // experimental features:
   mjENBL_SLEEP        = 1<<4,     // sleeping
+  mjENBL_DIAGEXACT    = 1<<5,     // exact diagonal of constraint inertia
 
-  mjNENABLE           = 5         // number of enable flags
+  mjNENABLE           = 6         // number of enable flags
 } mjtEnableBit;
 typedef enum mjtJoint_ {          // type of degree of freedom
   mjJNT_FREE          = 0,        // global position and orientation (quat)       (7)

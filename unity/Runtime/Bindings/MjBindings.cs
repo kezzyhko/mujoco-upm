@@ -146,7 +146,8 @@ public enum mjtEnableBit : int{
   mjENBL_FWDINV = 4,
   mjENBL_INVDISCRETE = 8,
   mjENBL_SLEEP = 16,
-  mjNENABLE = 5,
+  mjENBL_DIAGEXACT = 32,
+  mjNENABLE = 6,
 }
 public enum mjtJoint : int{
   mjJNT_FREE = 0,
@@ -5724,6 +5725,7 @@ public unsafe struct mjData_ {
   public int nl;
   public int nefc;
   public int nJ;
+  public int nY;
   public int nA;
   public int nisland;
   public int nidof;
@@ -5883,6 +5885,10 @@ public unsafe struct mjData_ {
   public double* iefc_frictionloss;
   public double* iefc_D;
   public double* iefc_R;
+  public int* efc_Y_rownnz;
+  public int* efc_Y_rowadr;
+  public int* efc_Y_colind;
+  public double* efc_Y;
   public int* efc_AR_rownnz;
   public int* efc_AR_rowadr;
   public int* efc_AR_colind;
