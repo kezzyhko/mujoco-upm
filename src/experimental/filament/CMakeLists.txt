@@ -51,10 +51,6 @@ target_sources(${MUJOCO_FILAMENT_TARGET_NAME}
         filament/scene_view.h
         filament/texture.cc
         filament/texture.h
-        compat/imgui_bridge.cc
-        compat/imgui_bridge.h
-        compat/mjr_filament_renderer.cc
-        compat/mjr_filament_renderer.h
         compat/model_objects.cc
         compat/model_objects.h
         compat/scene_bridge.cc
