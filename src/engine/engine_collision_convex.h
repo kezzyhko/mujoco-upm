@@ -26,7 +26,7 @@
 #include <mujoco/mjexport.h>
 #include <mujoco/mjdata.h>
 #include <mujoco/mjmodel.h>
-#include <mujoco/mjtnum.h>
+#include <mujoco/mjtype.h>
 
 // minimum number of vertices to use hill-climbing in mesh support
 #define mjMESH_HILLCLIMB_MIN 10
@@ -123,6 +123,9 @@ int mjc_HFieldElem(const mjModel* m, mjData* d, mjContact* con, int g, int f, in
 
 // fix contact frame normal
 void mjc_fixNormal(const mjModel* m, const mjData* d, mjPreContact* con, int g1, int g2);
+
+// set CCD internal buffer
+void mjc_setCCDBuffer(void* buffer);
 
 #ifdef __cplusplus
 }
