@@ -14,7 +14,6 @@
 
 #include "experimental/filament/filament/renderable.h"
 
-#include <algorithm>
 #include <cstdint>
 #include <numbers>
 
@@ -23,19 +22,17 @@
 #include <filament/RenderableManager.h>
 #include <filament/Scene.h>
 #include <filament/TransformManager.h>
+#include <math/mat3.h>
 #include <math/mat4.h>
 #include <math/vec2.h>
 #include <math/vec3.h>
 #include <math/vec4.h>
 #include <utils/EntityManager.h>
 #include <mujoco/mujoco.h>
-#include "experimental/filament/filament_util.h"
 #include "experimental/filament/filament/builtins.h"
-#include "experimental/filament/filament/filament_context.h"
 #include "experimental/filament/filament/material.h"
 #include "experimental/filament/filament/mesh.h"
 #include "experimental/filament/filament/object_manager.h"
-#include "experimental/filament/filament/texture.h"
 #include "experimental/filament/render_context_filament.h"
 
 namespace mujoco {
@@ -43,14 +40,17 @@ namespace mujoco {
 using filament::math::float2;
 using filament::math::float3;
 using filament::math::float4;
+using filament::math::mat3f;
 using filament::math::mat4f;
 
 // An arbitrary scale factor for arrows.
 static constexpr float kArrowScale = 1.f / 6.f;
 static constexpr float kArrowHeadSize = 1.75f;
 
-Renderable::Renderable(FilamentContext* ctx, const mjrRenderableParams& params)
-    : object_mgr_(ctx->GetObjectManager()), params_(params) {
+Renderable::Renderable(filament::Engine* engine,
+                       const mjrRenderableParams& params,
+                       ObjectManager* object_mgr)
+    : object_mgr_(object_mgr), params_(params) {
   mjr_defaultMaterial(&material_);
 }
 
@@ -77,6 +77,11 @@ void Renderable::SetMesh(const Mesh* mesh, int elem_offset, int elem_count) {
   if (mesh == nullptr) {
     mju_error("Cannot set mesh to nullptr.");
   }
+
+  // We use MESH, even though it could be any mesh-like geom type, e.g.
+  // heightfields, flex, skin, sdf, etc.
+  geom_type_ = mjGEOM_MESH;
+
   filament::VertexBuffer* vertex_buffer = mesh->GetFilamentVertexBuffer();
   if (vertex_buffer == nullptr) {
     mju_error("Invalid (null) vertex buffer.");
@@ -145,21 +150,33 @@ void Renderable::InitPartEntity(Part& part) {
   }
 }
 
-void Renderable::SetTransform(const Trs& trs) {
+void Renderable::SetTransform(const float3& position, const mat3f& rotation) {
+  trs_.translation = position;
+  trs_.rotation = rotation;
+  UpdateTransform();
+}
+
+void Renderable::SetSize(const float3& size) {
+  trs_.size = size;
+  UpdateTransform();
+}
+
+void Renderable::UpdateTransform() {
   if (parts_.empty()) {
-    transform_ = trs.ToTransform();
+    transform_ = trs_.ToTransform();
     return;
   }
 
   filament::TransformManager& tm = GetEngine()->getTransformManager();
   if (get_transform_fn_) {
     for (int i = 0; i < parts_.size(); ++i) {
-      const mat4f& transform = get_transform_fn_(i, trs);
+      const mat4f transform = get_transform_fn_(i, trs_);
       tm.setTransform(tm.getInstance(parts_[i].entity), transform);
     }
   } else {
+    const mat4f transform = trs_.ToTransform();
     for (Part& part : parts_) {
-      tm.setTransform(tm.getInstance(part.entity), trs.ToTransform());
+      tm.setTransform(tm.getInstance(part.entity), transform);
     }
   }
   transform_ = tm.getTransform(tm.getInstance(parts_[0].entity));
@@ -204,8 +221,12 @@ void Renderable::RemoveFromScene(filament::Scene* scene) {
 void Renderable::UpdateMaterial(const mjrMaterial& material) {
   material_ = material;
 
-  AssignMaterial(mjDRAW_MODE_COLOR, GetColorMaterialType());
+  const Mesh* mesh = !parts_.empty() ? parts_[0].mesh : nullptr;
+
+  const ObjectManager::MaterialType type = GetMaterialType(material, mesh);
+  AssignMaterial(mjDRAW_MODE_COLOR, type);
   if (!material_.decor_ux) {
+    AssignMaterial(mjDRAW_MODE_WIREFRAME, type);
     AssignMaterial(mjDRAW_MODE_DEPTH, ObjectManager::kUnlitDepth);
     AssignMaterial(mjDRAW_MODE_SEGMENTATION, ObjectManager::kUnlitSegmentation);
   }
@@ -215,7 +236,6 @@ void Renderable::UpdateMaterial(const mjrMaterial& material) {
       UpdateMaterialInstance(instances_[i], material_, object_mgr_);
     }
   }
-  SetDrawMode(draw_mode_);
 }
 
 void Renderable::AssignMaterial(mjrDrawMode mode,
@@ -234,6 +254,10 @@ void Renderable::AssignMaterial(mjrDrawMode mode,
   }
   if (material) {
     instances_[index] = material->createInstance();
+    if (geom_type_ == mjGEOM_PLANE || geom_type_ == mjGEOM_TRIANGLE) {
+      instances_[index]->setCullingMode(
+          filament::MaterialInstance::CullingMode::NONE);
+    }
   }
 }
 
@@ -246,6 +270,8 @@ void Renderable::SetDrawMode(mjrDrawMode mode) {
   if (material_.decor_ux) {
     mode = mjDRAW_MODE_COLOR;
   }
+
+  SetWireframe(mode == mjDRAW_MODE_WIREFRAME);
 
   filament::MaterialInstance* instance = instances_[static_cast<int>(mode)];
   if (instance) {
@@ -338,75 +364,9 @@ void Renderable::SetWireframe(bool wireframe) {
   }
 }
 
-ObjectManager::MaterialType Renderable::GetColorMaterialType() const {
-  if (material_.decor_ux) {
-    if (material_.color_texture) {
-      return ObjectManager::kUnlitUi;
-    } else {
-      return ObjectManager::kUnlitDecor;
-    }
-  } else if (material_.orm_texture) {
-    return ObjectManager::kPbrPacked;
-  } else if (material_.metallic_texture) {
-    return ObjectManager::kPbr;
-  } else if (material_.roughness_texture) {
-    return ObjectManager::kPbr;
-  } else if (material_.metallic >= 0) {
-    return ObjectManager::kPbr;
-  } else if (material_.roughness >= 0) {
-    return ObjectManager::kPbr;
-  }
-
-  // Check to see if we're dealing with a mesh with texture coordinates.
-  // `data_id` is the id of the mesh in model (i.e. the geom has mesh
-  // geometry) and `mesh_texcoordadr` stores the address of the mesh uvs if
-  // it has them.
-  bool has_texcoords = false;
-  const Texture* color_texture = Texture::downcast(material_.color_texture);
-  if (!parts_.empty()) {
-    const auto attribs = parts_[0].mesh->GetVertexAttributes();
-    auto it = std::find(attribs.begin(), attribs.end(),
-                        filament::VertexAttribute::UV0);
-    has_texcoords = (it != attribs.end());
-  }
-
-  if (color_texture == nullptr) {
-    if (material_.color[3] < 1.0f) {
-      return ObjectManager::kPhongColorFade;
-    } else if (material_.reflective) {
-      return ObjectManager::kPhongColorReflect;
-    } else {
-      return ObjectManager::kPhongColor;
-    }
-  } else if (color_texture->GetSamplerType() == mjTEXTURE_CUBE) {
-    if (material_.color[3] < 1.0f) {
-      return ObjectManager::kPhongCubeFade;
-    } else if (material_.reflective) {
-      return ObjectManager::kPhongCubeReflect;
-    } else {
-      return ObjectManager::kPhongCube;
-    }
-  } else if (has_texcoords) {
-    if (material_.color[3] < 1.0f) {
-      return ObjectManager::kPhong2dUvFade;
-    } else if (material_.reflective) {
-      return ObjectManager::kPhong2dUvReflect;
-    } else {
-      return ObjectManager::kPhong2dUv;
-    }
-  } else {
-    if (material_.color[3] < 1.0f) {
-      return ObjectManager::kPhong2dFade;
-    } else if (material_.reflective) {
-      return ObjectManager::kPhong2dReflect;
-    } else {
-      return ObjectManager::kPhong2d;
-    }
-  }
-}
-
 void Renderable::SetGeomMesh(mjtGeom type, int nstack, int nslice, int nquad) {
   Builtins* builtins = object_mgr_->GetBuiltins(nstack, nslice, nquad);
+  geom_type_ = type;
 
   switch (type) {
     case mjGEOM_PLANE:

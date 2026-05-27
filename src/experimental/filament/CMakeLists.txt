@@ -51,10 +51,8 @@ target_sources(${MUJOCO_FILAMENT_TARGET_NAME}
         filament/scene_view.h
         filament/texture.cc
         filament/texture.h
-        compat/imgui_bridge.cc
-        compat/imgui_bridge.h
-        compat/mjr_filament_renderer.cc
-        compat/mjr_filament_renderer.h
+        compat/light_manager.cc
+        compat/light_manager.h
         compat/model_objects.cc
         compat/model_objects.h
         compat/scene_bridge.cc
@@ -102,7 +100,9 @@ file(COPY
 set(MATC_EXECUTABLE matc)
 set(MATERIAL_FILES
     pbr.mat
+    pbr_transparent.mat
     pbr_packed.mat
+    pbr_packed_transparent.mat
     phong_2d_fade.mat
     phong_2d.mat
     phong_2d_reflect.mat

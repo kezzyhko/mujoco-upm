@@ -29,7 +29,7 @@ set(MSVC_INCREMENTAL_DEFAULT ON)
 
 project(
   mujoco
-  VERSION 3.8.1
+  VERSION 3.9.0
   DESCRIPTION "MuJoCo Physics Simulator"
   HOMEPAGE_URL "https://mujoco.org"
 )
@@ -108,6 +108,7 @@ include(MujocoMacOS)
 include(MujocoDependencies)
 
 set(MUJOCO_HEADERS
+    include/mujoco/mjassert.h
     include/mujoco/mjdata.h
     include/mujoco/mjexport.h
     include/mujoco/mjmacro.h
@@ -117,7 +118,7 @@ set(MUJOCO_HEADERS
     include/mujoco/mjsan.h
     include/mujoco/mjspec.h
     include/mujoco/mjthread.h
-    include/mujoco/mjtnum.h
+    include/mujoco/mjtype.h
     include/mujoco/mjui.h
     include/mujoco/mjvisualize.h
     include/mujoco/mjxmacro.h
@@ -157,6 +158,7 @@ add_subdirectory(plugin/stl_decoder)
 add_subdirectory(src/engine)
 add_subdirectory(src/user)
 add_subdirectory(src/xml)
+add_subdirectory(src/xml/mjz)
 add_subdirectory(src/thread)
 if(NOT EMSCRIPTEN AND NOT MUJOCO_USE_FILAMENT_MJR_COMPAT)
   add_subdirectory(src/render/classic)
@@ -256,7 +258,6 @@ if(MUJOCO_BUILD_SIMULATE)
 endif()
 
 if(MUJOCO_BUILD_STUDIO)
-  add_subdirectory(src/xml/mjz)
   add_subdirectory(src/experimental/platform)
   add_subdirectory(src/experimental/studio)
 endif()
@@ -296,11 +297,8 @@ if(BUILD_TESTING AND MUJOCO_BUILD_TESTS)
   endif()
 endif()
 
-if(NOT (APPLE AND MUJOCO_BUILD_MACOS_FRAMEWORKS))
+if(NOT EMSCRIPTEN AND NOT (APPLE AND MUJOCO_BUILD_MACOS_FRAMEWORKS))
   set(MUJOCO_TARGETS mujoco)
-  if (EMSCRIPTEN)
-    list(APPEND MUJOCO_TARGETS lodepng)
-  endif()
 
   # Install the libraries.
   install(

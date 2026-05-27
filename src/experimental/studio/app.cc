@@ -81,8 +81,14 @@ static constexpr const char* ICON_UNDO_SPEC = platform::ICON_FA_UNDO;
 static constexpr const char* ICON_REDO_SPEC = platform::ICON_FA_REPEAT;
 
 App::App(Config config)
-    : ini_path_(std::move(config.ini_path)), gfx_mode_(config.gfx_mode) {
+    : app_title_(std::move(config.title)),
+      ini_path_(std::move(config.ini_path)),
+      gfx_mode_(config.gfx_mode) {
   SwitchGraphicsMode(config.width, config.height, config.gfx_mode);
+
+  if (config.initial_theme.has_value()) {
+    ui_.theme = *config.initial_theme;
+  }
 
   ImPlot::CreateContext();
   mjv_defaultPerturb(&perturb_);
@@ -100,10 +106,16 @@ void App::SwitchGraphicsMode(int width, int height,
 
   platform::Window::Config window_config;
   window_config.gfx_mode = gfx_mode_;
-  window_ = std::make_unique<platform::Window>("MuJoCo Studio", width, height,
+  window_ = std::make_unique<platform::Window>(app_title_, width, height,
                                                window_config);
   renderer_ = std::make_unique<platform::Renderer>(
       window_->GetNativeWindowHandle(), gfx_mode_);
+
+  // TODO: Figure out why this breaks on some platforms.
+  // LoadSettings();
+  if (ui_.window_width > 0 && ui_.window_height > 0) {
+    window_->Resize(ui_.window_width, ui_.window_height);
+  }
 }
 
 void App::Recompile() {
@@ -141,9 +153,9 @@ void App::LoadModelFromFile(const std::string& filepath) {
     UpdateFilePaths(resolved_file);
     if (model() && model()->names) {
       // Assumes the first string in the model is the name of the model itself.
-      window_->SetTitle("MuJoCo Studio : " + std::string(model()->names));
+      window_->SetTitle(app_title_ + " : " + std::string(model()->names));
     } else {
-      window_->SetTitle("MuJoCo Studio : " +
+      window_->SetTitle(app_title_ + " : " +
                         std::filesystem::path(filepath).stem().string());
     }
   } else {
@@ -449,14 +461,20 @@ void App::HandleMouseEvents() {
     if (perturb_.select > 0) {
       mjtMouse action = mjMOUSE_NONE;
       if (ImGui::IsMouseDown(ImGuiMouseButton_Left)) {
-        action = io.KeyShift ? mjMOUSE_ROTATE_H : mjMOUSE_ROTATE_V;
+        if (io.KeyAlt) {
+          action = io.KeyShift ? mjMOUSE_MOVE_H : mjMOUSE_MOVE_V;
+        } else {
+          action = io.KeyShift ? mjMOUSE_ROTATE_H : mjMOUSE_ROTATE_V;
+        }
       } else if (ImGui::IsMouseDown(ImGuiMouseButton_Right)) {
         action = io.KeyShift ? mjMOUSE_MOVE_H : mjMOUSE_MOVE_V;
       } else if (ImGui::IsMouseDown(ImGuiMouseButton_Middle)) {
         action = mjMOUSE_ZOOM;
       }
       const mjtPertBit active =
-          action == mjMOUSE_MOVE_V ? mjPERT_TRANSLATE : mjPERT_ROTATE;
+          (action == mjMOUSE_MOVE_V || action == mjMOUSE_MOVE_H)
+              ? mjPERT_TRANSLATE
+              : mjPERT_ROTATE;
       if (active != perturb_.active) {
         platform::InitPerturb(model(), data(), &camera_, &perturb_, active);
       }
@@ -791,6 +809,10 @@ void App::LoadSettings() {
 void App::SaveSettings() {
   if (!ini_path_.empty()) {
     std::string settings = ImGui::SaveIniSettingsToMemory();
+    if (window_) {
+      ui_.window_width = window_->GetWidth();
+      ui_.window_height = window_->GetHeight();
+    }
     platform::AppendIniSection(settings, "[Studio][UX]", ui_.ToDict());
 
     platform::KeyValues plugin_names;
@@ -1839,12 +1861,18 @@ App::UiState::Dict App::UiState::ToDict() const {
   return {
       {"theme", std::to_string(static_cast<int>(theme))},
       {"font_scale", std::to_string(font_scale)},
+      {"window_width", std::to_string(window_width)},
+      {"window_height", std::to_string(window_height)},
   };
 }
 
 void App::UiState::FromDict(const Dict& dict) {
+  using platform::ReadIniValue;
+
   *this = UiState();
   theme = ReadIniValue(dict, "theme", theme);
-  font_scale = platform::ReadIniValue(dict, "font_scale", font_scale);
+  window_width = ReadIniValue(dict, "window_width", window_width);
+  window_height = ReadIniValue(dict, "window_height", window_height);
+  font_scale = ReadIniValue(dict, "font_scale", font_scale);
 }
 }  // namespace mujoco::studio

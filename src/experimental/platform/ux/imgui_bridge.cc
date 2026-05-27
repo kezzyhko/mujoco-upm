@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include "experimental/filament/compat/imgui_bridge.h"
+#include "experimental/platform/ux/imgui_bridge.h"
 
 #include <cstddef>
 #include <cstdint>
@@ -36,9 +36,6 @@ using filament::math::mat3f;
 ImguiBridge::ImguiBridge(mjrfContext* ctx) : ctx_(ctx) {
   mjrSceneParams params;
   mjr_defaultSceneParams(&params);
-  params.enable_post_processing = false;
-  params.enable_reflections = false;
-  params.enable_shadows = false;
   scene_ = CreateScene(ctx_, params);
 }
 
@@ -273,10 +270,8 @@ void ImguiBridge::Update() {
       }
       mjrf_setRenderableMaterial(renderable.get(), &material);
 
-      const float position[] = {0, 0, 0};
-      const float rotation[] = {1, 0, 0, 0, 1, 0, 0, 0, 1};
       const float size[] = {scale.x, scale.y, 1.0f};
-      mjrf_setRenderableTransform(renderable.get(), position, rotation, size);
+      mjrf_setRenderableSize(renderable.get(), size);
 
       index_offset += command.ElemCount;
       ++renderable_index;
@@ -321,38 +316,6 @@ mjrCamera ImguiBridge::GetCamera(int width, int height) const {
   camera.frustum_width = width / 2.0f;
   camera.frustum_bottom = height;
   return camera;
-}
-
-static ImVec2 ClipSpaceToWindowCoordinates(float x, float y) {
-  const ImVec2& display_size = ImGui::GetIO().DisplaySize;
-  const float pos_x = display_size.x * ((x + 1) * 0.5f);
-  const float pos_y = display_size.y * (1.0f - ((y + 1) * 0.5f));
-  return ImVec2(pos_x, pos_y);
-}
-
-void DrawTextAt(const char* text, float x, float y, float z) {
-  if (x < -1 || y < -1 || x > 1 || y > 1 || z < -1 || z > 1) {
-    return;
-  }
-
-  const ImVec2 center_pos = ClipSpaceToWindowCoordinates(x, y);
-  const ImVec2 size = ImGui::CalcTextSize(text);
-
-  const ImVec2 pos = ImVec2(center_pos.x - size.x / 2, center_pos.y);
-  const ImVec2 shadow_pos = ImVec2(pos.x + 2, pos.y + 2);
-  const int flags = ImGuiWindowFlags_NoBringToFrontOnFocus |
-                    ImGuiWindowFlags_NoFocusOnAppearing |
-                    ImGuiWindowFlags_NoBackground |
-                    ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoInputs |
-                    ImGuiWindowFlags_NoNav;
-
-  ImGui::Begin("labels", nullptr, flags);
-  ImGui::BeginChild("labels", ImGui::GetIO().DisplaySize, 0, flags);
-  ImDrawList* draw_list = ImGui::GetWindowDrawList();
-  draw_list->AddText(shadow_pos, IM_COL32_BLACK, text);
-  draw_list->AddText(pos, IM_COL32_WHITE, text);
-  ImGui::EndChild();
-  ImGui::End();
 }
 
 }  // namespace mujoco

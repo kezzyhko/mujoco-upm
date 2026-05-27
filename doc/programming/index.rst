@@ -154,19 +154,19 @@ links below, to make this documentation self-contained.
    global variables, and includes all other header files except mjxmacro.h.
 `mjmodel.h <https://github.com/google-deepmind/mujoco/blob/main/include/mujoco/mjmodel.h>`__
    Defines the C structure :ref:`mjModel` which is the runtime representation of the
-   model being simulated. It also defines a number of primitive types and other structures needed to define mjModel.
+   model being simulated.
 `mjdata.h <https://github.com/google-deepmind/mujoco/blob/main/include/mujoco/mjdata.h>`__
    Defines the C structure :ref:`mjData` which is the workspace where all computations
-   read their inputs and write their outputs. It also defines primitive types and other structures needed to define
-   mjData.
+   read their inputs and write their outputs.
 `mjvisualize.h <https://github.com/google-deepmind/mujoco/blob/main/include/mujoco/mjvisualize.h>`__
    Defines the primitive types and structures needed by the abstract visualizer.
 `mjrender.h <https://github.com/google-deepmind/mujoco/blob/main/include/mujoco/mjrender.h>`__
    Defines the primitive types and structures needed by the OpenGL renderer.
 `mjui.h <https://github.com/google-deepmind/mujoco/blob/main/include/mujoco/mjui.h>`__
    Defines the primitive types and structures needed by the UI framework.
-`mjtnum.h <https://github.com/google-deepmind/mujoco/blob/main/include/mujoco/mjtnum.h>`__
-   Defines MuJoCo's ``mjtNum`` floating-point type to be either ``double`` or ``float``. See :ref:`mjtNum`.
+`mjtype.h <https://github.com/google-deepmind/mujoco/blob/main/include/mujoco/mjtype.h>`__
+   Defines primitive types and enums, including the ``mjtNum`` floating-point type to be either ``double`` or ``float``
+   (see :ref:`mjtNum`).
 `mjspec.h <https://github.com/google-deepmind/mujoco/blob/main/include/mujoco/mjspec.h>`__
    Defines enums and structs used for :doc:`procedural model editing <modeledit>`.
 `mjplugin.h <https://github.com/google-deepmind/mujoco/blob/main/include/mujoco/mjplugin.h>`__
@@ -184,6 +184,8 @@ links below, to make this documentation self-contained.
    code.
 `mjsan.h <https://github.com/google-deepmind/mujoco/blob/main/include/mujoco/mjsan.h>`__
    Definitions required when building with sanitizer instrumentation.
+`mjassert.h <https://github.com/google-deepmind/mujoco/blob/main/include/mujoco/mjassert.h>`__
+   Compile-time size assertions verifying MuJoCo ABI stability across C and C++ compilers.
 
 .. _inVersion:
 
@@ -228,8 +230,7 @@ to which the symbol belongs. First we list the prefixes corresponding to type de
    Core simulation data structure (C struct), for example :ref:`mjModel`. If all characters
    after the prefix are capital, for example :ref:`mjMIN`, this is a macro or a symbol (#define).
 ``mjt``
-   Primitive type, for example :ref:`mjtGeom`. Except for mjtByte and mjtNum, all other
-   definitions in this family are enums.
+   Primitive type, for example :ref:`mjtNum` and :ref:`mjtGeom`. Most types in this family are enums.
 ``mjf``
    Callback function type, for example :ref:`mjfGeneric`.
 ``mjv``

@@ -71,8 +71,17 @@ class AssetRegistry {
 // The caller is responsible for freeing the buffer. Returns 0 on failure.
 EM_ASYNC_JS(int, FetchUrl,
             (const char* url, char** out_data, std::int32_t* out_size), {
+              const urlStr = UTF8ToString(url);
+              const filename = urlStr.split('/').pop() || urlStr;
+              const dlEl = document.getElementById('loadingDownload');
+              const dlFileEl = document.getElementById('loadingDownloadFile');
+              if (dlEl) {
+                dlEl.style.display = 'block';
+              }
+              if (dlFileEl) {
+                dlFileEl.textContent = filename + '\u2026';
+              }
               try {
-                const urlStr = UTF8ToString(url);
                 const response = await fetch(urlStr);
                 if (!response.ok) {
                   console.error('Fetch failed: ' + response.status + ' ' +
@@ -89,6 +98,13 @@ EM_ASYNC_JS(int, FetchUrl,
               } catch (e) {
                 console.error('Fetch error:', e);
                 return 0;
+              } finally {
+                if (dlEl) {
+                  dlEl.style.display = 'none';
+                }
+                if (dlFileEl) {
+                  dlFileEl.textContent = "";
+                }
               }
             });
 
@@ -148,7 +164,7 @@ void RegisterAsset(std::string filename, std::string contents) {
 }
 
 // Javascript-facing function to initialize the app.
-void Init() {
+void Init(const std::string& title, bool dark_theme) {
   // Note: dimensions do not matter as window will be resized to fit canvas.
   const int width = 100;
   const int height = 100;
@@ -195,12 +211,46 @@ void Init() {
   http_provider.prefix = "https";
   mjp_registerResourceProvider(&http_provider);
 
-  g_app = new mujoco::studio::App({
-    .width = width,
-    .height = height,
-    .ini_path = ini_path,
-    .gfx_mode = mujoco::platform::GraphicsMode::FilamentWebGl,
-  });
+  // Register a "github:" resource provider that resolves
+  // github:org/repo/branch/path/to/file.xml to
+  // https://raw.githubusercontent.com/org/repo/branch/path/to/file.xml
+  mjpResourceProvider github_provider;
+  mjp_defaultResourceProvider(&github_provider);
+
+  github_provider.open = [](mjResource* resource) {
+    std::string name(resource->name);
+    // Strip the "github:" prefix and prepend the raw.githubusercontent URL.
+    std::string url =
+        "https://raw.githubusercontent.com/" + name.substr(strlen("github:"));
+    return FetchCache::Instance().Fetch(url.c_str());
+  };
+  github_provider.read = [](mjResource* resource, const void** buffer) {
+    std::string name(resource->name);
+    std::string url =
+        "https://raw.githubusercontent.com/" + name.substr(strlen("github:"));
+    return FetchCache::Instance().Read(url.c_str(), buffer);
+  };
+  github_provider.close = [](mjResource* resource) {
+    std::string name(resource->name);
+    std::string url =
+        "https://raw.githubusercontent.com/" + name.substr(strlen("github:"));
+    FetchCache::Instance().Close(url.c_str());
+  };
+
+  github_provider.prefix = "github";
+  mjp_registerResourceProvider(&github_provider);
+
+  mujoco::studio::App::Config config;
+  config.width = width;
+  config.height = height;
+  config.ini_path = ini_path;
+  config.gfx_mode = mujoco::platform::GraphicsMode::FilamentWebGl;
+  config.initial_theme = dark_theme ? mujoco::platform::GuiTheme::kDark
+                                    : mujoco::platform::GuiTheme::kLight;
+  if (!title.empty()) {
+    config.title = title;
+  }
+  g_app = new mujoco::studio::App(std::move(config));
   g_app->InitEmptyModel();
 }
 

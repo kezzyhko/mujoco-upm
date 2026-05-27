@@ -388,7 +388,7 @@ Defined in `mujoco.h <https://github.com/google-deepmind/mujoco/blob/main/includ
      - value
      - description
    * - ``mjVERSION_HEADER``
-     - 3008001
+     - 3009000
      - The version of the MuJoCo headers. This is an integer calculated from the version string "S.M.P"
        using the formula ``(S * 1e6) + (M * 1e3) + P``. For example, version 4.2.1 is represented as 4002001.
        The API function :ref:`mj_version` returns a number with the same meaning
@@ -415,7 +415,7 @@ indicated otherwise.
      - 1E-15
      - The minimal value allowed in any denominator, and in general any mathematical operation where 0 is not allowed.
        In almost all cases, MuJoCo silently clamps smaller values to mjMINVAL.
-       Defined in `mjtnum.h <https://github.com/google-deepmind/mujoco/blob/main/include/mujoco/mjtnum.h>`_.
+       Defined in `mjtype.h <https://github.com/google-deepmind/mujoco/blob/main/include/mujoco/mjtype.h>`_.
    * - ``mjPI``
      - :math:`\pi`
      - The value of :math:`\pi`. This is used in various trigonometric functions, and also for conversion from degrees
