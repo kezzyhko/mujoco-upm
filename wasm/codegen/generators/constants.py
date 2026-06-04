@@ -147,14 +147,10 @@ _SKIPPED_MEMORY_FUNCTIONS: tuple[str, ...] = (
     "mju_boxQPmalloc",
     "mju_clearHandlers",
     "mju_error",
-    "mju_error_i",
-    "mju_error_s",
     "mju_free",
     "mju_malloc",
     "mju_strncpy",
     "mju_warning",
-    "mju_warning_i",
-    "mju_warning_s",
     # go/keep-sorted end
 )
 
@@ -320,7 +316,7 @@ MJDATA_SIZES: tuple[str, ...] = (
     "efc_R",
     "efc_aref",
     "efc_b",
-    "efc_diagApprox",
+    "efc_diagA",
     "efc_force",
     "efc_frictionloss",
     "efc_id",
@@ -569,7 +565,6 @@ FUNCTION_BOUNDS_CHECKS: Dict[str, str] = {
   CHECK_SIZE(qpos2, m.nq());
     """.strip(),
     "mj_fullM": """
-  CHECK_SIZE(M, m.nM());
   CHECK_SIZE(dst, m.nv() * m.nv());
     """.strip(),
     "mj_geomDistance": """

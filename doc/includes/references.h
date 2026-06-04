@@ -318,7 +318,7 @@ struct mjData_ {
   mjtNum* efc_pos;           // constraint position (equality, contact)          (nefc x 1)
   mjtNum* efc_margin;        // inclusion margin (contact)                       (nefc x 1)
   mjtNum* efc_frictionloss;  // frictionloss (friction)                          (nefc x 1)
-  mjtNum* efc_diagApprox;    // approximation to diagonal of A                   (nefc x 1)
+  mjtNum* efc_diagA;         // diagonal of A matrix, approximate or exact       (nefc x 1)
   mjtNum* efc_KBIP;          // stiffness, damping, impedance, imp'              (nefc x 4)
   mjtNum* efc_D;             // constraint mass                                  (nefc x 1)
   mjtNum* efc_R;             // inverse constraint mass                          (nefc x 1)
@@ -341,12 +341,6 @@ struct mjData_ {
   // computed by mj_island (dofs sorted by island)
   mjtNum* ifrc_smooth;       // net unconstrained force                          (nidof x 1)
   mjtNum* iacc_smooth;       // unconstrained acceleration                       (nidof x 1)
-  int*    iM_rownnz;         // inertia: non-zeros in each row                   (nidof x 1)
-  int*    iM_rowadr;         // inertia: address of each row in iM_colind        (nidof x 1)
-  int*    iM_colind;         // inertia: column indices of non-zeros             (nC x 1)
-  mjtNum* iM;                // total inertia (sparse)                           (nC x 1)
-  mjtNum* iLD;               // L'*D*L factorization of M (sparse)               (nC x 1)
-  mjtNum* iLDiagInv;         // 1/diag(D)                                        (nidof x 1)
   mjtNum* iacc;              // acceleration                                     (nidof x 1)
 
   // computed by mj_island (island constraint structure)
@@ -361,11 +355,6 @@ struct mjData_ {
   // computed by mj_island (constraints sorted by island)
   int*    iefc_type;         // constraint type (mjtConstraint)                  (nefc x 1)
   int*    iefc_id;           // id of object of specified type                   (nefc x 1)
-  int*    iefc_J_rownnz;     // number of non-zeros in constraint Jacobian row   (nefc x 1)
-  int*    iefc_J_rowadr;     // row start address in colind array                (nefc x 1)
-  int*    iefc_J_rowsuper;   // number of subsequent rows in supernode           (nefc x 1)
-  int*    iefc_J_colind;     // column indices in constraint Jacobian            (nJ x 1)
-  mjtNum* iefc_J;            // constraint Jacobian                              (nJ x 1)
   mjtNum* iefc_frictionloss; // frictionloss (friction)                          (nefc x 1)
   mjtNum* iefc_D;            // constraint mass                                  (nefc x 1)
   mjtNum* iefc_R;            // inverse constraint mass                          (nefc x 1)
@@ -3331,7 +3320,7 @@ void mj_jacDot(const mjModel* m, const mjData* d, mjtNum* jacp, mjtNum* jacr,
 void mj_angmomMat(const mjModel* m, mjData* d, mjtNum* mat, int body);
 int mj_name2id(const mjModel* m, int type, const char* name);
 const char* mj_id2name(const mjModel* m, int type, int id);
-void mj_fullM(const mjModel* m, mjtNum* dst, const mjtNum* M);
+void mj_fullM(const mjModel* m, const mjData* d, mjtNum* dst);
 void mj_mulM(const mjModel* m, const mjData* d, mjtNum* res, const mjtNum* vec);
 void mj_mulM2(const mjModel* m, const mjData* d, mjtNum* res, const mjtNum* vec);
 void mj_addM(const mjModel* m, mjData* d, mjtNum* dst, int* rownnz, int* rowadr, int* colind);
@@ -3468,11 +3457,7 @@ void mjui_update(int section, int item, const mjUI* ui,
 mjuiItem* mjui_event(mjUI* ui, mjuiState* state, const mjrContext* con);
 void mjui_render(mjUI* ui, const mjuiState* state, const mjrContext* con);
 void mju_error(const char* msg, ...) mjPRINTFLIKE(1, 2);
-void mju_error_i(const char* msg, int i);
-void mju_error_s(const char* msg, const char* text);
 void mju_warning(const char* msg, ...) mjPRINTFLIKE(1, 2);
-void mju_warning_i(const char* msg, int i);
-void mju_warning_s(const char* msg, const char* text);
 void mju_clearHandlers(void);
 void* mju_malloc(size_t size);
 void mju_free(void* ptr);
