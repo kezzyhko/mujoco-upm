@@ -81,9 +81,6 @@ void mjr_defaultMaterial(mjrMaterial* material) {
   memset(material, 0, sizeof(mjrMaterial));
   setf(material->color, {1.f, 1.f, 1.f, 1.f});
   setf(material->uv_scale, {1, 1, 1});
-  material->segmentation_color[0] = 255;
-  material->segmentation_color[1] = 255;
-  material->segmentation_color[2] = 255;
   material->emissive = -1.0f;
   material->specular = -1.0f;
   material->glossiness = -1.0f;
@@ -168,7 +165,7 @@ mjrRenderable* mjrf_createRenderable(mjrfContext* ctx,
                                      const mjrRenderableParams* params) {
   return new mujoco::Renderable(
       mujoco::FilamentContext::downcast(ctx)->GetEngine(), *params,
-      mujoco::FilamentContext::downcast(ctx)->GetObjectManager());
+      mujoco::FilamentContext::downcast(ctx)->GetMaterialManager());
 }
 
 void mjrf_destroyRenderable(mjrRenderable* renderable) {
