@@ -67,6 +67,9 @@ struct mjrfLight {};
 struct mjrfRenderable {};
 struct mjrfRenderTarget {};
 
+// Callback function type for rendering operations.
+typedef void (*mjrfCallback)(void* user_data);
+
 // ## Rendering Context (mjrfContext)
 //
 // The Context is the main entry point for the library. It manages all the
@@ -194,7 +197,7 @@ struct mjrfReadPixelsRequest {
 
   // Callback when the read pixels operation is complete. This function can
   // optionally be used to free the output buffer if needed.
-  void (*read_completed_callback)(void* user_data);
+  mjrfCallback read_completed;
 
   // User data to pass to the completion callback.
   void* user_data;
@@ -310,7 +313,7 @@ struct mjrfTextureData {
   // Because rendering may be multithreaded, we cannot make assumptions about
   // when the image data will finish uploading to the GPU. As such, we will use
   // this callback to notify callers when it is safe to free the image data.
-  void (*release_callback)(void* user_data);
+  mjrfCallback release;
 
   // User data to pass to the release callback.
   void* user_data;
@@ -441,7 +444,7 @@ struct mjrfMeshData {
   // Because rendering may be multithreaded, we cannot make assumptions about
   // when the mesh data will finish uploading to the GPU. As such, we will use
   // this callback to notify callers when it is safe to free the mesh data.
-  void (*release_callback)(void* user_data);
+  mjrfCallback release;
 
   // User data to pass to the release callback.
   void* user_data;
@@ -464,12 +467,6 @@ void mjrf_destroyMesh(mjrfMesh* mesh);
 
 // Configuration parameters for a Scene.
 struct mjrfSceneParams {
-  // This mask, in conjunction with the layer mask in the Renderable, determines
-  // which Renderables to render within the Scene.
-  uint8_t layer_mask;
-
-  // The layer mask to use for reflections.
-  uint8_t reflection_layer_mask;
 };
 
 // Initializes the mjrfSceneParams to default values.
@@ -684,15 +681,6 @@ struct mjrfRenderableParams {
   // Whether or not the Renderable receives shadows.
   mjtBool receive_shadows;
 
-  // The layers to which the Renderable belongs. This mask is used in
-  // conjunction with the layer mask in the Scene to determine which
-  // Renderables to render. Defaults to 0xff.
-  uint8_t layer_mask;
-
-  // Controls the order in which the Renderable is drawn relative to other
-  // Renderables; defaults to 4.
-  uint8_t priority;
-
   // Similar to priority, but provides finer-grained control for Renderables
   // with transparency; defaults to 0.
   uint16_t blend_order;
@@ -744,7 +732,7 @@ void mjrf_setRenderableSize(mjrfRenderable* renderable, const float size[3]);
 // See mjrf_render for more details.
 
 // Defines the basic properties of a render target.
-struct mjrRenderTargetConfig {
+struct mjrfRenderTargetConfig {
   // The width of the render target.
   int width;
 
@@ -759,11 +747,11 @@ struct mjrRenderTargetConfig {
 };
 
 // Initializes the RenderTargetConfig to default values.
-void mjrf_defaultRenderTargetConfig(mjrRenderTargetConfig* config);
+void mjrf_defaultRenderTargetConfig(mjrfRenderTargetConfig* config);
 
 // Creates a render target for the filament renderer.
 mjrfRenderTarget* mjrf_createRenderTarget(mjrfContext* ctx,
-                                         const mjrRenderTargetConfig* config);
+                                         const mjrfRenderTargetConfig* config);
 
 // Destroys the render target.
 void mjrf_destroyRenderTarget(mjrfRenderTarget* render_target);
