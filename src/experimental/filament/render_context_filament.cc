@@ -143,7 +143,8 @@ void mjrf_destroyMesh(mjrfMesh* mesh) { delete mujoco::Mesh::downcast(mesh); }
 
 mjrfScene* mjrf_createScene(mjrfContext* ctx, const mjrfSceneParams* params) {
   return new mujoco::SceneView(
-      mujoco::FilamentContext::downcast(ctx)->GetEngine(), *params);
+      mujoco::FilamentContext::downcast(ctx)->GetObjectManager(),
+      mujoco::FilamentContext::downcast(ctx)->GetMaterialManager(), *params);
 }
 
 void mjrf_destroyScene(mjrfScene* scene) {
@@ -289,6 +290,11 @@ void mjrf_setSceneSkybox(mjrfScene* scene, const mjrfTexture* texture) {
 
 void mjrf_configureSceneFromModel(mjrfScene* scene, const mjModel* model) {
   mujoco::SceneView::downcast(scene)->Configure(model);
+}
+
+void mjrf_resizeRenderTarget(mjrfRenderTarget* render_target, int width,
+                           int height) {
+  mujoco::RenderTarget::downcast(render_target)->Prepare(width, height);
 }
 
 mjrfFrameHandle mjrf_render(mjrfContext* ctx, const mjrfRenderRequest* req,
