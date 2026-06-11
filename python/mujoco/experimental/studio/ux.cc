@@ -22,10 +22,10 @@
 
 #include <imgui.h>
 #include <mujoco/mujoco.h>
-#include "third_party/mujoco/src/experimental/platform/helpers.h"
-#include "third_party/mujoco/src/experimental/platform/sim/step_control.h"
-#include "third_party/mujoco/src/experimental/platform/ux/gui.h"
-#include "third_party/mujoco/src/experimental/platform/ux/interaction.h"
+#include <mujoco/experimental/platform/helpers.h>
+#include <mujoco/experimental/platform/sim/step_control.h>
+#include <mujoco/experimental/platform/ux/gui.h>
+#include <mujoco/experimental/platform/ux/interaction.h>
 #include "structs.h"
 #include <pybind11/pybind11.h>
 #include <pybind11/stl.h>
@@ -94,6 +94,13 @@ PYBIND11_MODULE(ux, m) {
         mujoco::platform::SetupTheme(theme);
       },
       py::arg("theme"), "Set up Dear ImGui visual theme.");
+
+  m.def(
+      "set_imgui_context",
+      [](intptr_t ptr) {
+        ImGui::SetCurrentContext(reinterpret_cast<ImGuiContext*>(ptr));
+      },
+      py::arg("ptr"), "Set ImGui context pointer.");
 
   m.def(
       "configure_docking_layout",
