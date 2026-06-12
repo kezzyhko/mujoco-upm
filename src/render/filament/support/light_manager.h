@@ -12,22 +12,26 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#ifndef MUJOCO_SRC_EXPERIMENTAL_FILAMENT_COMPAT_LIGHT_MANAGER_H_
-#define MUJOCO_SRC_EXPERIMENTAL_FILAMENT_COMPAT_LIGHT_MANAGER_H_
+#ifndef MUJOCO_SRC_RENDER_FILAMENT_SUPPORT_LIGHT_MANAGER_H_
+#define MUJOCO_SRC_RENDER_FILAMENT_SUPPORT_LIGHT_MANAGER_H_
 
 #include <vector>
 
-#include "experimental/filament/compat/model_objects.h"
+#include <mujoco/mujoco.h>
 #include "render/filament/mjrfilament.h"
 #include "render/filament/mjrfilament_cpp.h"
+#include "render/filament/support/model_objects.h"
 
 namespace mujoco {
 
-// Manages Light entities for an mjrfScene using data from an mjvScene.
+// Manages Light entities for an mjrfScene.
 class LightManager {
  public:
   LightManager(mjrfContext* ctx, mjrfScene* scene, ModelObjects* model_objects);
   ~LightManager();
+
+  // Updates the state of the lights in the scene.
+  void Update(const mjData* data);
 
   // Returns the light with the given index in the mjModel. Note that an extra
   // headlight is assigned of the index `nlight`.
@@ -37,10 +41,12 @@ class LightManager {
   LightManager& operator=(const LightManager&) = delete;
 
  private:
-  void Prepare(ModelObjects* model_objects);
+  void Prepare();
 
   mjrfContext* ctx_ = nullptr;
   mjrfScene* scene_ = nullptr;
+  ModelObjects* model_objects_ = nullptr;
+
   UniquePtr<mjrfLight> fallback_ibl_{nullptr, nullptr};
   UniquePtr<mjrfTexture> fallback_ibl_texture_{nullptr, nullptr};
   std::vector<UniquePtr<mjrfLight>> lights_;
@@ -53,4 +59,4 @@ class LightManager {
 
 }  // namespace mujoco
 
-#endif  // MUJOCO_SRC_EXPERIMENTAL_FILAMENT_COMPAT_LIGHT_MANAGER_H_
+#endif  // MUJOCO_SRC_RENDER_FILAMENT_SUPPORT_LIGHT_MANAGER_H_
