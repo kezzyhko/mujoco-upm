@@ -28,7 +28,6 @@
 #include <mujoco/mjspec.h>
 #include <mujoco/mujoco.h>
 #include "src/cc/array_safety.h"
-#include "src/engine/engine_util_errmem.h"
 #include "src/user/user_api.h"
 #include "src/xml/xml_api.h"
 #include "test/compare_model.h"
@@ -381,14 +380,10 @@ TEST_F(XMLReaderTest, CanParseNanAndRaisesWarning) {
   </mujoco>
   )";
   std::array<char, 1024> error;
-  static char warning[1024];
-  warning[0] = '\0';
-  mju_user_warning = [](const char* msg) {
-    util::strcpy_arr(warning, msg);
-  };
+  MockWarningHandler warning_handler;
+  warning_handler.ExpectWarnings("XML contains a 'NaN'");
   mjModel* model = LoadModelFromString(xml, error.data(), error.size());
   ASSERT_THAT(model, NotNull());
-  EXPECT_THAT(warning, HasSubstr("XML contains a 'NaN'"));
   EXPECT_THAT(model->geom_pos[0], IsNan());
   EXPECT_THAT(model->geom_pos[1], IsNan());
   EXPECT_THAT(model->geom_pos[2], IsNan());
@@ -3895,6 +3890,81 @@ TEST_F(ActuatorParseTest, DampingArmatureDefaultsPropagate) {
   EXPECT_EQ(model->actuator_damping[0], 3);
   EXPECT_EQ(model->actuator_armature[0], 0.5);
   mj_deleteModel(model);
+}
+
+TEST_F(XMLReaderTest, AttachConflictXMLWarning) {
+  mock_warning_handler.ExpectWarnings();
+  std::array<char, 1024> error;
+  std::string path = GetTestDataFilePath("xml/testdata/parent_warn.xml");
+  mjSpec* spec = mj_parseXML(path.c_str(), nullptr, error.data(), error.size());
+  ASSERT_THAT(spec, NotNull()) << error.data();
+
+  // one grouped warning per attach, containing gravity and damper flag
+  // (constraint is only authored by child, not a conflict)
+  EXPECT_EQ(mjs_numWarnings(spec), 1);
+  std::string w = mjs_getWarning(spec, 0);
+  EXPECT_THAT(w, HasSubstr("gravity: parent has 0 0 -10, child has 0 0 0,"
+                           " keeping parent value"));
+  EXPECT_THAT(w, HasSubstr("flag 'Damper'"));
+
+  mjModel* m = mj_compile(spec, nullptr);
+  ASSERT_THAT(m, NotNull());
+  // Gravity should be parent's value (0 0 -10)
+  EXPECT_MJTNUM_EQ(m->opt.gravity[0], 0);
+  EXPECT_MJTNUM_EQ(m->opt.gravity[1], 0);
+  EXPECT_MJTNUM_EQ(m->opt.gravity[2], -10);
+
+  mj_deleteModel(m);
+  mj_deleteSpec(spec);
+}
+
+TEST_F(XMLReaderTest, AttachConflictXMLMerge) {
+  mock_warning_handler.ExpectWarnings();
+  std::array<char, 1024> error;
+  std::string path = GetTestDataFilePath("xml/testdata/parent_merge.xml");
+  mjSpec* spec = mj_parseXML(path.c_str(), nullptr, error.data(), error.size());
+  ASSERT_THAT(spec, NotNull()) << error.data();
+
+  // one grouped warning per attach, containing timestep, iterations, and flag
+  EXPECT_GE(mjs_numWarnings(spec), 1);
+  std::string w = mjs_getWarning(spec, 0);
+  EXPECT_THAT(w, HasSubstr("timestep: parent has 0.005, child has 0.002,"
+                           " taking the minimum"));
+  EXPECT_THAT(w, HasSubstr("iterations: parent has 50, child has 100,"
+                           " taking the maximum"));
+
+  mjModel* m = mj_compile(spec, nullptr);
+  ASSERT_THAT(m, NotNull());
+  // Timestep should be min (0.002)
+  EXPECT_MJTNUM_EQ(m->opt.timestep, 0.002);
+  // Iterations should be max (100)
+  EXPECT_EQ(m->opt.iterations, 100);
+
+  mj_deleteModel(m);
+  mj_deleteSpec(spec);
+}
+
+TEST_F(XMLReaderTest, AttachConflictXMLError) {
+  std::array<char, 1024> error;
+  std::string path = GetTestDataFilePath("xml/testdata/parent_error.xml");
+  mjSpec* spec = mj_parseXML(path.c_str(), nullptr, error.data(), error.size());
+
+  // Should fail to parse because of conflict in timestep in error mode
+  EXPECT_THAT(spec, IsNull());
+  EXPECT_THAT(error.data(),
+              HasSubstr("timestep: parent has 0.005, child has 0.002"));
+}
+
+TEST_F(XMLReaderTest, AttachConflictXMLMergeUnmergableError) {
+  std::array<char, 1024> error;
+  std::string path =
+      GetTestDataFilePath("xml/testdata/parent_merge_unmergable.xml");
+  mjSpec* spec = mj_parseXML(path.c_str(), nullptr, error.data(), error.size());
+
+  // Should fail to parse because gravity is unmergeable in merge mode
+  EXPECT_THAT(spec, IsNull());
+  EXPECT_THAT(error.data(),
+              HasSubstr("gravity: parent has 0 0 -10, child has 0 0 0"));
 }
 
 }  // namespace
