@@ -17,26 +17,26 @@ if(NOT TARGET mujoco::platform)
   return()
 endif()
 
+set(STUDIO_COMMON_LIBS
+  mujoco::platform
+  structs_header
+  structs_wrappers
+)
+
 mujoco_pybind11_module(parser parser.cc)
-target_link_libraries(parser PRIVATE mujoco::platform structs_header structs_wrappers)
+target_link_libraries(parser PRIVATE ${STUDIO_COMMON_LIBS})
 
 mujoco_pybind11_module(native_viewer_cc native_viewer.cc)
-target_link_libraries(native_viewer_cc PRIVATE
-  mujoco::platform
-  structs_header
-)
+target_link_libraries(native_viewer_cc PRIVATE ${STUDIO_COMMON_LIBS})
 
 mujoco_pybind11_module(renderer renderer.cc)
-target_link_libraries(renderer PRIVATE mujoco::platform structs_header)
+target_link_libraries(renderer PRIVATE ${STUDIO_COMMON_LIBS})
 
 mujoco_pybind11_module(ux ux.cc)
-target_link_libraries(ux PRIVATE
-  mujoco::platform
-  structs_header
-)
+target_link_libraries(ux PRIVATE ${STUDIO_COMMON_LIBS})
 
 mujoco_pybind11_module(sim sim.cc)
-target_link_libraries(sim PRIVATE mujoco::platform structs_header)
+target_link_libraries(sim PRIVATE ${STUDIO_COMMON_LIBS})
 
 set(MUJOCO_STUDIO_TARGETS
     parser
@@ -83,3 +83,26 @@ if(UNIX AND NOT APPLE)
     target_link_options(${target} PRIVATE "-Wl,--allow-multiple-definition")
   endforeach()
 endif()
+
+if(APPLE)
+  set(STUDIO_PY_MODULES
+      parser
+      native_viewer_cc
+      renderer
+      ux
+      sim
+      dear_imgui
+      implot
+  )
+  foreach(target ${STUDIO_PY_MODULES})
+    if(TARGET ${target})
+      add_custom_command(
+        TARGET ${target}
+        POST_BUILD
+        COMMAND
+          install_name_tool -add_rpath @loader_path/../../ $<TARGET_FILE:${target}>
+      )
+    endif()
+  endforeach()
+endif()
+
