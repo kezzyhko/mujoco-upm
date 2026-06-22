@@ -62,11 +62,11 @@ public const bool THIRD_PARTY_MUJOCO_MJRENDER_H_ = true;
 public const int mjNAUX = 10;
 public const int mjMAXTEXTURE = 1000;
 public const int mjMAXMATERIAL = 1000;
+public const bool THIRD_PARTY_MUJOCO_MJRFILAMENT_H_ = true;
 public const bool THIRD_PARTY_MUJOCO_INCLUDE_MJSAN_H_ = true;
 public const bool ADDRESS_SANITIZER = true;
 public const bool THIRD_PARTY_MUJOCO_INCLUDE_MJSPEC_H_ = true;
-public const bool THIRD_PARTY_MUJOCO_INCLUDE_MJTHREAD_H_ = true;
-public const int mjMAXTHREAD = 128;
+public const bool THIRD_PARTY_MUJOCO_MJSPECMACRO_H_ = true;
 public const bool THIRD_PARTY_MUJOCO_INCLUDE_MJTYPE_H_ = true;
 public const double mjMINVAL = 1e-15;
 public const bool THIRD_PARTY_MUJOCO_MJUI_H_ = true;
@@ -116,7 +116,7 @@ public const int mjMAXLINEPNT = 1001;
 public const int mjMAXPLANEGRID = 200;
 public const bool THIRD_PARTY_MUJOCO_MJXMACRO_H_ = true;
 public const bool THIRD_PARTY_MUJOCO_MUJOCO_H_ = true;
-public const int mjVERSION_HEADER = 3009000;
+public const int mjVERSION_HEADER = 3010000;
 
 
 // ------------------------------------Enums------------------------------------
@@ -517,10 +517,18 @@ public enum mjtSleepState : int{
   mjS_ASLEEP = 0,
   mjS_AWAKE = 1,
 }
-public enum mjtTaskStatus : int{
-  mjTASK_NEW = 0,
-  mjTASK_QUEUED = 1,
-  mjTASK_COMPLETED = 2,
+public enum mjtLogLevel : int{
+  mjLOG_DEBUG = 0,
+  mjLOG_INFO = 1,
+  mjLOG_WARNING = 2,
+  mjLOG_ERROR = 3,
+}
+public enum mjtLogTopic : int{
+  mjTOPIC_NONE = 0,
+  mjTOPIC_TIME_STP = 1,
+  mjTOPIC_TIME_CMP = 2,
+  mjTOPIC_SLEEP = 3,
+  mjNTOPIC = 3,
 }
 public enum mjtGeomInertia : int{
   mjINERTIA_VOLUME = 0,
@@ -575,6 +583,11 @@ public enum mjtOrientation : int{
   mjORIENTATION_XYAXES = 2,
   mjORIENTATION_ZAXIS = 3,
   mjORIENTATION_EULER = 4,
+}
+public enum mjtConflict : int{
+  mjCONFLICT_WARNING = 0,
+  mjCONFLICT_MERGE = 1,
+  mjCONFLICT_ERROR = 2,
 }
 public enum mjtCTimer : int{
   mjCTIMER_TOTAL = 0,
@@ -735,6 +748,36 @@ public enum mjtFont : int{
   mjFONT_SHADOW = 1,
   mjFONT_BIG = 2,
 }
+public enum mjrPixelFormat : int{
+  mjPIXEL_FORMAT_UNKNOWN = 0,
+  mjPIXEL_FORMAT_R8 = 1,
+  mjPIXEL_FORMAT_RGB8 = 2,
+  mjPIXEL_FORMAT_RGBA8 = 3,
+  mjPIXEL_FORMAT_R32F = 4,
+  mjPIXEL_FORMAT_DEPTH32F = 5,
+  mjPIXEL_FORMAT_KTX = 6,
+}
+public enum mjrVertexAttributeUsage : int{
+  mjVERTEX_ATTRIBUTE_USAGE_POSITION = 0,
+  mjVERTEX_ATTRIBUTE_USAGE_NORMAL = 1,
+  mjVERTEX_ATTRIBUTE_USAGE_TANGENTS = 2,
+  mjVERTEX_ATTRIBUTE_USAGE_UV = 3,
+  mjVERTEX_ATTRIBUTE_USAGE_COLOR = 4,
+}
+public enum mjrVertexAttributeType : int{
+  mjVERTEX_ATTRIBUTE_TYPE_FLOAT2 = 0,
+  mjVERTEX_ATTRIBUTE_TYPE_FLOAT3 = 1,
+  mjVERTEX_ATTRIBUTE_TYPE_FLOAT4 = 2,
+  mjVERTEX_ATTRIBUTE_TYPE_UBYTE4 = 3,
+}
+public enum mjrIndexType : int{
+  mjINDEX_TYPE_U16 = 0,
+  mjINDEX_TYPE_U32 = 1,
+}
+public enum mjrMeshPrimitiveType : int{
+  mjMESH_PRIMITIVE_TYPE_TRIANGLES = 0,
+  mjMESH_PRIMITIVE_TYPE_LINES = 1,
+}
 public enum mjtButton : int{
   mjBUTTON_NONE = 0,
   mjBUTTON_LEFT = 1,
@@ -778,6 +821,26 @@ public enum mjtSection : int{
 }
 
 // -------------------------------struct declarations---------------------------
+
+[StructLayout(LayoutKind.Sequential)]
+public unsafe struct mjLogMessage_ {
+  public int level;
+  public int topic;
+  public fixed char subject[1024];
+  public char* body;
+  public char* func;
+  public char* file;
+  public int line;
+  public byte timestamp;
+}
+
+[StructLayout(LayoutKind.Sequential)]
+public unsafe struct mjLogConfig_ {
+  public byte logto_console;
+  public byte logto_file;
+  public fixed char logfile[1024];
+  public int topics;
+}
 
 [StructLayout(LayoutKind.Sequential)]
 public unsafe struct mjLROpt_ {
@@ -1585,135 +1648,9 @@ public unsafe struct mjData_ {
   public UIntPtr pstack;
   public UIntPtr pbase;
   public UIntPtr parena;
+  public UIntPtr threadpool;
+  public byte threadlock;
   public UInt64 maxuse_stack;
-  public UInt64 maxuse_threadstack0;
-  public UInt64 maxuse_threadstack1;
-  public UInt64 maxuse_threadstack2;
-  public UInt64 maxuse_threadstack3;
-  public UInt64 maxuse_threadstack4;
-  public UInt64 maxuse_threadstack5;
-  public UInt64 maxuse_threadstack6;
-  public UInt64 maxuse_threadstack7;
-  public UInt64 maxuse_threadstack8;
-  public UInt64 maxuse_threadstack9;
-  public UInt64 maxuse_threadstack10;
-  public UInt64 maxuse_threadstack11;
-  public UInt64 maxuse_threadstack12;
-  public UInt64 maxuse_threadstack13;
-  public UInt64 maxuse_threadstack14;
-  public UInt64 maxuse_threadstack15;
-  public UInt64 maxuse_threadstack16;
-  public UInt64 maxuse_threadstack17;
-  public UInt64 maxuse_threadstack18;
-  public UInt64 maxuse_threadstack19;
-  public UInt64 maxuse_threadstack20;
-  public UInt64 maxuse_threadstack21;
-  public UInt64 maxuse_threadstack22;
-  public UInt64 maxuse_threadstack23;
-  public UInt64 maxuse_threadstack24;
-  public UInt64 maxuse_threadstack25;
-  public UInt64 maxuse_threadstack26;
-  public UInt64 maxuse_threadstack27;
-  public UInt64 maxuse_threadstack28;
-  public UInt64 maxuse_threadstack29;
-  public UInt64 maxuse_threadstack30;
-  public UInt64 maxuse_threadstack31;
-  public UInt64 maxuse_threadstack32;
-  public UInt64 maxuse_threadstack33;
-  public UInt64 maxuse_threadstack34;
-  public UInt64 maxuse_threadstack35;
-  public UInt64 maxuse_threadstack36;
-  public UInt64 maxuse_threadstack37;
-  public UInt64 maxuse_threadstack38;
-  public UInt64 maxuse_threadstack39;
-  public UInt64 maxuse_threadstack40;
-  public UInt64 maxuse_threadstack41;
-  public UInt64 maxuse_threadstack42;
-  public UInt64 maxuse_threadstack43;
-  public UInt64 maxuse_threadstack44;
-  public UInt64 maxuse_threadstack45;
-  public UInt64 maxuse_threadstack46;
-  public UInt64 maxuse_threadstack47;
-  public UInt64 maxuse_threadstack48;
-  public UInt64 maxuse_threadstack49;
-  public UInt64 maxuse_threadstack50;
-  public UInt64 maxuse_threadstack51;
-  public UInt64 maxuse_threadstack52;
-  public UInt64 maxuse_threadstack53;
-  public UInt64 maxuse_threadstack54;
-  public UInt64 maxuse_threadstack55;
-  public UInt64 maxuse_threadstack56;
-  public UInt64 maxuse_threadstack57;
-  public UInt64 maxuse_threadstack58;
-  public UInt64 maxuse_threadstack59;
-  public UInt64 maxuse_threadstack60;
-  public UInt64 maxuse_threadstack61;
-  public UInt64 maxuse_threadstack62;
-  public UInt64 maxuse_threadstack63;
-  public UInt64 maxuse_threadstack64;
-  public UInt64 maxuse_threadstack65;
-  public UInt64 maxuse_threadstack66;
-  public UInt64 maxuse_threadstack67;
-  public UInt64 maxuse_threadstack68;
-  public UInt64 maxuse_threadstack69;
-  public UInt64 maxuse_threadstack70;
-  public UInt64 maxuse_threadstack71;
-  public UInt64 maxuse_threadstack72;
-  public UInt64 maxuse_threadstack73;
-  public UInt64 maxuse_threadstack74;
-  public UInt64 maxuse_threadstack75;
-  public UInt64 maxuse_threadstack76;
-  public UInt64 maxuse_threadstack77;
-  public UInt64 maxuse_threadstack78;
-  public UInt64 maxuse_threadstack79;
-  public UInt64 maxuse_threadstack80;
-  public UInt64 maxuse_threadstack81;
-  public UInt64 maxuse_threadstack82;
-  public UInt64 maxuse_threadstack83;
-  public UInt64 maxuse_threadstack84;
-  public UInt64 maxuse_threadstack85;
-  public UInt64 maxuse_threadstack86;
-  public UInt64 maxuse_threadstack87;
-  public UInt64 maxuse_threadstack88;
-  public UInt64 maxuse_threadstack89;
-  public UInt64 maxuse_threadstack90;
-  public UInt64 maxuse_threadstack91;
-  public UInt64 maxuse_threadstack92;
-  public UInt64 maxuse_threadstack93;
-  public UInt64 maxuse_threadstack94;
-  public UInt64 maxuse_threadstack95;
-  public UInt64 maxuse_threadstack96;
-  public UInt64 maxuse_threadstack97;
-  public UInt64 maxuse_threadstack98;
-  public UInt64 maxuse_threadstack99;
-  public UInt64 maxuse_threadstack100;
-  public UInt64 maxuse_threadstack101;
-  public UInt64 maxuse_threadstack102;
-  public UInt64 maxuse_threadstack103;
-  public UInt64 maxuse_threadstack104;
-  public UInt64 maxuse_threadstack105;
-  public UInt64 maxuse_threadstack106;
-  public UInt64 maxuse_threadstack107;
-  public UInt64 maxuse_threadstack108;
-  public UInt64 maxuse_threadstack109;
-  public UInt64 maxuse_threadstack110;
-  public UInt64 maxuse_threadstack111;
-  public UInt64 maxuse_threadstack112;
-  public UInt64 maxuse_threadstack113;
-  public UInt64 maxuse_threadstack114;
-  public UInt64 maxuse_threadstack115;
-  public UInt64 maxuse_threadstack116;
-  public UInt64 maxuse_threadstack117;
-  public UInt64 maxuse_threadstack118;
-  public UInt64 maxuse_threadstack119;
-  public UInt64 maxuse_threadstack120;
-  public UInt64 maxuse_threadstack121;
-  public UInt64 maxuse_threadstack122;
-  public UInt64 maxuse_threadstack123;
-  public UInt64 maxuse_threadstack124;
-  public UInt64 maxuse_threadstack125;
-  public UInt64 maxuse_threadstack126;
-  public UInt64 maxuse_threadstack127;
   public UInt64 maxuse_arena;
   public int maxuse_con;
   public int maxuse_efc;
@@ -5867,7 +5804,7 @@ public unsafe struct mjData_ {
   public double* efc_pos;
   public double* efc_margin;
   public double* efc_frictionloss;
-  public double* efc_diagApprox;
+  public double* efc_diagA;
   public double* efc_KBIP;
   public double* efc_D;
   public double* efc_R;
@@ -5884,12 +5821,6 @@ public unsafe struct mjData_ {
   public int* map_idof2dof;
   public double* ifrc_smooth;
   public double* iacc_smooth;
-  public int* iM_rownnz;
-  public int* iM_rowadr;
-  public int* iM_colind;
-  public double* iM;
-  public double* iLD;
-  public double* iLDiagInv;
   public double* iacc;
   public int* efc_island;
   public int* island_ne;
@@ -5900,11 +5831,6 @@ public unsafe struct mjData_ {
   public int* map_iefc2efc;
   public int* iefc_type;
   public int* iefc_id;
-  public int* iefc_J_rownnz;
-  public int* iefc_J_rowadr;
-  public int* iefc_J_rowsuper;
-  public int* iefc_J_colind;
-  public double* iefc_J;
   public double* iefc_frictionloss;
   public double* iefc_D;
   public double* iefc_R;
@@ -5925,7 +5851,6 @@ public unsafe struct mjData_ {
   public int* efc_state;
   public double* efc_force;
   public double* ifrc_constraint;
-  public UIntPtr threadpool;
   public UInt64 signature;
 }
 
@@ -5946,9 +5871,25 @@ public unsafe struct mjsCompiler_ {
   public fixed int inertiagrouprange[2];
   public byte saveinertial;
   public int alignfree;
+  public int conflict;
   public mjLROpt_ LRopt;
   public void* meshdir;
   public void* texturedir;
+  public UInt64 authored;
+}
+
+[StructLayout(LayoutKind.Sequential)]
+public unsafe struct mjsAuthored_ {
+  public UInt64 option;
+  public int disableflags;
+  public int enableflags;
+  public int disableactuator;
+  public UInt64 visual_global;
+  public UInt64 visual_quality;
+  public UInt64 visual_headlight;
+  public UInt64 visual_map;
+  public UInt64 visual_scale;
+  public UInt64 visual_rgba;
 }
 
 [StructLayout(LayoutKind.Sequential)]
@@ -6238,6 +6179,13 @@ public unsafe struct mjrRect_ {
   public int bottom;
   public int width;
   public int height;
+}
+
+[StructLayout(LayoutKind.Sequential)]
+public unsafe struct mjrVertexAttribute_ {
+  public void* bytes;
+  public int usage;
+  public int type;
 }
 
 [StructLayout(LayoutKind.Sequential)]
@@ -7090,7 +7038,7 @@ public static unsafe extern int mj_name2id(mjModel_* m, int type, [MarshalAs(Unm
 public static unsafe extern IntPtr mj_id2name(mjModel_* m, int type, int id);
 
 [DllImport("mujoco", CallingConvention = CallingConvention.Cdecl)]
-public static unsafe extern void mj_fullM(mjModel_* m, double* dst, double* M);
+public static unsafe extern void mj_fullM(mjModel_* m, mjData_* d, double* dst);
 
 [DllImport("mujoco", CallingConvention = CallingConvention.Cdecl)]
 public static unsafe extern void mj_mulM(mjModel_* m, mjData_* d, double* res, double* vec);
@@ -7369,22 +7317,25 @@ public static unsafe extern void mjui_render(mjUI_* ui, mjuiState_* state, mjrCo
 public static unsafe extern void mju_error([MarshalAs(UnmanagedType.LPStr)]string msg);
 
 [DllImport("mujoco", CallingConvention = CallingConvention.Cdecl)]
-public static unsafe extern void mju_error_i([MarshalAs(UnmanagedType.LPStr)]string msg, int i);
-
-[DllImport("mujoco", CallingConvention = CallingConvention.Cdecl)]
-public static unsafe extern void mju_error_s([MarshalAs(UnmanagedType.LPStr)]string msg, [MarshalAs(UnmanagedType.LPStr)]string text);
-
-[DllImport("mujoco", CallingConvention = CallingConvention.Cdecl)]
 public static unsafe extern void mju_warning([MarshalAs(UnmanagedType.LPStr)]string msg);
 
 [DllImport("mujoco", CallingConvention = CallingConvention.Cdecl)]
-public static unsafe extern void mju_warning_i([MarshalAs(UnmanagedType.LPStr)]string msg, int i);
-
-[DllImport("mujoco", CallingConvention = CallingConvention.Cdecl)]
-public static unsafe extern void mju_warning_s([MarshalAs(UnmanagedType.LPStr)]string msg, [MarshalAs(UnmanagedType.LPStr)]string text);
-
-[DllImport("mujoco", CallingConvention = CallingConvention.Cdecl)]
 public static unsafe extern void mju_clearHandlers();
+
+[DllImport("mujoco", CallingConvention = CallingConvention.Cdecl)]
+public static unsafe extern IntPtr mju_setLogHandler(IntPtr handler);
+
+[DllImport("mujoco", CallingConvention = CallingConvention.Cdecl)]
+public static unsafe extern mjLogConfig_ mju_getLogConfig();
+
+[DllImport("mujoco", CallingConvention = CallingConvention.Cdecl)]
+public static unsafe extern void mju_setLogConfig(mjLogConfig_ config);
+
+[DllImport("mujoco", CallingConvention = CallingConvention.Cdecl)]
+public static unsafe extern void mju_info(int topic, [MarshalAs(UnmanagedType.LPStr)]string msg);
+
+[DllImport("mujoco", CallingConvention = CallingConvention.Cdecl)]
+public static unsafe extern void mju_message(mjLogMessage_* msg);
 
 [DllImport("mujoco", CallingConvention = CallingConvention.Cdecl)]
 public static unsafe extern void* mju_malloc(UIntPtr size);
@@ -7724,8 +7675,5 @@ public static unsafe extern void mjd_subQuat(double* qa, double* qb, double* Da,
 
 [DllImport("mujoco", CallingConvention = CallingConvention.Cdecl)]
 public static unsafe extern void mjd_quatIntegrate(double* vel, double scale, double* Dquat, double* Dvel, double* Dscale);
-
-[DllImport("mujoco", CallingConvention = CallingConvention.Cdecl)]
-public static unsafe extern void mju_bindThreadPool(mjData_* d, void* thread_pool);
 }
 }

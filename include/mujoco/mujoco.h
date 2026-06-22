@@ -16,7 +16,7 @@
 #define MUJOCO_MUJOCO_H_
 
 // header version; should match the library version as returned by mj_version()
-#define mjVERSION_HEADER 3009000
+#define mjVERSION_HEADER 3010000
 
 // needed to define size_t, fabs and log10
 #include <stdlib.h>
@@ -31,7 +31,6 @@
 #include <mujoco/mjrender.h>
 #include <mujoco/mjsan.h>
 #include <mujoco/mjspec.h>
-#include <mujoco/mjthread.h>
 #include <mujoco/mjtype.h>
 #include <mujoco/mjui.h>
 #include <mujoco/mjvisualize.h>
@@ -42,11 +41,13 @@
 extern "C" {
 #endif
 
-// user error and memory handlers
-MJAPI extern void  (*mju_user_error)(const char*);
-MJAPI extern void  (*mju_user_warning)(const char*);
+// user memory handlers
 MJAPI extern void* (*mju_user_malloc)(size_t);
 MJAPI extern void  (*mju_user_free)(void*);
+
+// legacy error/warning handlers (deprecated: prefer mju_setLogHandler)
+MJAPI extern void  (*mju_user_error)(const char*);
+MJAPI extern void  (*mju_user_warning)(const char*);
 
 
 // callbacks extending computation pipeline
@@ -72,6 +73,7 @@ MJAPI extern const char* mjLABELSTRING[mjNLABEL];
 MJAPI extern const char* mjFRAMESTRING[mjNFRAME];
 MJAPI extern const char* mjVISSTRING[mjNVISFLAG][3];
 MJAPI extern const char* mjRNDSTRING[mjNRNDFLAG][3];
+MJAPI extern const char* mjTOPICSTRING[mjNTOPIC];
 
 
 //---------------------------------- Virtual file system -------------------------------------------
@@ -599,8 +601,8 @@ MJAPI int mj_name2id(const mjModel* m, int type, const char* name);
 // Get name of object with the specified mjtObj type and id; return NULL if name not found.
 MJAPI const char* mj_id2name(const mjModel* m, int type, int id);
 
-// Convert sparse inertia matrix M into full (i.e. dense) matrix.
-MJAPI void mj_fullM(const mjModel* m, mjtNum* dst, const mjtNum* M);
+// Convert sparse inertia matrix into full (i.e. dense) matrix.
+MJAPI void mj_fullM(const mjModel* m, const mjData* d, mjtNum* dst);
 
 // Multiply vector by inertia matrix.
 MJAPI void mj_mulM(const mjModel* m, const mjData* d, mjtNum* res, const mjtNum* vec);
@@ -973,23 +975,27 @@ MJAPI void mjui_render(mjUI* ui, const mjuiState* state, const mjrContext* con);
 // Main error function; does not return to caller.
 MJAPI void mju_error(const char* msg, ...) mjPRINTFLIKE(1, 2);
 
-// Deprecated: use mju_error.
-MJAPI void mju_error_i(const char* msg, int i);
-
-// Deprecated: use mju_error.
-MJAPI void mju_error_s(const char* msg, const char* text);
-
 // Main warning function; returns to caller.
 MJAPI void mju_warning(const char* msg, ...) mjPRINTFLIKE(1, 2);
 
-// Deprecated: use mju_warning.
-MJAPI void mju_warning_i(const char* msg, int i);
-
-// Deprecated: use mju_warning.
-MJAPI void mju_warning_s(const char* msg, const char* text);
-
 // Clear user error and memory handlers.
 MJAPI void mju_clearHandlers(void);
+
+// Set the active log handler; return the previous handler.
+// If handler is NULL, restore the default handler.
+MJAPI mjfLogHandler mju_setLogHandler(mjfLogHandler handler);
+
+// Get default handler configuration.
+MJAPI mjLogConfig mju_getLogConfig(void);
+
+// Set default handler configuration.
+MJAPI void mju_setLogConfig(mjLogConfig config);
+
+// Log an info message with optional topic filtering.
+MJAPI void mju_info(int topic, const char* msg, ...) mjPRINTFLIKE(2, 3);
+
+// Dispatch a structured log message to the active handler.
+MJAPI void mju_message(const mjLogMessage* msg);
 
 // Allocate memory; byte-align on 64; pad size to multiple of 64.
 MJAPI void* mju_malloc(size_t size);
@@ -1009,9 +1015,14 @@ MJAPI const char* mjs_getError(mjSpec* s);
 // Get compiler timing diagnostics from spec, returns pointer to array of size mjNCTIMER.
 MJAPI const double* mjs_getTimer(mjSpec* s);
 
-// Return 1 if compiler error is a warning.
+// Return 1 if compiler error is a warning. Deprecated: use mjs_numWarnings(s) > 0.
 MJAPI int mjs_isWarning(mjSpec* s);
 
+// Get number of warnings accumulated in the spec.
+MJAPI int mjs_numWarnings(const mjSpec* spec);
+
+// Get the i-th warning message (returns nullptr if index out of bounds).
+MJAPI const char* mjs_getWarning(const mjSpec* spec, int index);
 
 //---------------------------------- Standard math -------------------------------------------------
 
@@ -1593,23 +1604,8 @@ MJAPI mjSpec* mju_decodeResource(mjResource* resource, const char* content_type,
 
 //---------------------------------- Threads -------------------------------------------------------
 
-// Create a thread pool with the specified number of threads running.
-MJAPI mjThreadPool* mju_threadPoolCreate(size_t number_of_threads);
-
-// Adds a thread pool to mjData and configures it for multi-threaded use.
-MJAPI void mju_bindThreadPool(mjData* d, void* thread_pool);
-
-// Enqueue a task in a thread pool.
-MJAPI void mju_threadPoolEnqueue(mjThreadPool* thread_pool, mjTask* task);
-
-// Destroy a thread pool.
-MJAPI void mju_threadPoolDestroy(mjThreadPool* thread_pool);
-
-// Initialize an mjTask.
-MJAPI void mju_defaultTask(mjTask* task);
-
-// Wait for a task to complete.
-MJAPI void mju_taskJoin(mjTask* task);
+// Create a thread pool with nthread worker threads.
+MJAPI void mju_threadpool(mjData* d, int nthread);
 
 
 //---------------------------------- Attachment ----------------------------------------------------
@@ -1666,6 +1662,15 @@ MJAPI mjsSensor* mjs_addSensor(mjSpec* s);
 
 // Add flex.
 MJAPI mjsFlex* mjs_addFlex(mjSpec* s);
+
+// Add flexcomp: create flex with auto-generated bodies/joints, return flex spec.
+// Nullable: type, dof, count, cellcount, spacing, scale, pos, quat, origin, file, vfs
+MJAPI mjsFlex* mjs_makeFlex(mjsBody* body, const char* name, const char* type, int dim,
+                            const char* dof, const int count[3], const int cellcount[3],
+                            const double spacing[3], const double scale[3], double radius,
+                            double mass, double inertiabox, int equality, int rigid, int flatskin,
+                            int elastic2d, const double pos[3], const double quat[4],
+                            const double origin[3], const char* file, const mjVFS* vfs);
 
 // Add contact pair.
 // Nullable: def

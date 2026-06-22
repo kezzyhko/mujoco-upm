@@ -65,7 +65,7 @@ KeyValues ReadIniSection(const std::string& contents,
 
 ImGui_DataPtrTable::ImGui_DataPtrTable(float w1, float w2) {
   ImGui::BeginTable("##PropertiesTable", 2, ImGuiTableFlags_RowBg);
-  const float width = ImGui::GetContentRegionAvail().x;
+  const float width = GetStableAvailWidth();
   ImGui::TableSetupColumn("", ImGuiTableColumnFlags_WidthFixed, width * w1);
   ImGui::TableSetupColumn("", ImGuiTableColumnFlags_WidthFixed, width * w2);
   ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(3.0f, 0.0f));
@@ -384,6 +384,23 @@ void ImGui_EndHSplit(bool open) {
 
 void MaybeSaveToClipboard(const std::string& contents) {
   ImGui::SetClipboardText(contents.c_str());
+}
+
+float GetExpectedLabelWidth() {
+  static float expected_label_width = 0;
+  if (expected_label_width == 0) {
+    int longest = 0;
+    const char* longest_label = "";
+    for (int i = 0; i < mjNVISFLAG; ++i) {
+      int length = static_cast<int>(std::strlen(mjVISSTRING[i][0]));
+      if (length > longest) {
+        longest_label = mjVISSTRING[i][0];
+        longest = length;
+      }
+    }
+    expected_label_width = ImGui::CalcTextSize(longest_label).x + 16;
+  }
+  return expected_label_width;
 }
 
 ImPlotFlags ImPlot_SetupPlotFlags(ImVec2 plot_size) {
