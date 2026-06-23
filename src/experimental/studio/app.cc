@@ -97,6 +97,11 @@ App::App(Config config)
   mjv_defaultOption(&vis_options_);
 
   profiler_.Clear();
+
+  step_control_.SetPreStepCallback(
+      [this](const mjModel* m, mjData* d) { PreStep(m, d); });
+  step_control_.SetPostStepCallback(
+      [this](const mjModel* m, mjData* d) { PostStep(m, d); });
 }
 
 void App::SwitchGraphicsMode(int width, int height,
@@ -329,6 +334,22 @@ void App::UpdatePhysics() {
   }
 }
 
+void App::PreStep(const mjModel* m, mjData* d) {
+  platform::ForEachPlugin<platform::ModelPlugin>([&](auto* plugin) {
+    if (plugin->pre_step) {
+      plugin->pre_step(plugin, m, d);
+    }
+  });
+}
+
+void App::PostStep(const mjModel* m, mjData* d) {
+  platform::ForEachPlugin<platform::ModelPlugin>([&](auto* plugin) {
+    if (plugin->post_step) {
+      plugin->post_step(plugin, m, d);
+    }
+  });
+}
+
 void App::LoadHistory(int offset) {
   std::span<mjtNum> state = sim_history_.SetIndex(offset);
   if (!state.empty()) {
@@ -421,7 +442,9 @@ void App::ProcessPendingLoads() {
       const char* buf = plugin->get_model_to_load(
           plugin, &size, content_type, sizeof(content_type), model_name,
           sizeof(model_name));
-      if (buf && size) {
+      if (buf && buf == model_name) {
+        LoadModelFromFile(model_name);
+      } else if (buf && size) {
         const std::byte* bytes = reinterpret_cast<const std::byte*>(buf);
         LoadModelFromBuffer({bytes, bytes + size}, content_type, model_name);
       }
