@@ -97,7 +97,7 @@ typedef struct mjData_ {
   // solver statistics
   mjSolverStat  solver[mjNISLAND*mjNSOLVER];  // solver statistics per island, per iteration
   int           solver_niter[mjNISLAND];      // number of solver iterations, per island
-  int           solver_nnz[mjNISLAND];        // number of nonzeros in Hessian or efc_AR, per island
+  int           solver_nnz[mjNISLAND];        // number of nonzeros in solver matrix, per island
   mjtNum        solver_fwdinv[2];             // forward-inverse comparison: qfrc, efc
 
   // diagnostics
@@ -3231,9 +3231,9 @@ mjSpec* mj_parseXML(const char* filename, const mjVFS* vfs, char* error, int err
 mjSpec* mj_parseXMLString(const char* xml, const mjVFS* vfs, char* error, int error_sz);
 mjSpec* mj_parse(const char* filename, const char* content_type,
                  const mjVFS* vfs, char* error, int error_sz);
-int mj_encode(const mjSpec* s, const mjModel* m, const char* filename,
-              const char* content_type, const mjVFS* vfs, char* error,
-              int error_sz);
+mjtSize mj_encode(const mjSpec* s, const mjModel* m, const char* filename,
+                  const char* content_type, const mjVFS* vfs, char* error,
+                  int error_sz);
 mjModel* mj_compile(mjSpec* s, const mjVFS* vfs);
 int mj_copyBack(mjSpec* s, const mjModel* m);
 int mj_recompile(mjSpec* s, const mjVFS* vfs, mjModel* m, mjData* d);
