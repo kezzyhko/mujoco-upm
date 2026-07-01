@@ -13,9 +13,9 @@
 # limitations under the License.
 """Example to run studio in the native viewer with responsive ImPlot UI.
 
-This script runs a Studio viewer in-process and adds an 'Inspect Body' window
-using ImGui and ImPlot bindings to visualize selected body data. The example
-demonstrates how responsive UI layout rules are easily implemented.
+This script runs a Studio viewer and adds an 'Inspect Body' window using ImGui
+and ImPlot bindings to visualize selected body data. The example demonstrates
+how responsive UI layout rules are easily implemented.
 
 Provide an MJCF model file via the first command-line argument to launch.
 """
@@ -106,14 +106,13 @@ def main(argv: list[str]) -> None:
   app = studio_app.StudioApp.from_argv(argv)
   title = os.path.basename(sys.argv[0])
 
-  # Initialize the viewer.
-  viewer = _viewer.NativeViewer(
-      app.model,
+  config = viewer_protocol.ViewerConfig(
       title=title,
       width=_WIDTH.value,
       height=_HEIGHT.value,
       gfx=_GFX.value,
   )
+  viewer = _viewer.NativeViewer(config)
 
   # Variables for the custom UI.
   centroid = [np.zeros(3) for _ in range(_N_HISTORY)]
