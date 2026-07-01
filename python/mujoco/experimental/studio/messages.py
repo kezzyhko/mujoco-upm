@@ -58,7 +58,14 @@ class SnapshotChannel(Protocol):
   """Channel to transport Snapshot messages with latest-wins semantics."""
 
   def put(self, value: Snapshot) -> None:
-    """Overwrites the latest snapshot of the same type."""
+    """Overwrites the latest snapshot of the same type.
+
+    After calling put() it is the caller's responsibility to ensure it no longer
+    holds a reference to the snapshot.
+
+    Args:
+      value: The snapshot to put into the channel.
+    """
     ...
 
   def get(self) -> list[Snapshot]:
@@ -113,8 +120,8 @@ class ModelEvent(Event):
 
 
 @dataclasses.dataclass(frozen=True)
-class OptionEvent(Event):
-  """An event that transports updated MuJoCo model options."""
+class MjOptionSnapshot(Snapshot):
+  """A snapshot sending mjOption state from viewer to sim each frame."""
 
   opt: mujoco.MjOption
 
@@ -128,8 +135,8 @@ class PerturbEvent(Event):
 
 
 @dataclasses.dataclass(frozen=True)
-class StepControlEvent(Event):
-  """An event carrying the full step control state from the viewer to the sim."""
+class StepControlSnapshot(Snapshot):
+  """A snapshot sending step control state from viewer to sim each frame."""
 
   pause_state: sim.PauseState
   speed: float
