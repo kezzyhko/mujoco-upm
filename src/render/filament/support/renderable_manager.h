@@ -31,8 +31,7 @@ namespace mujoco {
 class RenderableManager {
  public:
   // Populates the mjrScene with the renderables from the model.
-  RenderableManager(mjrfContext* ctx, mjrfScene* scene,
-                    ModelObjects* model_objects);
+  RenderableManager(mjrfScene* scene, ModelObjects* model_objects);
   ~RenderableManager();
 
   // Updates the state of the renderables in the scene.
@@ -58,6 +57,9 @@ class RenderableManager {
   // Applies the visualization options to the renderables in the scene.
   void Apply(const mjvOption& vopts);
 
+  RenderableManager(const RenderableManager&) = delete;
+  RenderableManager& operator=(const RenderableManager&) = delete;
+
  private:
   void AddGeomGeoms();
   void AddSiteGeoms();
@@ -72,9 +74,6 @@ class RenderableManager {
 
   int GetSegmentationId(mjtObj obj_type, int obj_index);
 
-  mjrfRenderable* GetSelectedRenderable();
-
-  mjrfContext* ctx_;
   mjrfScene* scene_;
   ModelObjects* model_objects_;
 
