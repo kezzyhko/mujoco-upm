@@ -616,6 +616,8 @@ public enum mjtMouse : int{
   mjMOUSE_ZOOM = 5,
   mjMOUSE_MOVE_V_REL = 6,
   mjMOUSE_MOVE_H_REL = 7,
+  mjMOUSE_TURN_V = 8,
+  mjMOUSE_TURN_H = 9,
 }
 public enum mjtPertBit : int{
   mjPERT_TRANSLATE = 1,
@@ -6183,6 +6185,12 @@ public unsafe struct mjrRect_ {
 }
 
 [StructLayout(LayoutKind.Sequential)]
+public unsafe struct mjrRendererInfo_ {
+  public char* renderer;
+  public char* backend;
+}
+
+[StructLayout(LayoutKind.Sequential)]
 public unsafe struct mjrVertexAttribute_ {
   public void* bytes;
   public int usage;
@@ -7144,7 +7152,7 @@ public static unsafe extern double mjv_frustumHeight(mjvScene_* scn);
 public static unsafe extern void mjv_alignToCamera(double* res, double* vec, double* forward);
 
 [DllImport("mujoco", CallingConvention = CallingConvention.Cdecl)]
-public static unsafe extern void mjv_moveCamera(mjModel_* m, int action, double reldx, double reldy, mjvScene_* scn, mjvCamera_* cam);
+public static unsafe extern void mjv_moveCamera(mjModel_* m, int action, double reldx, double reldy, mjvCamera_* cam);
 
 [DllImport("mujoco", CallingConvention = CallingConvention.Cdecl)]
 public static unsafe extern void mjv_movePerturb(mjModel_* m, mjData_* d, int action, double reldx, double reldy, mjvScene_* scn, mjvPerturb_* pert);
@@ -7214,6 +7222,12 @@ public static unsafe extern void mjv_cameraFrustum(float* zver, float* zhor, flo
 
 [DllImport("mujoco", CallingConvention = CallingConvention.Cdecl)]
 public static unsafe extern void mjr_defaultContext(mjrContext_* con);
+
+[DllImport("mujoco", CallingConvention = CallingConvention.Cdecl)]
+public static unsafe extern void mjr_defaultRendererInfo(mjrRendererInfo_* info);
+
+[DllImport("mujoco", CallingConvention = CallingConvention.Cdecl)]
+public static unsafe extern void mjr_getRendererInfo(mjrRendererInfo_* info);
 
 [DllImport("mujoco", CallingConvention = CallingConvention.Cdecl)]
 public static unsafe extern void mjr_makeContext(mjModel_* m, mjrContext_* con, int fontscale);
