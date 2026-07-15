@@ -418,16 +418,20 @@ adjust it properly through the XML.
 
 :at:`iterations`: :at-val:`int, "100"`
    Maximum number of iterations of the constraint solver. When the warmstart attribute of :ref:`flag <option-flag>` is
-   enabled (which is the default), accurate results are obtained with fewer iterations. Larger and more complex systems
-   with many interacting constraints require more iterations. Note that mjData.solver contains statistics about solver
-   convergence, also shown in the profiler.
+   enabled (which is the default), accurate results are obtained with fewer iterations; if the warmstarted solution
+   already satisfies the tolerance, the CG and Newton solvers terminate with zero iterations. Larger and more complex
+   systems with many interacting constraints require more iterations. Note that mjData.solver contains statistics about
+   solver convergence, also shown in the profiler.
 
 .. _option-tolerance:
 
 :at:`tolerance`: :at-val:`real, "1e-8"`
    Tolerance threshold used for early termination of the iterative solver. For PGS, the threshold is applied to the cost
    improvement between two iterations. For CG and Newton, it is applied to the smaller of the cost improvement and the
-   gradient norm. Set the tolerance to 0 to disable early termination.
+   gradient norm. For Newton, it is additionally applied to the Newton decrement :math:`\tfrac{1}{2} g^T H^{-1} g`, the
+   predicted cost improvement of the next iteration. Before the first iteration, CG and Newton also apply it to a
+   :ref:`convergence certificate<soAlgorithms>` of the warmstarted solution, possibly terminating with zero iterations.
+   Set the tolerance to 0 to disable early termination.
 
 .. _option-ls_iterations:
 

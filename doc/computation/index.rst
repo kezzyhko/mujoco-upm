@@ -1392,7 +1392,10 @@ representations of the constraint Jacobian and related matrices.
    This algorithm implements the exact Newton method, with analytical second-order derivatives and Cholesky
    factorization of the Hessian. The line-search is the same as in the CG method. When constraint states change between
    iterations (e.g., a constraint transitions from quadratic to linear), the Hessian factorization is updated
-   incrementally via rank-1 Cholesky updates, avoiding full refactorization. It is the default solver.
+   incrementally via rank-1 Cholesky updates, avoiding full refactorization. Early termination is triggered when any of
+   three quantities falls below :ref:`tolerance<option-tolerance>`: the cost improvement of the last iteration, the
+   gradient norm, and the Newton decrement :math:`\tfrac{1}{2} g^T H^{-1} g` -- the predicted cost improvement of the
+   next iteration. It is the default solver.
 
 **PGS** : Projected Gauss-Seidel method
    This is the most common algorithm used in physics simulators, and used to be the default in MuJoCo, until we
@@ -1441,6 +1444,14 @@ representations of the constraint Jacobian and related matrices.
    ``qacc_smooth``). The lower-cost initialization is used. This dual warmstart strategy is robust: it quickly
    bootstraps the solver when constraints persist across time steps, but avoids carrying over stale forces from
    constraints that have disappeared.
+
+   Because every zone of the piecewise-quadratic cost has curvature of at least :math:`M`, the cost is strongly convex
+   in the :math:`M`-norm, which bounds the suboptimality of any point by the duality gap at its constraint forces:
+   :math:`\text{cost}(a) - \text{cost}^* \le \tfrac{1}{2} g^T M^{-1} g`. Before starting iterations, the CG and Newton
+   solvers evaluate this certificate at the warmstarted point, using the already-computed factorization of
+   :math:`M`. If it is below tolerance, convergence is proven and the solver returns immediately with zero iterations;
+   in the Newton case this skips constructing and factorizing the Hessian. In a quiescent, well-warmstarted scene this
+   eliminates nearly the entire cost of the constraint solver.
 
 .. _soIsland:
 
