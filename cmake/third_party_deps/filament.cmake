@@ -13,7 +13,7 @@
 # limitations under the License.
 
 set(MUJOCO_DEP_VERSION_filament
-    10d2fc35128c2bc41ec4a1913c288d5df24afdaf
+    da22932b543b59810caf490d7f9e8859ec3fe204
     CACHE STRING "Tag/version of `filament` to be fetched."
 )
 mark_as_advanced(MUJOCO_DEP_VERSION_filament)
@@ -48,7 +48,7 @@ if(WIN32)
 endif()
 
 set(FILAMENT_PATCH_COMMAND
-  git apply --reject --whitespace=fix ${mujoco_SOURCE_DIR}/cmake/filament-allow-clang-windows.patch
+  git apply --reject --whitespace=fix --ignore-space-change ${mujoco_SOURCE_DIR}/cmake/filament-allow-clang-windows.patch
 )
 
 fetchpackage(
