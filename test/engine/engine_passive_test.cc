@@ -14,6 +14,7 @@
 
 // Tests for engine/engine_core_smooth.c.
 
+#include <cmath>
 #include <limits>
 #include <string>
 
@@ -965,5 +966,133 @@ TEST_F(ElasticityTest, InterpBendingRigidRotationInvariance) {
   }
 }
 
+
+// verify that a pinned vertex (on a static body) gets zero bending force
+// while its free neighbors get nonzero bending force
+TEST_F(ElasticityTest, PinnedVertexBendingForce) {
+  static constexpr char xml[] = R"(
+  <mujoco>
+  <worldbody>
+    <body name="parent">
+      <flexcomp name="test" type="grid" count="3 3 1" spacing="1 1 1"
+                radius="0.01" dim="2">
+        <elasticity young="1" poisson="0" thickness="1" elastic2d="bend"/>
+        <pin id="0"/>
+      </flexcomp>
+    </body>
+  </worldbody>
+  </mujoco>
+  )";
+
+  char error[1024] = {0};
+  MjModelPtr m = LoadModelFromString(xml, error, sizeof(error));
+  ASSERT_THAT(m.get(), testing::NotNull()) << error;
+  MjDataPtr d = MakeData(m);
+
+  // displace a free vertex out of plane to create bending
+  d->qpos[3] = 0.1;
+  mj_forward(m.get(), d.get());
+
+  // vertex 0 is pinned to the world body (body 0), which has 0 dofs,
+  // so no bending force is written for it — the reaction is absorbed by the pin
+
+  // verify that at least some free vertices have nonzero spring force
+  bool has_nonzero = false;
+  for (int i = 0; i < m->nv; i++) {
+    if (d->qfrc_spring[i] != 0) {
+      has_nonzero = true;
+      break;
+    }
+  }
+  EXPECT_TRUE(has_nonzero) << "bending should produce nonzero spring forces";
+}
+
+// verify that a flexcomp with dof="trilinear" inside a parent body
+// with non-identity quaternion produces:
+//   1. restoring forces (not expanding) for small perturbations
+//   2. identical qfrc_passive between rotated and non-rotated models
+//   3. stable simulation with implicit integration (no NaN, bounded qacc)
+TEST_F(ElasticityTest, TrilinearParentBodyRotation) {
+  static constexpr char rotated_xml[] = R"(
+  <mujoco>
+    <option gravity="0 0 0" integrator="implicitfast"
+            timestep="0.0005" solver="CG"/>
+    <worldbody>
+      <body name="base" pos="0 0 0" quat="0.7071 0 0.7071 0">
+        <flexcomp type="grid" count="3 3 3" spacing=".05 .05 .05"
+                  dim="3" radius=".001" mass=".005" name="soft" dof="trilinear">
+          <elasticity young="1e4" poisson="0.1" damping="0.1"/>
+          <contact selfcollide="none" internal="false"/>
+        </flexcomp>
+      </body>
+    </worldbody>
+  </mujoco>
+  )";
+  static constexpr char nonrotated_xml[] = R"(
+  <mujoco>
+    <option gravity="0 0 0" integrator="implicitfast"
+            timestep="0.0005" solver="CG"/>
+    <worldbody>
+      <body name="base" pos="0 0 0">
+        <flexcomp type="grid" count="3 3 3" spacing=".05 .05 .05"
+                  dim="3" radius=".001" mass=".005" name="soft" dof="trilinear">
+          <elasticity young="1e4" poisson="0.1" damping="0.1"/>
+          <contact selfcollide="none" internal="false"/>
+        </flexcomp>
+      </body>
+    </worldbody>
+  </mujoco>
+  )";
+
+  char error[1024] = {0};
+
+  // --- test 1: force sign and rotational invariance ---
+  MjModelPtr m_rot = LoadModelFromString(rotated_xml, error, sizeof(error));
+  ASSERT_THAT(m_rot.get(), NotNull()) << error;
+  MjDataPtr d_rot = MakeData(m_rot);
+
+  MjModelPtr m_non = LoadModelFromString(nonrotated_xml, error, sizeof(error));
+  ASSERT_THAT(m_non.get(), NotNull()) << error;
+  MjDataPtr d_non = MakeData(m_non);
+
+  // apply small +X perturbation to DOF 0 (node 0, X slide)
+  d_rot->qpos[0] = 1e-6;
+  d_non->qpos[0] = 1e-6;
+
+  mj_forward(m_rot.get(), d_rot.get());
+  mj_forward(m_non.get(), d_non.get());
+
+  // check force sign on the displaced DOF: positive qpos -> negative qfrc (restoring)
+  EXPECT_LT(d_rot->qfrc_passive[0], 0)
+      << "rotated model: expected restoring force on displaced DOF 0";
+  EXPECT_LT(d_non->qfrc_passive[0], 0)
+      << "non-rotated model: expected restoring force on displaced DOF 0";
+
+  // check rotational invariance: forces match within numerical precision
+  // (tol ~ 1e-13 due to floating-point differences in polar decomposition path)
+  const mjtNum tol = MjTol(1e-12, 1e-5);
+  for (int i = 0; i < m_rot->nv; i++) {
+    EXPECT_NEAR(d_rot->qfrc_passive[i], d_non->qfrc_passive[i], tol)
+        << "rotated/non-rotated qfrc mismatch at DOF " << i;
+  }
+
+  // --- test 2: implicit integration stability (200 steps, no NaN) ---
+  mjtNum max_qacc = 0;
+  for (int step = 0; step < 200; step++) {
+    mj_step(m_rot.get(), d_rot.get());
+
+    for (int i = 0; i < m_rot->nv; i++) {
+      ASSERT_TRUE(std::isfinite(d_rot->qacc[i]))
+          << "NaN/Inf in qacc at DOF " << i << " at step " << step;
+      mjtNum a = mju_abs(d_rot->qacc[i]);
+      if (a > max_qacc) max_qacc = a;
+    }
+    if (HasFatalFailure()) return;
+  }
+
+  EXPECT_LT(max_qacc, 1e4);
+}
+
 }  // namespace
 }  // namespace mujoco
+

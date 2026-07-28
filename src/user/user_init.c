@@ -82,6 +82,9 @@ void mjs_defaultBody(mjsBody* body) {
   body->ipos[0] = mjNAN;
   body->iquat[0] = 1;
   body->fullinertia[0] = mjNAN;
+
+  // simple optimization: auto
+  body->simple = 1;
 }
 
 
@@ -338,6 +341,7 @@ void mjs_defaultActuator(mjsActuator* actuator) {
   actuator->dyntype = mjDYN_NONE;
   actuator->dynprm[0] = 1;
   actuator->actdim = -1;
+  actuator->ctrlspec = 0;
 
   // transmission
   actuator->trntype = mjTRN_UNDEFINED;

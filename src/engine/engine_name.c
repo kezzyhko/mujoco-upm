@@ -160,10 +160,10 @@ static int _getnumadr(const mjModel* m, mjtObj type, int** padr, int* mapadr) {
     mjFALLTHROUGH;
 
   case mjOBJ_ACTUATOR:
-    *mapadr -= mjLOAD_MULTIPLE*m->nu;
+    *mapadr -= mjLOAD_MULTIPLE*m->nactuator;
     if (num < 0) {
       *padr = m->name_actuatoradr;
-      num = m->nu;
+      num = m->nactuator;
     }
     mjFALLTHROUGH;
 
@@ -277,6 +277,24 @@ const char* mj_id2name(const mjModel* m, int type, int id) {
   // id is in [0, num) and the found name is not the empty string "\0"
   if (id >= 0 && id < num && m->names[adr[id]]) {
     return m->names+adr[id];
+  }
+
+  return NULL;
+}
+
+
+// get name of actuator input, determined by the actuator type and input signature,
+// returns NULL if the actuator type defines no input names
+const char* mj_actuatorInputName(const mjModel* m, int id, int input) {
+  if (id < 0 || id >= m->nactuator || input < 0 || input >= m->actuator_ctrlnum[id]) {
+    return NULL;
+  }
+
+  // so3 orientation actuator: input names are chart components
+  if (m->actuator_gaintype[id] == mjGAIN_SO3) {
+    static const char* expmap[3] = {"rx", "ry", "rz"};
+    static const char* quat[4] = {"qw", "qx", "qy", "qz"};
+    return m->actuator_ctrlspec[id] == mjCHART_QUAT ? quat[input] : expmap[input];
   }
 
   return NULL;

@@ -166,665 +166,442 @@ static void UpdateString(string& psuffix, int count, int i) {
 
 //---------------------------------- MJCF schema ---------------------------------------------------
 
+// clang-format off
 std::vector<const char*> MJCF[nMJCF] = {
-    {"mujoco", "!", "model"},
+{"mujoco", "!", "model"},
+{"<"},
+    {"compiler", "*", "autolimits", "boundmass", "boundinertia", "settotalmass",
+        "balanceinertia", "strippath", "coordinate", "angle", "fitaabb", "eulerseq",
+        "meshdir", "texturedir", "discardvisual", "usethread", "fusestatic", "inertiafromgeom",
+        "inertiagrouprange", "saveinertial", "assetdir", "alignfree", "conflict"},
     {"<"},
-    {"compiler",          "*",
-     "autolimits",        "boundmass",
-     "boundinertia",      "settotalmass",
-     "balanceinertia",    "strippath",
-     "coordinate",        "angle",
-     "fitaabb",           "eulerseq",
-     "meshdir",           "texturedir",
-     "discardvisual",     "usethread",
-     "fusestatic",        "inertiafromgeom",
-     "inertiagrouprange", "saveinertial",
-     "assetdir",          "alignfree",
-     "conflict"},
-    {"<"},
-    {"lengthrange", "?", "mode", "useexisting", "uselimit", "accel", "maxforce",
-     "timeconst", "timestep", "inttotal", "interval", "tolrange"},
+        {"lengthrange", "?", "mode", "useexisting", "uselimit",
+            "accel", "maxforce", "timeconst", "timestep",
+            "inttotal", "interval", "tolrange"},
     {">"},
 
-    {"option",
-     "*",
-     "timestep",
-     "impratio",
-     "tolerance",
-     "ls_tolerance",
-     "noslip_tolerance",
-     "ccd_tolerance",
-     "sleep_tolerance",
-     "gravity",
-     "wind",
-     "magnetic",
-     "density",
-     "viscosity",
-     "o_margin",
-     "o_solref",
-     "o_solimp",
-     "o_friction",
-     "integrator",
-     "cone",
-     "jacobian",
-     "solver",
-     "iterations",
-     "ls_iterations",
-     "noslip_iterations",
-     "ccd_iterations",
-     "sdf_iterations",
-     "sdf_initpoints",
-     "actuatorgroupdisable"},
+    {"option", "*",
+        "timestep", "impratio", "tolerance", "ls_tolerance", "noslip_tolerance",
+        "ccd_tolerance", "sleep_tolerance", "gravity", "wind", "magnetic", "density", "viscosity",
+        "o_margin", "o_solref", "o_solimp", "o_friction",
+        "integrator", "cone", "jacobian",
+        "solver", "iterations", "ls_iterations", "noslip_iterations", "ccd_iterations",
+        "sdf_iterations", "sdf_initpoints", "actuatorgroupdisable"},
     {"<"},
-    {"flag",      "?",         "constraint",   "equality",  "frictionloss",
-     "limit",     "contact",   "spring",       "damper",    "gravity",
-     "clampctrl", "warmstart", "filterparent", "actuation", "refsafe",
-     "sensor",    "midphase",  "eulerdamp",    "autoreset", "nativeccd",
-     "island",    "override",  "energy",       "fwdinv",    "invdiscrete",
-     "multiccd",  "sleep",     "diagexact"},
+        {"flag", "?", "constraint", "equality", "frictionloss", "limit", "contact",
+            "spring", "damper", "gravity", "clampctrl", "warmstart", "filterparent", "actuation",
+            "refsafe", "sensor", "midphase", "eulerdamp", "autoreset", "nativeccd", "island",
+            "override", "energy", "fwdinv", "invdiscrete", "multiccd", "sleep",
+            "diagexact"},
     {">"},
 
     {"size", "*", "memory", "njmax", "nconmax", "nstack", "nuserdata", "nkey",
-     "nuser_body", "nuser_jnt", "nuser_geom", "nuser_site", "nuser_cam",
-     "nuser_tendon", "nuser_actuator", "nuser_sensor"},
+        "nuser_body", "nuser_jnt", "nuser_geom", "nuser_site", "nuser_cam",
+        "nuser_tendon", "nuser_actuator", "nuser_sensor"},
 
     {"visual", "*"},
     {"<"},
-    {"global", "?", "cameraid", "orthographic", "fovy", "ipd", "azimuth",
-     "elevation", "linewidth", "glow", "offwidth", "offheight", "realtime",
-     "ellipsoidinertia", "bvactive"},
-    {"quality", "?", "shadowsize", "offsamples", "numslices", "numstacks",
-     "numquads"},
-    {"headlight", "?", "ambient", "diffuse", "specular", "active"},
-    {"map", "?", "stiffness", "stiffnessrot", "force", "torque", "alpha",
-     "fogstart", "fogend", "znear", "zfar", "haze", "shadowclip", "shadowscale",
-     "actuatortendon"},
-    {"scale", "?", "forcewidth", "contactwidth", "contactheight", "connect",
-     "com", "camera", "light", "selectpoint", "jointlength", "jointwidth",
-     "actuatorlength", "actuatorwidth", "framelength", "framewidth",
-     "constraint", "slidercrank", "frustum"},
-    {"rgba",
-     "?",
-     "fog",
-     "haze",
-     "force",
-     "inertia",
-     "joint",
-     "actuator",
-     "actuatornegative",
-     "actuatorpositive",
-     "com",
-     "camera",
-     "light",
-     "selectpoint",
-     "connect",
-     "contactpoint",
-     "contactforce",
-     "contactfriction",
-     "contacttorque",
-     "contactgap",
-     "rangefinder",
-     "constraint",
-     "slidercrank",
-     "crankbroken",
-     "frustum",
-     "bv",
-     "bvactive"},
+        {"global", "?", "cameraid", "orthographic", "fovy", "ipd", "azimuth", "elevation",
+            "linewidth", "glow", "offwidth", "offheight", "realtime", "ellipsoidinertia",
+            "bvactive"},
+        {"quality", "?", "shadowsize", "offsamples", "numslices", "numstacks",
+            "numquads"},
+        {"headlight", "?", "ambient", "diffuse", "specular", "active"},
+        {"map", "?", "stiffness", "stiffnessrot", "force", "torque", "alpha",
+            "fogstart", "fogend", "znear", "zfar", "haze", "shadowclip", "shadowscale",
+            "actuatortendon"},
+        {"scale", "?", "forcewidth", "contactwidth", "contactheight", "connect", "com",
+            "camera", "light", "selectpoint", "jointlength", "jointwidth", "actuatorlength",
+            "actuatorwidth", "framelength", "framewidth", "constraint", "slidercrank", "frustum"},
+        {"rgba", "?", "fog", "haze", "force", "inertia", "joint",
+            "actuator", "actuatornegative", "actuatorpositive", "com",
+            "camera", "light", "selectpoint", "connect", "contactpoint", "contactforce",
+            "contactfriction", "contacttorque", "contactgap", "rangefinder",
+            "constraint", "slidercrank", "crankbroken", "frustum", "bv", "bvactive"},
     {">"},
 
-    {"statistic", "*", "meaninertia", "meanmass", "meansize", "extent",
-     "center"},
+    {"statistic", "*", "meaninertia", "meanmass", "meansize", "extent", "center"},
 
     {"default", "R", "class"},
     {"<"},
-    {"mesh", "?", "scale", "maxhullvert", "inertia"},
-    {"material", "?", "texture", "emission", "specular", "shininess",
-     "reflectance", "metallic", "roughness", "rgba", "texrepeat", "texuniform"},
-    {"<"},
-    {"layer", "*", "texture", "role"},
-    {">"},
-    {"joint",
-     "?",
-     "type",
-     "group",
-     "pos",
-     "axis",
-     "springdamper",
-     "limited",
-     "actuatorfrclimited",
-     "solreflimit",
-     "solimplimit",
-     "solreffriction",
-     "solimpfriction",
-     "stiffness",
-     "range",
-     "actuatorfrcrange",
-     "actuatorgravcomp",
-     "margin",
-     "ref",
-     "springref",
-     "armature",
-     "damping",
-     "frictionloss",
-     "user"},
-    {"geom",         "?",           "type",      "pos",      "quat",
-     "contype",      "conaffinity", "condim",    "group",    "priority",
-     "size",         "material",    "friction",  "mass",     "density",
-     "shellinertia", "solmix",      "solref",    "solimp",   "margin",
-     "gap",          "fromto",      "axisangle", "xyaxes",   "zaxis",
-     "euler",        "hfield",      "mesh",      "fitscale", "rgba",
-     "fluidshape",   "fluidcoef",   "user"},
-    {"site", "?", "type", "group", "pos", "quat", "material", "size", "fromto",
-     "axisangle", "xyaxes", "zaxis", "euler", "rgba", "user"},
-    {"camera",     "?",         "projection",
-     "fovy",       "ipd",       "resolution",
-     "output",     "pos",       "quat",
-     "axisangle",  "xyaxes",    "zaxis",
-     "euler",      "mode",      "focal",
-     "focalpixel", "principal", "principalpixel",
-     "sensorsize", "user"},
-    {"light", "?", "pos", "dir", "bulbradius", "intensity", "range",
-     "directional", "type", "castshadow", "active", "attenuation", "cutoff",
-     "exponent", "ambient", "diffuse", "specular", "mode"},
-    {"pair", "?", "condim", "friction", "solref", "solreffriction", "solimp",
-     "gap", "margin"},
-    {"equality", "?", "active", "solref", "solimp"},
-    {"tendon", "?", "group", "limited", "range", "solreflimit", "solimplimit",
-     "solreffriction", "solimpfriction", "frictionloss", "springlength",
-     "width", "material", "margin", "stiffness", "damping", "rgba", "user"},
-    {"general",   "?",           "ctrllimited", "forcelimited", "actlimited",
-     "ctrlrange", "forcerange",  "actrange",    "gear",         "damping",
-     "armature",  "cranklength", "user",        "group",        "nsample",
-     "interp",    "delay",       "actdim",      "dyntype",      "gaintype",
-     "biastype",  "dynprm",      "gainprm",     "biasprm",      "actearly"},
-    {"motor", "?", "ctrllimited", "forcelimited", "ctrlrange", "forcerange",
-     "gear", "damping", "armature", "cranklength", "user", "group", "nsample",
-     "interp", "delay"},
-    {"position",     "?",          "ctrllimited", "forcelimited", "ctrlrange",
-     "inheritrange", "forcerange", "gear",        "damping",      "armature",
-     "cranklength",  "user",       "group",       "nsample",      "interp",
-     "delay",        "kp",         "kv",          "dampratio",    "timeconst"},
-    {"velocity", "?", "ctrllimited", "forcelimited", "ctrlrange", "forcerange",
-     "gear", "damping", "armature", "cranklength", "user", "group", "nsample",
-     "interp", "delay", "kv"},
-    {"intvelocity", "?",           "ctrllimited",  "forcelimited", "ctrlrange",
-     "forcerange",  "actrange",    "inheritrange", "gear",         "damping",
-     "armature",    "cranklength", "user",         "group",        "nsample",
-     "interp",      "delay",       "kp",           "kv",           "dampratio"},
-    {"damper", "?", "forcelimited", "ctrlrange", "forcerange", "gear",
-     "damping", "armature", "cranklength", "user", "group", "nsample", "interp",
-     "delay", "kv"},
-    {"cylinder", "?", "ctrllimited", "forcelimited", "ctrlrange", "forcerange",
-     "gear", "damping", "armature", "cranklength", "user", "group", "nsample",
-     "interp", "delay", "timeconst", "area", "diameter", "bias"},
-    {"muscle",     "?",     "ctrllimited", "forcelimited", "ctrlrange",
-     "forcerange", "gear",  "damping",     "armature",     "cranklength",
-     "user",       "group", "nsample",     "interp",       "delay",
-     "timeconst",  "range", "force",       "scale",        "lmin",
-     "lmax",       "vmax",  "fpmax",       "fvmax"},
-    {"adhesion", "?", "forcelimited", "ctrlrange", "forcerange", "gain", "user",
-     "group", "nsample", "interp", "delay"},
-    {"dcmotor", "?",          "ctrllimited", "ctrlrange",  "gear",
-     "damping", "armature",   "cranklength", "user",       "group",
-     "nsample", "interp",     "delay",       "motorconst", "resistance",
-     "nominal", "saturation", "inductance",  "cogging",    "controller",
-     "input",   "thermal",    "lugre"},
+        {"mesh", "?", "scale", "maxhullvert", "inertia"},
+        {"material", "?", "texture", "emission", "specular", "shininess",
+            "reflectance", "metallic", "roughness", "rgba", "texrepeat", "texuniform"},
+        {"<"},
+            {"layer", "*", "texture", "role"},
+        {">"},
+        {"joint", "?", "type", "group", "pos", "axis", "springdamper",
+            "limited", "actuatorfrclimited", "solreflimit", "solimplimit",
+            "solreffriction", "solimpfriction", "stiffness", "range", "actuatorfrcrange",
+            "actuatorgravcomp", "margin", "ref", "springref", "armature", "damping",
+            "frictionloss", "user"},
+        {"geom", "?", "type", "pos", "quat", "contype", "conaffinity", "condim",
+            "group", "priority", "size", "material", "friction", "mass", "density",
+            "shellinertia", "solmix", "solref", "solimp",
+            "margin", "gap", "surfacevel", "adhesion", "fromto", "axisangle", "xyaxes", "zaxis",
+            "euler",
+            "hfield", "mesh", "fitscale", "rgba", "fluidshape", "fluidcoef", "user"},
+        {"site", "?", "type", "group", "pos", "quat", "material",
+            "size", "fromto", "axisangle", "xyaxes", "zaxis", "euler", "rgba", "user"},
+        {"camera", "?", "projection", "fovy", "ipd", "resolution", "output", "pos", "quat",
+            "axisangle", "xyaxes", "zaxis", "euler", "mode", "focal", "focalpixel",
+            "principal", "principalpixel", "sensorsize", "user"},
+        {"light", "?", "pos", "dir", "bulbradius", "intensity", "range",
+            "directional", "type", "castshadow", "active", "attenuation", "cutoff", "exponent",
+            "ambient", "diffuse", "specular", "mode"},
+        {"pair", "?", "condim", "friction", "solref", "solreffriction", "solimp",
+         "gap", "margin", "adhesion"},
+        {"equality", "?", "active", "solref", "solimp"},
+        {"tendon", "?", "group", "limited", "range",
+            "solreflimit", "solimplimit", "solreffriction", "solimpfriction",
+            "frictionloss", "springlength", "width", "material",
+            "margin", "stiffness", "damping", "rgba", "user"},
+        {"general", "?", "ctrllimited", "forcelimited", "actlimited", "ctrlrange", "forcerange",
+            "actrange", "gear", "damping", "armature", "cranklength", "user", "group", "nsample",
+            "interp", "delay", "actdim", "input", "dyntype", "gaintype", "biastype", "dynprm", "gainprm",
+            "biasprm", "actearly"},
+        {"motor", "?", "ctrllimited", "forcelimited", "ctrlrange", "forcerange",
+            "gear", "damping", "armature", "cranklength", "user", "group", "nsample", "interp", "delay"},
+        {"position", "?", "ctrllimited", "forcelimited", "ctrlrange", "inheritrange", "forcerange",
+            "gear", "damping", "armature", "cranklength", "user", "group", "nsample", "interp",
+            "delay", "kp", "kv", "dampratio", "timeconst"},
+        {"velocity", "?", "ctrllimited", "forcelimited", "ctrlrange", "forcerange", "gear",
+            "damping", "armature", "cranklength", "user", "group", "nsample", "interp", "delay", "kv"},
+        {"intvelocity", "?", "ctrllimited", "forcelimited", "actlimited", "ctrlrange", "forcerange",
+             "actrange", "inheritrange", "gear", "damping", "armature", "cranklength", "user", "group",
+            "nsample", "interp", "delay", "kp", "kv", "dampratio"},
+        {"damper", "?", "forcelimited", "ctrlrange", "forcerange",
+            "gear", "damping", "armature", "cranklength", "user", "group", "nsample", "interp", "delay", "kv"},
+        {"cylinder", "?", "ctrllimited", "forcelimited", "ctrlrange", "forcerange",
+            "gear", "damping", "armature", "cranklength", "user", "group", "nsample", "interp", "delay",
+            "timeconst", "area", "diameter", "bias"},
+        {"muscle", "?", "ctrllimited", "forcelimited", "ctrlrange", "forcerange",
+            "gear", "damping", "armature", "cranklength", "user", "group", "nsample", "interp", "delay",
+            "timeconst", "range", "force", "scale",
+            "lmin", "lmax", "vmax", "fpmax", "fvmax"},
+        {"adhesion", "?", "forcelimited", "ctrlrange", "forcerange",
+            "gain", "user", "group", "nsample", "interp", "delay"},
+        {"dcmotor", "?", "ctrllimited", "ctrlrange",
+            "gear", "damping", "armature", "cranklength", "user", "group", "nsample", "interp", "delay",
+            "motorconst", "resistance", "nominal", "saturation",
+            "inductance", "cogging", "controller", "input", "thermal", "lugre"},
     {">"},
 
     {"extension", "*"},
     {"<"},
-    {"plugin", "*", "plugin"},
-    {"<"},
-    {"instance", "*", "name"},
-    {"<"},
-    {"config", "*", "key", "value"},
-    {">"},
-    {">"},
+        {"plugin", "*", "plugin"},
+        {"<"},
+            {"instance", "*", "name"},
+            {"<"},
+                {"config", "*", "key", "value"},
+            {">"},
+        {">"},
     {">"},
 
     {"custom", "*"},
     {"<"},
-    {"numeric", "*", "name", "size", "data"},
-    {"text", "*", "name", "data"},
-    {"tuple", "*", "name"},
-    {"<"},
-    {"element", "*", "objtype", "objname", "prm"},
-    {">"},
+        {"numeric", "*",  "name", "size", "data"},
+        {"text", "*", "name", "data"},
+        {"tuple", "*", "name"},
+        {"<"},
+            {"element", "*",  "objtype", "objname", "prm"},
+        {">"},
     {">"},
 
     {"asset", "*"},
     {"<"},
-    {"mesh", "*", "name", "class", "content_type", "file", "vertex", "normal",
-     "texcoord", "face", "refpos", "refquat", "scale", "smoothnormal",
-     "maxhullvert", "inertia", "builtin", "params", "material"},
-    {"<"},
-    {"plugin", "*", "plugin", "instance"},
-    {"<"},
-    {"config", "*", "key", "value"},
+        {"mesh", "*", "name", "class", "content_type", "file", "vertex", "normal",
+            "texcoord", "face", "refpos", "refquat", "scale", "smoothnormal",
+            "maxhullvert", "inertia", "builtin", "params", "material"},
+        {"<"},
+          {"plugin", "*", "plugin", "instance"},
+          {"<"},
+            {"config", "*", "key", "value"},
+          {">"},
+        {">"},
+        {"hfield", "*", "name", "content_type", "file", "nrow", "ncol", "size", "elevation"},
+        {"skin", "*", "name", "file", "material", "rgba", "inflate",
+            "vertex", "texcoord", "face", "group"},
+        {"<"},
+            {"bone", "*", "body", "bindpos", "bindquat", "vertid", "vertweight"},
+        {">"},
+        {"texture", "*", "name", "type", "colorspace", "content_type", "file", "gridsize",
+            "gridlayout", "fileright", "fileleft", "fileup", "filedown", "filefront", "fileback",
+            "builtin", "rgb1", "rgb2", "mark", "markrgb", "random", "width", "height",
+            "hflip", "vflip", "nchannel"},
+        {"material", "*", "name", "class", "texture",  "texrepeat", "texuniform",
+            "emission", "specular", "shininess", "reflectance", "metallic", "roughness", "rgba"},
+        {"<"},
+            {"layer", "*", "texture", "role"},
+        {">"},
+        {"model", "*", "name", "file", "content_type"},
     {">"},
-    {">"},
-    {"hfield", "*", "name", "content_type", "file", "nrow", "ncol", "size",
-     "elevation"},
-    {"skin", "*", "name", "file", "material", "rgba", "inflate", "vertex",
-     "texcoord", "face", "group"},
-    {"<"},
-    {"bone", "*", "body", "bindpos", "bindquat", "vertid", "vertweight"},
-    {">"},
-    {"texture",      "*",      "name",     "type",       "colorspace",
-     "content_type", "file",   "gridsize", "gridlayout", "fileright",
-     "fileleft",     "fileup", "filedown", "filefront",  "fileback",
-     "builtin",      "rgb1",   "rgb2",     "mark",       "markrgb",
-     "random",       "width",  "height",   "hflip",      "vflip",
-     "nchannel"},
-    {"material", "*", "name", "class", "texture", "texrepeat", "texuniform",
-     "emission", "specular", "shininess", "reflectance", "metallic",
-     "roughness", "rgba"},
-    {"<"},
-    {"layer", "*", "texture", "role"},
-    {">"},
-    {"model", "*", "name", "file", "content_type"},
-    {">"},
-
     {"body", "R", "name", "childclass", "pos", "quat", "mocap", "axisangle",
-     "xyaxes", "zaxis", "euler", "gravcomp", "sleep", "user"},
+        "xyaxes", "zaxis", "euler", "gravcomp", "sleep", "simple", "user"},
     {"<"},
-    {"inertial", "?", "pos", "quat", "mass", "diaginertia", "axisangle",
-     "xyaxes", "zaxis", "euler", "fullinertia"},
-    {"joint",
-     "*",
-     "name",
-     "class",
-     "type",
-     "group",
-     "pos",
-     "axis",
-     "springdamper",
-     "limited",
-     "actuatorfrclimited",
-     "solreflimit",
-     "solimplimit",
-     "solreffriction",
-     "solimpfriction",
-     "stiffness",
-     "range",
-     "actuatorfrcrange",
-     "actuatorgravcomp",
-     "margin",
-     "ref",
-     "springref",
-     "armature",
-     "damping",
-     "frictionloss",
-     "user"},
-    {"freejoint", "*", "name", "group", "align"},
-    {"geom",         "*",           "name",       "class",     "type",
-     "contype",      "conaffinity", "condim",     "group",     "priority",
-     "size",         "material",    "friction",   "mass",      "density",
-     "shellinertia", "solmix",      "solref",     "solimp",    "margin",
-     "gap",          "fromto",      "pos",        "quat",      "axisangle",
-     "xyaxes",       "zaxis",       "euler",      "hfield",    "mesh",
-     "fitscale",     "rgba",        "fluidshape", "fluidcoef", "user"},
-    {"<"},
-    {"plugin", "*", "plugin", "instance"},
-    {"<"},
-    {"config", "*", "key", "value"},
-    {">"},
-    {">"},
-    {"attach", "*", "model", "body", "prefix"},
-    {"site", "*", "name", "class", "type", "group", "pos", "quat", "material",
-     "size", "fromto", "axisangle", "xyaxes", "zaxis", "euler", "rgba", "user"},
-    {"camera",         "*",          "name",       "class",      "projection",
-     "fovy",           "ipd",        "resolution", "output",     "pos",
-     "quat",           "axisangle",  "xyaxes",     "zaxis",      "euler",
-     "mode",           "target",     "focal",      "focalpixel", "principal",
-     "principalpixel", "sensorsize", "user"},
-    {"light",      "*",          "name",    "class",       "directional",
-     "type",       "castshadow", "active",  "pos",         "dir",
-     "bulbradius", "intensity",  "range",   "attenuation", "cutoff",
-     "exponent",   "ambient",    "diffuse", "specular",    "mode",
-     "target",     "texture"},
-    {"plugin", "*", "plugin", "instance"},
-    {"<"},
-    {"config", "*", "key", "value"},
-    {">"},
-    {"composite", "*", "prefix", "type", "count", "offset", "vertex", "initial",
-     "curve", "size", "quat"},
-    {"<"},
-    {"joint", "*", "kind", "group", "stiffness", "damping", "armature",
-     "solreffix", "solimpfix", "type", "axis", "limited", "range", "margin",
-     "solreflimit", "solimplimit", "frictionloss", "solreffriction",
-     "solimpfriction"},
-    {"skin", "?", "texcoord", "material", "group", "rgba", "inflate",
-     "subgrid"},
-    {"geom", "?", "type", "contype", "conaffinity", "condim", "group",
-     "priority", "size", "material", "rgba", "friction", "mass", "density",
-     "solmix", "solref", "solimp", "margin", "gap"},
-    {"site", "?", "group", "size", "material", "rgba"},
-    {"plugin", "*", "plugin", "instance"},
-    {"<"},
-    {"config", "*", "key", "value"},
-    {">"},
-    {">"},
-    {"flexcomp",  "*",          "name",      "type",     "group",  "dim",
-     "dof",       "count",      "cellcount", "spacing",  "radius", "rigid",
-     "mass",      "inertiabox", "scale",     "file",     "point",  "element",
-     "texcoord",  "material",   "rgba",      "flatskin", "pos",    "quat",
-     "axisangle", "xyaxes",     "zaxis",     "euler",    "origin"},
-    {"<"},
-    {"edge", "?", "equality", "solref", "solimp", "stiffness", "damping"},
-    {"elasticity", "?", "young", "poisson", "damping", "thickness",
-     "elastic2d"},
-    {"contact", "?", "contype", "conaffinity", "condim", "priority", "friction",
-     "solmix", "solref", "solimp", "margin", "gap", "internal", "selfcollide",
-     "activelayers", "passive"},
-    {"pin", "*", "id", "range", "grid", "gridrange"},
-    {"plugin", "*", "plugin", "instance"},
-    {"<"},
-    {"config", "*", "key", "value"},
-    {">"},
-    {">"},
+        {"inertial", "?", "pos", "quat", "mass", "diaginertia",
+            "axisangle", "xyaxes", "zaxis", "euler", "fullinertia"},
+        {"joint", "*", "name", "class", "type", "group", "pos", "axis",
+            "springdamper", "limited", "actuatorfrclimited",
+            "solreflimit", "solimplimit", "solreffriction", "solimpfriction",
+            "stiffness", "range", "actuatorfrcrange", "actuatorgravcomp", "margin", "ref",
+            "springref", "armature", "damping", "frictionloss", "user"},
+        {"freejoint", "*",  "name", "group", "align"},
+        {"geom", "*", "name", "class", "type", "contype", "conaffinity", "condim",
+            "group", "priority", "size", "material", "friction", "mass", "density",
+            "shellinertia", "solmix", "solref", "solimp",
+            "margin", "gap", "surfacevel", "adhesion", "fromto", "pos", "quat", "axisangle",
+            "xyaxes", "zaxis", "euler", "hfield", "mesh", "fitscale", "rgba", "fluidshape",
+            "fluidcoef", "user"},
+        {"<"},
+            {"plugin", "*", "plugin", "instance"},
+            {"<"},
+              {"config", "*", "key", "value"},
+            {">"},
+        {">"},
+        {"attach", "*", "model", "body", "frame", "prefix"},
+        {"site", "*",  "name", "class", "type", "group", "pos", "quat",
+            "material", "size", "fromto", "axisangle", "xyaxes", "zaxis", "euler", "rgba", "user"},
+        {"camera", "*", "name", "class", "projection", "fovy", "ipd", "resolution", "output", "pos",
+            "quat", "axisangle", "xyaxes", "zaxis", "euler", "mode", "target",
+            "focal", "focalpixel", "principal", "principalpixel", "sensorsize", "user"},
+        {"light", "*", "name", "class", "directional", "type", "castshadow", "active",
+            "pos", "dir", "bulbradius", "intensity", "range", "attenuation", "cutoff",
+            "exponent", "ambient", "diffuse", "specular", "mode", "target", "texture"},
+        {"plugin", "*", "plugin", "instance"},
+        {"<"},
+          {"config", "*", "key", "value"},
+        {">"},
+        {"composite", "*", "prefix", "type", "count", "offset",
+            "vertex", "initial", "curve", "size", "quat"},
+        {"<"},
+            {"joint", "*", "kind", "group", "stiffness", "damping", "armature",
+                "solreffix", "solimpfix", "type", "axis",
+                "limited", "range", "margin", "solreflimit", "solimplimit",
+                "frictionloss", "solreffriction", "solimpfriction"},
+            {"skin", "?", "texcoord", "material", "group", "rgba", "inflate", "subgrid"},
+            {"geom", "?", "type", "contype", "conaffinity", "condim",
+                "group", "priority", "size", "material", "rgba", "friction", "mass",
+                "density", "solmix", "solref", "solimp", "margin", "gap", "surfacevel",
+                "adhesion"},
+            {"site", "?", "group", "size", "material", "rgba"},
+            {"plugin", "*", "plugin", "instance"},
+            {"<"},
+              {"config", "*", "key", "value"},
+            {">"},
+        {">"},
+        {"flexcomp", "*", "name", "type", "group", "dim", "dof",
+            "count", "cellcount", "spacing", "radius", "rigid", "mass", "inertiabox",
+            "scale", "file", "point", "element", "texcoord", "material", "rgba",
+            "flatskin", "pos", "quat", "axisangle", "xyaxes", "zaxis", "euler", "origin"},
+        {"<"},
+            {"edge", "?", "equality", "solref", "solimp", "stiffness", "damping"},
+            {"elasticity", "?", "young", "poisson", "damping", "thickness", "elastic2d"},
+            {"contact", "?",  "contype", "conaffinity", "condim", "priority",
+                "friction", "solmix", "solref", "solimp", "margin", "gap",
+                "internal", "selfcollide", "activelayers", "passive"},
+            {"pin", "*", "id", "range", "grid", "gridrange"},
+            {"plugin", "*", "plugin", "instance"},
+            {"<"},
+              {"config", "*", "key", "value"},
+            {">"},
+        {">"},
     {">"},
 
     {"deformable", "*"},
     {"<"},
-    {"flex", "*", "name", "group", "dim", "radius", "material", "rgba",
-     "flatskin", "body", "vertex", "element", "texcoord", "elemtexcoord",
-     "node", "cellcount", "dof"},
-    {"<"},
-    {"contact", "?", "contype", "conaffinity", "condim", "priority", "friction",
-     "solmix", "solref", "solimp", "margin", "gap", "internal", "selfcollide",
-     "activelayers", "passive"},
-    {"edge", "?", "stiffness", "damping"},
-    {"elasticity", "?", "young", "poisson", "damping", "thickness",
-     "elastic2d"},
-    {">"},
-    {"skin", "*", "name", "file", "material", "rgba", "inflate", "vertex",
-     "texcoord", "face", "group"},
-    {"<"},
-    {"bone", "*", "body", "bindpos", "bindquat", "vertid", "vertweight"},
-    {">"},
+        {"flex", "*", "name", "group", "dim", "radius", "material", "rgba", "flatskin", "body",
+            "vertex", "element", "texcoord", "elemtexcoord", "node", "cellcount", "dof"},
+        {"<"},
+            {"contact", "?",  "contype", "conaffinity", "condim", "priority",
+                "friction", "solmix", "solref", "solimp", "margin", "gap",
+                "internal", "selfcollide", "activelayers", "passive"},
+            {"edge", "?", "stiffness", "damping"},
+            {"elasticity", "?", "young", "poisson", "damping", "thickness", "elastic2d"},
+        {">"},
+        {"skin", "*", "name", "file", "material", "rgba", "inflate",
+            "vertex", "texcoord", "face", "group"},
+        {"<"},
+            {"bone", "*", "body", "bindpos", "bindquat", "vertid", "vertweight"},
+        {">"},
     {">"},
 
     {"contact", "*"},
     {"<"},
-    {"pair", "*", "name", "class", "geom1", "geom2", "condim", "friction",
-     "solref", "solreffriction", "solimp", "gap", "margin"},
-    {"exclude", "*", "name", "body1", "body2"},
+        {"pair", "*", "name", "class", "geom1", "geom2", "condim", "friction",
+            "solref", "solreffriction", "solimp", "gap", "margin", "adhesion"},
+        {"exclude", "*", "name", "body1", "body2"},
     {">"},
 
     {"equality", "*"},
     {"<"},
-    {"connect", "*", "name", "class", "body1", "body2", "anchor", "site1",
-     "site2", "active", "solref", "solimp"},
-    {"weld", "*", "name", "class", "body1", "body2", "relpose", "anchor",
-     "site1", "site2", "active", "solref", "solimp", "torquescale"},
-    {"joint", "*", "name", "class", "joint1", "joint2", "polycoef", "active",
-     "solref", "solimp"},
-    {"tendon", "*", "name", "class", "tendon1", "tendon2", "polycoef", "active",
-     "solref", "solimp"},
-    {"flex", "*", "name", "class", "flex", "active", "solref", "solimp"},
-    {"flexvert", "*", "name", "class", "flex", "active", "solref", "solimp"},
-    {"flexstrain", "*", "name", "class", "flex", "cell", "active", "solref",
-     "solimp"},
+        {"connect", "*",  "name", "class", "body1", "body2", "anchor",
+            "site1", "site2", "active", "solref", "solimp"},
+        {"weld", "*", "name", "class", "body1", "body2", "relpose", "anchor",
+            "site1", "site2", "active", "solref", "solimp", "torquescale"},
+        {"joint", "*", "name", "class", "joint1", "joint2", "polycoef",
+            "active", "solref", "solimp"},
+        {"tendon", "*", "name", "class", "tendon1", "tendon2", "polycoef",
+            "active", "solref", "solimp"},
+        {"flex", "*", "name", "class", "flex",
+            "active", "solref", "solimp"},
+        {"flexvert", "*", "name", "class", "flex",
+            "active", "solref", "solimp"},
+        {"flexstrain", "*", "name", "class", "flex", "cell",
+            "active", "solref", "solimp"},
     {">"},
 
     {"tendon", "*"},
     {"<"},
-    {"spatial",
-     "*",
-     "name",
-     "class",
-     "group",
-     "limited",
-     "actuatorfrclimited",
-     "range",
-     "actuatorfrcrange",
-     "solreflimit",
-     "solimplimit",
-     "solreffriction",
-     "solimpfriction",
-     "frictionloss",
-     "springlength",
-     "width",
-     "material",
-     "margin",
-     "stiffness",
-     "damping",
-     "armature",
-     "rgba",
-     "user"},
-    {"<"},
-    {"site", "*", "site"},
-    {"geom", "*", "geom", "sidesite"},
-    {"pulley", "*", "divisor"},
-    {">"},
-    {"fixed",
-     "*",
-     "name",
-     "class",
-     "group",
-     "limited",
-     "actuatorfrclimited",
-     "range",
-     "actuatorfrcrange",
-     "solreflimit",
-     "solimplimit",
-     "solreffriction",
-     "solimpfriction",
-     "frictionloss",
-     "springlength",
-     "margin",
-     "stiffness",
-     "damping",
-     "armature",
-     "user"},
-    {"<"},
-    {"joint", "*", "joint", "coef"},
-    {">"},
+        {"spatial", "*", "name", "class", "group", "limited", "actuatorfrclimited", "range",
+            "actuatorfrcrange", "solreflimit", "solimplimit", "solreffriction", "solimpfriction",
+            "frictionloss", "springlength", "width", "material",
+            "margin", "stiffness", "damping", "armature", "rgba", "user"},
+        {"<"},
+            {"site", "*", "site"},
+            {"geom", "*", "geom", "sidesite"},
+            {"pulley", "*", "divisor"},
+        {">"},
+        {"fixed", "*", "name", "class", "group", "limited", "actuatorfrclimited", "range",
+            "actuatorfrcrange", "solreflimit", "solimplimit", "solreffriction", "solimpfriction",
+            "frictionloss", "springlength", "margin", "stiffness", "damping", "armature", "user"},
+        {"<"},
+            {"joint", "*", "joint", "coef"},
+        {">"},
     {">"},
 
     {"actuator", "*"},
     {"<"},
-    {"general",       "*",          "name",
-     "class",         "group",      "nsample",
-     "interp",        "delay",      "ctrllimited",
-     "forcelimited",  "actlimited", "ctrlrange",
-     "forcerange",    "actrange",   "lengthrange",
-     "gear",          "damping",    "armature",
-     "cranklength",   "user",       "joint",
-     "jointinparent", "tendon",     "slidersite",
-     "cranksite",     "site",       "refsite",
-     "body",          "actdim",     "dyntype",
-     "gaintype",      "biastype",   "dynprm",
-     "gainprm",       "biasprm",    "actearly"},
-    {"motor",     "*",           "name",        "class",       "group",
-     "nsample",   "interp",      "delay",       "ctrllimited", "forcelimited",
-     "ctrlrange", "forcerange",  "lengthrange", "gear",        "damping",
-     "armature",  "cranklength", "user",        "joint",       "jointinparent",
-     "tendon",    "slidersite",  "cranksite",   "site",        "refsite"},
-    {"position",     "*",           "name",
-     "class",        "group",       "nsample",
-     "interp",       "delay",       "ctrllimited",
-     "forcelimited", "ctrlrange",   "inheritrange",
-     "forcerange",   "lengthrange", "gear",
-     "damping",      "armature",    "cranklength",
-     "user",         "joint",       "jointinparent",
-     "tendon",       "slidersite",  "cranksite",
-     "site",         "refsite",     "kp",
-     "kv",           "dampratio",   "timeconst"},
-    {"velocity",  "*",           "name",        "class",       "group",
-     "nsample",   "interp",      "delay",       "ctrllimited", "forcelimited",
-     "ctrlrange", "forcerange",  "lengthrange", "gear",        "damping",
-     "armature",  "cranklength", "user",        "joint",       "jointinparent",
-     "tendon",    "slidersite",  "cranksite",   "site",        "refsite",
-     "kv"},
-    {"intvelocity", "*",
-     "name",        "class",
-     "group",       "nsample",
-     "interp",      "delay",
-     "ctrllimited", "forcelimited",
-     "ctrlrange",   "forcerange",
-     "actrange",    "inheritrange",
-     "lengthrange", "gear",
-     "damping",     "armature",
-     "cranklength", "user",
-     "joint",       "jointinparent",
-     "tendon",      "slidersite",
-     "cranksite",   "site",
-     "refsite",     "kp",
-     "kv",          "dampratio"},
-    {"damper",      "*",           "name",  "class",         "group",
-     "nsample",     "interp",      "delay", "forcelimited",  "ctrlrange",
-     "forcerange",  "lengthrange", "gear",  "damping",       "armature",
-     "cranklength", "user",        "joint", "jointinparent", "tendon",
-     "slidersite",  "cranksite",   "site",  "refsite",       "kv"},
-    {"cylinder",  "*",           "name",        "class",       "group",
-     "nsample",   "interp",      "delay",       "ctrllimited", "forcelimited",
-     "ctrlrange", "forcerange",  "lengthrange", "gear",        "damping",
-     "armature",  "cranklength", "user",        "joint",       "jointinparent",
-     "tendon",    "slidersite",  "cranksite",   "site",        "refsite",
-     "timeconst", "area",        "diameter",    "bias"},
-    {"muscle",    "*",           "name",        "class",       "group",
-     "nsample",   "interp",      "delay",       "ctrllimited", "forcelimited",
-     "ctrlrange", "forcerange",  "lengthrange", "gear",        "damping",
-     "armature",  "cranklength", "user",        "joint",       "jointinparent",
-     "tendon",    "slidersite",  "cranksite",   "timeconst",   "tausmooth",
-     "range",     "force",       "scale",       "lmin",        "lmax",
-     "vmax",      "fpmax",       "fvmax"},
-    {"adhesion", "*", "name", "class", "group", "nsample", "interp", "delay",
-     "forcelimited", "ctrlrange", "forcerange", "user", "body", "gain"},
-    {"dcmotor",     "*",          "name",          "class",       "group",
-     "nsample",     "interp",     "delay",         "ctrllimited", "ctrlrange",
-     "lengthrange", "gear",       "damping",       "armature",    "cranklength",
-     "user",        "joint",      "jointinparent", "tendon",      "slidersite",
-     "cranksite",   "site",       "refsite",       "motorconst",  "resistance",
-     "nominal",     "saturation", "inductance",    "cogging",     "controller",
-     "thermal",     "lugre",      "input"},
-    {"plugin",      "*",          "name",          "class",
-     "plugin",      "instance",   "group",         "nsample",
-     "interp",      "delay",      "ctrllimited",   "forcelimited",
-     "actlimited",  "ctrlrange",  "forcerange",    "actrange",
-     "lengthrange", "gear",       "damping",       "armature",
-     "cranklength", "joint",      "jointinparent", "site",
-     "actdim",      "dyntype",    "dynprm",        "tendon",
-     "cranksite",   "slidersite", "user",          "actearly"},
-    {"<"},
-    {"config", "*", "key", "value"},
-    {">"},
+        {"general", "*", "name", "class", "group", "nsample", "interp", "delay",
+            "ctrllimited", "forcelimited", "actlimited", "ctrlrange", "forcerange", "actrange",
+            "lengthrange", "gear", "damping", "armature", "cranklength", "user",
+            "joint", "jointinparent", "tendon", "slidersite", "cranksite", "site", "refsite",
+            "body", "actdim", "input", "dyntype", "gaintype", "biastype", "dynprm", "gainprm", "biasprm",
+            "actearly"},
+        {"motor", "*", "name", "class", "group", "nsample", "interp", "delay",
+            "ctrllimited", "forcelimited", "ctrlrange", "forcerange",
+            "lengthrange", "gear", "damping", "armature", "cranklength", "user",
+            "joint", "jointinparent", "tendon", "slidersite", "cranksite", "site", "refsite"},
+        {"position", "*", "name", "class", "group", "nsample", "interp", "delay",
+            "ctrllimited", "forcelimited", "ctrlrange", "inheritrange", "forcerange",
+            "lengthrange", "gear", "damping", "armature", "cranklength", "user",
+            "joint", "jointinparent", "tendon", "slidersite", "cranksite", "site", "refsite",
+            "kp", "kv", "dampratio", "timeconst"},
+        {"velocity", "*", "name", "class", "group", "nsample", "interp", "delay",
+            "ctrllimited", "forcelimited", "ctrlrange", "forcerange",
+            "lengthrange", "gear", "damping", "armature", "cranklength", "user",
+            "joint", "jointinparent", "tendon", "slidersite", "cranksite", "site", "refsite",
+            "kv"},
+        {"intvelocity", "*", "name", "class", "group", "nsample", "interp", "delay",
+            "ctrllimited", "forcelimited", "actlimited",
+            "ctrlrange", "forcerange", "actrange", "inheritrange", "lengthrange",
+            "gear", "damping", "armature", "cranklength", "user",
+            "joint", "jointinparent", "tendon", "slidersite", "cranksite", "site", "refsite",
+            "kp", "kv", "dampratio"},
+        {"orientation", "*", "name", "class", "group", "nsample", "interp", "delay",
+            "forcelimited", "ctrlrange", "forcerange", "user",
+            "joint", "site", "refsite",
+            "kp", "kv", "dampratio", "input"},
+        {"damper", "*", "name", "class", "group", "nsample", "interp", "delay",
+            "forcelimited", "ctrlrange", "forcerange",
+            "lengthrange", "gear", "damping", "armature", "cranklength", "user",
+            "joint", "jointinparent", "tendon", "slidersite", "cranksite", "site", "refsite",
+            "kv"},
+        {"cylinder", "*", "name", "class", "group", "nsample", "interp", "delay",
+            "ctrllimited", "forcelimited", "ctrlrange", "forcerange",
+            "lengthrange", "gear", "damping", "armature", "cranklength", "user",
+            "joint", "jointinparent", "tendon", "slidersite", "cranksite", "site", "refsite",
+            "timeconst", "area", "diameter", "bias"},
+        {"muscle", "*",  "name", "class", "group", "nsample", "interp", "delay",
+            "ctrllimited", "forcelimited", "ctrlrange", "forcerange",
+            "lengthrange", "gear", "damping", "armature", "cranklength", "user",
+            "joint", "jointinparent", "tendon", "slidersite", "cranksite",
+            "timeconst", "tausmooth", "range", "force", "scale",
+            "lmin", "lmax", "vmax", "fpmax", "fvmax"},
+        {"adhesion", "*", "name", "class", "group", "nsample", "interp", "delay",
+            "forcelimited", "ctrlrange", "forcerange", "user", "body", "gain"},
+        {"dcmotor", "*", "name", "class", "group", "nsample", "interp", "delay",
+            "ctrllimited", "ctrlrange",
+            "lengthrange", "gear", "damping", "armature", "cranklength", "user",
+            "joint", "jointinparent", "tendon", "slidersite", "cranksite", "site", "refsite",
+            "motorconst", "resistance", "nominal", "saturation",
+            "inductance", "cogging", "controller", "thermal", "lugre", "input"},
+        {"plugin", "*", "name", "class",  "plugin", "instance", "group", "nsample", "interp", "delay",
+            "ctrllimited", "forcelimited", "actlimited", "ctrlrange", "forcerange", "actrange",
+            "lengthrange", "gear", "damping", "armature", "cranklength", "joint", "jointinparent",
+            "site", "actdim", "dyntype", "dynprm", "tendon", "cranksite", "slidersite", "user",
+            "actearly"},
+        {"<"},
+          {"config", "*", "key", "value"},
+        {">"},
     {">"},
 
     {"sensor", "*"},
     {"<"},
-    {"touch", "*", "name", "site", "nsample", "interp", "delay", "interval",
-     "cutoff", "noise", "user"},
-    {"accelerometer", "*", "name", "site", "nsample", "interp", "delay",
-     "interval", "cutoff", "noise", "user"},
-    {"velocimeter", "*", "name", "site", "nsample", "interp", "delay",
-     "interval", "cutoff", "noise", "user"},
-    {"gyro", "*", "name", "site", "nsample", "interp", "delay", "interval",
-     "cutoff", "noise", "user"},
-    {"force", "*", "name", "site", "nsample", "interp", "delay", "interval",
-     "cutoff", "noise", "user"},
-    {"torque", "*", "name", "site", "nsample", "interp", "delay", "interval",
-     "cutoff", "noise", "user"},
-    {"magnetometer", "*", "name", "site", "nsample", "interp", "delay",
-     "interval", "cutoff", "noise", "user"},
-    {"camprojection", "*", "name", "site", "camera", "nsample", "interp",
-     "delay", "interval", "cutoff", "noise", "user"},
-    {"rangefinder", "*", "name", "site", "camera", "data", "nsample", "interp",
-     "delay", "interval", "cutoff", "noise", "user"},
-    {"jointpos", "*", "name", "joint", "nsample", "interp", "delay", "interval",
-     "cutoff", "noise", "user"},
-    {"jointvel", "*", "name", "joint", "nsample", "interp", "delay", "interval",
-     "cutoff", "noise", "user"},
-    {"tendonpos", "*", "name", "tendon", "nsample", "interp", "delay",
-     "interval", "cutoff", "noise", "user"},
-    {"tendonvel", "*", "name", "tendon", "nsample", "interp", "delay",
-     "interval", "cutoff", "noise", "user"},
-    {"actuatorpos", "*", "name", "actuator", "nsample", "interp", "delay",
-     "interval", "cutoff", "noise", "user"},
-    {"actuatorvel", "*", "name", "actuator", "nsample", "interp", "delay",
-     "interval", "cutoff", "noise", "user"},
-    {"actuatorfrc", "*", "name", "actuator", "nsample", "interp", "delay",
-     "interval", "cutoff", "noise", "user"},
-    {"jointactuatorfrc", "*", "name", "joint", "nsample", "interp", "delay",
-     "interval", "cutoff", "noise", "user"},
-    {"tendonactuatorfrc", "*", "name", "tendon", "nsample", "interp", "delay",
-     "interval", "cutoff", "noise", "user"},
-    {"ballquat", "*", "name", "joint", "nsample", "interp", "delay", "interval",
-     "cutoff", "noise", "user"},
-    {"ballangvel", "*", "name", "joint", "nsample", "interp", "delay",
-     "interval", "cutoff", "noise", "user"},
-    {"jointlimitpos", "*", "name", "joint", "nsample", "interp", "delay",
-     "interval", "cutoff", "noise", "user"},
-    {"jointlimitvel", "*", "name", "joint", "nsample", "interp", "delay",
-     "interval", "cutoff", "noise", "user"},
-    {"jointlimitfrc", "*", "name", "joint", "nsample", "interp", "delay",
-     "interval", "cutoff", "noise", "user"},
-    {"tendonlimitpos", "*", "name", "tendon", "nsample", "interp", "delay",
-     "interval", "cutoff", "noise", "user"},
-    {"tendonlimitvel", "*", "name", "tendon", "nsample", "interp", "delay",
-     "interval", "cutoff", "noise", "user"},
-    {"tendonlimitfrc", "*", "name", "tendon", "nsample", "interp", "delay",
-     "interval", "cutoff", "noise", "user"},
-    {"framepos", "*", "name", "objtype", "objname", "reftype", "refname",
-     "nsample", "interp", "delay", "interval", "cutoff", "noise", "user"},
-    {"framequat", "*", "name", "objtype", "objname", "reftype", "refname",
-     "nsample", "interp", "delay", "interval", "cutoff", "noise", "user"},
-    {"framexaxis", "*", "name", "objtype", "objname", "reftype", "refname",
-     "nsample", "interp", "delay", "interval", "cutoff", "noise", "user"},
-    {"frameyaxis", "*", "name", "objtype", "objname", "reftype", "refname",
-     "nsample", "interp", "delay", "interval", "cutoff", "noise", "user"},
-    {"framezaxis", "*", "name", "objtype", "objname", "reftype", "refname",
-     "nsample", "interp", "delay", "interval", "cutoff", "noise", "user"},
-    {"framelinvel", "*", "name", "objtype", "objname", "reftype", "refname",
-     "nsample", "interp", "delay", "interval", "cutoff", "noise", "user"},
-    {"frameangvel", "*", "name", "objtype", "objname", "reftype", "refname",
-     "nsample", "interp", "delay", "interval", "cutoff", "noise", "user"},
-    {"framelinacc", "*", "name", "objtype", "objname", "nsample", "interp",
-     "delay", "interval", "cutoff", "noise", "user"},
-    {"frameangacc", "*", "name", "objtype", "objname", "nsample", "interp",
-     "delay", "interval", "cutoff", "noise", "user"},
-    {"subtreecom", "*", "name", "body", "nsample", "interp", "delay",
-     "interval", "cutoff", "noise", "user"},
-    {"subtreelinvel", "*", "name", "body", "nsample", "interp", "delay",
-     "interval", "cutoff", "noise", "user"},
-    {"subtreeangmom", "*", "name", "body", "nsample", "interp", "delay",
-     "interval", "cutoff", "noise", "user"},
-    {"insidesite", "*", "name", "site", "objtype", "objname", "nsample",
-     "interp", "delay", "interval", "cutoff", "noise", "user"},
-    {"distance", "*", "name", "geom1", "geom2", "body1", "body2", "nsample",
-     "interp", "delay", "interval", "cutoff", "noise", "user"},
-    {"normal", "*", "name", "geom1", "geom2", "body1", "body2", "nsample",
-     "interp", "delay", "interval", "cutoff", "noise", "user"},
-    {"fromto", "*", "name", "geom1", "geom2", "body1", "body2", "nsample",
-     "interp", "delay", "interval", "cutoff", "noise", "user"},
-    {"contact",  "*",        "name",     "geom1",  "geom2", "body1",  "body2",
-     "subtree1", "subtree2", "site",     "num",    "data",  "reduce", "nsample",
-     "interp",   "delay",    "interval", "cutoff", "noise", "user"},
-    {"e_potential", "*", "name", "nsample", "interp", "delay", "interval",
-     "cutoff", "noise", "user"},
-    {"e_kinetic", "*", "name", "nsample", "interp", "delay", "interval",
-     "cutoff", "noise", "user"},
-    {"clock", "*", "name", "nsample", "interp", "delay", "interval", "cutoff",
-     "noise", "user"},
-    {"tactile", "*", "name", "geom", "mesh", "nsample", "interp", "delay",
-     "interval", "user"},
-    {"user", "*", "name", "objtype", "objname", "datatype", "needstage", "dim",
-     "cutoff", "noise", "user"},
-    {"plugin", "*", "name", "plugin", "instance", "cutoff", "objtype",
-     "objname", "reftype", "refname", "user"},
-    {"<"},
-    {"config", "*", "key", "value"},
-    {">"},
+        {"touch", "*", "name", "site", "nsample", "interp", "delay", "interval", "cutoff", "noise", "user"},
+        {"accelerometer", "*", "name", "site", "nsample", "interp", "delay", "interval", "cutoff", "noise", "user"},
+        {"velocimeter", "*", "name", "site", "nsample", "interp", "delay", "interval", "cutoff", "noise", "user"},
+        {"gyro", "*", "name", "site", "nsample", "interp", "delay", "interval", "cutoff", "noise", "user"},
+        {"force", "*", "name", "site", "nsample", "interp", "delay", "interval", "cutoff", "noise", "user"},
+        {"torque", "*", "name", "site", "nsample", "interp", "delay", "interval", "cutoff", "noise", "user"},
+        {"magnetometer", "*", "name", "site", "nsample", "interp", "delay", "interval", "cutoff", "noise", "user"},
+        {"camprojection", "*", "name", "site", "camera", "nsample", "interp", "delay", "interval", "cutoff", "noise", "user"},
+        {"rangefinder", "*", "name", "site", "camera", "data", "nsample", "interp", "delay", "interval", "cutoff", "noise", "user"},
+        {"jointpos", "*", "name", "joint", "nsample", "interp", "delay", "interval", "cutoff", "noise", "user"},
+        {"jointvel", "*", "name", "joint", "nsample", "interp", "delay", "interval", "cutoff", "noise", "user"},
+        {"tendonpos", "*", "name", "tendon", "nsample", "interp", "delay", "interval", "cutoff", "noise", "user"},
+        {"tendonvel", "*", "name", "tendon", "nsample", "interp", "delay", "interval", "cutoff", "noise", "user"},
+        {"actuatorpos", "*", "name", "actuator", "nsample", "interp", "delay", "interval", "cutoff", "noise", "user"},
+        {"actuatorvel", "*", "name", "actuator", "nsample", "interp", "delay", "interval", "cutoff", "noise", "user"},
+        {"actuatorfrc", "*", "name", "actuator", "nsample", "interp", "delay", "interval", "cutoff", "noise", "user"},
+        {"jointactuatorfrc", "*", "name", "joint", "nsample", "interp", "delay", "interval", "cutoff", "noise", "user"},
+        {"tendonactuatorfrc", "*", "name", "tendon", "nsample", "interp", "delay", "interval", "cutoff", "noise", "user"},
+        {"ballquat", "*", "name", "joint", "nsample", "interp", "delay", "interval", "cutoff", "noise", "user"},
+        {"ballangvel", "*", "name", "joint", "nsample", "interp", "delay", "interval", "cutoff", "noise", "user"},
+        {"jointlimitpos", "*", "name", "joint", "nsample", "interp", "delay", "interval", "cutoff", "noise", "user"},
+        {"jointlimitvel", "*", "name", "joint", "nsample", "interp", "delay", "interval", "cutoff", "noise", "user"},
+        {"jointlimitfrc", "*", "name", "joint", "nsample", "interp", "delay", "interval", "cutoff", "noise", "user"},
+        {"tendonlimitpos", "*", "name", "tendon", "nsample", "interp", "delay", "interval", "cutoff", "noise", "user"},
+        {"tendonlimitvel", "*", "name", "tendon", "nsample", "interp", "delay", "interval", "cutoff", "noise", "user"},
+        {"tendonlimitfrc", "*", "name", "tendon", "nsample", "interp", "delay", "interval", "cutoff", "noise", "user"},
+        {"framepos", "*", "name", "objtype", "objname", "reftype", "refname", "nsample", "interp", "delay", "interval", "cutoff", "noise", "user"},
+        {"framequat", "*", "name", "objtype", "objname", "reftype", "refname", "nsample", "interp", "delay", "interval", "cutoff", "noise", "user"},
+        {"framexaxis", "*", "name", "objtype", "objname", "reftype", "refname", "nsample", "interp", "delay", "interval", "cutoff", "noise", "user"},
+        {"frameyaxis", "*", "name", "objtype", "objname", "reftype", "refname", "nsample", "interp", "delay", "interval", "cutoff", "noise", "user"},
+        {"framezaxis", "*", "name", "objtype", "objname", "reftype", "refname", "nsample", "interp", "delay", "interval", "cutoff", "noise", "user"},
+        {"framelinvel", "*", "name", "objtype", "objname", "reftype", "refname", "nsample", "interp", "delay", "interval", "cutoff", "noise", "user"},
+        {"frameangvel", "*", "name", "objtype", "objname", "reftype", "refname", "nsample", "interp", "delay", "interval", "cutoff", "noise", "user"},
+        {"framelinacc", "*", "name", "objtype", "objname", "nsample", "interp", "delay", "interval", "cutoff", "noise", "user"},
+        {"frameangacc", "*", "name", "objtype", "objname", "nsample", "interp", "delay", "interval", "cutoff", "noise", "user"},
+        {"subtreecom", "*", "name", "body", "nsample", "interp", "delay", "interval", "cutoff", "noise", "user"},
+        {"subtreelinvel", "*", "name", "body", "nsample", "interp", "delay", "interval", "cutoff", "noise", "user"},
+        {"subtreeangmom", "*", "name", "body", "nsample", "interp", "delay", "interval", "cutoff", "noise", "user"},
+        {"insidesite", "*", "name", "site", "objtype", "objname", "nsample", "interp", "delay", "interval", "cutoff", "noise", "user"},
+        {"distance", "*", "name", "geom1", "geom2", "body1", "body2", "nsample", "interp", "delay", "interval", "cutoff", "noise", "user"},
+        {"normal", "*", "name", "geom1", "geom2", "body1", "body2", "nsample", "interp", "delay", "interval", "cutoff", "noise", "user"},
+        {"fromto", "*", "name", "geom1", "geom2", "body1", "body2", "nsample", "interp", "delay", "interval", "cutoff", "noise", "user"},
+        {"contact", "*", "name", "geom1", "geom2", "body1", "body2", "subtree1", "subtree2", "site",
+            "num", "data", "reduce", "nsample", "interp", "delay", "interval", "cutoff", "noise", "user"},
+        {"e_potential", "*", "name", "nsample", "interp", "delay", "interval", "cutoff", "noise", "user"},
+        {"e_kinetic", "*", "name", "nsample", "interp", "delay", "interval", "cutoff", "noise", "user"},
+        {"clock", "*", "name", "nsample", "interp", "delay", "interval", "cutoff", "noise", "user"},
+        {"tactile", "*", "name", "geom", "mesh", "nsample", "interp", "delay", "interval", "user"},
+        {"user", "*", "name", "objtype", "objname", "datatype", "needstage",
+            "dim", "cutoff", "noise", "user"},
+        {"plugin", "*", "name", "plugin", "instance", "cutoff", "objtype", "objname", "reftype", "refname",
+            "user"},
+        {"<"},
+          {"config", "*", "key", "value"},
+        {">"},
     {">"},
 
     {"keyframe", "*"},
     {"<"},
-    {"key", "*", "name", "time", "qpos", "qvel", "act", "mpos", "mquat",
-     "ctrl"},
+        {"key", "*", "name", "time", "qpos", "qvel", "act", "mpos", "mquat", "ctrl"},
     {">"},
-    {">"}};
+{">"}
+};
+// clang-format on
 
 
 
@@ -870,6 +647,13 @@ const mjMap TFAuto_map[3] = {
   {"false",   0},
   {"true",    1},
   {"auto",    2}
+};
+
+
+// FAuto type
+const mjMap FAuto_map[2] = {
+  {"false",   0},
+  {"auto",    1}
 };
 
 
@@ -1060,23 +844,33 @@ const mjMap dcmotorinput_map[dcmotorinput_sz] = {
 
 
 // gain type
-const int gain_sz = 5;
+const int gain_sz = 6;
 const mjMap gain_map[gain_sz] = {
   {"fixed",         mjGAIN_FIXED},
   {"affine",        mjGAIN_AFFINE},
   {"muscle",        mjGAIN_MUSCLE},
   {"dcmotor",       mjGAIN_DCMOTOR},
+  {"so3",           mjGAIN_SO3},
   {"user",          mjGAIN_USER}
 };
 
 
+// so3 input chart
+const int input_sz = 2;
+const mjMap input_map[input_sz] = {
+  {"expmap",        mjCHART_EXPMAP},
+  {"quat",          mjCHART_QUAT}
+};
+
+
 // bias type
-const int bias_sz = 5;
+const int bias_sz = 6;
 const mjMap bias_map[bias_sz] = {
   {"none",          mjBIAS_NONE},
   {"affine",        mjBIAS_AFFINE},
   {"muscle",        mjBIAS_MUSCLE},
   {"dcmotor",       mjBIAS_DCMOTOR},
+  {"so3",           mjBIAS_SO3},
   {"user",          mjBIAS_USER}
 };
 
@@ -2196,6 +1990,8 @@ void mjXReader::OneGeom(XMLElement* elem, mjsGeom* geom) {
   ReadAttr(elem, "solimp", mjNIMP, geom->solimp, text, false, false);
   ReadAttr(elem, "margin", 1, &geom->margin, text);
   ReadAttr(elem, "gap", 1, &geom->gap, text);
+  ReadAttr(elem, "surfacevel", 6, geom->surfacevel, text, false, false);
+  ReadAttr(elem, "adhesion", 1, &geom->adhesion, text);
   if (ReadAttrTxt(elem, "hfield", hfieldname)) {
     mjs_setString(geom->hfieldname, hfieldname.c_str());
   }
@@ -2418,6 +2214,7 @@ void mjXReader::OnePair(XMLElement* elem, mjsPair* pair) {
   ReadAttr(elem, "solimp", mjNIMP, pair->solimp, text, false, false);
   ReadAttr(elem, "margin", 1, &pair->margin, text);
   ReadAttr(elem, "gap", 1, &pair->gap, text);
+  ReadAttr(elem, "adhesion", 1, &pair->adhesion, text);
   ReadAttr(elem, "friction", 5, pair->friction, text, false, false);
 
   // write error info
@@ -2731,6 +2528,9 @@ void mjXReader::OneActuator(XMLElement* elem, mjsActuator* actuator) {
     ReadAttr(elem, "gainprm", mjNGAIN, actuator->gainprm, text, false, false);
     ReadAttr(elem, "biasprm", mjNBIAS, actuator->biasprm, text, false, false);
     ReadAttrInt(elem, "actdim", &actuator->actdim);
+    if (MapValue(elem, "input", &n, input_map, input_sz)) {
+      actuator->ctrlspec = n;
+    }
   }
 
   // direct drive motor
@@ -2775,6 +2575,32 @@ void mjXReader::OneActuator(XMLElement* elem, mjsActuator* actuator) {
     }
   }
 
+  // orientation servo: geodesic PD on an SO3 transmission
+  else if (type == "orientation") {
+    double kp = actuator->gainprm[0];
+    ReadAttr(elem, "kp", 1, &kp, text);
+
+    double kv_data;
+    double *kv = &kv_data;
+    if (!ReadAttr(elem, "kv", 1, kv, text)) {
+      kv = nullptr;
+    }
+
+    double dampratio_data;
+    double *dampratio = &dampratio_data;
+    if (!ReadAttr(elem, "dampratio", 1, dampratio, text)) {
+      dampratio = nullptr;
+    }
+
+    // input chart: expmap (default) or quat
+    int n;
+    if (MapValue(elem, "input", &n, input_map, input_sz)) {
+      actuator->ctrlspec = n;
+    }
+
+    err = mjs_setToOrientation(actuator, kp, kv, dampratio, actuator->ctrlspec);
+  }
+
   // velocity servo
   else if (type == "velocity") {
     double kv = actuator->gainprm[0];
@@ -2784,7 +2610,8 @@ void mjXReader::OneActuator(XMLElement* elem, mjsActuator* actuator) {
 
   // damper
   else if (type == "damper") {
-    double kv = 0;
+    bool inherited = (actuator->gaintype == mjGAIN_AFFINE);
+    double kv = inherited ? -actuator->gainprm[2] : 0;
     ReadAttr(elem, "kv", 1, &kv, text);
     err = mjs_setToDamper(actuator, kv);
   }
@@ -2792,14 +2619,16 @@ void mjXReader::OneActuator(XMLElement* elem, mjsActuator* actuator) {
   // cylinder
   else if (type == "cylinder") {
     double timeconst = actuator->dynprm[0];
-    double bias = actuator->biasprm[0];
+    double bias[3] = {actuator->biasprm[0], actuator->biasprm[1], actuator->biasprm[2]};
     double area = actuator->gainprm[0];
     double diameter = -1;
     ReadAttr(elem, "timeconst", 1, &timeconst, text);
-    ReadAttr(elem, "bias", 3, &bias, text);
+    ReadAttr(elem, "bias", 3, bias, text);
     ReadAttr(elem, "area", 1, &area, text);
     ReadAttr(elem, "diameter", 1, &diameter, text);
-    err = mjs_setToCylinder(actuator, timeconst, bias, area, diameter);
+    err = mjs_setToCylinder(actuator, timeconst, bias[0], area, diameter);
+    actuator->biasprm[1] = bias[1];
+    actuator->biasprm[2] = bias[2];
   }
 
   // muscle
@@ -3004,6 +2833,8 @@ void mjXReader::OneComposite(XMLElement* elem, mjsBody* body, mjsFrame* frame, c
     ReadAttr(egeom, "solimp", mjNIMP, dgeom.solimp, text, false, false);
     ReadAttr(egeom, "margin", 1, &dgeom.margin, text);
     ReadAttr(egeom, "gap", 1, &dgeom.gap, text);
+    ReadAttr(egeom, "surfacevel", 6, dgeom.surfacevel, text, false, false);
+    ReadAttr(egeom, "adhesion", 1, &dgeom.adhesion, text);
     if (ReadAttrTxt(egeom, "material", material)) {
       mjs_setString(dgeom.material, material.c_str());
     }
@@ -3336,6 +3167,7 @@ void mjXReader::Default(XMLElement* section, const mjsDefault* def, const mjVFS*
              name == "velocity"    ||
              name == "damper"      ||
              name == "intvelocity" ||
+             name == "orientation" ||
              name == "cylinder"    ||
              name == "muscle"      ||
              name == "adhesion"    ||
@@ -4155,6 +3987,9 @@ void mjXReader::Body(XMLElement* section, mjsBody* body, mjsFrame* frame,
       if (MapValue(elem, "sleep", &n, bodysleep_map, bodysleep_sz)) {
         child->sleep = (mjtSleepPolicy) n;
       }
+      if (MapValue(elem, "simple", &n, FAuto_map, 2)) {
+        child->simple = (mjtByte) n;
+      }
 
       // read userdata
       std::vector<double> userdata;
@@ -4170,37 +4005,71 @@ void mjXReader::Body(XMLElement* section, mjsBody* body, mjsFrame* frame,
 
     // attachment
     else if (name == "attach") {
-      string model_name, body_name, prefix;
-      ReadAttrTxt(elem, "model", model_name, /*required=*/true);
-      ReadAttrTxt(elem, "body", body_name, /*required=*/false);
+      string model_name, child_name, prefix;
+      bool has_model = ReadAttrTxt(elem, "model", model_name, /*required=*/false);
+      bool has_body = ReadAttrTxt(elem, "body", child_name, /*required=*/false);
+      bool has_frame = ReadAttrTxt(elem, "frame", child_name, /*required=*/false);
       ReadAttrTxt(elem, "prefix", prefix, /*required=*/true);
 
-      mjsBody* child_body = mjs_findBody(spec, (prefix+body_name).c_str());
-      mjsFrame* pframe = frame ? frame : mjs_addFrame(body, nullptr);
+      if (has_body && has_frame) {
+        throw mjXError(elem, "only one of body or frame can be specified in attach");
+      }
+      mjtObj type = mjOBJ_UNKNOWN;
+      if (has_body) type = mjOBJ_BODY;
+      else if (has_frame) type = mjOBJ_FRAME;
 
-      if (!child_body) {
+      mjsElement* source_elem = nullptr;
+      if (!has_model) { // Self-attach
+        if (type == mjOBJ_UNKNOWN) {
+          throw mjXError(elem, "either 'body' or 'frame' attribute must be specified for self-attach");
+        }
+
+        // check for name collision in the current spec
+        string full_name = prefix + child_name;
+        if (mjs_findElement(spec, type, full_name.c_str())) {
+          throw mjXError(elem, "cannot self-attach: element %s already exists", full_name.c_str());
+        }
+        source_elem = mjs_findElement(spec, type, child_name.c_str());
+        if (!source_elem) {
+          throw mjXError(elem, "%s",
+                         (string("could not find ") + mju_type2Str(type) + " '" + child_name +
+                          "' in the current model for self-attachment").c_str());
+        }
+      } else { // Attach from external model asset
+        // Check for name collision in the current spec
+        if (!child_name.empty()) {
+            string full_name = prefix + child_name;
+            if (mjs_findElement(spec, type, full_name.c_str())) {
+                throw mjXError(elem, "%s",
+                               (string("cannot attach: element ") + child_name +
+                                " already exists with prefix " + prefix).c_str());
+            }
+        }
+
         mjSpec* asset = mjs_findSpec(spec, model_name.c_str());
         if (!asset) {
           throw mjXError(elem, "could not find model '%s'", model_name.c_str());
         }
-        mjsElement* child;
-        if (body_name.empty()) {
-          child = asset->element;
-        } else {
-          child_body = mjs_findBody(asset, body_name.c_str());
-          if (!child_body) {
-            throw mjXError(elem, "could not find body '%s''%s'", body_name.c_str());
+
+        if (type == mjOBJ_UNKNOWN) { // Attach world body contents
+          source_elem = asset->element;
+        } else { // Attach specific body or frame
+          source_elem = mjs_findElement(asset, type, child_name.c_str());
+          if (!source_elem) {
+            throw mjXError(elem, "%s",
+                           (string("could not find ") + mju_type2Str(type) + " '" + child_name +
+                            "' in model asset '" + model_name + "'").c_str());
           }
-          child = child_body->element;
         }
-        if (!mjs_attach(pframe->element, child, prefix.c_str(), "")) {
-          throw mjXError(elem, "%s", stripError(mjs_getError(spec)));
-        }
-      } else {
-        // only set frame to existing body
-        if (mjs_setFrame(child_body->element, pframe)) {
-          throw mjXError(elem, "%s", stripError(mjs_getError(spec)));
-        }
+      }
+
+      mjsFrame* pframe = frame ? frame : mjs_addFrame(body, nullptr);
+      // Set default for the new frame from the current context
+      mjs_setDefault(pframe->element, mjs_getDefault(frame ? frame->element : body->element));
+      mjs_setString(pframe->info, ("line = " + std::to_string(elem->GetLineNum())).c_str());
+
+      if (!mjs_attach(pframe->element, source_elem, prefix.c_str(), "")) {
+        throw mjXError(elem, "%s", stripError(mjs_getError(spec)));
       }
     }
 

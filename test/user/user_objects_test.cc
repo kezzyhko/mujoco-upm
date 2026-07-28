@@ -1287,6 +1287,55 @@ TEST_F(MjCJointTest, AlignFree) {
   mj_deleteSpec(s);
 }
 
+TEST_F(MjCJointTest, BodySimpleFalse) {
+  constexpr char xml[] = R"(
+  <mujoco>
+    <worldbody>
+      <body name="B1">
+        <joint type="slide"/>
+        <geom size=".1"/>
+      </body>
+    </worldbody>
+  </mujoco>
+  )";
+
+  constexpr char xml_nosimple[] = R"(
+  <mujoco>
+    <worldbody>
+      <body name="B1" simple="false">
+        <joint type="slide"/>
+        <geom size=".1"/>
+      </body>
+    </worldbody>
+  </mujoco>
+  )";
+
+  char error[1024];
+
+  // compile default model: body should be simple
+  MjModelPtr m = LoadModelFromString(xml, error, sizeof(error));
+  ASSERT_THAT(m.get(), NotNull()) << error;
+  int b = mj_name2id(m.get(), mjOBJ_BODY, "B1");
+  EXPECT_GT(m->body_simple[b], 0);
+  EXPECT_GT(m->dof_simplenum[0], 0);
+
+  // compile with simple="false": body should not be simple
+  MjModelPtr m_ns = LoadModelFromString(xml_nosimple, error, sizeof(error));
+  ASSERT_THAT(m_ns.get(), NotNull()) << error;
+  EXPECT_EQ(m_ns->body_simple[b], 0);
+  EXPECT_EQ(m_ns->dof_simplenum[0], 0);
+
+  // forward kinematics should produce identical results
+  MjDataPtr d = MakeData(m);
+  MjDataPtr d_ns = MakeData(m_ns);
+  d->qpos[0] = d_ns->qpos[0] = 0.5;
+  mj_forward(m.get(), d.get());
+  mj_forward(m_ns.get(), d_ns.get());
+  EXPECT_THAT(d_ns->xpos[3*b+0], MjNear(d->xpos[3*b+0], 1e-10, 1e-6));
+  EXPECT_THAT(d_ns->xpos[3*b+1], MjNear(d->xpos[3*b+1], 1e-10, 1e-6));
+  EXPECT_THAT(d_ns->xpos[3*b+2], MjNear(d->xpos[3*b+2], 1e-10, 1e-6));
+}
+
 // ------------- test height fields --------------------------------------------
 
 using MjCHFieldTest = MujocoTest;
@@ -2615,6 +2664,37 @@ TEST_F(UserObjectsTest, Inertial) {
   m = LoadModelFromString(bad_xml2.c_str(), error, sizeof(error));
   ASSERT_THAT(m.get(), IsNull());
   EXPECT_THAT(error, HasSubstr("fullinertia and inertial orientation cannot"));
+}
+
+// Merged COM must be correct when a fused-static child has a non-identity
+// inertial-frame orientation (e.g. from a degenerate diaginertia).
+TEST_F(UserObjectsTest, FuseStaticWithRotatedInertial) {
+  static constexpr char xml[] = R"(
+  <mujoco>
+    <compiler fusestatic="true"/>
+    <worldbody>
+      <body name="parent">
+        <freejoint/>
+        <inertial pos="0 0 0" mass="1" diaginertia="1 1 1"/>
+        <body name="child" pos="1 0 0">
+          <inertial pos="0 0 0" quat="0.5 0.5 -0.5 0.5"
+                    mass="1" diaginertia="0.01 0.01 0.02"/>
+        </body>
+      </body>
+    </worldbody>
+  </mujoco>
+  )";
+
+  char error[1024];
+  MjModelPtr m = LoadModelFromString(xml, error, sizeof(error));
+  ASSERT_THAT(m.get(), NotNull()) << error;
+  // Child fuses into parent; only world + parent remain.
+  EXPECT_EQ(m->nbody, 2);
+  EXPECT_EQ(m->body_mass[1], 2);
+  // Mass-weighted COM in parent frame: (1*(0,0,0) + 1*(1,0,0)) / 2.
+  const mjtNum expected_com[3] = {0.5, 0, 0};
+  EXPECT_THAT(AsVector(m->body_ipos + 3, 3),
+              Pointwise(MjNear(1e-8, 1e-6), AsVector(expected_com, 3)));
 }
 
 TEST_F(UserObjectsTest, ZeroMass) {

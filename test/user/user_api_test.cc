@@ -18,6 +18,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
+#include <filesystem>
 #include <functional>
 #include <map>
 #include <memory>
@@ -478,6 +479,36 @@ TEST_F(MujocoTest, SetToDCMotorLuGre) {
   EXPECT_EQ(actuator->biasprm[3], 0.5);   // coulomb
   EXPECT_EQ(actuator->biasprm[4], 0.7);   // static
   EXPECT_EQ(actuator->biasprm[5], 10.0);  // stribeck
+
+  mj_deleteSpec(spec);
+}
+
+TEST_F(MujocoTest, SetToOrientation) {
+  mjSpec* spec = mj_makeSpec();
+  mjsActuator* actuator = mjs_addActuator(spec, 0);
+
+  // kv variant, default (expmap) chart
+  double kv = 2.0;
+  const char* err = mjs_setToOrientation(actuator, 5.0, &kv, nullptr, 0);
+  EXPECT_STREQ(err, "");
+  EXPECT_EQ(actuator->gaintype, mjGAIN_SO3);
+  EXPECT_EQ(actuator->biastype, mjBIAS_SO3);
+  EXPECT_EQ(actuator->dyntype, mjDYN_NONE);
+  EXPECT_EQ(actuator->gainprm[0], 5.0);
+  EXPECT_EQ(actuator->biasprm[1], -5.0);
+  EXPECT_EQ(actuator->biasprm[2], -2.0);
+  EXPECT_EQ(actuator->ctrlspec, 0);
+
+  // dampratio variant, quat chart
+  double dampratio = 1.0;
+  err = mjs_setToOrientation(actuator, 5.0, nullptr, &dampratio, mjCHART_QUAT);
+  EXPECT_STREQ(err, "");
+  EXPECT_EQ(actuator->biasprm[2], 1.0);
+  EXPECT_EQ(actuator->ctrlspec, mjCHART_QUAT);
+
+  // kv and dampratio are mutually exclusive
+  err = mjs_setToOrientation(actuator, 5.0, &kv, &dampratio, 0);
+  EXPECT_STREQ(err, "kv and dampratio cannot both be defined");
 
   mj_deleteSpec(spec);
 }
@@ -1281,6 +1312,20 @@ TEST_F(MujocoTest, AttachSpatialTendonWithoutSidesite) {
   EXPECT_THAT(
       mjs_findElement(parent, mjOBJ_TENDON, "tendon_without_sidesite_child"),
       NotNull());
+
+  mjsTendon* tendon = mjs_asTendon(
+      mjs_findElement(parent, mjOBJ_TENDON, "tendon_with_sidesite_child"));
+  ASSERT_THAT(tendon, NotNull());
+  ASSERT_EQ(mjs_getWrapNum(tendon), 3);
+
+  EXPECT_EQ(mjs_getWrapTarget(mjs_getWrap(tendon, 0)),
+            mjs_findElement(parent, mjOBJ_SITE, "site_A_child"));
+  EXPECT_EQ(mjs_getWrapTarget(mjs_getWrap(tendon, 1)),
+            mjs_findElement(parent, mjOBJ_GEOM, "wrap_geom_child"));
+  EXPECT_EQ(mjs_getWrapTarget(mjs_getWrap(tendon, 2)),
+            mjs_findElement(parent, mjOBJ_SITE, "site_B_child"));
+  EXPECT_EQ(mjs_getWrapSideSite(mjs_getWrap(tendon, 1)),
+            mjs_asSite(mjs_findElement(parent, mjOBJ_SITE, "side_site_child")));
 
   mjModel* model = mj_compile(parent, nullptr);
   ASSERT_THAT(model, NotNull()) << mjs_getError(parent);
@@ -3537,5 +3582,69 @@ TEST_F(MujocoTest, CompilationWarningsClearedOnRecompile) {
   mj_deleteSpec(spec);
 }
 
+TEST_F(MujocoTest, MjEncodeNativeFormats) {
+  // simple test spec
+  mjSpec* spec = mj_makeSpec();
+  mjsBody* world = mjs_findBody(spec, "world");
+  mjsBody* body = mjs_addBody(world, nullptr);
+  mjsGeom* geom = mjs_addGeom(body, nullptr);
+  geom->size[0] = 1.0;
+  geom->size[1] = 1.0;
+  geom->size[2] = 1.0;
+
+  mjModel* model = mj_compile(spec, nullptr);
+  ASSERT_THAT(model, NotNull());
+
+  std::filesystem::path tmp_dir = std::filesystem::temp_directory_path();
+  std::string xml_path = (tmp_dir / "test_encode.xml").string();
+  std::string mjb_path = (tmp_dir / "test_encode.mjb").string();
+  std::string txt_path = (tmp_dir / "test_encode.txt").string();
+
+  char error[1000];
+
+  // XML Encoding with spec
+  EXPECT_GT(mj_encode(spec, model, xml_path.c_str(), nullptr, nullptr, error,
+                      sizeof(error)),
+            0);
+  EXPECT_TRUE(std::filesystem::exists(xml_path));
+  EXPECT_GT(std::filesystem::file_size(xml_path), 0);
+
+  // XML Encoding without spec (should fail because no XML loaded in global
+  // spec)
+  std::filesystem::remove(xml_path);
+  // free global spec
+  mj_freeLastXML();
+  EXPECT_EQ(mj_encode(nullptr, model, xml_path.c_str(), nullptr, nullptr, error,
+                      sizeof(error)),
+            -1);
+  EXPECT_THAT(error, HasSubstr("No XML model loaded"));
+  EXPECT_TRUE(std::filesystem::exists(xml_path));
+  EXPECT_EQ(std::filesystem::file_size(xml_path), 0);
+  std::filesystem::remove(xml_path);
+
+  // MJB Encoding (spec can be null)
+  EXPECT_GT(mj_encode(nullptr, model, mjb_path.c_str(), nullptr, nullptr, error,
+                      sizeof(error)),
+            0);
+  EXPECT_TRUE(std::filesystem::exists(mjb_path));
+  EXPECT_GT(std::filesystem::file_size(mjb_path), 0);
+
+  mjModel* model2 = mj_loadModel(mjb_path.c_str(), nullptr);
+  EXPECT_THAT(model2, NotNull());
+  mj_deleteModel(model2);
+
+  // TXT Encoding (spec can be null)
+  EXPECT_GT(mj_encode(nullptr, model, txt_path.c_str(), nullptr, nullptr, error,
+                      sizeof(error)),
+            0);
+  EXPECT_TRUE(std::filesystem::exists(txt_path));
+  EXPECT_GT(std::filesystem::file_size(txt_path), 0);
+
+  // Clean up
+  std::filesystem::remove(mjb_path);
+  std::filesystem::remove(txt_path);
+  mj_deleteModel(model);
+  mj_deleteSpec(spec);
+}
 }  // namespace
 }  // namespace mujoco
