@@ -13,6 +13,8 @@ General
   grammar table, presence constraints, keyword maps, typed attribute bindings and save policies are generated from it
   and gated by tests, as are the schema's enum keywords and declared defaults against the C headers and
   default-constructors.
+- An XSD schema derived from the main schema is provided in
+  `model/mjcf.xsd <https://github.com/google-deepmind/mujoco/tree/main/src/xml/generated/mjcf.xsd>`__.
 
 Actuation
 ^^^^^^^^^
@@ -63,6 +65,11 @@ Bug fixes
   large penetration depth between nearly touching thin boxes with positive margin, causing resting stacks to explode.
 - Fixed a bug in the box-box collider where penetrations deeper than a box's smallest half-size could produce no
   contacts, letting boxes tunnel through thin boxes. Fixes :issue:`1800`.
+- Fixed the flex stretch stiffness operator, which was the Gauss-Newton Hessian of the stretch force rather than its
+  Jacobian: the geometric (stress-proportional) term was missing. Only the tensile part of that term is added, since
+  it is positive semi-definite exactly when the edge is in tension, and its consumers require an SPD operator; the
+  stretch force itself is unchanged. This affects the implicit integrators and the implicit effective metric, so
+  flexes using ``elastic2d="stretch"`` integrate slightly differently. Bending-only flexes are unaffected.
 
 Version 3.11.0 (July 27, 2026)
 ------------------------------
