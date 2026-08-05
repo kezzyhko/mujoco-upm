@@ -1164,6 +1164,9 @@
                :ref:`cutoff<body-light-cutoff>`
 
             .. grid-item::
+               :ref:`softness<body-light-softness>`
+
+            .. grid-item::
                :ref:`exponent<body-light-exponent>`
 
             .. grid-item::
@@ -1693,6 +1696,9 @@
 
             .. grid-item::
                :ref:`node<deformable-flex-node>`
+
+            .. grid-item::
+               :ref:`nodecoord<deformable-flex-nodecoord>`
 
             .. grid-item::
                :ref:`cellcount<deformable-flex-cellcount>`
@@ -5869,6 +5875,9 @@
 
             .. grid-item::
                :ref:`cutoff<default-light-cutoff>`
+
+            .. grid-item::
+               :ref:`softness<default-light-softness>`
 
             .. grid-item::
                :ref:`exponent<default-light-exponent>`
