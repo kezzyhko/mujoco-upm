@@ -2689,7 +2689,8 @@ void mjCBody::Compile(void) {
 
   // set parentid and weldid of children
   for (int i=0; i < bodies.size(); i++) {
-    bodies[i]->weldid = (!bodies[i]->joints.empty() ? bodies[i]->id : weldid);
+    bool weld_root = !bodies[i]->joints.empty() || bodies[i]->spec.mocap;
+    bodies[i]->weldid = (weld_root ? bodies[i]->id : weldid);
   }
 
   // check and process orientation alternatives for body
@@ -3962,9 +3963,15 @@ void mjCGeom::Compile(void) {
     throw mjCError(this, "hfield geom '%s' (id = %d) must have valid hfieldid", name.c_str(), id);
   }
 
-  // plane only allowed in static bodies
+  // plane only allowed in bodies with no dofs (static, including mocap)
   if (type == mjGEOM_PLANE && body->weldid != 0) {
-    throw mjCError(this, "plane only allowed in static bodies");
+    const mjCBody* weld = body;
+    while (weld->id != weld->weldid) {
+      weld = weld->parent;
+    }
+    if (!weld->spec.mocap) {
+      throw mjCError(this, "plane only allowed in static bodies");
+    }
   }
 
   // check if can collide
@@ -5286,43 +5293,6 @@ void mjCTexture::LoadKTX(mjResource* resource, std::vector<std::byte>& image,
 }
 
 // load custom file
-void mjCTexture::LoadCustom(mjResource* resource, std::vector<std::byte>& image,
-                            unsigned int& w, unsigned int& h, bool& is_srgb) {
-  const void* buffer = 0;
-  int buffer_sz = mju_readResource(resource, &buffer);
-
-  // still not found
-  if (buffer_sz < 0) {
-    throw mjCError(this, "could not read texture file '%s'", resource->name);
-  } else if (!buffer_sz) {
-    throw mjCError(this, "texture file is empty: '%s'", resource->name);
-  }
-
-
-  // read dimensions
-  int* pint = (int*)buffer;
-  w = pint[0];
-  h = pint[1];
-
-  // assume linear color space
-  is_srgb = false;
-
-  // check dimensions
-  if (w < 1 || h < 1) {
-    throw mjCError(this, "Non-PNG texture, assuming custom binary file format,\n"
-                         "non-positive texture dimensions in file '%s'", resource->name);
-  }
-
-  // check buffer size
-  if (buffer_sz != 2*sizeof(int) + w*h*3*sizeof(char)) {
-    throw mjCError(this, "Non-PNG texture, assuming custom binary file format,\n"
-                         "unexpected file size in file '%s'", resource->name);
-  }
-
-  // allocate and copy
-  image.resize(w*h*3);
-  memcpy(image.data(), (void*)(pint+2), w*h*3*sizeof(char));
-}
 
 void mjCTexture::FlipIfNeeded(std::vector<std::byte>& image, unsigned int w,
                               unsigned int h) {
@@ -5391,12 +5361,7 @@ void mjCTexture::LoadFlip(std::string filename, const mjVFS* vfs,
 
   std::string asset_type = GetAssetContentType(filename, content_type_);
 
-  // fallback to custom
-  if (asset_type.empty()) {
-    asset_type = "image/vnd.mujoco.texture";
-  }
-
-  if (asset_type != "image/png" && asset_type != "image/ktx" && asset_type != "image/vnd.mujoco.texture") {
+  if (asset_type != "image/png" && asset_type != "image/ktx") {
     throw mjCError(this, "unsupported content type: '%s'", asset_type.c_str());
   }
 
@@ -5416,8 +5381,6 @@ void mjCTexture::LoadFlip(std::string filename, const mjVFS* vfs,
         throw mjCError(this, "cannot flip KTX textures");
       }
       LoadKTX(resource, image, w, h, is_srgb);
-    } else {
-      LoadCustom(resource, image, w, h, is_srgb);
     }
   } catch(mjCError err) {
     mju_closeResource(resource);

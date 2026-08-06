@@ -14,6 +14,13 @@ General
   and gated by tests, as are the schema's enum keywords and declared defaults against the C headers and
   default-constructors.
 
+.. admonition:: Breaking API changes
+   :class: attention
+
+   - Removed the custom binary texture format (``image/vnd.mujoco.texture``) and the automatic fallback to custom
+     textures when loading files with unrecognized extensions. Textures can now only be loaded from PNG (``image/png``)
+     and KTX (``image/ktx``) files.
+
 Actuation
 ^^^^^^^^^
 - Added the :ref:`pid<actuator-pid>` actuator: a PID controller with real position and velocity setpoint inputs,
@@ -53,6 +60,12 @@ Engine
    - Changed the default value of :ref:`bvactive<visual-global-bvactive>` from "true" to "false". This avoids
      unnecessarily clearing bounding volume hierarchy visualization flags at every simulation step, which can be a
      bottleneck for models with large meshes.
+   - Mocap bodies and their dof-less descendants are now the root of their own weld group: ``mjModel.body_weldid`` of a
+     mocap body equals its own id rather than 0. Consequences: dragging a mocap body into sleeping objects now wakes
+     them; children of mocap bodies receive standard :ref:`parent-child collision filtering<SurprisingCollisions>`;
+     mocap bodies no longer count as static geometry for ray casting, and contact-matching sensors aggregate their
+     contacts under the mocap body rather than the world; and geom pairs where neither body can move no longer generate
+     contacts.
 
 Models
 ^^^^^^
@@ -69,7 +82,7 @@ Rendering
    :class: attention
 
    - Added :ref:`light/softness<body-light-softness>`: edge softness for spotlights under physically-based lighting
-     models, given as the fraction of the cone over which intensity falls to zero. The default of 0 is a sharp-edged
+     models, given as the fraction of the cone over which intensity falls to zero. The default of 0.2 is a semi-soft
      cone which delivers the full :ref:`intensity<body-light-intensity>` everywhere inside it, so that illuminance
      follows :math:`E = I/d^2` independent of the :ref:`cutoff<body-light-cutoff>` angle. Previously the filament
      renderer treated the entire cone as penumbra, dimming spotlights well below their rated intensity, increasingly
@@ -93,6 +106,24 @@ Bug fixes
   it is positive semi-definite exactly when the edge is in tension, and its consumers require an SPD operator; the
   stretch force itself is unchanged. This affects the implicit integrators and the implicit effective metric, so
   flexes using ``elastic2d="stretch"`` integrate slightly differently. Bending-only flexes are unaffected.
+
+OpenUSD
+^^^^^^^
+
+- Upgraded Newton USD schemas support to version 0.4.0:
+  - ``NewtonJointAPI`` (``newton:armature``, ``newton:damping``, ``newton:friction``) deprecates the ``MjcJointAPI``
+    equivalent ``mjc:armature``, ``mjc:damping``, and ``mjc:frictionloss`` attributes.
+  - ``NewtonMassAPI`` (``newton:massModel``, ``newton:inertia``) deprecates the ``MjcCollisionAPI``
+    equivalent ``mjc:shellinertia`` and ``MjcMeshCollisionAPI`` ``mjc:inertia`` attributes. This completes the
+    deprecation of all ``MjcMeshCollisionAPI`` attributes, slating it for removal in a future release.
+  - Added support for ``NewtonSiteAPI`` to declare sites, ``MjcSiteAPI`` auto applies this schema, but remains
+    as an extension for the ``mjc:group`` attribute.
+  - Added support for ``NewtonMaterialAPI`` (``newton:contactAdhesion``, ``newton:torsionalFriction``,
+    ``newton:rollingFriction``). This deprecates ``MjcMaterialAPI`` which will be removed in a future release.
+  - Added support for ``NewtonMimicAPI`` (``newton:mimicJoint``, ``newton:mimicCoef0``, ``newton:mimicCoef1``) as a
+    base for ``MjcEqualityJointAPI``, this deprecates the ``mjc:coef0`` and ``mjc:coef1`` attributes and the
+    ``mjc:target`` relationship.
+  - Added support for ``NewtonArticulationRootAPI`` (``newton:jointsAddMobility``).
 
 Version 3.11.0 (July 27, 2026)
 ------------------------------
