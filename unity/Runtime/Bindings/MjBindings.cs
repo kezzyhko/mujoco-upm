@@ -58,6 +58,7 @@ public const int mjNSOLVER = 200;
 public const int mjNISLAND = 20;
 public const bool THIRD_PARTY_MUJOCO_INCLUDE_MJPLUGIN_H_ = true;
 public const bool mjEXTERNC = true;
+public const bool THIRD_PARTY_MUJOCO_INCLUDE_MJPROFILE_H_ = true;
 public const bool THIRD_PARTY_MUJOCO_MJRENDER_H_ = true;
 public const int mjNAUX = 10;
 public const int mjMAXTEXTURE = 1000;
@@ -117,7 +118,7 @@ public const int mjMAXLINEPNT = 1001;
 public const int mjMAXPLANEGRID = 200;
 public const bool THIRD_PARTY_MUJOCO_MJXMACRO_H_ = true;
 public const bool THIRD_PARTY_MUJOCO_MUJOCO_H_ = true;
-public const int mjVERSION_HEADER = 3011000;
+public const int mjVERSION_HEADER = 3012000;
 
 
 // ------------------------------------Enums------------------------------------
@@ -276,7 +277,8 @@ public enum mjtDyn : int{
   mjDYN_FILTEREXACT = 3,
   mjDYN_MUSCLE = 4,
   mjDYN_DCMOTOR = 5,
-  mjDYN_USER = 6,
+  mjDYN_PID = 6,
+  mjDYN_USER = 7,
 }
 public enum mjtGain : int{
   mjGAIN_FIXED = 0,
@@ -284,7 +286,8 @@ public enum mjtGain : int{
   mjGAIN_MUSCLE = 2,
   mjGAIN_DCMOTOR = 3,
   mjGAIN_SO3 = 4,
-  mjGAIN_USER = 5,
+  mjGAIN_PID = 5,
+  mjGAIN_USER = 6,
 }
 public enum mjtBias : int{
   mjBIAS_NONE = 0,
@@ -297,6 +300,13 @@ public enum mjtBias : int{
 public enum mjtCtrlChart : int{
   mjCHART_EXPMAP = 1,
   mjCHART_QUAT = 2,
+}
+public enum mjtCtrlInput : int{
+  mjINPUT_POS = 1,
+  mjINPUT_VEL = 2,
+  mjINPUT_FF = 4,
+  mjINPUT_VOLTAGE = 8,
+  mjINPUT_NONE = 16,
 }
 public enum mjtObj : int{
   mjOBJ_UNKNOWN = 0,
@@ -1279,6 +1289,7 @@ public unsafe struct mjModel_ {
   public double* light_dir0;
   public float* light_attenuation;
   public float* light_cutoff;
+  public float* light_softness;
   public float* light_exponent;
   public float* light_ambient;
   public float* light_diffuse;
@@ -1379,6 +1390,7 @@ public unsafe struct mjModel_ {
   public int* mesh_texcoordadr;
   public int* mesh_texcoordnum;
   public int* mesh_graphadr;
+  public int* mesh_extrema;
   public float* mesh_vert;
   public float* mesh_normal;
   public float* mesh_texcoord;
@@ -5888,9 +5900,6 @@ public unsafe struct mjData_ {
   public int* efm_K_colind;
   public double* efm_K_val;
   public int* efm_dofid;
-  public int* efm_L_rownnz;
-  public int* efm_L_rowadr;
-  public int* efm_L_colind;
   public double* efm_L;
   public double* efc_b;
   public double* iefc_aref;
@@ -6026,6 +6035,7 @@ public unsafe struct mjvLight_ {
   public float bulbradius;
   public float intensity;
   public float range;
+  public float softness;
 }
 
 [StructLayout(LayoutKind.Sequential)]
@@ -7224,6 +7234,9 @@ public static unsafe extern void mjv_applyPerturbForce(mjModel_* m, mjData_* d, 
 
 [DllImport("mujoco", CallingConvention = CallingConvention.Cdecl)]
 public static unsafe extern mjvGLCamera_ mjv_averageCamera(mjvGLCamera_* cam1, mjvGLCamera_* cam2);
+
+[DllImport("mujoco", CallingConvention = CallingConvention.Cdecl)]
+public static unsafe extern mjvGLCamera_ mjv_camera2GLCamera(mjModel_* model, mjData_* data, mjvCamera_* mjv_camera);
 
 [DllImport("mujoco", CallingConvention = CallingConvention.Cdecl)]
 public static unsafe extern int mjv_select(mjModel_* m, mjData_* d, mjvOption_* vopt, double aspectratio, double relx, double rely, mjvScene_* scn, double* selpnt, int* geomid, int* flexid, int* skinid);

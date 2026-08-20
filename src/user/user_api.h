@@ -189,6 +189,11 @@ MJAPI const char* mjs_setToVelocity(mjsActuator* actuator, double kv);
 MJAPI const char* mjs_setToOrientation(mjsActuator* actuator, double kp, double kv[1],
                                        double dampratio[1], int ctrlspec);
 
+// Set to PID actuator.
+MJAPI const char* mjs_setToPID(mjsActuator* actuator, double kp, double kv[1], double dampratio[1],
+                               double ki[1], double imax[1], double slewmax[1], double inheritrange,
+                               int ctrlspec);
+
 // Set actuator to damper, return error on failure.
 MJAPI const char* mjs_setToDamper(mjsActuator* actuator, double kv);
 
@@ -208,7 +213,7 @@ MJAPI const char* mjs_setToAdhesion(mjsActuator* actuator, double gain);
 MJAPI const char* mjs_setToDCMotor(mjsActuator* actuator, double motorconst[2], double resistance,
                                    double nominal[3], double saturation[3], double inductance[2],
                                    double cogging[3], double controller[6], double thermal[6],
-                                   double lugre[5], int input_mode);
+                                   double lugre[5], int ctrlspec);
 
 
 //---------------------------------- Add assets ----------------------------------------------------

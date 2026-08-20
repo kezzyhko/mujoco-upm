@@ -455,6 +455,7 @@ typedef struct mjsLight_ {         // light specification
   float range;                     // range of effectiveness
   float attenuation[3];            // OpenGL attenuation (quadratic model)
   float cutoff;                    // OpenGL cutoff
+  float softness;                  // spotlight edge softness
   float exponent;                  // OpenGL exponent
   float ambient[3];                // ambient color
   float diffuse[3];                // diffuse color
@@ -725,6 +726,8 @@ typedef struct mjsActuator_ {      // actuator specification
   double dynprm[mjNDYN];           // dynamics parameters
   int actdim;                      // number of activation variables
   int ctrlspec;                    // input signature, scoped by gaintype; 0: type default
+  double velrange[2];              // range of the velocity-setpoint input (pid)
+  double ffrange[2];               // range of the feedforward input (pid)
   mjtBool actearly;                // apply next activations to qfrc
 
   // transmission

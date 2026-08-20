@@ -225,34 +225,46 @@ void mj_fwdVelocity(const mjModel* m, mjData* d) {
 }
 
 
-// helper for DC motor: computes control voltage from PID state
-static mjtNum dcmotorVoltage(mjtNum ctrl, mjtNum length, mjtNum velocity,
-                             mjtNum x_I, const mjtNum* gainprm) {
-  int input_mode = (int)gainprm[8];
-  mjtNum Vmax = gainprm[7];
-  mjtNum voltage;
+// unpack servo-family inputs from control block in canonical order [pos, vel, ff]
+// absent input: setpoint 0
+static void unpackServoInputs(const mjtNum* u, int spec, mjtNum out[4]) {
+  int adr = 0;
+  out[0] = (spec & mjINPUT_POS)     ? u[adr++] : 0;
+  out[1] = (spec & mjINPUT_VEL)     ? u[adr++] : 0;
+  out[2] = (spec & mjINPUT_FF)      ? u[adr++] : 0;
+  out[3] = (spec & mjINPUT_VOLTAGE) ? u[adr]   : 0;
+}
 
-  // get voltage
-  if (input_mode > 0) {
+
+// helper for DC motor: computes control voltage from PID state
+static mjtNum dcmotorVoltage(const mjtNum* u, int spec, mjtNum length, mjtNum velocity,
+                             mjtNum x_I, const mjtNum* gainprm) {
+  mjtNum voltage = 0;
+
+  // unpack present inputs in canonical order [pos, vel, ff, voltage]; absent input: 0
+  mjtNum u4[4];
+  unpackServoInputs(u, spec, u4);
+
+  // on-board controller: torque-space PID + torque feedforward
+  if (spec & (mjINPUT_POS | mjINPUT_VEL | mjINPUT_FF)) {
     mjtNum kp = gainprm[4];  // proportional gain
     mjtNum ki = gainprm[5];  // integral gain
     mjtNum kd = gainprm[6];  // derivative gain
+    mjtNum torque = kp*(u4[0] - length) + kd*(u4[1] - velocity) + ki*x_I + u4[2];
 
-    if (input_mode == 1) {
-      // position mode
-      voltage = kp * (ctrl - length) + ki * x_I - kd * velocity;
-    } else {
-      // velocity mode
-      voltage = kp * (ctrl - velocity) + ki * (x_I - length);
-    }
-  } else {
-    voltage = ctrl;
+    // torque mode is current control: V = R/K * torque + K * velocity, the second
+    // term compensating back-EMF; the compiler requires K > 0 on this path
+    mjtNum R = gainprm[0];
+    mjtNum K = gainprm[1];
+    voltage = R/K * torque + K*velocity;
+
+    // driver supply limit
+    mjtNum Vmax = gainprm[7];
+    if (Vmax > 0) voltage = mju_clip(voltage, -Vmax, Vmax);
   }
 
-  // clip voltage
-  if (Vmax > 0) voltage = mju_clip(voltage, -Vmax, Vmax);
-
-  return voltage;
+  // raw terminal voltage input: downstream of the controller, unclamped
+  return voltage + u4[3];
 }
 
 
@@ -285,10 +297,15 @@ static void expmap2Quat(mjtNum quat[4], const mjtNum v[3]) {
 static mjtNum wrapPeriod(const mjModel* m, int i) {
   // servo shape: fixed gain, affine bias, matching kp, setpoint input
   mjtDyn dyntype = m->actuator_dyntype[i];
-  if (m->actuator_gaintype[i] != mjGAIN_FIXED  ||
-      m->actuator_biastype[i] != mjBIAS_AFFINE ||
-      m->actuator_gainprm[mjNGAIN*i] != -m->actuator_biasprm[mjNBIAS*i+1] ||
-      (dyntype != mjDYN_NONE && dyntype != mjDYN_INTEGRATOR)) {
+  int servo = m->actuator_gaintype[i] == mjGAIN_FIXED  &&
+              m->actuator_biastype[i] == mjBIAS_AFFINE &&
+              m->actuator_gainprm[mjNGAIN*i] == -m->actuator_biasprm[mjNBIAS*i+1] &&
+              (dyntype == mjDYN_NONE || dyntype == mjDYN_INTEGRATOR);
+
+  // PID shape: kp and kv are single-sourced in the affine bias
+  int pid = m->actuator_gaintype[i] == mjGAIN_PID;
+
+  if (!servo && !pid) {
     return 0;
   }
 
@@ -315,6 +332,20 @@ static mjtNum wrapPeriod(const mjModel* m, int i) {
 static mjtNum wrapSetpoint(mjtNum u, mjtNum length, mjtNum period) {
   mjtNum err = u - length;
   return u - period * mju_round(err / period);
+}
+
+
+// slew-rate-limit setpoint u given previous effective setpoint u_prev, write act_dot
+// period > 0: wrap u to the representative nearest u_prev before limiting
+static mjtNum slewLimit(mjtNum u, mjtNum u_prev, mjtNum slew_s, mjtNum dt,
+                        mjtNum period, mjtNum* act_dot) {
+  if (period > 0) {
+    u = wrapSetpoint(u, u_prev, period);
+  }
+  mjtNum slew = slew_s * dt;
+  mjtNum u_eff = mju_clip(u, u_prev - slew, u_prev + slew);
+  *act_dot = (u_eff - u_prev) / dt;
+  return u_eff;
 }
 
 
@@ -419,6 +450,42 @@ void mj_fwdActuation(const mjModel* m, mjData* d) {
       d->act_dot[act_last] = mju_muscleDynamics(ctrl[uadr], d->act[act_last], dynprm);
       break;
 
+    case mjDYN_PID: {               // PID controller states, slot order: slew, integral
+      int adr = act_first;
+      mjtNum period = wrapPeriod(m, i);
+
+      // slew rate limiting of the position setpoint
+      mjtNum slew_s = dynprm[1];
+      if (slew_s > 0) {
+        ctrl[uadr] = slewLimit(ctrl[uadr], d->act[adr], slew_s, m->opt.timestep,
+                               period, d->act_dot + adr);
+        adr++;
+      }
+
+      // integral of the position error
+      if (m->actuator_gainprm[mjNGAIN*i] > 0) {
+        mjtNum err = ctrl[uadr] - d->actuator_length[oadr];
+
+        // rotational transmission: error on the circle
+        if (period > 0) {
+          err -= period*mju_round(err/period);
+        }
+
+        // anti-windup: stop accumulating beyond imax
+        mjtNum imax = dynprm[0];
+        if (imax > 0) {
+          mjtNum z = d->act[adr];
+          if (z >= imax) {
+            err = mju_min(err, 0);
+          } else if (z <= -imax) {
+            err = mju_max(err, 0);
+          }
+        }
+        d->act_dot[adr] = err;
+      }
+      break;
+    }
+
     case mjDYN_DCMOTOR: {           // DC motor: up to 5 optional states
       const mjtNum* gainprm = m->actuator_gainprm + mjNGAIN*i;
 
@@ -439,26 +506,17 @@ void mj_fwdActuation(const mjModel* m, mjData* d) {
       // controller state: slew rate limiting
       mjtNum slew_s = dynprm[7];  // slew rate limit
       if (slew_s > 0) {
-        mjtNum u_prev = d->act[adr];
-        mjtNum slew = slew_s * m->opt.timestep;
-        mjtNum u_eff = mju_clip(ctrl[uadr], u_prev - slew, u_prev + slew);
-        d->act_dot[adr] = (u_eff - u_prev) / m->opt.timestep;
-        ctrl[uadr] = u_eff;
+        ctrl[uadr] = slewLimit(ctrl[uadr], d->act[adr], slew_s, m->opt.timestep,
+                               0, d->act_dot + adr);
         adr++;
       }
 
-      // controller state: integral state
+      // controller state: integral of the position error (setpoint mode only)
       mjtNum x_I = 0;
       if (ki > 0) {
         x_I = d->act[adr];
-        int input_mode = (int)gainprm[8];
         mjtNum Imax = dynprm[8];   // integral clamp
-        mjtNum act_dot = ctrl[uadr];  // default raw accumulator for voltage and velocity modes
-
-        // position mode
-        if (input_mode == 1) {
-          act_dot = ctrl[uadr] - d->actuator_length[oadr];
-        }
+        mjtNum act_dot = ctrl[uadr] - d->actuator_length[oadr];
 
         // clamp act_dot based on integral state
         if (Imax > 0) {
@@ -473,7 +531,8 @@ void mj_fwdActuation(const mjModel* m, mjData* d) {
       }
 
       // compute physical voltage to feed into current and temperature equations
-      mjtNum V = dcmotorVoltage(ctrl[uadr], d->actuator_length[oadr], velocity, x_I, gainprm);
+      mjtNum V = dcmotorVoltage(ctrl + uadr, m->actuator_ctrlspec[i],
+                                d->actuator_length[oadr], velocity, x_I, gainprm);
 
       // temperature: dT/dt = (R*i^2 - T/RT) / C, where T = delta above ambient
       mjtNum RT = dynprm[2];  // thermal resistance
@@ -630,6 +689,10 @@ void mj_fwdActuation(const mjModel* m, mjData* d) {
       gain = gainprm[0];
       break;
 
+    case mjGAIN_PID:                // PID servo: input side handled below, state side in bias
+      gain = 0;
+      break;
+
     case mjGAIN_AFFINE:             // affine: prm = [const, kp, kv]
       gain = gainprm[0] + gainprm[1]*d->actuator_length[oadr] +
              gainprm[2]*d->actuator_velocity[oadr];
@@ -669,9 +732,11 @@ void mj_fwdActuation(const mjModel* m, mjData* d) {
       gain = (dynprm[0] > 0) ? K : K / mju_max(mjMINVAL, R);
 
       // controller: compute voltage, override ctrl[uadr] for force computation
-      if ((int)gainprm[8] > 0) {
+      // (pure raw-voltage motor reads ctrl directly; empty block reads as 0 below)
+      if (m->actuator_ctrlspec[i] != mjINPUT_VOLTAGE && m->actuator_ctrlnum[i] > 0) {
         mjtNum x_I = (slots.integral >= 0) ? d->act[adr + slots.integral] : 0;
-        ctrl[uadr] = dcmotorVoltage(ctrl[uadr], d->actuator_length[oadr],
+        ctrl[uadr] = dcmotorVoltage(ctrl + uadr, m->actuator_ctrlspec[i],
+                                    d->actuator_length[oadr],
                                     d->actuator_velocity[oadr], x_I, gainprm);
       }
       break;
@@ -693,8 +758,38 @@ void mj_fwdActuation(const mjModel* m, mjData* d) {
 
     // DC motor without current state: use ctrl even if other activations exist
     int dcmotor_no_current = (gaintype == mjGAIN_DCMOTOR && dynprm[0] <= 0);
-    if (actnum == 0 || dcmotor_no_current) {
-      mjtNum input = ctrl[uadr];
+
+    // PID servo: force = kp*(qref - l) + kv*(vref - l_dot) [+ ff] [+ ki*z]
+    // input-side terms computed here; state-side terms added by the affine bias below
+    if (gaintype == mjGAIN_PID) {
+      const mjtNum* prm = m->actuator_biasprm + mjNBIAS*i;
+
+      // unpack present inputs in canonical order [pos, vel, ff]; absent input: setpoint 0
+      mjtNum u4[4];
+      unpackServoInputs(ctrl + uadr, m->actuator_ctrlspec[i], u4);
+      mjtNum qref = u4[0], vref = u4[1], ff = u4[2];
+
+      // position setpoint: representative nearest the length on rotational transmissions
+      mjtNum period = wrapPeriod(m, i);
+      if (period > 0) {
+        qref = wrapSetpoint(qref, d->actuator_length[oadr], period);
+      }
+
+      // kp and kv are single-sourced in the affine bias parameters
+      force[oadr] = -prm[1]*qref - prm[2]*vref + ff;
+
+      // integral state (last slot): force += ki * z
+      if (actnum && gainprm[0] > 0) {
+        int act_adr = m->actuator_actadr[i] + actnum - 1;
+        mjtNum z = m->actuator_actearly[i]
+                       ? mj_nextActivation(m, d, i, act_adr, d->act_dot[act_adr])
+                       : d->act[act_adr];
+        force[oadr] += gainprm[0]*z;
+      }
+    }
+    else if (actnum == 0 || dcmotor_no_current) {
+      // empty input block (passive dcmotor): input is 0
+      mjtNum input = m->actuator_ctrlnum[i] ? ctrl[uadr] : 0;
 
       // rotational setpoint: use representative nearest the length (local, no state change)
       mjtNum period = wrapPeriod(m, i);
@@ -1082,7 +1177,7 @@ void mj_fwdConstraint(const mjModel* m, mjData* d) {
   // check if islands are supported
   // TODO: support islands with the implicit effective metric and remove the mj_flexCG
   // condition. It is here because the metric machinery is monolithic: the efm_c shift and
-  // the Ma/Mv/Mgrad operators (mjd_effMulAdd, mjd_effSolve) act on global dof vectors with
+  // the Ma/Mv/Mgrad operators (mjd_effMulAdd, mjd_effPrec) act on global dof vectors with
   // no island-local form. Discovery is already handled: findEdges unions the trees of every
   // stiffness-active flex, so a flex always lands in one island together with everything it
   // touches. Removal therefore needs only the solver side: apply the efm_c shift to that
@@ -1493,6 +1588,16 @@ void mj_RungeKutta(const mjModel* m, mjData* d, int N) {
 
 
 // return 1 if any flex needs implicit stiffness treatment (interp or bending)
+// return 1 if any non-rigid flex uses passive contacts (needs the metric independently of elasticity)
+static mjtBool flex_has_passive_contact(const mjModel* m) {
+  for (int f=0; f < m->nflex; f++) {
+    if (!m->flex_rigid[f] && m->flex_passive[f]) {
+      return 1;
+    }
+  }
+  return 0;
+}
+
 static mjtBool flex_has_implicit_stiffness(const mjModel* m) {
   for (int f=0; f < m->nflex; f++) {
     if (m->flex_rigid[f]) {
@@ -1536,7 +1641,7 @@ int mj_flexCG(const mjModel* m) {
   return m->opt.solver == mjSOL_CG &&
          (m->opt.integrator == mjINT_IMPLICIT || m->opt.integrator == mjINT_IMPLICITFAST) &&
          m->opt.cone != mjCONE_ELLIPTIC && !mjENABLED(mjENBL_SLEEP) &&
-         flex_has_implicit_stiffness(m);
+         (flex_has_implicit_stiffness(m) || flex_has_passive_contact(m));
 }
 
 
@@ -1677,6 +1782,12 @@ void mj_implicit(const mjModel* m, mjData* d) {
 // forward dynamics with skip; skipstage is mjtStage
 void mj_forwardSkip(const mjModel* m, mjData* d, int skipstage, int skipsensor) {
   TM_START;
+
+  // Passive flex contact is too stiff for explicit integration; require the effective metric.
+  if (flex_has_passive_contact(m) && !mj_flexCG(m)) {
+    mjERROR("passive flex contact requires the effective metric: use integrator=\"implicit\" or "
+            "\"implicitfast\" with solver=\"CG\", pyramidal cones and sleep disabled");
+  }
 
   // position-dependent
   if (skipstage < mjSTAGE_POS) {

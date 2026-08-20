@@ -1348,6 +1348,48 @@ const char* mjs_setToOrientation(mjsActuator* actuator, double kp, double kv[1],
 }
 
 
+// Set to PID actuator.
+const char* mjs_setToPID(mjsActuator* actuator, double kp, double kv[1], double dampratio[1],
+                         double ki[1], double imax[1], double slewmax[1], double inheritrange,
+                         int ctrlspec) {
+  if (kv && dampratio) {
+    return "kv and dampratio cannot both be defined";
+  }
+  actuator->biasprm[1] = -kp;
+  if (kv) {
+    if (*kv < 0) return "kv cannot be negative";
+    actuator->biasprm[2] = -(*kv);
+  }
+  if (dampratio) {
+    if (*dampratio < 0) return "dampratio cannot be negative";
+    actuator->biasprm[2] = *dampratio;
+  }
+
+  // controller states: ki in gainprm[0], imax in dynprm[0], slewmax in dynprm[1]
+  double ki_value = ki ? *ki : 0;
+  double slew_value = slewmax ? *slewmax : 0;
+  if (slew_value < 0) return "slewmax cannot be negative";
+  actuator->gainprm[0] = ki_value;
+  actuator->dynprm[1] = slew_value;
+  actuator->dyntype = (ki_value || slew_value) ? mjDYN_PID : mjDYN_NONE;
+  if (ki_value && imax) {
+    actuator->dynprm[0] = *imax;
+  }
+
+  actuator->inheritrange = inheritrange;
+  if (inheritrange > 0) {
+    if (actuator->ctrlrange[0] || actuator->ctrlrange[1]) {
+      return "posrange and inheritrange cannot both be defined";
+    }
+  }
+
+  actuator->ctrlspec = ctrlspec;
+  actuator->gaintype = mjGAIN_PID;
+  actuator->biastype = mjBIAS_AFFINE;
+  return "";
+}
+
+
 
 // Set to velocity actuator.
 const char* mjs_setToVelocity(mjsActuator* actuator, double kv) {
@@ -1464,7 +1506,7 @@ const char* mjs_setToAdhesion(mjsActuator* actuator, double gain) {
 const char* mjs_setToDCMotor(mjsActuator* actuator, double motorconst[2], double resistance,
                              double nominal[3], double saturation[3], double inductance[2],
                              double cogging[3], double controller[6], double thermal[6],
-                             double lugre[5], int input_mode) {
+                             double lugre[5], int ctrlspec) {
   double R      = resistance;                      // electrical resistance
   double Kt     = motorconst ? motorconst[0] : 0;  // torque constant
   double Ke     = motorconst ? motorconst[1] : 0;  // back-EMF constant
@@ -1610,7 +1652,8 @@ const char* mjs_setToDCMotor(mjsActuator* actuator, double motorconst[2], double
   }
 
   // set input mode and activation dimension
-  actuator->gainprm[8] = input_mode;
+  actuator->gainprm[8] = 0;  // reserved (was input_mode)
+  actuator->ctrlspec = ctrlspec;
   actuator->actdim = actdim;
 
   // enforce actlimited = 0; homogeneous bounds are invalid across DC motor states

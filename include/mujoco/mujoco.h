@@ -16,7 +16,7 @@
 #define MUJOCO_MUJOCO_H_
 
 // header version; should match the library version as returned by mj_version()
-#define mjVERSION_HEADER 3011000
+#define mjVERSION_HEADER 3012000
 
 // needed to define size_t, fabs and log10
 #include <stdlib.h>
@@ -787,6 +787,10 @@ MJAPI void mjv_applyPerturbForce(const mjModel* m, mjData* d, const mjvPerturb* 
 
 // Return the average of two OpenGL cameras.
 MJAPI mjvGLCamera mjv_averageCamera(const mjvGLCamera* cam1, const mjvGLCamera* cam2);
+
+// Converts a mjvCamera to a mjvGLCamera.
+MJAPI mjvGLCamera mjv_camera2GLCamera(const mjModel* model, const mjData* data,
+                                      const mjvCamera* mjv_camera);
 
 // Select geom, flex or skin with mouse; return bodyid; -1: none selected.
 // Nullable: geomid, flexid, skinid
@@ -1756,6 +1760,11 @@ MJAPI const char* mjs_setToVelocity(mjsActuator* actuator, double kv);
 MJAPI const char* mjs_setToOrientation(mjsActuator* actuator, double kp, double kv[1],
                                        double dampratio[1], int ctrlspec);
 
+// Set actuator to PID controller.
+MJAPI const char* mjs_setToPID(mjsActuator* actuator, double kp, double kv[1], double dampratio[1],
+                               double ki[1], double imax[1], double slewmax[1], double inheritrange,
+                               int ctrlspec);
+
 // Set actuator to activate damper; return error if any.
 MJAPI const char* mjs_setToDamper(mjsActuator* actuator, double kv);
 
@@ -1776,7 +1785,7 @@ MJAPI const char* mjs_setToAdhesion(mjsActuator* actuator, double gain);
 MJAPI const char* mjs_setToDCMotor(mjsActuator* actuator, double motorconst[2], double resistance,
                                    double nominal[3], double saturation[3], double inductance[2],
                                    double cogging[3], double controller[6], double thermal[6],
-                                   double lugre[5], int input_mode);
+                                   double lugre[5], int ctrlspec);
 
 
 //---------------------------------- Assets --------------------------------------------------------
