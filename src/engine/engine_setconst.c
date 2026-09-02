@@ -342,19 +342,22 @@ static void setFixed(mjModel* m, mjData* d) {
 
   // actuators: trees with any actuated joint, site, body, or tendon do not auto-sleep
   for (int i=0; i < m->nactuator; i++) {
-    int bodyid = -1;
+    int bodyid = -1, bodyid2 = -1;
     int tid = m->actuator_trnid[2*i];
+    int tid2 = m->actuator_trnid[2*i+1];
     switch ((mjtTrn)m->actuator_trntype[i]) {
     case mjTRN_JOINT:
     case mjTRN_JOINTINPARENT:
       bodyid = m->jnt_bodyid[tid];
       break;
     case mjTRN_SO3:
-      bodyid = m->actuator_trnid[2*i+1] >= 0 ? m->site_bodyid[tid] : m->jnt_bodyid[tid];
+      bodyid = tid2 >= 0 ? m->site_bodyid[tid] : m->jnt_bodyid[tid];
+      bodyid2 = tid2 >= 0 ? m->site_bodyid[tid2] : -1;
       break;
     case mjTRN_SITE:
     case mjTRN_SLIDERCRANK:
       bodyid = m->site_bodyid[tid];
+      bodyid2 = tid2 >= 0 ? m->site_bodyid[tid2] : -1;
       break;
     case mjTRN_BODY:
       bodyid = tid;
@@ -379,6 +382,12 @@ static void setFixed(mjModel* m, mjData* d) {
         m->tree_sleep_policy[treeid] = mjSLEEP_AUTO_NEVER;
       }
     }
+    if (bodyid2 != -1) {
+      int treeid = m->body_treeid[bodyid2];
+      if (treeid != -1 && m->tree_sleep_policy[treeid] == mjSLEEP_AUTO) {
+        m->tree_sleep_policy[treeid] = mjSLEEP_AUTO_NEVER;
+      }
+    }
   }
 
   // trees with inter-tree tendons that have non-zero stiffness or damping do not auto-sleep
@@ -392,10 +401,7 @@ static void setFixed(mjModel* m, mjData* d) {
     }
 
     // tendon spans 2 trees and has no stiffness or damping: skip
-    if (treenum == 2 &&
-        m->tendon_stiffness[i] == 0 && mju_isZero(m->tendon_stiffnesspoly+mjNPOLY*i, mjNPOLY) &&
-        m->tendon_damping[i] == 0   && mju_isZero(m->tendon_dampingpoly+mjNPOLY*i, mjNPOLY) &&
-        m->tendon_actuatorid[i] == -1) {
+    if (treenum == 2 && !mj_tendonHasStiffness(m, i) && !mj_tendonHasDamping(m, i)) {
       continue;
     }
 
@@ -1501,10 +1507,11 @@ static void setEfm0Factor(mjModel* m, mjData* d) {
                          Hu_rownnz, Hu_rowadr, Hu_colind, nbd, d);
 
   // numeric factorization
+  mjtNum* scratch = mjSTACKALLOC(d, nbd, mjtNum);
   int rank = mju_cholFactorNumeric(m->efm0_L, nbd, mjMINVAL,
                                    m->efm0_L_rownnz, m->efm0_L_rowadr, m->efm0_L_colind,
                                    LT_rownnz, LT_rowadr, LT_colind, LT_map,
-                                   Hl_val, Hl_rownnz, Hl_rowadr, Hl_colind, d);
+                                   Hl_val, Hl_rownnz, Hl_rowadr, Hl_colind, scratch);
   if (rank != nbd) {
     mj_freeStack(d);
     mjERROR("constant metric factor is rank-deficient (%d of %d)", rank, nbd);
