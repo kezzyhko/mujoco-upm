@@ -394,6 +394,7 @@
 #define MJMODEL_POINTERS_SITE                                                   \
     X   ( int,     site_type,             nsite,         1                    ) \
     X   ( int,     site_bodyid,           nsite,         1                    ) \
+    X   ( int,     site_dataid,           nsite,         1                    ) \
     X   ( int,     site_matid,            nsite,         1                    ) \
     X   ( int,     site_group,            nsite,         1                    ) \
     X   ( mjtByte, site_sameframe,        nsite,         1                    ) \

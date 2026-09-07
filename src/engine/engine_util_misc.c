@@ -449,8 +449,8 @@ void mju_geomSemiAxes(mjtNum semiaxes[3], const mjtNum size[3], mjtGeom type) {
 
 
 // return 1 if point is inside a primitive geom, 0 otherwise
-int mju_insideGeom(const mjtNum pos[3], const mjtNum mat[9], const mjtNum size[3], mjtGeom type,
-                   const mjtNum point[3]) {
+int mju_insidePrimitive(const mjtNum pos[3], const mjtNum mat[9], const mjtNum size[3], mjtGeom type,
+                        const mjtNum point[3]) {
   // vector from geom to point
   mjtNum vec[3];
   mju_sub3(vec, point, pos);

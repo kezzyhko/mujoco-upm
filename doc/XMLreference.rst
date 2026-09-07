@@ -14,7 +14,8 @@ XML schema
 ~~~~~~~~~~
 
 The dropdown below summarizes the XML elements and their attributes in MJCF. All information in MJCF is entered through
-elements and attributes. Text content in elements is not used (except for CDATA in :ref:`custom text<custom-text>` elements); if present, the parser ignores it.
+elements and attributes. Text content in elements is not used (except for CDATA in :ref:`custom text<custom-text>`
+elements); if present, the parser ignores it.
 
 .. only:: html
 
@@ -639,7 +640,9 @@ from its default.
    This flag enables a safety mechanism that prevents instabilities due to solref[0] being too small compared to the
    simulation timestep. Recall that solref[0] is the stiffness of the virtual spring-damper used for constraint
    stabilization. If this setting is enabled, the solver uses max(solref[0], 2*timestep) in place of solref[0]
-   separately for each active constraint.
+   separately for each active constraint. Under the :ref:`discrete<geIntegrators>` integrator, the flag instead
+   replaces contact and limit rows whose spring the timestep cannot resolve (solref[0]*solref[1] < timestep) by the
+   stiffest zero-restitution row for the timestep.
 
 .. _option-flag-sensor:
 
@@ -3021,7 +3024,7 @@ tendons, constructing slider-crank transmissions for actuators.
 
 .. _body-site-type:
 
-:at:`type`: :at-val:`[sphere, capsule, ellipsoid, cylinder, box], "sphere"`
+:at:`type`: :at-val:`[sphere, capsule, ellipsoid, cylinder, box, mesh], "sphere"`
    Type of geometric shape. This is used for rendering, and also determines the active sensor zone for :ref:`touch
    sensors <sensor-touch>`.
 
@@ -3035,6 +3038,11 @@ tendons, constructing slider-crank transmissions for actuators.
 
 :at:`material`: :at-val:`string, optional`
    Material used to specify the visual properties of the site.
+
+.. _body-site-mesh:
+
+:at:`mesh`: :at-val:`string, optional`
+   Mesh asset name. This attribute is required if the site type is "mesh".
 
 .. _body-site-rgba:
 
@@ -3592,9 +3600,11 @@ This sub-element adjusts the attributes of the sites in the composite object. Ot
 
 .. _composite-site-material:
 
+.. _composite-site-mesh:
+
 .. _composite-site-rgba:
 
-:at:`group`, :at:`size`, :at:`material`, :at:`rgba`
+:at:`group`, :at:`size`, :at:`material`, :at:`mesh`, :at:`rgba`
    Same meaning as regular :ref:`site <body-site>` attributes.
 
 
@@ -10031,6 +10041,8 @@ if omitted.
 .. _default-site-quat:
 
 .. _default-site-material:
+
+.. _default-site-mesh:
 
 .. _default-site-size:
 

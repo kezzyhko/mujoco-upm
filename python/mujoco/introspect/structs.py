@@ -2317,6 +2317,14 @@ STRUCTS: Mapping[str, StructDecl] = dict([
                  array_extent=('nsite',),
              ),
              StructFieldDecl(
+                 name='site_dataid',
+                 type=PointerType(
+                     inner_type=ValueType(name='int'),
+                 ),
+                 doc="id of site's mesh; -1: none",
+                 array_extent=('nsite',),
+             ),
+             StructFieldDecl(
                  name='site_matid',
                  type=PointerType(
                      inner_type=ValueType(name='int'),
@@ -8302,6 +8310,13 @@ STRUCTS: Mapping[str, StructDecl] = dict([
                      extents=(4,),
                  ),
                  doc='rgba when material is omitted',
+             ),
+             StructFieldDecl(
+                 name='meshname',
+                 type=PointerType(
+                     inner_type=ValueType(name='mjString'),
+                 ),
+                 doc='mesh attached to site',
              ),
              StructFieldDecl(
                  name='userdata',

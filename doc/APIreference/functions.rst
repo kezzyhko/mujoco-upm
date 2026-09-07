@@ -696,6 +696,15 @@ found, the function will return ``distmax`` and ``fromto``, if given, will be se
    As explained in :ref:`Collision Detection<coDistance>`, distances are inaccurate when using the
    :ref:`legacy CCD pipeline<coCCD>`, and its use is discouraged.
 
+.. _mj_insideSite:
+
+`mj_insideSite <#mj_insideSite>`__
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+.. mujoco-include:: mj_insideSite
+
+Return 1 if point is inside a site (convex hull for meshes), 0 otherwise.
+
 .. _mj_contactForce:
 
 `mj_contactForce <#mj_contactForce>`__

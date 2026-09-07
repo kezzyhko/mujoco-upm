@@ -485,6 +485,7 @@ typedef struct mjModel_ {
   // sites
   int*      site_type;            // geom type for rendering (mjtGeom)        (nsite x 1)
   int*      site_bodyid;          // id of site's body                        (nsite x 1)
+  int*      site_dataid;          // id of site's mesh; -1: none              (nsite x 1)
   int*      site_matid;           // material id for rendering; -1: none      (nsite x 1)
   int*      site_group;           // group for visibility                     (nsite x 1)
   mjtByte*  site_sameframe;       // same frame as body (mjtSameframe)        (nsite x 1)

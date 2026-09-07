@@ -3717,6 +3717,14 @@ struct MjsSite {
   emscripten::val rgba() const {
     return emscripten::val(emscripten::typed_memory_view(4, ptr_->rgba));
   }
+  mjString meshname() const {
+    return (ptr_ && ptr_->meshname) ? *(ptr_->meshname) : "";
+  }
+  void set_meshname(const mjString& value) {
+    if (ptr_ && ptr_->meshname) {
+      *(ptr_->meshname) = value;
+    }
+  }
   mjDoubleVec &userdata() const {
     return *(ptr_->userdata);
   }
@@ -4673,6 +4681,9 @@ struct MjModel {
   }
   emscripten::val site_bodyid() const {
     return emscripten::val(emscripten::typed_memory_view(ptr_->nsite, ptr_->site_bodyid));
+  }
+  emscripten::val site_dataid() const {
+    return emscripten::val(emscripten::typed_memory_view(ptr_->nsite, ptr_->site_dataid));
   }
   emscripten::val site_matid() const {
     return emscripten::val(emscripten::typed_memory_view(ptr_->nsite, ptr_->site_matid));
