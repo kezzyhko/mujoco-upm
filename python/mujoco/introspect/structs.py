@@ -7094,7 +7094,7 @@ STRUCTS: Mapping[str, StructDecl] = dict([
                      inner_type=ValueType(name='int'),
                  ),
                  doc='ids of actuators with terms in the metric',
-                 array_extent=('nu',),
+                 array_extent=('nactuator',),
              ),
              StructFieldDecl(
                  name='efm_as',
@@ -7102,7 +7102,7 @@ STRUCTS: Mapping[str, StructDecl] = dict([
                      inner_type=ValueType(name='mjtNum'),
                  ),
                  doc='actuator metric scale h^2*gp + h*gv, aid indexed',
-                 array_extent=('nu',),
+                 array_extent=('nactuator',),
              ),
              StructFieldDecl(
                  name='efm_ak',
@@ -7110,7 +7110,7 @@ STRUCTS: Mapping[str, StructDecl] = dict([
                      inner_type=ValueType(name='mjtNum'),
                  ),
                  doc='actuator stiffness h*gp, aid indexed',
-                 array_extent=('nu',),
+                 array_extent=('nactuator',),
              ),
              StructFieldDecl(
                  name='efm_ca',

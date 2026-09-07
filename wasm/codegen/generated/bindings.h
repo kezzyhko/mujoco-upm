@@ -7363,13 +7363,13 @@ struct MjData {
     return emscripten::val(emscripten::typed_memory_view(model->ntendon, ptr_->efm_tk));
   }
   emscripten::val efm_aid() const {
-    return emscripten::val(emscripten::typed_memory_view(model->nu, ptr_->efm_aid));
+    return emscripten::val(emscripten::typed_memory_view(model->nactuator, ptr_->efm_aid));
   }
   emscripten::val efm_as() const {
-    return emscripten::val(emscripten::typed_memory_view(model->nu, ptr_->efm_as));
+    return emscripten::val(emscripten::typed_memory_view(model->nactuator, ptr_->efm_as));
   }
   emscripten::val efm_ak() const {
-    return emscripten::val(emscripten::typed_memory_view(model->nu, ptr_->efm_ak));
+    return emscripten::val(emscripten::typed_memory_view(model->nactuator, ptr_->efm_ak));
   }
   emscripten::val efm_ca() const {
     return emscripten::val(emscripten::typed_memory_view(model->nv, ptr_->efm_ca));
