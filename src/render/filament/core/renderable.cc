@@ -227,14 +227,14 @@ void Renderable::RemoveFromScene(filament::Scene* scene) {
 }
 
 void Renderable::UpdateMaterial(const mjrfMaterial& material) {
-  uint8_t layer_mask_ = kLayerMask_Object;
+  uint8_t layer_mask = kLayerMask_Object;
   if (material.decor_ux) {
-    layer_mask_ = kLayerMask_Decor;
+    layer_mask = kLayerMask_Decor;
   }
   if (material.selected) {
-    layer_mask_ |= kLayerMask_Outline;
+    layer_mask |= kLayerMask_Outline;
   }
-  SetLayerMask(layer_mask_);
+  SetLayerMask(layer_mask);
   material_ = material;
 }
 

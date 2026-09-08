@@ -157,7 +157,7 @@ void FilamentRenderer::Render(const mjModel* model, mjData* data,
   imgui_bridge_->Update();
 
   mjrfRenderRequest reqs[2];
-  BuildMainRenderRequest(&reqs[0], viewport,
+  BuildMainRenderRequest(&reqs[0], vis_option, viewport,
                          mjv_camera2GLCamera(model, data, camera));
   BuildUxRenderRequest(&reqs[1], viewport);
 
@@ -200,8 +200,11 @@ void FilamentRenderer::RenderToTexture(const mjModel* model, mjData* data,
 
   mjrf_resizeRenderTarget(render_target_.get(), width, height);
 
+  mjvOption vis_option;
+  mjv_defaultOption(&vis_option);
+
   mjrfRenderRequest request;
-  BuildMainRenderRequest(&request, {0, 0, width, height},
+  BuildMainRenderRequest(&request, &vis_option, {0, 0, width, height},
                          mjv_camera2GLCamera(model, data, camera));
   request.target = render_target_.get();
 
@@ -226,6 +229,7 @@ int FilamentRenderer::UploadImage(int texture_id, const std::byte* pixels,
 double FilamentRenderer::GetFps() { return fps_; }
 
 void FilamentRenderer::BuildMainRenderRequest(mjrfRenderRequest* request,
+                                              const mjvOption* vis_option,
                                               const mjrRect& viewport,
                                               const mjrCamera& camera) {
   mjrDrawMode draw_mode = mjDRAW_MODE_DEFAULT;
@@ -239,6 +243,8 @@ void FilamentRenderer::BuildMainRenderRequest(mjrfRenderRequest* request,
     draw_mode = mjDRAW_MODE_DEPTH;
   } else if (render_flags_[mjRND_WIREFRAME]) {
     draw_mode = mjDRAW_MODE_WIREFRAME;
+  } else if (vis_option->flags[mjVIS_ISLAND]) {
+    draw_mode = mjDRAW_MODE_ISLANDS;
   }
 
   mjrf_defaultRenderRequest(request);

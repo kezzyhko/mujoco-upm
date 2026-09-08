@@ -215,16 +215,11 @@ jobs:
     # compiler-independent so it does not need to run in every matrix job.
 
     - name: Notify team chat
-      shell: bash
-      env:
-        GCHAT_API_URL: ${{ secrets.GCHAT_API }}
-        JOB_URL: "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
-        CHATMSG_AUTHOR_NAME: ${{ github.event.head_commit.author.name }}
-        CHATMSG_AUTHOR_EMAIL: ${{ github.event.head_commit.author.email }}
-        CHATMSG_COMMIT_MESSAGE: ${{ github.event.head_commit.message }}
-        CHATMSG_JOB_ID: ${{ matrix.label }}
-      if: failure() && github.ref_name == 'main' && github.event_name == 'push' && env.GCHAT_API_URL != ''
-      run: bash ./.github/workflows/build_steps.sh notify_team_chat
+      if: failure() && github.ref_name == 'main' && github.event_name == 'push'
+      uses: ./.github/actions/notify-chat
+      with:
+        service-account-key: ${{ secrets.CHAT_SERVICE_ACCOUNT_KEY }}
+        space-id: "spaces/AAAAzcCLt1A"
 
   # This job quickly determines if MuJoCo Studio is broken. It is the only place
   # Filament is compiled in CI, so ccache here is what keeps the long pole short.
@@ -298,16 +293,11 @@ jobs:
       run: bash ./.github/workflows/build_steps.sh build_studio
 
     - name: Notify team chat
-      shell: bash
-      env:
-        GCHAT_API_URL: ${{ secrets.GCHAT_API }}
-        JOB_URL: "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
-        CHATMSG_AUTHOR_NAME: ${{ github.event.head_commit.author.name }}
-        CHATMSG_AUTHOR_EMAIL: ${{ github.event.head_commit.author.email }}
-        CHATMSG_COMMIT_MESSAGE: ${{ github.event.head_commit.message }}
-        CHATMSG_JOB_ID: ${{ matrix.label }}
-      if: failure() && github.ref_name == 'main' && github.event_name == 'push' && env.GCHAT_API_URL != ''
-      run: bash ./.github/workflows/build_steps.sh notify_team_chat
+      if: failure() && github.ref_name == 'main' && github.event_name == 'push'
+      uses: ./.github/actions/notify-chat
+      with:
+        service-account-key: ${{ secrets.CHAT_SERVICE_ACCOUNT_KEY }}
+        space-id: "spaces/AAAAzcCLt1A"
 
 
   # This job quickly determines if WASM bindings are broken.
@@ -351,16 +341,11 @@ jobs:
         bash ./.github/workflows/build_steps.sh build_test_wasm
 
     - name: Notify team chat
-      shell: bash
-      env:
-        GCHAT_API_URL: ${{ secrets.GCHAT_API }}
-        JOB_URL: "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
-        CHATMSG_AUTHOR_NAME: ${{ github.event.head_commit.author.name }}
-        CHATMSG_AUTHOR_EMAIL: ${{ github.event.head_commit.author.email }}
-        CHATMSG_COMMIT_MESSAGE: ${{ github.event.head_commit.message }}
-        CHATMSG_JOB_ID: ${{ env.label }}
-      if: failure() && github.ref_name == 'main' && github.event_name == 'push' && env.GCHAT_API_URL != ''
-      run: bash ./.github/workflows/build_steps.sh notify_team_chat
+      if: failure() && github.ref_name == 'main' && github.event_name == 'push'
+      uses: ./.github/actions/notify-chat
+      with:
+        service-account-key: ${{ secrets.CHAT_SERVICE_ACCOUNT_KEY }}
+        space-id: "spaces/AAAAzcCLt1A"
 
 
   # MJX (mujoco.mjx) is pure JAX/XLA and compiler-independent: it imports the
@@ -445,13 +430,8 @@ jobs:
       run: bash ../.github/workflows/build_steps.sh test_mjx
 
     - name: Notify team chat
-      shell: bash
-      env:
-        GCHAT_API_URL: ${{ secrets.GCHAT_API }}
-        JOB_URL: "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
-        CHATMSG_AUTHOR_NAME: ${{ github.event.head_commit.author.name }}
-        CHATMSG_AUTHOR_EMAIL: ${{ github.event.head_commit.author.email }}
-        CHATMSG_COMMIT_MESSAGE: ${{ github.event.head_commit.message }}
-        CHATMSG_JOB_ID: "ubuntu-24.04-clang-18-mjx"
-      if: failure() && github.ref_name == 'main' && github.event_name == 'push' && env.GCHAT_API_URL != ''
-      run: bash ./.github/workflows/build_steps.sh notify_team_chat
+      if: failure() && github.ref_name == 'main' && github.event_name == 'push'
+      uses: ./.github/actions/notify-chat
+      with:
+        service-account-key: ${{ secrets.CHAT_SERVICE_ACCOUNT_KEY }}
+        space-id: "spaces/AAAAzcCLt1A"

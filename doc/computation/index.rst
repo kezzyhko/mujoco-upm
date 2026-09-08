@@ -1080,7 +1080,7 @@ as defined later. The ``condim`` parameter determines the contact type, and has 
    rolling friction, which can be used for example to stop a ball from rolling indefinitely on a plane. Rolling friction
    in the real world results from energy dissipated by local deformations near the contact point. It can be
    used to model rolling friction between tires and a road, and in general to stabilize contacts. Rolling friction
-   coefficients also have **units of length** which can be interperted as the depth of the local deformation within
+   coefficients also have **units of length** which can be interpreted as the depth of the local deformation within
    which energy is dissipated.
 
 Note that condim cannot be 2 or 5. This is because the two tangential directions and the two rolling directions are
@@ -1517,6 +1517,8 @@ representations of the constraint Jacobian and related matrices.
    and involves small matrices. Overall this algorithm has similar behavior to PGS for pyramidal cones, but it can
    handle elliptic cones without approximating them. It does more work per contact, however the contact dimensionality
    is smaller, and these two factors roughly balance each other.
+
+.. _soNoSlip:
 
 **NoSlip** : post-processing pass
    This is not a standalone solver but a post-processing step, enabled by setting ``noslip_iterations`` to a positive
