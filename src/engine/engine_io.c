@@ -1355,6 +1355,9 @@ static void _resetData(const mjModel* m, mjData* d, unsigned char debug_value) {
   d->nidof = 0;
   d->efm_active = 0;
   d->nefmK = 0;
+  d->nefmcon = 0;
+  d->nefmT = 0;
+  d->nefmA = 0;
   d->nefmdof = 0;
   d->nefmL = 0;
 
@@ -2002,6 +2005,13 @@ const char* mj_validateReferences(const mjModel* m) {
     } else if ((m->geom_type[i] == mjGEOM_MESH) || (m->geom_type[i] == mjGEOM_SDF)) {
       if (m->geom_dataid[i] >= m->nmesh || m->geom_dataid[i] < -1) {
         return "Invalid model: geom_dataid out of bounds.";
+      }
+    }
+  }
+  for (int i=0; i < m->nsite; i++) {
+    if (m->site_type[i] == mjGEOM_MESH) {
+      if (m->site_dataid[i] >= m->nmesh || m->site_dataid[i] < -1) {
+        return "Invalid model: site_dataid out of bounds.";
       }
     }
   }

@@ -14,7 +14,8 @@ XML schema
 ~~~~~~~~~~
 
 The dropdown below summarizes the XML elements and their attributes in MJCF. All information in MJCF is entered through
-elements and attributes. Text content in elements is not used; if present, the parser ignores it.
+elements and attributes. Text content in elements is not used (except for CDATA in :ref:`custom text<custom-text>`
+elements); if present, the parser ignores it.
 
 .. only:: html
 
@@ -87,6 +88,53 @@ will appear in the reference documentation as
    .. raw:: html
 
       <p style="display: none"></p>
+
+
+.. _CXSD:
+
+XSD schema
+~~~~~~~~~~
+
+The schema is also emitted as an `XML Schema <https://www.w3.org/TR/xmlschema-1/>`__ (XSD) document, generated from the
+same source of truth and checked in as
+`src/xml/generated/mjcf.xsd <https://github.com/google-deepmind/mujoco/blob/main/src/xml/generated/mjcf.xsd>`__.
+Editors use it to complete elements, attributes and keywords, and to report ill-formed values as you type:
+
+.. image:: images/XMLreference/xsd_editor.png
+   :width: 100%
+   :align: center
+   :class: only-light
+
+.. image:: images/XMLreference/xsd_editor_dark.png
+   :width: 100%
+   :align: center
+   :class: only-dark
+
+To enable this in VS Code, install the Red Hat
+`XML extension <https://marketplace.visualstudio.com/items?itemName=redhat.vscode-xml>`__ (or the same extension from
+`Open VSX <https://open-vsx.org/extension/redhat/vscode-xml>`__ in forks such as Cursor and VSCodium) and reference
+the schema in the model's root element
+(`example <https://github.com/google-deepmind/mujoco/blob/main/test/xml/testdata/schema_location.xml>`__):
+
+.. code-block:: xml
+
+   <mujoco xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+           xsi:noNamespaceSchemaLocation="https://raw.githubusercontent.com/google-deepmind/mujoco/refs/heads/main/src/xml/generated/mjcf.xsd">
+
+Alternatively, associate model files with the schema in the editor's settings, leaving the models untouched:
+
+.. code-block:: json
+
+   "xml.fileAssociations": [{
+     "pattern": "**/*.xml",
+     "systemId": "https://raw.githubusercontent.com/google-deepmind/mujoco/refs/heads/main/src/xml/generated/mjcf.xsd"
+   }]
+
+Replace ``refs/heads/main`` with a release tag to pin the schema to a MuJoCo version.
+
+The XSD is not a specification of model validity: it never rejects a model that MuJoCo accepts, but does accept models
+that the compiler rejects. Constraints that XSD 1.0 cannot express -- child cardinality and presence constraints
+between attributes -- are carried as annotations.
 
 
 .. _Reference:
@@ -326,9 +374,10 @@ adjust it properly through the XML.
    This attribute determines the ratio of frictional-to-normal constraint impedance for elliptic friction cones. The
    setting of solimp determines a single impedance value for all contact dimensions, which is then modulated by this
    attribute. Settings larger than 1 cause friction forces to be "harder" than normal forces, having the general effect
-   of preventing slip, without increasing the actual friction coefficient. For pyramidal friction cones the situation is
-   more complex because the pyramidal approximation mixes normal and frictional dimensions within each basis vector; it
-   is not recommended to use high impratio values with pyramidal cones.
+   of reducing :ref:`slow slippage<CSlowSlippage>` without increasing the actual friction coefficient or guaranteeing
+   exact sticking. For pyramidal friction cones the situation is more complex because the pyramidal approximation mixes
+   normal and frictional dimensions within each basis vector; it is not recommended to use high impratio values with
+   pyramidal cones.
 
 .. _option-gravity:
 
@@ -389,11 +438,12 @@ adjust it properly through the XML.
 
 .. _option-integrator:
 
-:at:`integrator`: :at-val:`[Euler, RK4, implicit, implicitfast], "Euler"`
+:at:`integrator`: :at-val:`[Euler, RK4, implicit, implicitfast, discrete], "Euler"`
    This attribute selects the numerical :ref:`integrator <geIntegration>` to be used. Currently the available
-   integrators are the semi-implicit Euler method, the fixed-step 4-th order Runge Kutta method, the
-   Implicit-in-velocity Euler method, and :at:`implicitfast`, which drops the Coriolis and centrifugal terms. See
-   :ref:`Numerical Integration<geIntegration>` for more details.
+   integrators are the semi-implicit Euler method, the fixed-step 4th-order Runge-Kutta method, the
+   implicit-in-velocity Euler method, :at:`implicitfast`, which drops the Coriolis and centrifugal terms, and
+   :at:`discrete`, a velocity-stepping integrator which unifies constraint solving and implicit position/velocity
+   updates in an effective inertia metric. See :ref:`Numerical Integration<geIntegration>` for more details.
 
 .. _option-cone:
 
@@ -448,9 +498,10 @@ adjust it properly through the XML.
 .. _option-noslip_iterations:
 
 :at:`noslip_iterations`: :at-val:`int, "0"`
-   Maximum number of iterations of the Noslip solver. This is a post-processing step executed after the main solver. It
+   Maximum number of iterations of the NoSlip solver. This is a post-processing step executed after the main solver. It
    uses a modified PGS method to suppress slip/drift in friction dimensions resulting from the soft-constraint model.
-   The default setting 0 disables this post-processing step.
+   The default setting 0 disables this post-processing step. See the :ref:`NoSlip solver<soNoSlip>` for its mechanics
+   and tradeoffs, and :ref:`slow slippage<CSlowSlippage>` for practical guidance.
 
 .. _option-noslip_tolerance:
 
@@ -591,7 +642,9 @@ from its default.
    This flag enables a safety mechanism that prevents instabilities due to solref[0] being too small compared to the
    simulation timestep. Recall that solref[0] is the stiffness of the virtual spring-damper used for constraint
    stabilization. If this setting is enabled, the solver uses max(solref[0], 2*timestep) in place of solref[0]
-   separately for each active constraint.
+   separately for each active constraint. Under the :ref:`discrete<geIntegrators>` integrator, the flag instead
+   replaces contact and limit rows whose spring the timestep cannot resolve (solref[0]*solref[1] < timestep) by the
+   stiffest zero-restitution row for the timestep, keeping the authored damping ratio.
 
 .. _option-flag-sensor:
 
@@ -705,6 +758,9 @@ from its default.
    negligible since :math:`Y` is computed anyway. Consider enabling this flag when observing divergence or poor
    constraint quality, particularly in models with highly anisotropic body inertias or bodies operating far from the
    initial configuration ``qpos0``.
+
+   Under the ``discrete`` :ref:`integrator<option-integrator>`, the exact diagonal is computed against the factored
+   backbone of the effective metric :math:`\widehat{M}`; tendon, actuator and flex couplings are not included.
 
 .. _compiler:
 
@@ -2970,7 +3026,7 @@ tendons, constructing slider-crank transmissions for actuators.
 
 .. _body-site-type:
 
-:at:`type`: :at-val:`[sphere, capsule, ellipsoid, cylinder, box], "sphere"`
+:at:`type`: :at-val:`[sphere, capsule, ellipsoid, cylinder, box, mesh], "sphere"`
    Type of geometric shape. This is used for rendering, and also determines the active sensor zone for :ref:`touch
    sensors <sensor-touch>`.
 
@@ -2984,6 +3040,11 @@ tendons, constructing slider-crank transmissions for actuators.
 
 :at:`material`: :at-val:`string, optional`
    Material used to specify the visual properties of the site.
+
+.. _body-site-mesh:
+
+:at:`mesh`: :at-val:`string, optional`
+   Mesh asset name. This attribute is required if the site type is "mesh".
 
 .. _body-site-rgba:
 
@@ -3541,9 +3602,11 @@ This sub-element adjusts the attributes of the sites in the composite object. Ot
 
 .. _composite-site-material:
 
+.. _composite-site-mesh:
+
 .. _composite-site-rgba:
 
-:at:`group`, :at:`size`, :at:`material`, :at:`rgba`
+:at:`group`, :at:`size`, :at:`material`, :at:`mesh`, :at:`rgba`
    Same meaning as regular :ref:`site <body-site>` attributes.
 
 
@@ -3750,7 +3813,7 @@ saving the XML:
      for the entire flex, independent of the number of vertices. The positions of the vertices are updated using
      quadratic interpolation over the bounding box. While this option requires more degrees of freedom than trilinear
      flexes, it enables curved deformation modes, while the only modes achievable for trilinear flexes are
-     strech/compression and shear. To understand the difference between the two parametrizations, see `a trilinear cube
+     stretch/compression and shear. To understand the difference between the two parametrizations, see `a trilinear cube
      <https://github.com/google-deepmind/mujoco/blob/main/model/flex/trilinear.xml>`__ and `a quadratic cube
      <https://github.com/google-deepmind/mujoco/blob/main/model/flex/quadratic.xml>`__.
 
@@ -6981,7 +7044,8 @@ This element has the following custom attributes in addition to the common attri
    A value of 0 (the default) disables the respective feature. When positive, :at-val:`slewmax` limits the
    rate-of-change of the first input (position setpoint in rad/s, or with signatures lacking ``pos``, velocity
    setpoint or torque feedforward), :at-val:`Imax` clamps the integrator state (anti-windup), and :at-val:`Vmax`
-   clamps the drive voltage :math:`v_{\max}` (Volt), upstream of the raw ``voltage`` input.
+   clamps the controller's drive voltage :math:`v_{\max}` (Volt). It does not bound the raw ``voltage`` input,
+   which is added downstream: use :at:`ctrlrange` to limit a voltage command.
    (see `tech note <_static/dcmotor.pdf>`__, Section 2.5)
 
 .. _actuator-plugin:
@@ -8987,6 +9051,8 @@ visualization of contact points.
 
 .. _sensor-tactile-name:
 
+.. _sensor-tactile-cutoff:
+
 .. _sensor-tactile-nsample:
 
 .. _sensor-tactile-interp:
@@ -8997,7 +9063,7 @@ visualization of contact points.
 
 .. _sensor-tactile-user:
 
-:at:`name`, :at:`nsample`, :at:`interval`, :at:`delay`, :at:`user`:
+:at:`name`, :at:`cutoff`, :at:`nsample`, :at:`interval`, :at:`delay`, :at:`user`:
    See :ref:`CSensor`.
 
 .. _sensor-e_potential:
@@ -9978,6 +10044,8 @@ if omitted.
 
 .. _default-site-material:
 
+.. _default-site-mesh:
+
 .. _default-site-size:
 
 .. _default-site-fromto:
@@ -10754,8 +10822,9 @@ other custom computations.
 
 .. _custom-text-data:
 
-:at:`data`: :at-val:`string, required`
-   Custom text to be copied into mjModel.
+:at:`data`: :at-val:`string, optional`
+   Custom text to be copied into mjModel. Alternatively, the text can be provided in a
+   `CDATA section <https://www.w3.org/TR/xml/#sec-cdata-sect>`__ of the form ``<![CDATA[ ... ]]>`` in the ``<text>`` element.
 
 
 .. _custom-tuple:

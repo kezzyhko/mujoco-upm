@@ -112,10 +112,17 @@ typedef struct mjData_ {
   int     nl;                // number of limit constraints
   int     nefc;              // number of constraints
   int     nJ;                // number of non-zeros in constraint Jacobian
+
+  // effective metric: per-step activity flag and sizes, set by mjd_effBuild
   int     efm_active;        // implicit effective metric M+K is active (see mjd_effBuild)
   int     nefmK;             // number of non-zeros in effective-stiffness CSR
+  int     nefmcon;           // packed length of the contact rank-1 rows
+  int     nefmT;             // number of tendons with terms in the metric
+  int     nefmA;             // number of actuators with terms in the metric
   int     nefmdof;           // number of 3x3 blocks in the effective-metric preconditioner
   int     nefmL;             // size of the effective-metric block storage (9*nefmdof)
+
+  // variable sizes, continued
   int     nY;                // number of non-zeros in constraint inverse inertia square root
   int     nA;                // number of non-zeros in constraint inverse inertia matrix
   int     nisland;           // number of detected constraint islands
@@ -376,13 +383,26 @@ typedef struct mjData_ {
   mjtNum* efc_vel;           // velocity in constraint space: J*qvel             (nefc x 1)
   mjtNum* efc_aref;          // reference pseudo-acceleration                    (nefc x 1)
 
-  // computed by mj_fwdPosition/mj_invPosition when the implicit effective metric M+K is active
+  // computed when the implicit effective metric M+K is active
   mjtNum* efm_c;             // smooth-force shift h*K*qvel                      (nv x 1)
+  mjtNum* efm_diag;          // effective-metric diagonal h*D + h^2*K            (nv x 1)
+  mjtNum* efm_ck;            // diagonal stiffness h*k, for the smooth shift     (nv x 1)
+  mjtNum* efm_sdiag;         // diagonal additions to M in the backbone          (nv x 1)
+  mjtNum* efm_fluid;         // fluid drag blocks in M's sparsity pattern        (nC x 1)
+  int*    efm_tid;           // ids of tendons with terms in the metric          (ntendon x 1)
+  mjtNum* efm_ts;            // tendon metric scale h^2*k + h*b, tid indexed     (ntendon x 1)
+  mjtNum* efm_tk;            // tendon stiffness h*k for shift, tid indexed      (ntendon x 1)
+  int*    efm_aid;           // ids of actuators with terms in the metric        (nactuator x 1)
+  mjtNum* efm_as;            // actuator metric scale h^2*gp + h*gv, aid indexed (nactuator x 1)
+  mjtNum* efm_ak;            // actuator stiffness h*gp, aid indexed             (nactuator x 1)
+  mjtNum* efm_ca;            // actuation-stage smooth-force shift               (nv x 1)
   int*    efm_K_rownnz;      // effective-stiffness CSR row nonzeros             (nv x 1)
   int*    efm_K_rowadr;      // effective-stiffness CSR row addresses            (nv x 1)
   int*    efm_K_colind;      // effective-stiffness CSR column indices           (nefmK x 1)
   mjtNum* efm_K_val;         // effective-stiffness CSR values                   (nefmK x 1)
   int*    efm_dofid;         // block k -> dof address of its vertex triple      (nefmdof x 1)
+  int*    efm_con_ind;       // contact rank-1 rows, packed [nnz, colind...]     (nefmcon x 1)
+  mjtNum* efm_con_val;       // contact rank-1 rows, packed [scale, val...]      (nefmcon x 1)
   mjtNum* efm_L;             // factored 3x3 diagonal blocks of M+K              (nefmL x 1)
 
   //-------------------- arena-allocated: POSITION, VELOCITY, CONTROL/ACCELERATION dependent
@@ -815,6 +835,7 @@ typedef struct mjModel_ {
   // sites
   int*      site_type;            // geom type for rendering (mjtGeom)        (nsite x 1)
   int*      site_bodyid;          // id of site's body                        (nsite x 1)
+  int*      site_dataid;          // id of site's mesh; -1: none              (nsite x 1)
   int*      site_matid;           // material id for rendering; -1: none      (nsite x 1)
   int*      site_group;           // group for visibility                     (nsite x 1)
   mjtByte*  site_sameframe;       // same frame as body (mjtSameframe)        (nsite x 1)
@@ -1601,6 +1622,7 @@ typedef struct mjrfMeshData_ {
   void* user_data;              // user data for release callback
 } mjrfMeshData;
 typedef struct mjrfSceneParams_ {
+  char unused;  // ensure min size of 1 for C/C++ compatibility
 } mjrfSceneParams;
 typedef struct mjrfLightParams_ {
   int type;                        // type of light (e.g. spot, point, image, etc.) [mjrLightType]
@@ -1640,6 +1662,8 @@ typedef struct mjrfMaterial_ {
   const mjrfTexture* orm_texture;         // occlusion/roughness/metallic texture (RGB8)
   const mjrfTexture* emissive_texture;    // emissive texture (RGB8)
   const mjrfTexture* reflection_texture;  // reflection texture, for internal use only
+  float reflection_normal[3];      // mirror normal, gates reflection to front face (internal)
+  float reflection_view_proj[16];  // main camera view-proj for reflection UV mapping (internal)
 } mjrfMaterial;
 typedef struct mjrfRenderableParams_ {
   mjtBool cast_shadows;                 // if true, casts shadows
@@ -1955,6 +1979,7 @@ typedef struct mjsSite_ {          // site specification
   float rgba[4];                   // rgba when material is omitted
 
   // other
+  mjString* meshname;              // mesh attached to site
   mjDoubleVec* userdata;           // user data
   mjString* info;                  // message appended to compiler errors
 } mjsSite;
@@ -2469,7 +2494,8 @@ typedef enum mjtIntegrator {      // integrator mode
   mjINT_EULER         = 0,        // semi-implicit Euler
   mjINT_RK4,                      // 4th-order Runge Kutta
   mjINT_IMPLICIT,                 // implicit in velocity
-  mjINT_IMPLICITFAST              // implicit in velocity, no rne derivative
+  mjINT_IMPLICITFAST,             // implicit in velocity, no rne derivative
+  mjINT_DISCRETE                  // discrete step map: constraint solve in the effective metric
 } mjtIntegrator;
 typedef enum mjtCone {            // type of friction cone
   mjCONE_PYRAMIDAL     = 0,       // pyramidal
@@ -3420,6 +3446,135 @@ typedef struct mjvFigure_ {       // abstract 2D figure passed to OpenGL rendere
   float   yaxisdata[2];           // range of y-axis in data units
 } mjvFigure;
 
+//----------------------------- STRING CONSTANTS -------------------------------
+const char* mjDISABLESTRING[mjNDISABLE] = {
+  "Constraint",
+  "Equality",
+  "Frictionloss",
+  "Limit",
+  "Contact",
+  "Spring",
+  "Damper",
+  "Gravity",
+  "Clampctrl",
+  "Warmstart",
+  "Filterparent",
+  "Actuation",
+  "Refsafe",
+  "Sensor",
+  "Midphase",
+  "Eulerdamp",
+  "AutoReset",
+  "NativeCCD",
+  "Island",
+  "MultiCCD"
+};
+const char* mjENABLESTRING[mjNENABLE] = {
+  "Override",
+  "Energy",
+  "Fwdinv",
+  "InvDiscrete",
+  "Sleep",
+  "DiagExact"
+};
+const char* mjTIMERSTRING[mjNTIMER]= {
+  "step",
+  "forward",
+  "inverse",
+  "position",
+  "velocity",
+  "actuation",
+  "constraint",
+  "advance",
+  "pos_kinematics",
+  "pos_inertia",
+  "pos_collision",
+  "pos_make",
+  "pos_project",
+  "col_broadphase",
+  "col_narrowphase"
+};
+const char* mjTOPICSTRING[mjNTOPIC] = {
+  "Step timing",
+  "Compile timing",
+  "Sleep/wake"
+};
+const char* mjLABELSTRING[mjNLABEL] = {
+  "None",
+  "Body",
+  "Joint",
+  "Geom",
+  "Site",
+  "Camera",
+  "Light",
+  "Tendon",
+  "Actuator",
+  "Constraint",
+  "Flex",
+  "Skin",
+  "Selection",
+  "SelPoint",
+  "Contact",
+  "ContactForce",
+  "Island"
+};
+const char* mjFRAMESTRING[mjNFRAME] = {
+  "None",
+  "Body",
+  "Geom",
+  "Site",
+  "Camera",
+  "Light",
+  "Contact",
+  "World"
+};
+const char* mjVISSTRING[mjNVISFLAG][3] = {
+  {"Convex Hull",     "0", "H"},
+  {"Texture",         "1", "X"},
+  {"Joint",           "0", "J"},
+  {"Camera",          "0", "Q"},
+  {"Actuator",        "0", "U"},
+  {"Activation",      "0", ","},
+  {"Light",           "0", "Z"},
+  {"Tendon",          "1", "V"},
+  {"Range Finder",    "1", "Y"},
+  {"Equality",        "0", "E"},
+  {"Inertia",         "0", "I"},
+  {"Scale Inertia",   "0", "'"},
+  {"Perturb Force",   "0", "B"},
+  {"Perturb Object",  "1", "O"},
+  {"Contact Point",   "0", "C"},
+  {"Island",          "0", "N"},
+  {"Contact Force",   "0", "F"},
+  {"Contact Split",   "0", "P"},
+  {"Transparent",     "0", "T"},
+  {"Auto Connect",    "0", "A"},
+  {"Center of Mass",  "0", "M"},
+  {"Select Point",    "0", ""},
+  {"Static Body",     "1", "D"},
+  {"Skin",            "1", ";"},
+  {"Flex Vert",       "0", ""},
+  {"Flex Edge",       "1", ""},
+  {"Flex Face",       "0", ""},
+  {"Flex Skin",       "1", ""},
+  {"Body Tree",       "0", "`"},
+  {"Mesh Tree",       "0", "\\"},
+  {"SDF iters",       "0", ""}
+};
+const char* mjRNDSTRING[mjNRNDFLAG][3] = {
+  {"Shadow",      "1", "S"},
+  {"Wireframe",   "0", "W"},
+  {"Reflection",  "1", "R"},
+  {"Additive",    "0", "L"},
+  {"Skybox",      "1", "K"},
+  {"Fog",         "0", "G"},
+  {"Haze",        "1", "/"},
+  {"Depth",       "0", ""},
+  {"Segment",     "0", ","},
+  {"Id Color",    "0", ""},
+  {"Cull Face",   "1", ""}
+};
+
 //----------------------------- MJAPI FUNCTIONS --------------------------------
 void mjrf_defaultContextConfig(mjrfContextConfig* config);
 mjrfContext* mjrf_createContext(const mjrfContextConfig* config);
@@ -3656,6 +3811,7 @@ void mj_objectAcceleration(const mjModel* m, const mjData* d,
                            int objtype, int objid, mjtNum res[6], int flg_local);
 mjtNum mj_geomDistance(const mjModel* m, mjData* d, int geom1, int geom2, mjtNum distmax,
                        mjtNum fromto[6]);
+int mj_insideSite(const mjModel* m, const mjData* d, int siteid, const mjtNum point[3]);
 void mj_contactForce(const mjModel* m, const mjData* d, int id, mjtNum result[6]);
 void mj_differentiatePos(const mjModel* m, mjtNum* qvel, mjtNum dt,
                          const mjtNum* qpos1, const mjtNum* qpos2);
