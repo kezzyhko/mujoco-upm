@@ -27,7 +27,7 @@
 
 #include <mujoco/mujoco.h>
 #include "experimental/studio/hal/graphics_mode.h"
-#include "experimental/studio/hal/renderer.h"
+#include "experimental/studio/hal/filament_renderer.h"
 #include "experimental/studio/hal/window.h"
 #include "experimental/studio/sim/model_holder.h"
 #include "experimental/studio/sim/sim_history.h"
@@ -82,6 +82,10 @@ class App {
                            std::string_view content_type,
                            std::string_view name);
 
+  // Selects and loads a keyframe by name or numerical index. If invalid,
+  // silently ignores it.
+  void LoadKeyframe(std::string_view keyframe);
+
   // Processes window events and advances the state of the simulation.
   bool Update();
 
@@ -111,7 +115,7 @@ class App {
     char watch_field[1000] = "qpos";
     int watch_index = 0;
     int camera_idx = kTumbleCameraIdx;
-    int key_idx = 0;
+    int key_idx = -1;
     GuiTheme theme = GuiTheme::kDark;
     float font_scale = 1.0f;
     int window_width = 0;
@@ -197,6 +201,15 @@ class App {
   // then compile the spec to a model.
   void OnModelLoaded(std::string filename, ModelKind model_kind);
 
+  struct SavedKeyframeSelection {
+    bool is_reload = false;
+    int key_idx = -1;
+    std::string key_name;
+    std::vector<std::string> all_old_names;
+  };
+  SavedKeyframeSelection CaptureKeyframeSelection(bool is_reload) const;
+  void RestoreKeyframeSelection(const SavedKeyframeSelection& saved);
+
   void SwitchGraphicsMode(int width, int height, GraphicsMode mode);
 
   void SetLoadError(std::string error);
@@ -246,6 +259,8 @@ class App {
   KeyValues window_state_storage_;
   std::string model_name_;  // Used if model_kind_ is kModelFromBuffer.
   std::string model_path_;
+  std::vector<std::byte> last_buffer_;
+  std::string last_content_type_;
   std::string load_error_;
   std::string step_error_;
   std::string edit_error_;
@@ -259,7 +274,7 @@ class App {
   GraphicsMode gfx_mode_ = GraphicsMode::FilamentVulkan;
 
   std::unique_ptr<Window> window_;
-  std::unique_ptr<Renderer> renderer_;
+  std::unique_ptr<FilamentRenderer> renderer_;
   std::unique_ptr<ModelHolder> model_holder_;
 
   StepControl step_control_;
