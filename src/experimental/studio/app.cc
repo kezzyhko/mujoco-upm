@@ -34,6 +34,7 @@
 #include <string_view>
 #include <system_error>
 #include <utility>
+#include <variant>
 #include <vector>
 
 #include <imgui.h>
@@ -80,7 +81,7 @@ static void SelectParentPerturb(const mjModel* model, mjvPerturb& perturb) {
 }
 
 static std::string CheckPathForFile(const std::filesystem::path& path,
-                                    const std::string& filename) {
+                                    std::string_view filename) {
   std::filesystem::path resolved = path / filename;
   if (std::filesystem::exists(resolved)) {
     return resolved.string();
@@ -94,10 +95,10 @@ static std::string CheckPathForFile(const std::filesystem::path& path,
 
 // Attempts to find a file with the given name by recursively searching the
 // given search paths.
-static std::string ResolveFile(const std::string& filename,
+static std::string ResolveFile(std::string_view filename,
                                const std::vector<std::string>& search_paths) {
   if (std::filesystem::exists(filename)) {
-    return filename;
+    return std::string(filename);
   }
 
   std::string resolved;
@@ -124,7 +125,7 @@ static std::string ResolveFile(const std::string& filename,
       }
     }
   }
-  return filename;
+  return std::string(filename);
 }
 
 // Exports the given image (assumed to be RGB888) to a webp file.
@@ -167,6 +168,8 @@ App::App(Config config)
       [this](const mjModel* m, mjData* d) { PreStep(m, d); });
   step_control_.SetPostStepCallback(
       [this](const mjModel* m, mjData* d) { PostStep(m, d); });
+
+  LoadSettings();
 }
 
 App::~App() {
@@ -197,92 +200,27 @@ void App::SwitchGraphicsMode(int width, int height,
   }
 }
 
-void App::Recompile() {
-  const SavedKeyframeSelection saved_key =
-      CaptureKeyframeSelection(/*is_reload=*/true);
-  model_holder_->Recompile();
-  if (!model_holder_->ok()) {
-    SetLoadError(std::string(model_holder_->error()));
-    return;
-  }
-
-  RestoreKeyframeSelection(saved_key);
-  ResetPhysics();
-  renderer_->Init(model());
-}
-
 void App::RequestModelLoad(std::string model_file) {
   pending_load_ = std::move(model_file);
 }
 
 void App::RequestModelReload() {
-  if (model_kind_ == kModelFromFile ||
-      (model_kind_ == kEmptyModel && !model_path_.empty())) {
-    pending_load_ = model_path_;
-    preserve_camera_on_load_ = true;
-  }
+  pending_reload_ = true;
 }
 
 void App::InitEmptyModel() {
-  model_holder_ = ModelHolder::FromSpec(mj_makeSpec());
-  ui_.key_idx = -1;
-  last_buffer_.clear();
-  last_content_type_.clear();
-  OnModelLoaded("", kEmptyModel);
-  spec_editor_.Reset(*spec());
+  LoadModel(EmptyModel{});
 }
 
 void App::LoadModelFromFile(const std::string& filepath) {
-  const std::string resolved_file = ResolveFile(filepath, search_paths_);
-  const SavedKeyframeSelection saved_key =
-      CaptureKeyframeSelection(preserve_camera_on_load_);
-  model_holder_ = ModelHolder::FromFile(resolved_file);
-  if (model_holder_->ok()) {
-    last_buffer_.clear();
-    last_content_type_.clear();
-    RestoreKeyframeSelection(saved_key);
-    OnModelLoaded(filepath, kModelFromFile);
-    if (spec()) {
-      spec_editor_.Reset(*spec());
-    } else {
-      spec_editor_.Reset();
-    }
-    UpdateFilePaths(resolved_file);
-    if (model() && model()->names) {
-      // Assumes the first string in the model is the name of the model itself.
-      window_->SetTitle(app_title_ + " : " + std::string(model()->names));
-    } else {
-      window_->SetTitle(app_title_ + " : " +
-                        std::filesystem::path(filepath).stem().string());
-    }
-  } else {
-    SetLoadError(std::string(model_holder_->error()));
-    // Keep track of the attempted load in case the user fixes the error and
-    // tries to reload the same file again.
-    model_path_ = resolved_file;
-  }
+  LoadModel(FileModel{filepath});
 }
 
 void App::LoadModelFromBuffer(std::span<const std::byte> buffer,
                               std::string_view content_type,
                               std::string_view filename) {
-  const SavedKeyframeSelection saved_key =
-      CaptureKeyframeSelection(preserve_camera_on_load_);
-  model_holder_ =
-      ModelHolder::FromBuffer(buffer, content_type, filename);
-  if (model_holder_->ok()) {
-    last_buffer_.assign(buffer.begin(), buffer.end());
-    last_content_type_ = std::string(content_type);
-    RestoreKeyframeSelection(saved_key);
-    OnModelLoaded(std::string(filename), kModelFromFile);
-  } else {
-    SetLoadError(std::string(model_holder_->error()));
-  }
-  if (spec()) {
-    spec_editor_.Reset(*spec());
-  } else {
-    spec_editor_.Reset();
-  }
+  LoadModel(BufferModel{
+      .buffer = buffer, .content_type = content_type, .name = filename});
 }
 
 void App::LoadKeyframe(std::string_view keyframe) {
@@ -376,7 +314,7 @@ void App::RestoreKeyframeSelection(const SavedKeyframeSelection& saved) {
   }
 }
 
-void App::OnModelLoaded(std::string filename, ModelKind model_kind) {
+void App::OnModelLoaded(std::string_view filename, ModelKind model_kind) {
   load_error_ = "";
   step_error_ = "";
   edit_error_ = "";
@@ -384,7 +322,7 @@ void App::OnModelLoaded(std::string filename, ModelKind model_kind) {
   if (!model_holder_->warning().empty()) {
     load_error_ = model_holder_->warning();
   }
-  model_path_ = std::move(filename);
+  model_path_ = std::string(filename);
 
   if (model_kind_ == kEmptyModel) {
     step_control_.SetPauseState(PauseState::kUnpaused);
@@ -550,6 +488,13 @@ void App::UpdatePhysics() {
       }
     }
   }
+
+  plugin_scene_.ngeom = 0;
+  ForEachPlugin<ScenePlugin>([&](auto* plugin) {
+    if (plugin->enhance_scene) {
+      plugin->enhance_scene(plugin, model(), data(), &plugin_scene_);
+    }
+  });
 }
 
 void App::PreStep(const mjModel* m, mjData* d) {
@@ -580,21 +525,27 @@ void App::LoadHistory(int offset) {
 }
 
 bool App::Update() {
-  // Must precede the first NewFrame: the dockspace is built lazily on the frame
-  // that finds no root node, so the saved nodes have to be there already or the
-  // default layout wins.
-  if (tmp_.first_frame) {
-    LoadSettings();
-    tmp_.first_frame = false;
-  }
-
   const Window::Status status = window_->NewFrame();
+
+  // Execute any operations that could not be performed during the actual
+  // BuildGui() flow.
+  if (pending_op_) {
+    pending_op_();
+    pending_op_ = nullptr;
+  }
 
   HandleWindowEvents();
   HandleMouseEvents();
   HandleKeyboardEvents();
 
   ProcessPendingLoads();
+
+  if (has_data()) {
+    for (int i = 0; i < mjNTIMER; i++) {
+      data()->timer[i].duration = 0;
+      data()->timer[i].number = 0;
+    }
+  }
 
   PauseState current_pause = step_control_.GetPauseState();
   if (current_pause != last_pause_state_) {
@@ -621,53 +572,129 @@ void App::Render() {
     pixels_.clear();
   }
 
-  plugin_scene_.ngeom = 0;
-  ForEachPlugin<ScenePlugin>([&](auto* plugin) {
-    if (plugin->enhance_scene) {
-      plugin->enhance_scene(plugin, model(), data(), &plugin_scene_);
-    }
-  });
-
   renderer_->Render(model(), data(), &perturb_, &camera_, &vis_options_,
                     width * scale, height * scale, pixels_,
                     {plugin_scene_.geoms, (size_t)plugin_scene_.ngeom});
-
   window_->EndFrame();
   window_->Present(pixels_);
+}
 
-  if (has_data()) {
-    for (int i = 0; i < mjNTIMER; i++) {
-      data()->timer[i].duration = 0;
-      data()->timer[i].number = 0;
+void App::LoadModel(const LoadModelInfo& info) {
+  if (std::holds_alternative<EmptyModel>(info)) {
+    model_holder_ = ModelHolder::FromSpec(mj_makeSpec());
+    ui_.key_idx = -1;
+    last_buffer_.clear();
+    last_content_type_.clear();
+    OnModelLoaded("", kEmptyModel);
+    spec_editor_.Reset(*spec());
+  } else if (std::holds_alternative<FileModel>(info)) {
+    auto& load = std::get<FileModel>(info);
+    const std::string resolved_file = ResolveFile(load.filepath, search_paths_);
+    const SavedKeyframeSelection saved_key =
+        CaptureKeyframeSelection(preserve_camera_on_load_);
+    model_holder_ = ModelHolder::FromFile(resolved_file);
+    if (model_holder_->ok()) {
+      last_buffer_.clear();
+      last_content_type_.clear();
+      RestoreKeyframeSelection(saved_key);
+      OnModelLoaded(load.filepath, kModelFromFile);
+      if (spec()) {
+        spec_editor_.Reset(*spec());
+      } else {
+        spec_editor_.Reset();
+      }
+      UpdateFilePaths(resolved_file);
+      if (model() && model()->names) {
+        // Assumes the first string in the model is the name of the model itself.
+        window_->SetTitle(app_title_ + " : " + std::string(model()->names));
+      } else {
+        window_->SetTitle(app_title_ + " : " +
+                          std::filesystem::path(load.filepath).stem().string());
+      }
+    } else {
+      SetLoadError(std::string(model_holder_->error()));
+      // Keep track of the attempted load in case the user fixes the error and
+      // tries to reload the same file again.
+      model_path_ = resolved_file;
+    }
+  } else if (std::holds_alternative<BufferModel>(info)) {
+    auto& load = std::get<BufferModel>(info);
+    const SavedKeyframeSelection saved_key =
+        CaptureKeyframeSelection(preserve_camera_on_load_);
+    model_holder_ =
+        ModelHolder::FromBuffer(load.buffer, load.content_type, load.name);
+    if (model_holder_->ok()) {
+      last_buffer_.assign(load.buffer.begin(), load.buffer.end());
+      last_content_type_ = std::string(load.content_type);
+      RestoreKeyframeSelection(saved_key);
+      OnModelLoaded(load.name, kModelFromFile);
+    } else {
+      SetLoadError(std::string(model_holder_->error()));
+    }
+    if (spec()) {
+      spec_editor_.Reset(*spec());
+    } else {
+      spec_editor_.Reset();
     }
   }
 }
 
 void App::ProcessPendingLoads() {
+  if (pending_reload_) {
+    pending_reload_ = false;
+    if (model_kind_ == kModelFromFile ||
+        (model_kind_ == kEmptyModel && !model_path_.empty())) {
+      pending_load_ = model_path_;
+      preserve_camera_on_load_ = true;
+    }
+  }
+
   // Check to see if we need to load a new model.
   if (pending_load_.has_value()) {
     std::string load_data = std::move(pending_load_.value());
     pending_load_.reset();
 
     if (load_data.empty()) {
-      InitEmptyModel();
+      LoadModel(EmptyModel{});
     } else if (!last_buffer_.empty() && load_data == model_path_) {
-      LoadModelFromBuffer(last_buffer_, last_content_type_, load_data);
+      LoadModel(BufferModel{last_buffer_, last_content_type_, load_data});
     } else {
-      LoadModelFromFile(load_data);
+      LoadModel(FileModel(load_data));
     }
   }
 
-  if (pending_op_) {
-    pending_op_();
-    pending_op_ = nullptr;
+  if (recompile_spec_) {
+    recompile_spec_ = false;
+    const SavedKeyframeSelection saved_key =
+      CaptureKeyframeSelection(/*is_reload=*/true);
+    auto tmp_holder = spec_editor_.Compile();
+    if (tmp_holder->ok()) {
+      preserve_camera_on_load_ = true;
+      model_holder_ = std::move(tmp_holder);
+      RestoreKeyframeSelection(saved_key);
+      OnModelLoaded("", model_kind_);
+    } else {
+      load_error_ = std::move(tmp_holder->error());
+    }
   }
 
   // Allow plugins to edit the spec as well.
   ForEachPlugin<SpecEditorPlugin>([&](auto* plugin) {
     if (plugin->pre_compile) {
       if (plugin->pre_compile(plugin, spec(), model(), data(), &camera_)) {
-        Recompile();
+
+        const SavedKeyframeSelection saved_key =
+            CaptureKeyframeSelection(/*is_reload=*/true);
+        model_holder_->Recompile();
+        if (!model_holder_->ok()) {
+          SetLoadError(std::string(model_holder_->error()));
+          return;
+        }
+
+        RestoreKeyframeSelection(saved_key);
+        ResetPhysics();
+        renderer_->Init(model());
+
         if (plugin->post_compile) {
           plugin->post_compile(plugin, spec(), model(), data());
         }
@@ -685,10 +712,10 @@ void App::ProcessPendingLoads() {
           plugin, &size, content_type, sizeof(content_type), model_name,
           sizeof(model_name));
       if (buf && buf == model_name) {
-        LoadModelFromFile(model_name);
+        LoadModel(FileModel(model_name));
       } else if (buf && size) {
         const std::byte* bytes = reinterpret_cast<const std::byte*>(buf);
-        LoadModelFromBuffer({bytes, bytes + size}, content_type, model_name);
+        LoadModel(BufferModel{{bytes, bytes + size}, content_type, model_name});
       }
     }
   });
@@ -1703,19 +1730,7 @@ void App::SpecEditorGui() {
           is_dark ? ImColor(40, 125, 60, 255) : ImColor(40, 180, 40, 255);
       ImGui::PushStyleColor(ImGuiCol_Button, compile_green.Value);
       if (ImGui::Button("Compile and Reload", ImVec2(-1, 0))) {
-        pending_op_ = [this]() {
-          const SavedKeyframeSelection saved_key =
-              CaptureKeyframeSelection(/*is_reload=*/true);
-          auto tmp_holder = spec_editor_.Compile();
-          if (tmp_holder->ok()) {
-            preserve_camera_on_load_ = true;
-            model_holder_ = std::move(tmp_holder);
-            RestoreKeyframeSelection(saved_key);
-            OnModelLoaded(model_name_, model_kind_);
-          } else {
-            load_error_ = std::move(tmp_holder->error());
-          }
-        };
+        recompile_spec_ = true;
       }
       ImGui::PopStyleColor();
 

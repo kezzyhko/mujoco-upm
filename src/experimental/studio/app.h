@@ -23,6 +23,7 @@
 #include <string>
 #include <string_view>
 #include <unordered_map>
+#include <variant>
 #include <vector>
 
 #include <mujoco/mujoco.h>
@@ -104,6 +105,19 @@ class App {
     kModelFromBuffer,
   };
 
+  struct EmptyModel {};
+  struct FileModel {
+    std::string_view filepath;
+  };
+  struct BufferModel {
+    std::span<const std::byte> buffer;
+    std::string_view content_type;
+    std::string_view name;
+  };
+
+  using LoadModelInfo =
+      std::variant<EmptyModel, FileModel, BufferModel>;
+
   enum class SpecPropertiesMode {
     kSpec,
     kModel,
@@ -130,7 +144,6 @@ class App {
   // UI state that is transient and only needed while the application runs
   struct UiTempState {
     bool should_exit = false;
-    bool first_frame = true;
     bool update_threadpool = false;
 
     // Windows.
@@ -194,12 +207,12 @@ class App {
   // Requests that the currently loaded model be reloaded at the next update.
   void RequestModelReload();
 
-  // Recompiles the spec, updating the model and data.
-  void Recompile();
+  // Loads the model from the given info.
+  void LoadModel(const LoadModelInfo& info);
 
   // Updates the currently loaded model to the given model. If model is null,
   // then compile the spec to a model.
-  void OnModelLoaded(std::string filename, ModelKind model_kind);
+  void OnModelLoaded(std::string_view filename, ModelKind model_kind);
 
   struct SavedKeyframeSelection {
     bool is_reload = false;
@@ -257,7 +270,6 @@ class App {
   // "<window name>/<id>", which ImGui does not serialize. Entries stay
   // pending until their window is first created.
   KeyValues window_state_storage_;
-  std::string model_name_;  // Used if model_kind_ is kModelFromBuffer.
   std::string model_path_;
   std::vector<std::byte> last_buffer_;
   std::string last_content_type_;
@@ -268,6 +280,9 @@ class App {
       StepControl::PauseState::kNormalPaused;
 
   std::optional<std::string> pending_load_;
+  bool pending_reload_ = false;
+  bool recompile_spec_ = false;
+
   std::function<void()> pending_op_;
   bool preserve_camera_on_load_ = false;
   ModelKind model_kind_ = kEmptyModel;
