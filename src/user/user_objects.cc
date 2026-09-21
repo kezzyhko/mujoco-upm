@@ -348,6 +348,7 @@ void mjCBoundingVolumeHierarchy::AllocateBoundingVolumes(int nleaf) {
   bvh_.clear();
   child_.clear();
   nodeid_.clear();
+  nodeidptr_.clear();
   level_.clear();
   bvleaf_.clear();
   bvleaf_.reserve(nleaf);
@@ -1564,6 +1565,7 @@ mjCBody::mjCBody(mjCModel* _model) {
   mjuu_setvec(xquat0, 1, 0, 0, 0);
   last_attached = nullptr;
   mocapid       = -1;
+  bodyadr_      = -1;
 
   // clear object lists
   bodies.clear();
@@ -1604,6 +1606,8 @@ mjCBody& mjCBody::operator=(const mjCBody& other) {
     cameras.clear();
     lights.clear();
     id          = -1;
+    mocapid     = -1;
+    bodyadr_    = -1;
     subtreedofs = 0;
 
     // add elements to lists
@@ -1793,6 +1797,8 @@ void mjCBody::CopyList(std::vector<T*>&          dst,
 mjCBody& mjCBody::operator-=(const mjCBody& subtree) {
   for (int i = 0; i < bodies.size(); i++) {
     if (bodies[i] == &subtree) {
+      bodies[i]->SetParent(nullptr);
+      bodies[i]->frame = nullptr;
       bodies.erase(bodies.begin() + i);
       break;
     }
@@ -1845,7 +1851,9 @@ void mjCBody::SetModel(mjCModel* _model) {
 
 // reset ids of all objects in this body
 void mjCBody::ResetId() {
-  id = -1;
+  id       = -1;
+  mocapid  = -1;
+  bodyadr_ = -1;
   for (auto& body : bodies) { body->ResetId(); }
   for (auto& frame : frames) { frame->id = -1; }
   for (auto& geom : geoms) { geom->id = -1; }
@@ -1889,13 +1897,20 @@ void mjCBody::CopyPlugin() {
 
 // destructor
 mjCBody::~mjCBody() {
-  for (int i = 0; i < bodies.size(); i++) bodies[i]->Release();
-  for (int i = 0; i < geoms.size(); i++) geoms[i]->Release();
-  for (int i = 0; i < frames.size(); i++) frames[i]->Release();
-  for (int i = 0; i < joints.size(); i++) joints[i]->Release();
-  for (int i = 0; i < sites.size(); i++) sites[i]->Release();
-  for (int i = 0; i < cameras.size(); i++) cameras[i]->Release();
-  for (int i = 0; i < lights.size(); i++) lights[i]->Release();
+  auto release_children = [](auto& list) {
+    for (auto* child : list) {
+      child->SetParent(nullptr);
+      child->frame = nullptr;
+      child->Release();
+    }
+  };
+  release_children(bodies);
+  release_children(geoms);
+  release_children(frames);
+  release_children(joints);
+  release_children(sites);
+  release_children(cameras);
+  release_children(lights);
 }
 
 
@@ -1950,8 +1965,8 @@ mjCBody* mjCBody::AddBody(mjCDef* _def) {
 
   obj->parent = this;
 
-  // update signature
-  model->spec.element->signature = model->Signature();
+  // invalidate signature
+  model->InvalidateSignature();
   return obj;
 }
 
@@ -1963,8 +1978,8 @@ mjCFrame* mjCBody::AddFrame(mjCFrame* _frame) {
   model->ResetTreeLists();
   model->MakeTreeLists();
 
-  // update signature
-  model->spec.element->signature = model->Signature();
+  // invalidate signature
+  model->InvalidateSignature();
   return obj;
 }
 
@@ -1984,8 +1999,8 @@ mjCJoint* mjCBody::AddFreeJoint() {
   model->ResetTreeLists();
   model->MakeTreeLists();
 
-  // update signature
-  model->spec.element->signature = model->Signature();
+  // invalidate signature
+  model->InvalidateSignature();
   return obj;
 }
 
@@ -2004,8 +2019,8 @@ mjCJoint* mjCBody::AddJoint(mjCDef* _def) {
   model->ResetTreeLists();
   model->MakeTreeLists();
 
-  // update signature
-  model->spec.element->signature = model->Signature();
+  // invalidate signature
+  model->InvalidateSignature();
   return obj;
 }
 
@@ -2024,8 +2039,8 @@ mjCGeom* mjCBody::AddGeom(mjCDef* _def) {
   model->ResetTreeLists();
   model->MakeTreeLists();
 
-  // update signature
-  model->spec.element->signature = model->Signature();
+  // invalidate signature
+  model->InvalidateSignature();
   return obj;
 }
 
@@ -2044,8 +2059,8 @@ mjCSite* mjCBody::AddSite(mjCDef* _def) {
   model->ResetTreeLists();
   model->MakeTreeLists();
 
-  // update signature
-  model->spec.element->signature = model->Signature();
+  // invalidate signature
+  model->InvalidateSignature();
   return obj;
 }
 
@@ -2064,8 +2079,8 @@ mjCCamera* mjCBody::AddCamera(mjCDef* _def) {
   model->ResetTreeLists();
   model->MakeTreeLists();
 
-  // update signature
-  model->spec.element->signature = model->Signature();
+  // invalidate signature
+  model->InvalidateSignature();
   return obj;
 }
 
@@ -2084,8 +2099,8 @@ mjCLight* mjCBody::AddLight(mjCDef* _def) {
   model->ResetTreeLists();
   model->MakeTreeLists();
 
-  // update signature
-  model->spec.element->signature = model->Signature();
+  // invalidate signature
+  model->InvalidateSignature();
   return obj;
 }
 
@@ -2117,7 +2132,7 @@ mjCFrame* mjCBody::ToFrame() {
                        parent->bodies.end());
   model->ResetTreeLists();
   model->MakeTreeLists();
-  model->spec.element->signature = model->Signature();
+  model->InvalidateSignature();
   return newframe;
 }
 
@@ -2498,10 +2513,11 @@ void mjCBody::AccumulateInertia(const mjsBody* other, mjsBody* result) {
 
 // compute bounding volume hierarchy
 void mjCBody::ComputeBVH() {
+  // discard the tree of a previous compilation, also when no geoms are left
+  tree.AllocateBoundingVolumes(geoms.size());
   if (geoms.empty()) { return; }
 
   tree.Set(ipos, iquat);
-  tree.AllocateBoundingVolumes(geoms.size());
   for (const mjCGeom* geom : geoms) {
     tree.AddBoundingVolume(&geom->id,
                            geom->contype,
@@ -2767,6 +2783,11 @@ void mjCBody::Compile(void) {
       double qunit[4] = {1, 0, 0, 0};
       mjuu_frameaccumChild(ipos_inverse, iquat_inverse, lights[i]->pos, qunit);
       mjuu_rotVecQuat(lights[i]->dir, lights[i]->dir, iquat_inverse);
+    }
+
+    // frames: keep them in place relative to their contents, for the writer
+    for (int i = 0; i < frames.size(); i++) {
+      mjuu_frameaccumChild(ipos_inverse, iquat_inverse, frames[i]->pos, frames[i]->quat);
     }
   }
 }
@@ -5946,6 +5967,7 @@ mjCEquality::mjCEquality(mjCModel* _model, mjCDef* _def) {
   // clear internal variables
   spec_name1_.clear();
   spec_name2_.clear();
+  eqadr_ = -1;
   obj1id = obj2id = -1;
 
   // reset to default if given
@@ -5975,6 +5997,8 @@ mjCEquality& mjCEquality::operator=(const mjCEquality& other) {
 
     *static_cast<mjCEquality_*>(this) = static_cast<const mjCEquality_&>(other);
     *static_cast<mjsEquality*>(this)  = static_cast<const mjsEquality&>(other);
+
+    eqadr_ = -1;
   }
   PointToLocal();
   return *this;
@@ -6076,10 +6100,18 @@ void mjCEquality::Compile(void) {
   // find objects
   ResolveReferences(model);
 
-  // make sure flex is not rigid
-  if ((type == mjEQ_FLEX || type == mjEQ_FLEXVERT || type == mjEQ_FLEXSTRAIN) &&
-      model->Flexes()[obj1id]->rigid) {
-    throw mjCError(this, "rigid flex '%s' in equality constraint %d", name1_.c_str(), id);
+  // make sure flex is not rigid, and has no conflicting stretch forces
+  if (type == mjEQ_FLEX || type == mjEQ_FLEXVERT || type == mjEQ_FLEXSTRAIN) {
+    mjCFlex* flex = model->Flexes()[obj1id];
+    if (flex->rigid) {
+      throw mjCError(this, "rigid flex '%s' in equality constraint %d", name1_.c_str(), id);
+    }
+    if (flex->elastic2d != 1 && flex->young > 0) {
+      throw mjCError(this, "flex constraints and elasticity (young) cannot both be present");
+    }
+    if (flex->edgestiffness > 0) {
+      throw mjCError(this, "flex constraints and edge stiffness cannot both be present");
+    }
   }
 }
 
@@ -6175,7 +6207,7 @@ void mjCTendon::CopyFromSpec() {
 // desctructor
 mjCTendon::~mjCTendon() {
   // delete objects allocated here
-  for (unsigned int i = 0; i < path.size(); i++) { delete path[i]; }
+  for (unsigned int i = 0; i < path.size(); i++) { path[i]->Release(); }
 
   path.clear();
 }
@@ -6630,8 +6662,10 @@ mjCActuator::mjCActuator(mjCModel* _model, mjCDef* _def) {
   PointToLocal();
 
   // no previous state when an actuator is created
-  actadr_ = -1;
-  actdim_ = -1;
+  actadr_     = -1;
+  actdim_     = -1;
+  historyadr_ = -1;
+  historynum_ = 0;
 
   // input and output blocks, set by mjCModel; all actuator types are currently 1x1
   ctrladr_  = -1;
@@ -6655,7 +6689,13 @@ mjCActuator& mjCActuator::operator=(const mjCActuator& other) {
     *static_cast<mjCActuator_*>(this) = static_cast<const mjCActuator_&>(other);
     *static_cast<mjsActuator*>(this)  = static_cast<const mjsActuator&>(other);
 
-    ptarget = nullptr;
+    actadr_     = -1;
+    actdim_     = -1;
+    ctrladr_    = -1;
+    outadr_     = -1;
+    historyadr_ = -1;
+    historynum_ = 0;
+    ptarget     = nullptr;
   }
   PointToLocal();
   return *this;
@@ -6680,16 +6720,12 @@ bool mjCActuator::is_actlimited() const {
 
 
 std::vector<mjtNum>& mjCActuator::act(const std::string& state_name) {
-  if (act_.find(state_name) == act_.end()) {
-    act_[state_name] = std::vector<mjtNum>(model->nu, mjNAN);
-  }
-  return act_.at(state_name);
+  return act_[state_name];
 }
 
 
-mjtNum& mjCActuator::ctrl(const std::string& state_name) {
-  if (ctrl_.find(state_name) == ctrl_.end()) { ctrl_[state_name] = mjNAN; }
-  return ctrl_.at(state_name);
+std::vector<mjtNum>& mjCActuator::ctrl(const std::string& state_name) {
+  return ctrl_[state_name];
 }
 
 
@@ -7300,8 +7336,10 @@ mjCSensor::mjCSensor(mjCModel* _model) {
   spec_objname_.clear();
   spec_refname_.clear();
   spec_userdata_.clear();
-  obj = nullptr;
-  ref = nullptr;
+  historyadr_ = -1;
+  historynum_ = 0;
+  obj         = nullptr;
+  ref         = nullptr;
 
   // in case this sensor is not compiled
   CopyFromSpec();
@@ -7323,8 +7361,10 @@ mjCSensor& mjCSensor::operator=(const mjCSensor& other) {
     *static_cast<mjCSensor_*>(this) = static_cast<const mjCSensor_&>(other);
     *static_cast<mjsSensor*>(this)  = static_cast<const mjsSensor&>(other);
 
-    obj = nullptr;
-    ref = nullptr;
+    historyadr_ = -1;
+    historynum_ = 0;
+    obj         = nullptr;
+    ref         = nullptr;
   }
   PointToLocal();
   return *this;
@@ -8373,6 +8413,8 @@ void mjCKey::Compile(const mjModel* m) {
 mjCPlugin::mjCPlugin(mjCModel* _model) {
   name        = "";
   nstate      = -1;
+  stateadr_   = -1;
+  statenum_   = 0;
   plugin_slot = -1;
   parent      = this;
   model       = _model;
@@ -8402,6 +8444,8 @@ mjCPlugin& mjCPlugin::operator=(const mjCPlugin& other) {
 
     *static_cast<mjCPlugin_*>(this) = static_cast<const mjCPlugin_&>(other);
 
+    stateadr_   = -1;
+    statenum_   = 0;
     parent      = this;
     plugin_slot = other.plugin_slot;
   }
