@@ -1369,6 +1369,11 @@ void mjCMesh::Process() {
     for (size_t i = 0; i < facetexcoord_.size(); i += 3) {
       std::swap(facetexcoord_[i + 1], facetexcoord_[i + 2]);
     }
+    if (graph_) {
+      int* faces = GraphFaces();
+      for (int i = 0; i < graph_[1]; i++) { std::swap(faces[3 * i + 1], faces[3 * i + 2]); }
+      for (auto& polygon : polygons_) { std::reverse(polygon.begin() + 1, polygon.end()); }
+    }
   }
 
   mesh_timer_[mjCTIMER_MESH_POLYGON] += Seconds(Clock::now() - t0).count();
@@ -1414,11 +1419,11 @@ void mjCMesh::Process() {
     volume_ = total_volume;
   }
 
-  // get quaternion and diagonal inertia
+  // get quaternion and diagonal inertia (vertices are float32, so stop at 1e-7 relative)
   double eigval[3], eigvec[9], quattmp[4];
   double full[9] =
       {inert[0], inert[3], inert[4], inert[3], inert[1], inert[5], inert[4], inert[5], inert[2]};
-  mjuu_eig3(eigval, eigvec, quattmp, full);
+  mjuu_eig3(eigval, eigvec, quattmp, full, 1e-7);
 
   constexpr double inequality_atol = 1e-9;
   constexpr double inequality_rtol = 1e-6;
