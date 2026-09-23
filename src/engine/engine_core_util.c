@@ -1116,6 +1116,38 @@ int tendonLimit(const mjModel* m, const mjtNum* ten_length, int i) {
 }
 
 
+// compute spring and damper forces along tendon i, zero when disabled
+void mj_tendonSpringDamper(const mjModel* m, const mjData* d, int i,
+                           mjtNum* frc_spring, mjtNum* frc_damper) {
+  *frc_spring = 0;
+  *frc_damper = 0;
+
+  // spring force: displacement outside the spring range
+  if (!mjDISABLED(mjDSBL_SPRING)) {
+    mjtNum stiffness = m->tendon_stiffness[i];
+    const mjtNum* spoly = m->tendon_stiffnesspoly + mjNPOLY*i;
+    if (stiffness || !mju_isZero(spoly, mjNPOLY)) {
+      mjtNum length = d->ten_length[i];
+      mjtNum lower = m->tendon_lengthspring[2*i];
+      mjtNum upper = m->tendon_lengthspring[2*i+1];
+      mjtNum x = (length > upper) ? length - upper : (length < lower) ? length - lower : 0;
+      *frc_spring = -x * mju_polyForce(stiffness, spoly, x, mjNPOLY, 0);
+    }
+  }
+
+  // damper force: velocity, damping includes the contribution of actuators
+  if (!mjDISABLED(mjDSBL_DAMPER)) {
+    mjtNum dpoly[mjNPOLY];
+    mju_copy(dpoly, m->tendon_dampingpoly + mjNPOLY*i, mjNPOLY);
+    mjtNum damping = m->tendon_damping[i] + mj_actuatorDamping(m, mjOBJ_TENDON, i, dpoly);
+    if (damping || !mju_isZero(dpoly, mjNPOLY)) {
+      mjtNum v = d->ten_velocity[i];
+      *frc_damper = -v * mju_polyForce(damping, dpoly, v, mjNPOLY, 1);
+    }
+  }
+}
+
+
 // return actuator damping contribution to joint or tendon
 mjtNum mj_actuatorDamping(const mjModel* m, mjtObj type, int id, mjtNum poly[mjNPOLY]) {
   if (type != mjOBJ_TENDON && type != mjOBJ_JOINT) {
@@ -1219,6 +1251,26 @@ mjtNum mj_actuatorArmature(const mjModel* m, mjtObj type, int id) {
 }
 
 
+// return DC motor winding resistance at the current temperature
+mjtNum mj_dcmotorResistance(const mjModel* m, const mjData* d, int id) {
+  const mjtNum* dynprm = m->actuator_dynprm + mjNDYN*id;
+  const mjtNum* gainprm = m->actuator_gainprm + mjNGAIN*id;
+  mjtNum R = gainprm[0];
+  mjDCMotorSlots slots = mj_dcmotorSlots(dynprm, gainprm);
+
+  // account for temperature if thermal model is enabled
+  if (slots.temperature >= 0) {
+    mjtNum T = d->act[m->actuator_actadr[id]+slots.temperature];
+    mjtNum alpha = gainprm[2];  // temperature coefficient
+    mjtNum T0 = gainprm[3];     // reference temperature
+    mjtNum Ta = dynprm[4];      // ambient temperature
+    R *= 1 + alpha * (T + Ta - T0);
+  }
+
+  return mju_max(mjMINVAL, R);
+}
+
+
 // count warnings, print only the first time
 void mj_warning(mjData* d, int warning, int info) {
   // check type
@@ -1275,11 +1327,12 @@ int mj_tendonHasDamping(const mjModel* m, int i) {
 }
 
 
-// does flex f use the passive contact path: metric-carried contacts require a standard
-// (non-interpolated) deformable flex of dim >= 2. This predicate is the single authority,
-// shared by the integrator validation and the constraint-exclusion path
+// does flex f use the penalty form of passive contact: a standard deformable flex of dim >= 2
+// that asks for it, and not under the ipc flag, which solves the same law for every supported
+// flex itself (running both would apply each pair's force twice)
 int mj_effFlexContactPossible(const mjModel* m, int f) {
-  return m->flex_passive[f] && !m->flex_rigid[f] && !m->flex_interp[f] && m->flex_dim[f] >= 2;
+  return m->flex_passive[f] && !m->flex_rigid[f] && !m->flex_interp[f] && m->flex_dim[f] >= 2 &&
+         !mjENABLED(mjENBL_IPC);
 }
 
 
@@ -1292,9 +1345,10 @@ int mj_effFlexStiffPossible(const mjModel* m, int f) {
     return 0;
   }
 
-  // stretch stiffness present
+  // stretch stiffness present (the strain equality mode stores its constraint
+  // eigenmodes in this block instead)
   int sadr = m->flex_stiffnessadr[f];
-  if (sadr >= 0 && m->flex_stiffness[sadr] != 0) {
+  if (sadr >= 0 && m->flex_stiffness[sadr] != 0 && m->flex_edgeequality[f] != 3) {
     return 1;
   }
 

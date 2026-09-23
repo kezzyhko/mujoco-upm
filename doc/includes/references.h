@@ -219,6 +219,10 @@ typedef struct mjData_ {
   mjtNum* flexvert_length;   // flex vertex lengths                              (nflexvert x 2)
   mjtNum* bvh_aabb_dyn;      // global bounding box (center, size)               (nbvhdynamic x 6)
 
+  // AL contact state carried across steps (flag ipc, not in mjtState)
+  mjtNum* flexvert_lambda;   // flex contact multiplier                          (nflexvert x 1)
+  int*    flexvert_conage;   // flex contact age: <0 loaded, >0 steps since      (nflexvert x 1)
+
   // computed by mj_fwdPosition/mj_tendon
   int*    ten_wrapadr;       // start address of tendon's path                   (ntendon x 1)
   int*    ten_wrapnum;       // number of wrap points in path                    (ntendon x 1)
@@ -299,7 +303,7 @@ typedef struct mjData_ {
   mjtNum* qacc_smooth;       // unconstrained acceleration                       (nv x 1)
 
   // computed by mj_fwdConstraint/mj_inverse
-  mjtNum* qfrc_constraint;   // constraint force                                 (nv x 1)
+  mjtNum* qfrc_constraint;   // constraint force (flag ipc: incl. flex contact)  (nv x 1)
 
   // computed by mj_inverse
   mjtNum* qfrc_inverse;      // net external force; should equal:
@@ -401,8 +405,8 @@ typedef struct mjData_ {
   int*    efm_K_colind;      // effective-stiffness CSR column indices           (nefmK x 1)
   mjtNum* efm_K_val;         // effective-stiffness CSR values                   (nefmK x 1)
   int*    efm_dofid;         // block k -> dof address of its vertex triple      (nefmdof x 1)
-  int*    efm_con_ind;       // contact rank-1 rows, packed [nnz, colind...]     (nefmcon x 1)
-  mjtNum* efm_con_val;       // contact rank-1 rows, packed [scale, val...]      (nefmcon x 1)
+  int*    efm_con_ind;       // contact rows, packed [nnz, conid, colind...]     (nefmcon x 1)
+  mjtNum* efm_con_val;       // contact rows, packed [scale, force, val...]      (nefmcon x 1)
   mjtNum* efm_L;             // factored 3x3 diagonal blocks of M+K              (nefmL x 1)
 
   //-------------------- arena-allocated: POSITION, VELOCITY, CONTROL/ACCELERATION dependent
@@ -1577,6 +1581,13 @@ typedef struct mjrfRenderRequest_ {
   mjtBool enable_post_processing;    // enable post processing, enabled by default
   mjtBool enable_reflections;        // enable reflections, enabled by default
   mjtBool enable_shadows;            // enable shadows, enabled by default
+
+  // The headlight is a directional light aligned with this request's camera. It
+  // is a property of the request rather than of the scene, so that a scene
+  // rendered from several cameras is not lit by any one of them.
+  mjtBool enable_headlight;          // enable the headlight, disabled by default
+  float headlight_color[3];          // headlight color, RGB
+  float headlight_intensity;         // headlight intensity, in lux
 } mjrfRenderRequest;
 typedef struct mjrfReadPixelsRequest_ {
   mjrfRenderTarget* target;              // render target from which to read the image pixels
@@ -2414,8 +2425,9 @@ typedef enum mjtEnableBit {       // enable optional feature bitflags
   mjENBL_INVDISCRETE  = 1<<3,     // discrete-time inverse dynamics
   mjENBL_SLEEP        = 1<<4,     // sleeping
   mjENBL_DIAGEXACT    = 1<<5,     // exact diagonal of constraint inertia
+  mjENBL_IPC          = 1<<6,     // IPC flex contact mode of the discrete integrator
 
-  mjNENABLE           = 6         // number of enable flags
+  mjNENABLE           = 7         // number of enable flags
 } mjtEnableBit;
 typedef enum mjtJoint {           // type of degree of freedom
   mjJNT_FREE          = 0,        // global position and orientation (quat)       (7)
@@ -3475,7 +3487,8 @@ const char* mjENABLESTRING[mjNENABLE] = {
   "Fwdinv",
   "InvDiscrete",
   "Sleep",
-  "DiagExact"
+  "DiagExact",
+  "IPC"
 };
 const char* mjTIMERSTRING[mjNTIMER]= {
   "step",
@@ -3614,9 +3627,15 @@ void mjrf_defaultLightParams(mjrfLightParams* params);
 mjrfLight* mjrf_createLight(mjrfContext* ctx, const mjrfLightParams* params);
 void mjrf_destroyLight(mjrfLight* light);
 void mjrf_setLightEnabled(mjrfLight* light, mjtBool enabled);
-void mjrf_setLightIntensity(mjrfLight* light, float intensity);
-void mjrf_setLightShadowMapSize(mjrfLight* light, int map_size);
+void mjrf_setLightShadowsEnabled(mjrfLight* light, mjtBool enabled);
 void mjrf_setLightColor(mjrfLight* light, const float color[3]);
+void mjrf_setLightIntensity(mjrfLight* light, float intensity);
+void mjrf_setLightRange(mjrfLight* light, float range);
+void mjrf_setLightCutoffAngle(mjrfLight* light, float cutoff);
+void mjrf_setLightSoftness(mjrfLight* light, float softness);
+void mjrf_setLightBulbRadius(mjrfLight* light, float radius);
+void mjrf_setLightBlurWidth(mjrfLight* light, float blur_width);
+void mjrf_setLightShadowMapSize(mjrfLight* light, int map_size);
 void mjrf_setLightTransform(mjrfLight* light, const float position[3], const float direction[3]);
 int mjrf_getLightType(const mjrfLight* light);
 void mjrf_defaultMaterial(mjrfMaterial* material);
@@ -3770,7 +3789,8 @@ void mj_extractState(const mjModel* m, const mjtNum* src, int srcsig,
                      mjtNum* dst, int dstsig);
 void mj_setState(const mjModel* m, mjData* d, const mjtNum* state, int sig);
 void mj_copyState(const mjModel* m, const mjData* src, mjData* dst, int sig);
-mjtNum mj_readCtrl(const mjModel* m, const mjData* d, int id, mjtNum time, int interp);
+const mjtNum* mj_readCtrl(const mjModel* m, const mjData* d, int id, mjtNum time,
+                          mjtNum* result, int interp);
 const mjtNum* mj_readSensor(const mjModel* m, const mjData* d, int id, mjtNum time,
                             mjtNum* result, int interp);
 void mj_initCtrlHistory(const mjModel* m, mjData* d, int id,
@@ -4110,6 +4130,9 @@ const mjpDecoder* mjp_findDecoder(const mjResource* resource, const char* conten
 void mjp_registerEncoder(const mjpEncoder* encoder);
 void mjp_defaultEncoder(mjpEncoder* encoder);
 const mjpEncoder* mjp_findEncoder(const char* filename, const char* content_type);
+void mjp_registerArchiveResourceProvider(const mjpResourceProvider* provider);
+const mjpResourceProvider* mjp_findArchiveResourceProvider(const char* resource_name);
+int mjp_archiveResourceProviderCount(void);
 mjResource* mju_openResource(const char* dir, const char* name,
                              const mjVFS* vfs, char* error, size_t nerror);
 void mju_closeResource(mjResource* resource);

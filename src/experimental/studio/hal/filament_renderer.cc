@@ -135,8 +135,9 @@ void FilamentRenderer::Render(const mjModel* model, mjData* data,
     perturb = &default_perturb;
   }
 
+  const mjrCamera gl_camera = mjv_camera2GLCamera(model, data, camera);
+
   model_lights_->Update(data);
-  model_renderables_->Update(data);
 
   if (vis_option) {
     model_renderables_->SetOptions(*vis_option);
@@ -150,6 +151,7 @@ void FilamentRenderer::Render(const mjModel* model, mjData* data,
   } else {
     model_renderables_->MarkAsSelected(mjOBJ_UNKNOWN, -1);
   }
+  model_renderables_->Update(data);
 
   model_decorations_->Update(data, vis_option, perturb, camera, viewport,
                              DrawTextAt, extra_geoms);
@@ -157,8 +159,7 @@ void FilamentRenderer::Render(const mjModel* model, mjData* data,
   imgui_bridge_->Update();
 
   mjrfRenderRequest reqs[2];
-  BuildMainRenderRequest(&reqs[0], vis_option, viewport,
-                         mjv_camera2GLCamera(model, data, camera));
+  BuildMainRenderRequest(&reqs[0], model, vis_option, viewport, gl_camera);
   BuildUxRenderRequest(&reqs[1], viewport);
 
   mjrfFrameHandle frame = 0;
@@ -204,7 +205,7 @@ void FilamentRenderer::RenderToTexture(const mjModel* model, mjData* data,
   mjv_defaultOption(&vis_option);
 
   mjrfRenderRequest request;
-  BuildMainRenderRequest(&request, &vis_option, {0, 0, width, height},
+  BuildMainRenderRequest(&request, model, &vis_option, {0, 0, width, height},
                          mjv_camera2GLCamera(model, data, camera));
   request.target = render_target_.get();
 
@@ -229,6 +230,7 @@ int FilamentRenderer::UploadImage(int texture_id, const std::byte* pixels,
 double FilamentRenderer::GetFps() { return fps_; }
 
 void FilamentRenderer::BuildMainRenderRequest(mjrfRenderRequest* request,
+                                              const mjModel* model,
                                               const mjvOption* vis_option,
                                               const mjrRect& viewport,
                                               const mjrCamera& camera) {
@@ -254,6 +256,11 @@ void FilamentRenderer::BuildMainRenderRequest(mjrfRenderRequest* request,
   request->viewport = viewport;
   request->enable_shadows = render_flags_[mjRND_SHADOW];
   request->enable_reflections = render_flags_[mjRND_REFLECTION];
+  request->enable_headlight = model->vis.headlight.active;
+  request->headlight_color[0] = model->vis.headlight.diffuse[0];
+  request->headlight_color[1] = model->vis.headlight.diffuse[1];
+  request->headlight_color[2] = model->vis.headlight.diffuse[2];
+  request->headlight_intensity = model_lights_->GetHeadlightIntensity();
 }
 
 void FilamentRenderer::BuildUxRenderRequest(mjrfRenderRequest* request,

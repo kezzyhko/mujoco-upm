@@ -1936,10 +1936,6 @@ mjtNum mj_rayMesh_wrapper(const MjModel& m, const MjData& d, int geomid, const N
   return mj_rayMesh(m.get(), d.get(), geomid, pnt_.data(), vec_.data(), normal_.data());
 }
 
-mjtNum mj_readCtrl_wrapper(const MjModel& m, const MjData& d, int id, mjtNum time, int interp) {
-  return mj_readCtrl(m.get(), d.get(), id, time, interp);
-}
-
 void mj_referenceConstraint_wrapper(const MjModel& m, MjData& d) {
   mj_referenceConstraint(m.get(), d.get());
 }
@@ -4047,6 +4043,7 @@ EMSCRIPTEN_BINDINGS(mujoco_bindings) {
     .value("mjENBL_INVDISCRETE", mjENBL_INVDISCRETE)
     .value("mjENBL_SLEEP", mjENBL_SLEEP)
     .value("mjENBL_DIAGEXACT", mjENBL_DIAGEXACT)
+    .value("mjENBL_IPC", mjENBL_IPC)
     .value("mjNENABLE", mjNENABLE);
   enum_<mjtEq>("mjtEq")
     .value("mjEQ_CONNECT", mjEQ_CONNECT)
@@ -4662,6 +4659,8 @@ EMSCRIPTEN_BINDINGS(mujoco_bindings) {
     .property("flexelem_aabb", &MjData::flexelem_aabb)
     .property("flexelem_krot", &MjData::flexelem_krot)
     .property("flexvert_J", &MjData::flexvert_J)
+    .property("flexvert_conage", &MjData::flexvert_conage)
+    .property("flexvert_lambda", &MjData::flexvert_lambda)
     .property("flexvert_length", &MjData::flexvert_length)
     .property("flexvert_xpos", &MjData::flexvert_xpos)
     .property("flg_energypos", &MjData::flg_energypos, &MjData::set_flg_energypos)
@@ -6402,7 +6401,6 @@ EMSCRIPTEN_BINDINGS(mujoco_bindings) {
   function("mj_rayFlex", &mj_rayFlex_wrapper);
   function("mj_rayHfield", &mj_rayHfield_wrapper);
   function("mj_rayMesh", &mj_rayMesh_wrapper);
-  function("mj_readCtrl", &mj_readCtrl_wrapper);
   function("mj_referenceConstraint", &mj_referenceConstraint_wrapper);
   function("mj_resetCallbacks", &mj_resetCallbacks);
   function("mj_resetCtrl", &mj_resetCtrl_wrapper);
