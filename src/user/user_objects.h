@@ -704,6 +704,7 @@ class mjCJoint : public mjCJoint_, private mjsJoint {
   friend class mjCDef;
   friend class mjCEquality;
   friend class mjCBody;
+  friend class mjCFlex;
   friend class mjCModel;
   friend class mjCSensor;
   friend class mjXWriter;
@@ -1074,6 +1075,7 @@ class mjCFlex : public mjCFlex_, private mjsFlex {
 
 
  private:
+  bool IsSimple() const;           // fixed or independent XYZ-slide attachments
   void Compile(const mjVFS* vfs);  // compiler
   void CreateBVH(void);            // create flex BVH
   void CreateShellPair(void);      // create shells and evpairs

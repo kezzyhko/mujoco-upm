@@ -4162,19 +4162,6 @@ void mjCFlex::ResolveReferences(const mjCModel* m) {
     mjCBody* pbody = static_cast<mjCBody*>(m->FindObject(mjOBJ_BODY, vertbody));
     if (pbody) {
       vertbodyid.push_back(pbody->id);
-      // pinned vertices with bending are only valid for static (jointless) pin
-      // bodies: the runtime treats pin velocity as zero, which is only correct
-      // for static bodies.
-      if (!pbody->joints.empty() &&
-          pbody->joints.size() != 3 &&
-          dim == 2 &&
-          (elastic2d == 1 || elastic2d == 3) &&
-          !interpolated) {
-        throw mjCError(this,
-                       "pinned flex vertices with bending require a static (jointless) "
-                       "pin body, body '%s' has joints",
-                       vertbody.c_str());
-      }
     } else {
       throw mjCError(this, "unknown body '%s' in flex", vertbody.c_str());
     }
@@ -4187,6 +4174,29 @@ void mjCFlex::ResolveReferences(const mjCModel* m) {
       throw mjCError(this, "unknown body '%s' in flex", nodebody.c_str());
     }
   }
+}
+
+
+// Mirrors mj_flexSimple: only fixed-frame XYZ translations use the cached bending factor.
+bool mjCFlex::IsSimple() const {
+  for (int bid : vertbodyid) {
+    const mjCBody* weld = model->Bodies()[model->Bodies()[bid]->weldid];
+    if (!weld->joints.empty()) {
+      if (weld->joints.size() != 3) return false;
+      for (int j = 0; j < 3; j++) {
+        const mjCJoint* joint = weld->joints[j];
+        if (joint->type != mjJNT_SLIDE) return false;
+        for (int k = 0; k < 3; k++) {
+          // Match the precision of the engine's compiled axes, including in float builds.
+          if (std::abs(static_cast<mjtNum>(joint->axis[k]) - (j == k)) > mjEPS) return false;
+        }
+      }
+    }
+    for (const mjCBody* ancestor = weld->parent; ancestor; ancestor = ancestor->parent) {
+      if (!ancestor->joints.empty()) return false;
+    }
+  }
+  return true;
 }
 
 
@@ -4661,6 +4671,41 @@ void mjCFlex::Compile(const mjVFS* vfs) {
     }
   }
 
+  // disallow joint damping on free flex vertex/node bodies
+  if (!rigid) {
+    const std::vector<int>&      bodyids = interpolated ? nodebodyid : vertbodyid;
+    std::unordered_map<int, int> body_count;
+    for (int bid : bodyids) { body_count[bid]++; }
+    for (int bid : bodyids) {
+      if (body_count[bid] != 1) continue;
+      mjCBody* pbody = model->Bodies()[bid];
+      if (pbody->joints.empty() || !pbody->geoms.empty() || !pbody->bodies.empty()) { continue; }
+      bool all_slide = true;
+      for (const mjCJoint* jnt : pbody->joints) {
+        if (jnt->spec.type != mjJNT_SLIDE) {
+          all_slide = false;
+          break;
+        }
+      }
+      if (!all_slide) continue;
+      for (const mjCJoint* jnt : pbody->joints) {
+        bool has_damping = (jnt->spec.springdamper[0] > 0 && jnt->spec.springdamper[1] > 0);
+        for (int p = 0; p <= mjNPOLY; p++) {
+          if (jnt->spec.damping[p] != 0) {
+            has_damping = true;
+            break;
+          }
+        }
+        if (has_damping) {
+          throw mjCError(this,
+                         "flex vertex/node body '%s' cannot have joint damping; "
+                         "use flex elasticity or edge damping instead",
+                         pbody->name.c_str());
+        }
+      }
+    }
+  }
+
   // compute global vertex positions
   vertxpos = std::vector<double>(3 * nvert);
   for (int i = 0; i < nvert; i++) {
@@ -4761,6 +4806,20 @@ void mjCFlex::Compile(const mjVFS* vfs) {
   if (young > 0) {
     if (poisson < 0 || poisson >= 0.5) {
       throw mjCError(this, "Poisson ratio must be in [0, 0.5)");
+    }
+
+    // Mocap poses do not supply velocities, so they cannot define elastic damping or the
+    // implicit shift consistently. Dynamic articulated attachments have ordinary Jacobians.
+    if (!rigid && !interpolated) {
+      for (int bid : vertbodyid) {
+        for (const mjCBody* body = model->Bodies()[bid]; body; body = body->parent) {
+          if (body->mocap) {
+            throw mjCError(this,
+                           "flex elasticity does not support mocap attachments, body '%s'",
+                           body->name.c_str());
+          }
+        }
+      }
     }
 
     // linear elasticity

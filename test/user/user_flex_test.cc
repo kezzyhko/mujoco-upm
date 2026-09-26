@@ -1482,7 +1482,7 @@ TEST_F(UserFlexTest, Load1DFlexFromOBJ) {
   mj_deleteModel(m);
 }
 
-TEST_F(UserFlexTest, PinBendingRejectsNonStaticBody) {
+TEST_F(UserFlexTest, PinBendingAcceptsMovingBody) {
   // pinned vertex inherits the flexcomp's parent body, which here has a joint
   static constexpr char xml[] = R"(
   <mujoco>
@@ -1501,8 +1501,7 @@ TEST_F(UserFlexTest, PinBendingRejectsNonStaticBody) {
   )";
   std::array<char, 1024> error;
   MjModelPtr m = LoadModelFromString(xml, error.data(), error.size());
-  EXPECT_THAT(m.get(), IsNull());
-  EXPECT_THAT(error.data(), HasSubstr("static"));
+  EXPECT_THAT(m.get(), NotNull()) << error.data();
 }
 
 TEST_F(UserFlexTest, PinBendingAcceptsStaticBody) {
@@ -1569,6 +1568,239 @@ TEST_F(UserFlexTest, FlexConstraintsAndEdgeStiffnessError) {
       error.data(),
       HasSubstr("flex constraints and edge stiffness cannot both be present"));
 }
+
+struct FlexDampingCase {
+  const char* name;
+  const char* flex_attributes;
+  const char* joint_attributes;
+};
+
+class FlexDampingTest : public MujocoTest,
+                        public testing::WithParamInterface<FlexDampingCase> {};
+
+TEST_P(FlexDampingTest, RejectsInheritedDamping) {
+  std::string xml =
+      std::string("<mujoco><default><joint ") + GetParam().joint_attributes +
+      "/></default><worldbody><flexcomp name='test' type='grid' " +
+      GetParam().flex_attributes + R"(>
+        <contact selfcollide="none"/>
+        <elasticity young="10"/>
+      </flexcomp></worldbody></mujoco>)";
+  char error[1024];
+  auto model = LoadModelFromString(xml, error, sizeof(error));
+  EXPECT_THAT(model.get(), IsNull());
+  EXPECT_THAT(error, HasSubstr("cannot have joint damping"));
+}
+
+INSTANTIATE_TEST_SUITE_P(
+    VerticesAndNodes, FlexDampingTest,
+    testing::Values(
+        FlexDampingCase{"Vertex", "dim='2' count='3 3 1'", "damping='0.1'"},
+        FlexDampingCase{"VertexPolynomial", "dim='2' count='3 3 1'",
+                        "damping='0 0.1'"},
+        FlexDampingCase{"VertexSpringDamper", "dim='2' count='3 3 1'",
+                        "springdamper='0.1 1'"},
+        FlexDampingCase{"Node", "dim='3' count='3 3 2' dof='trilinear'",
+                        "damping='0.1'"},
+        FlexDampingCase{"NodePolynomial",
+                        "dim='3' count='3 3 2' dof='trilinear'",
+                        "damping='0 0.1'"},
+        FlexDampingCase{"NodeSpringDamper",
+                        "dim='3' count='3 3 2' dof='trilinear'",
+                        "springdamper='0.1 1'"}),
+    [](const testing::TestParamInfo<FlexDampingCase>& info) {
+      return info.param.name;
+    });
+
+TEST_F(UserFlexTest, AllowsDampingOnPinnedParent) {
+  static constexpr char xml[] = R"(
+    <mujoco><worldbody>
+      <body name="slider" pos="0 0 1">
+        <inertial pos="0 0 0" mass="1" diaginertia="1 1 1"/>
+        <joint type="slide" axis="0 0 1" damping="5"/>
+        <flexcomp name="test" type="grid" count="3 3 1" spacing="0.1 0.1 0.1" dim="2">
+          <pin id="4"/>
+          <edge equality="true"/>
+        </flexcomp>
+      </body>
+    </worldbody></mujoco>)";
+  char error[1024];
+  auto model = LoadModelFromString(xml, error, sizeof(error));
+  EXPECT_THAT(model.get(), NotNull()) << error;
+}
+
+class FlexPinnedDampingTest : public MujocoTest,
+                              public testing::WithParamInterface<bool> {};
+
+TEST_P(FlexPinnedDampingTest, AllowsDampingOnRigidAttachment) {
+  std::string pin =
+      GetParam()
+          ? "<joint type='slide' damping='5'/><geom type='sphere' size='0.1'/>"
+          : "<joint type='hinge' damping='5'/>";
+  std::string xml = R"(
+  <mujoco>
+    <worldbody>
+      <body name="pin">
+        <inertial pos="0 0 0" mass="1" diaginertia="1 1 1"/>)" +
+                    pin + R"(
+      </body>
+      <body name="end" pos="1 0 0">
+        <inertial pos="0 0 0" mass="0.1" diaginertia="1e-4 1e-4 1e-4"/>
+        <joint type="slide" axis="1 0 0"/>
+        <joint type="slide" axis="0 1 0"/>
+        <joint type="slide" axis="0 0 1"/>
+      </body>
+    </worldbody>
+    <deformable>
+      <flex dim="1" body="pin end" element="0 1">
+        <edge damping="0.1"/>
+      </flex>
+    </deformable>
+  </mujoco>)";
+  char error[1024];
+  auto model = LoadModelFromString(xml, error, sizeof(error));
+  EXPECT_THAT(model.get(), NotNull()) << error;
+}
+
+INSTANTIATE_TEST_SUITE_P(LeafBodies, FlexPinnedDampingTest, testing::Bool(),
+                         [](const testing::TestParamInfo<bool>& info) {
+                           return info.param ? "SliderWithGeom" : "Hinge";
+                         });
+
+constexpr char kXYZSlides[] = R"(
+    <joint type="slide" axis="1 0 0"/>
+    <joint type="slide" axis="0 1 0"/>
+    <joint type="slide" axis="0 0 1"/>)";
+
+struct BendingAttachmentCase {
+  const char* name;
+  std::string joints;
+  std::string ancestor;
+  std::string attributes;
+};
+
+class FlexBendingAttachmentTest
+    : public MujocoTest,
+      public testing::WithParamInterface<BendingAttachmentCase> {
+ protected:
+  MjModelPtr LoadAttachment(char* error, int error_size,
+                            const char* elastic2d = "bend") {
+    std::string xml = R"(
+  <mujoco>
+    <worldbody>
+      <body name="v0"/>
+      <body name="v1" pos="0.1 0 0"/>
+      <body name="ancestor" pos="0.1 0.1 0" )" +
+                      GetParam().attributes + R"(>
+        <inertial pos="0 0 0" mass="1" diaginertia="1 1 1"/>)" +
+                      GetParam().ancestor + R"(
+        <body name="carrier">
+          <inertial pos="0 0 0" mass="1" diaginertia="1 1 1"/>)" +
+                      GetParam().joints + R"(
+          <body name="pin"/>
+        </body>
+      </body>
+    </worldbody>
+    <deformable>
+      <flex dim="2" body="v0 v1 pin" element="0 1 2">
+        <contact selfcollide="none" contype="0" conaffinity="0"/>
+        <elasticity young="10" thickness="0.01" elastic2d=")" +
+                      elastic2d + R"("/>
+      </flex>
+    </deformable>
+  </mujoco>)";
+    return LoadModelFromString(xml, error, error_size);
+  }
+};
+
+TEST_P(FlexBendingAttachmentTest, AcceptsArticulatedBendingMotion) {
+  char error[1024];
+  auto model = LoadAttachment(error, sizeof(error));
+  EXPECT_THAT(model.get(), NotNull()) << error;
+}
+
+TEST_P(FlexBendingAttachmentTest, DoesNotRestrictStretchOnlyAttachments) {
+  char error[1024];
+  auto model = LoadAttachment(error, sizeof(error), "stretch");
+  EXPECT_THAT(model.get(), NotNull()) << error;
+}
+
+INSTANTIATE_TEST_SUITE_P(
+    ArticulatedMotion, FlexBendingAttachmentTest,
+    testing::Values(
+        BendingAttachmentCase{"Ball", "<joint type='ball'/>", ""},
+        BendingAttachmentCase{
+            "Hinges", "<joint/><joint axis='1 0 0'/><joint axis='0 1 0'/>", ""},
+        BendingAttachmentCase{"SingleSlide", "<joint type='slide'/>", ""},
+        BendingAttachmentCase{"ReorderedSlides", R"(
+          <joint type="slide" axis="0 1 0"/>
+          <joint type="slide" axis="1 0 0"/>
+          <joint type="slide" axis="0 0 1"/>)",
+                              ""},
+        BendingAttachmentCase{"ReversedSlide", R"(
+          <joint type="slide" axis="-1 0 0"/>
+          <joint type="slide" axis="0 1 0"/>
+          <joint type="slide" axis="0 0 1"/>)",
+                              ""},
+        BendingAttachmentCase{
+            "JointFrame",
+            std::string("<frame euler='0 0 30'>") + kXYZSlides + "</frame>",
+            ""},
+        BendingAttachmentCase{"MovingAncestor", kXYZSlides,
+                              "<joint type='ball'/>"}),
+    [](const testing::TestParamInfo<BendingAttachmentCase>& info) {
+      return info.param.name;
+    });
+
+class FlexMocapAttachmentTest : public FlexBendingAttachmentTest {};
+
+TEST_P(FlexMocapAttachmentTest, RejectsMocapElasticity) {
+  for (const char* elasticity : {"bend", "stretch"}) {
+    SCOPED_TRACE(elasticity);
+    char error[1024];
+    auto model = LoadAttachment(error, sizeof(error), elasticity);
+    EXPECT_EQ(model.get(), nullptr);
+    EXPECT_THAT(
+        error, HasSubstr("flex elasticity does not support mocap attachments"));
+  }
+}
+
+INSTANTIATE_TEST_SUITE_P(
+    Mocap, FlexMocapAttachmentTest,
+    testing::Values(BendingAttachmentCase{"FixedChild", "", "", "mocap='true'"},
+                    BendingAttachmentCase{"SliderChild", kXYZSlides, "",
+                                          "mocap='true'"}),
+    [](const testing::TestParamInfo<BendingAttachmentCase>& info) {
+      return info.param.name;
+    });
+
+class FlexBendingSupportedAttachmentTest : public FlexBendingAttachmentTest {};
+
+TEST_P(FlexBendingSupportedAttachmentTest, AcceptsFixedOrXYZSlideAttachments) {
+  char error[1024];
+  auto model = LoadAttachment(error, sizeof(error));
+  EXPECT_THAT(model.get(), NotNull()) << error;
+}
+
+INSTANTIATE_TEST_SUITE_P(
+    SupportedMotion, FlexBendingSupportedAttachmentTest,
+    testing::Values(BendingAttachmentCase{"Fixed", "", ""},
+                    BendingAttachmentCase{"XYZSlides", kXYZSlides, ""},
+                    BendingAttachmentCase{"NormalizedAxes", R"(
+          <joint type="slide" axis="2 0 0"/>
+          <joint type="slide" axis="0 3 0"/>
+          <joint type="slide" axis="0 0 4"/>)",
+                                          ""},
+                    BendingAttachmentCase{"CompiledJointFrame", R"(
+          <frame euler="0 0 90">
+            <joint type="slide" axis="0 -1 0"/>
+            <joint type="slide" axis="1 0 0"/>
+            <joint type="slide" axis="0 0 1"/>
+          </frame>)",
+                                          ""}),
+    [](const testing::TestParamInfo<BendingAttachmentCase>& info) {
+      return info.param.name;
+    });
 
 }  // namespace
 }  // namespace mujoco
