@@ -18,6 +18,7 @@
 #include <cstdio>
 #include <memory>
 #include <string>
+#include <vector>
 
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
@@ -33,6 +34,191 @@ using ::testing::IsNull;
 using ::testing::NotNull;
 using ::testing::Pointwise;
 using UserFlexTest = MujocoTest;
+
+// SNH is selected through mjSpec, with StVK remaining the default for MJCF.
+TEST_F(UserFlexTest, SNHSpecOnly) {
+  static constexpr char xml[] = R"(
+  <mujoco>
+    <option gravity="0 0 0"/>
+    <worldbody>
+      <flexcomp name="old" type="grid" dim="3" count="2 2 2" spacing="1 1 1">
+        <contact contype="0" conaffinity="0" selfcollide="none"/>
+        <elasticity young="1000" poisson=".3"/>
+      </flexcomp>
+      <flexcomp name="new" type="grid" dim="3" count="2 2 2" spacing="1 1 1" pos="3 0 0">
+        <contact contype="0" conaffinity="0" selfcollide="none"/>
+        <elasticity young="1000" poisson=".3"/>
+      </flexcomp>
+    </worldbody>
+  </mujoco>
+  )";
+  using SpecPtr = std::unique_ptr<mjSpec, decltype(&mj_deleteSpec)>;
+  SpecPtr spec(mj_parseXMLString(xml, nullptr, nullptr, 0), mj_deleteSpec);
+  ASSERT_THAT(spec.get(), NotNull());
+  mjsFlex* flex = mjs_asFlex(mjs_findElement(spec.get(), mjOBJ_FLEX, "new"));
+  ASSERT_THAT(flex, NotNull());
+  EXPECT_EQ(flex->elastic3d, 0);
+  MjModelPtr initial(mj_compile(spec.get(), nullptr));
+  ASSERT_THAT(initial.get(), NotNull()) << mjs_getError(spec.get());
+  for (int t = 0; t < initial->nflexelem; t++) {
+    for (int i = 21; i < 24; i++)
+      EXPECT_EQ(initial->flex_stiffness[24 * t + i], 0);
+  }
+
+  // Recompilation and spec copying retain the programmatic selection.
+  flex->elastic3d = 1;
+  SpecPtr copy(mj_copySpec(spec.get()), mj_deleteSpec);
+  ASSERT_THAT(copy.get(), NotNull());
+  EXPECT_EQ(
+      mjs_asFlex(mjs_findElement(copy.get(), mjOBJ_FLEX, "new"))->elastic3d, 1);
+  MjModelPtr m(mj_compile(copy.get(), nullptr));
+  ASSERT_THAT(m.get(), NotNull()) << mjs_getError(copy.get());
+  ASSERT_EQ(m->nflexstiffness, 24 * m->nflexelem);
+  for (int f = 0; f < 2; f++) {
+    for (int t = 0; t < m->flex_elemnum[f]; t++) {
+      const mjtNum* k = m->flex_stiffness + m->flex_stiffnessadr[f] + 24 * t;
+      if (f == 0) {
+        EXPECT_EQ(k[21], 0);
+        EXPECT_EQ(k[22], 0);
+        EXPECT_EQ(k[23], 0);
+      } else {
+        EXPECT_LT(k[21], 0);
+        EXPECT_GT(k[22], 0);
+        EXPECT_NE(k[23], 0);
+      }
+    }
+  }
+
+  // Reflection preserves every edge length. StVK has zero force, SNH does not.
+  MjDataPtr d = MakeData(m);
+  mj_forward(m.get(), d.get());
+  for (int v = 0; v < m->nflexvert; v++) {
+    int adr = m->body_dofadr[m->flex_vertbodyid[v]];
+    d->qpos[adr + 2] = -2 * d->flexvert_xpos[3 * v + 2];
+  }
+  mj_forward(m.get(), d.get());
+  mjtNum snh_force = 0;
+  for (int f = 0; f < 2; f++) {
+    for (int v = 0; v < m->flex_vertnum[f]; v++) {
+      int adr = m->body_dofadr[m->flex_vertbodyid[m->flex_vertadr[f] + v]];
+      for (int x = 0; x < 3; x++) {
+        if (f == 0) {
+          EXPECT_NEAR(d->qfrc_spring[adr + x], 0, MjTol(1e-10, 1e-3));
+        } else {
+          snh_force += mju_abs(d->qfrc_spring[adr + x]);
+        }
+      }
+    }
+  }
+  EXPECT_GT(snh_force, 1);
+
+  // The compiled coefficients preserve the choice in MJB without a model flag.
+  std::vector<char> buffer(mj_sizeModel(m.get()));
+  mj_saveModel(m.get(), nullptr, buffer.data(), buffer.size());
+  mjVFS vfs;
+  mj_defaultVFS(&vfs);
+  ASSERT_EQ(mj_addBufferVFS(&vfs, "mixed.mjb", buffer.data(), buffer.size()),
+            0);
+  MjModelPtr restored(mj_loadModel("mixed.mjb", &vfs));
+  mj_deleteVFS(&vfs);
+  ASSERT_THAT(restored.get(), NotNull());
+  ASSERT_EQ(restored->nflexstiffness, m->nflexstiffness);
+  for (int i = 0; i < m->nflexstiffness; i++) {
+    EXPECT_EQ(restored->flex_stiffness[i], m->flex_stiffness[i]);
+  }
+  MjDataPtr restored_data = MakeData(restored);
+  mju_copy(restored_data->qpos, d->qpos, m->nq);
+  mj_forward(restored.get(), restored_data.get());
+  for (int i = 0; i < m->nv; i++)
+    EXPECT_EQ(restored_data->qfrc_spring[i], d->qfrc_spring[i]);
+
+  // MJCF cannot represent the choice: report an error instead of changing the
+  // material.
+  std::array<char, 32768> output;
+  std::array<char, 1024> error;
+  EXPECT_EQ(mj_saveXMLString(copy.get(), output.data(), output.size(),
+                             error.data(), error.size()),
+            -1);
+  EXPECT_THAT(error.data(), HasSubstr("mjSpec-only"));
+  flex->elastic3d = 0;
+  MjModelPtr reset(mj_compile(spec.get(), nullptr));
+  ASSERT_THAT(reset.get(), NotNull());
+  EXPECT_EQ(reset->flex_stiffness[reset->flex_stiffnessadr[1] + 21], 0);
+  EXPECT_EQ(mj_saveXMLString(spec.get(), output.data(), output.size(),
+                             error.data(), error.size()),
+            0);
+}
+
+TEST_F(UserFlexTest, Elastic3DNotInMJCF) {
+  for (const char* xml : {
+           R"(<mujoco>
+                <worldbody>
+                  <flexcomp name="test" dim="3">
+                    <elasticity young="1000" elastic3d="1"/>
+                  </flexcomp>
+                </worldbody>
+              </mujoco>)",
+           R"(<mujoco>
+                <deformable>
+                  <flex name="test" dim="3" body="world">
+                    <elasticity young="1000" elastic3d="1"/>
+                  </flex>
+                </deformable>
+              </mujoco>)"}) {
+    std::array<char, 1024> error;
+    MjModelPtr m = LoadModelFromString(xml, error.data(), error.size());
+    EXPECT_THAT(m.get(), IsNull());
+    EXPECT_THAT(error.data(), HasSubstr("unrecognized attribute: 'elastic3d'"));
+  }
+}
+
+TEST_F(UserFlexTest, Elastic3DInvalidSelector) {
+  static constexpr char xml[] = R"(
+  <mujoco>
+    <worldbody>
+      <flexcomp name="test" dim="3" count="2 2 2">
+        <elasticity young="1000"/>
+      </flexcomp>
+    </worldbody>
+  </mujoco>
+  )";
+  mjSpec* spec = mj_parseXMLString(xml, nullptr, nullptr, 0);
+  ASSERT_THAT(spec, NotNull());
+  mjsFlex* flex = mjs_asFlex(mjs_findElement(spec, mjOBJ_FLEX, "test"));
+  for (int value : {-1, 2}) {
+    flex->elastic3d = value;
+    MjModelPtr m(mj_compile(spec, nullptr));
+    EXPECT_THAT(m.get(), IsNull());
+    EXPECT_THAT(mjs_getError(spec),
+                HasSubstr("elastic3d must be 0 (StVK) or 1 (SNH)"));
+  }
+  mj_deleteSpec(spec);
+}
+
+TEST_F(UserFlexTest, SNHRequiresStandard3D) {
+  for (const char* attributes :
+       {"dim='2' count='2 2 1'", "dim='3' count='2 2 2' dof='trilinear'"}) {
+    std::string xml =
+        "<mujoco>\n"
+        "  <worldbody>\n"
+        "    <flexcomp name='test' " +
+        std::string(attributes) +
+        ">\n"
+        "      <contact selfcollide='none'/>\n"
+        "      <elasticity young='1000'/>\n"
+        "    </flexcomp>\n"
+        "  </worldbody>\n"
+        "</mujoco>";
+    mjSpec* spec = mj_parseXMLString(xml.c_str(), nullptr, nullptr, 0);
+    ASSERT_THAT(spec, NotNull());
+    mjs_asFlex(mjs_findElement(spec, mjOBJ_FLEX, "test"))->elastic3d = 1;
+    MjModelPtr m(mj_compile(spec, nullptr));
+    EXPECT_THAT(m.get(), IsNull());
+    EXPECT_THAT(mjs_getError(spec),
+                HasSubstr("requires a non-interpolated 3d flex"));
+    mj_deleteSpec(spec);
+  }
+}
 
 TEST_F(UserFlexTest, ParentMustHaveName) {
   static constexpr char xml[] = R"(
@@ -327,7 +513,7 @@ TEST_F(UserFlexTest, TrilinearCannotDoSelfCollision) {
   <mujoco>
   <worldbody>
     <flexcomp name="test" type="grid" count="2 2 2" spacing="1 1 1" dim="3" dof="trilinear">
-      <contact selfcollide="auto" internal="false"/>
+      <contact selfcollide="auto"/>
     </flexcomp>
   </worldbody>
   </mujoco>
@@ -336,19 +522,6 @@ TEST_F(UserFlexTest, TrilinearCannotDoSelfCollision) {
   EXPECT_THAT(m1.get(), IsNull()) << error.data();
   EXPECT_THAT(error.data(),
               HasSubstr("trilinear interpolation cannot do self-collision"));
-  static constexpr char xml_internal[] = R"(
-  <mujoco>
-  <worldbody>
-    <flexcomp name="test" type="grid" count="2 2 2" spacing="1 1 1" dim="3" dof="trilinear">
-      <contact selfcollide="none" internal="true"/>
-    </flexcomp>
-  </worldbody>
-  </mujoco>
-  )";
-  MjModelPtr m2 = LoadModelFromString(xml_internal, error.data(), error.size());
-  EXPECT_THAT(m2.get(), IsNull()) << error.data();
-  EXPECT_THAT(error.data(),
-              HasSubstr("trilinear interpolation cannot do internal"));
 }
 
 TEST_F(UserFlexTest, TrilinearInterpolation) {
@@ -357,7 +530,7 @@ TEST_F(UserFlexTest, TrilinearInterpolation) {
   <worldbody>
     <geom type="plane" pos="0 0 -.5" size="10 10 .1"/>
     <flexcomp name="test" type="grid" count="2 2 2" spacing="1 1 1" dim="3" dof="trilinear">
-      <contact selfcollide="none" internal="false"/>
+      <contact selfcollide="none"/>
     </flexcomp>
   </worldbody>
   </mujoco>
@@ -374,7 +547,7 @@ TEST_F(UserFlexTest, TrilinearInterpolation) {
   <worldbody>
     <geom type="plane" pos="0 0 -.5" size="10 10 .1"/>
     <flexcomp name="test" type="grid" count="2 2 2" spacing="1 1 1" dim="3">
-      <contact selfcollide="none" internal="false"/>
+      <contact selfcollide="none"/>
     </flexcomp>
   </worldbody>
   </mujoco>
@@ -447,7 +620,7 @@ TEST_F(UserFlexTest, StiffnessMatrix) {
   <mujoco>
   <worldbody>
     <flexcomp name="test" type="grid" count="3 3 3" spacing="1 1 1" dim="3" dof="trilinear">
-      <contact selfcollide="none" internal="false"/>
+      <contact selfcollide="none"/>
       <elasticity young="1"/>
     </flexcomp>
   </worldbody>
@@ -479,7 +652,7 @@ TEST_F(UserFlexTest, StiffnessCacheDiffersByGeometry) {
   <mujoco>
   <worldbody>
     <flexcomp name="test" type="grid" count="3 3 3" spacing="1 1 1" dim="3" dof="trilinear">
-      <contact selfcollide="none" internal="false"/>
+      <contact selfcollide="none"/>
       <elasticity young="1" poisson="0.3"/>
     </flexcomp>
   </worldbody>
@@ -490,7 +663,7 @@ TEST_F(UserFlexTest, StiffnessCacheDiffersByGeometry) {
   <mujoco>
   <worldbody>
     <flexcomp name="test" type="grid" count="3 3 3" spacing="2 2 2" dim="3" dof="trilinear">
-      <contact selfcollide="none" internal="false"/>
+      <contact selfcollide="none"/>
       <elasticity young="1" poisson="0.3"/>
     </flexcomp>
   </worldbody>
@@ -1322,7 +1495,7 @@ TEST_F(UserFlexTest, TotalMassTrilinear) {
   <worldbody>
     <flexcomp name="test" type="grid" count="2 2 2" spacing="1 1 1"
               dim="3" dof="trilinear" mass="1.5">
-      <contact selfcollide="none" internal="false"/>
+      <contact selfcollide="none"/>
     </flexcomp>
   </worldbody>
   </mujoco>
@@ -1345,7 +1518,7 @@ TEST_F(UserFlexTest, TotalMassQuadratic) {
   <worldbody>
     <flexcomp name="test" type="grid" count="3 2 2" spacing="1 1 1"
               dim="3" dof="quadratic" mass="2.0">
-      <contact selfcollide="none" internal="false"/>
+      <contact selfcollide="none"/>
     </flexcomp>
   </worldbody>
   </mujoco>
@@ -1431,7 +1604,7 @@ TEST_F(UserFlexTest, Vert0RotationInvariant) {
     <body name="parent">
       <flexcomp name="test" type="grid" count="2 2 2" spacing="1 1 1"
                 dim="3" dof="trilinear">
-        <contact selfcollide="none" internal="false"/>
+        <contact selfcollide="none"/>
       </flexcomp>
     </body>
   </worldbody>
@@ -1445,7 +1618,7 @@ TEST_F(UserFlexTest, Vert0RotationInvariant) {
     <body name="parent" quat="0.9238795 0 0 0.3826834">
       <flexcomp name="test" type="grid" count="2 2 2" spacing="1 1 1"
                 dim="3" dof="trilinear">
-        <contact selfcollide="none" internal="false"/>
+        <contact selfcollide="none"/>
       </flexcomp>
     </body>
   </worldbody>
