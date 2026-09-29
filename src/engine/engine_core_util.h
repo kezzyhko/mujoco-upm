@@ -206,6 +206,14 @@ int mj_effActuatorPossible(const mjModel* m, int i);
 
 //-------------------------- flex elasticity -------------------------------------------------------
 
+// lazily assemble the unscaled Cartesian stretch Hessian for a standard 2D or 3D flex
+// stores symmetric diagonal blocks per vertex and oriented off-diagonal blocks per edge
+void mj_flexHessian(const mjModel* m, mjData* d, int f);
+
+// add scale * cached Hessian * vec to res; vectors use flex-local Cartesian vertex order
+void mj_flexHessianMul(const mjModel* m, const mjData* d, int f, mjtNum* res,
+                       const mjtNum* vec, mjtNum scale);
+
 // element-local geometry, quadratic edge response, and stiffness contractions shared by
 // passive forces and both solver paths; keep the helpers visible to the compiler so the
 // small edge loops can be optimized together with their callers
@@ -306,28 +314,6 @@ static inline void mj_stretchStiffness(mjtNum metric[36], mjtNum tension[6], con
 }
 
 
-// apply stiffness to edge-vector variations; scatter result with +/- edge signs
-static inline void mj_stretchStiffnessMul(mjtNum result[6][3], const mjtNum metric[36],
-                                          const mjtNum tension[6], mjtNum edgevec[6][3],
-                                          mjtNum delta[6][3], int nedge, mjtNum scale) {
-  mjtNum g[6], material[6];
-  for (int e = 0; e < nedge; e++) {
-    g[e] = 0;
-    for (int x = 0; x < 3; x++) {
-      g[e] += edgevec[e][x]*delta[e][x];
-    }
-  }
-  mj_stretchTension(material, metric, g, nedge);
-  for (int e = 0; e < nedge; e++) {
-    mjtNum coef = material[e];
-    coef *= 2*scale;
-    for (int x = 0; x < 3; x++) {
-      result[e][x] = coef*edgevec[e][x] + scale*tension[e]*delta[e][x];
-    }
-  }
-}
-
-
 // evaluate the corresponding 3x3 world-frame vertex-pair block for sparse assembly
 static inline void mj_stretchStiffnessBlock(mjtNum block[9], const mjtNum metric[36],
                                             const mjtNum tension[6], mjtNum edgevec[6][3],
@@ -416,12 +402,6 @@ static inline mjtNum mj_snhStiffness(mjtNum metric[36], mjtNum tension[6], mjtNu
   mj_snhCubic(metric, tension, elongation, k[21], 1);
   return 2*k[22]*(mj_snhVolume(grad, edgevec, k)-1);
 }
-
-
-// multiply the exact stiffness, including geometric terms, by vertex variations
-void mj_snhStiffnessMul(mjtNum result[4][3], const mjtNum metric[36], const mjtNum tension[6],
-                        mjtNum edgevec[6][3], mjtNum grad[4][3], mjtNum pressure,
-                        const mjtNum k[24], mjtNum vec[4][3], mjtNum scale);
 
 
 // world-space vertex-pair block of the same exact stiffness
