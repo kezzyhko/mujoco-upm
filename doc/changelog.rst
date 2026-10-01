@@ -29,13 +29,16 @@ Engine
    - Removed the deprecated ``internal`` flex collision option and associated ``evpair`` structures.
 
 - Added experimental simplified Stable Neo-Hookean elasticity for non-interpolated 3D flexes, enabled only through
-  ``mjsFlex.elastic3d = 1``. It uses the full energy Hessian and preserves the Saint Venant-Kirchhoff (StVK) default
-  (``0``). SNH requires the discrete integrator. The setting is not available in MJCF.
+  ``mjsFlex.elastic3d = 1``. It projects the material Hessian to positive semidefiniteness for the solver and Rayleigh
+  damping, and preserves the Saint Venant-Kirchhoff (StVK) default (``0``).
+  SNH requires the discrete integrator. The setting is not available in MJCF.
 - The cached flex bending factor now retains cross-coordinate couplings between differently oriented vertex bodies.
 - Flex bending and stretching now include the motion and reaction forces of articulated vertex attachments. The discrete
   integrator supports these attachments with the CG solver; fixed and independent XYZ-slide attachments retain their
   optimized assembly. Elastic flexes attached to mocap bodies produce a compiler error.
 - Added single-shot :ref:`multicontact<coMultiCCD>` for collisions with capsule geoms.
+- Added the :ref:`enclosed<sensor-insidesite-enclosed>` attribute to :ref:`insidesite<sensor-insidesite>` sensors,
+  measuring how much an object juts out of a site (using directed Hausdorff distance) and reporting signed clearance/protrusion.
 
 Version 3.14.0 (September 22, 2026)
 -----------------------------------
