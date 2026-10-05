@@ -199,6 +199,9 @@ replicating 200 times, suffixes will be ``000, 001, ...`` etc). All referencing 
 and namespaced appropriately. Detailed examples of models using replicate can be found in the
 `model/replicate/ <https://github.com/google-deepmind/mujoco/tree/main/model/replicate>`__ directory.
 
+Direct children of replicate are replicated into its parent body. Joints are therefore not allowed as direct children;
+wrap them in a :ref:`body<body>`.
+
 There are some caveats concerning :ref:`keyframes<keyframe>` when using replicate. Since :ref:`mjs_attach` is used to
 self-attach multiple times the enclosed kinematic tree, if this tree contains further :ref:`attach<body-attach>`
 elements, keyframes will not be replicated nor namespaced by :ref:`replicate<replicate>`, but they will be attached and
@@ -1916,7 +1919,8 @@ Only ``image/png`` and ``image/ktx`` are supported.
 
 :at:`nchannel`: :at-val:`int, "3"`
    The number of channels in the texture image file. This allows loading 4-channel textures (RGBA) or single-channel
-   textures (e.g., for Physics-Based Rendering properties such as roughness or metallic).
+   textures (e.g., for Physics-Based Rendering properties such as roughness or metallic). Procedural, cube and skybox
+   textures must have 3 channels.
 
 
 .. _asset-material:

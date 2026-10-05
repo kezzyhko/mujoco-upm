@@ -33,6 +33,7 @@
 #include <mujoco/mujoco.h>
 #include "src/xml/xml_api.h"
 #include "test/compare_model.h"
+#include "test/compare_spec.h"
 #include "test/fixture.h"
 
 namespace mujoco {
@@ -40,6 +41,7 @@ namespace {
 
 using ::testing::ElementsAreArray;
 using ::testing::HasSubstr;
+using ::testing::IsEmpty;
 using ::testing::IsNull;
 using ::testing::NotNull;
 
@@ -480,6 +482,24 @@ TEST_F(MujocoTest, SetToDCMotorLuGre) {
   EXPECT_EQ(actuator->biasprm[3], 0.5);   // coulomb
   EXPECT_EQ(actuator->biasprm[4], 0.7);   // static
   EXPECT_EQ(actuator->biasprm[5], 10.0);  // stribeck
+
+  mj_deleteSpec(spec);
+}
+
+TEST_F(MujocoTest, SetToIntVelocityReportsErrors) {
+  mjSpec* spec = mj_makeSpec();
+  mjsActuator* actuator = mjs_addActuator(spec, 0);
+
+  // position servo errors are returned; timeconst is not an MJCF attribute
+  double timeconst = -1.0;
+  const char* err =
+      mjs_setToIntVelocity(actuator, 5.0, nullptr, nullptr, &timeconst, 0);
+  EXPECT_STREQ(err, "timeconst cannot be negative");
+
+  // inheritrange sets actrange, so the two are exclusive
+  actuator->actrange[1] = 1.0;
+  err = mjs_setToIntVelocity(actuator, 5.0, nullptr, nullptr, nullptr, 1.0);
+  EXPECT_STREQ(err, "actrange and inheritrange cannot both be defined");
 
   mj_deleteSpec(spec);
 }
@@ -1131,6 +1151,257 @@ TEST_F(MujocoTest, RecompileEditFrame) {
   mj_deleteModel(m1);
   mj_deleteModel(m2);
   mj_deleteSpec(spec);
+}
+
+// compiling does not change what was authored in the spec
+TEST_F(MujocoTest, CompileLeavesSpecUnchanged) {
+  static constexpr char xml[] = R"(
+  <mujoco>
+    <compiler angle="degree"/>
+    <default>
+      <default class="arm">
+        <joint damping="1"/>
+        <geom type="capsule" size=".05"/>
+      </default>
+    </default>
+    <asset>
+      <mesh name="tetra" vertex="0 0 0 1 0 0 0 1 0 0 0 1"/>
+      <mesh file="cube.obj" scale=".1 .1 .1"/>
+      <material name="blue" rgba="0 0 1 1"/>
+    </asset>
+    <worldbody>
+      <light pos="0 0 3"/>
+      <camera name="fixed" pos="0 -2 1" xyaxes="1 0 0 0 1 2"/>
+      <geom name="floor" type="plane" size="1 1 .1" material="blue"/>
+      <frame name="base" pos="0 0 1" euler="0 0 30">
+        <body name="upper" childclass="arm">
+          <joint name="shoulder" axis="0 1 0" range="-90 90"/>
+          <geom name="upper" fromto="0 0 0 0 0 -.3"/>
+          <body name="lower" pos="0 0 -.3">
+            <joint name="elbow" axis="0 1 0"/>
+            <geom name="lower" fromto="0 0 0 0 0 -.3"/>
+            <site name="hand" pos="0 0 -.3" zaxis="0 1 1"/>
+          </body>
+        </body>
+      </frame>
+      <body name="free" pos="1 0 1" axisangle="0 0 1 45">
+        <freejoint align="true"/>
+        <geom name="tetra" type="mesh" mesh="tetra" pos=".1 0 0"/>
+        <geom name="cube" type="mesh" mesh="cube" pos="-.1 0 0"/>
+        <site name="top" pos="0 0 .2"/>
+      </body>
+    </worldbody>
+    <contact>
+      <pair geom1="lower" geom2="tetra"/>
+      <pair geom1="upper" geom2="tetra"/>
+      <exclude body1="lower" body2="free"/>
+      <exclude body1="upper" body2="lower"/>
+    </contact>
+    <equality>
+      <connect body1="lower" body2="free" anchor="0 0 -.3"/>
+    </equality>
+    <tendon>
+      <spatial name="rope" range="0 1">
+        <site site="hand"/>
+        <site site="top"/>
+      </spatial>
+    </tendon>
+    <actuator>
+      <position name="shoulder" joint="shoulder" kp="10"/>
+      <motor name="rope" tendon="rope"/>
+    </actuator>
+    <sensor>
+      <jointpos joint="elbow"/>
+      <framepos objtype="site" objname="hand"/>
+    </sensor>
+    <custom>
+      <numeric name="gain" data="1 2 3"/>
+    </custom>
+    <keyframe>
+      <key name="bent" qpos="45 90 1 0 1 1 0 0 0"/>
+    </keyframe>
+  </mujoco>
+  )";
+
+  static constexpr char cube[] = R"(
+  v -1 -1  1
+  v  1 -1  1
+  v -1  1  1
+  v  1  1  1
+  v -1  1 -1
+  v  1  1 -1
+  v -1 -1 -1
+  v  1 -1 -1)";
+  auto vfs = std::make_unique<mjVFS>();
+  mj_defaultVFS(vfs.get());
+  mj_addBufferVFS(vfs.get(), "cube.obj", cube, sizeof(cube));
+
+  std::array<char, 1000> er;
+  mjSpec* spec = mj_parseXMLString(xml, vfs.get(), er.data(), er.size());
+  ASSERT_THAT(spec, NotNull()) << er.data();
+  mjSpec* authored = mj_copySpec(spec);
+  ASSERT_THAT(CompareSpec(authored, spec), IsEmpty());
+
+  // a compilation, and a second one
+  for (int i = 0; i < 2; i++) {
+    mjModel* model = mj_compile(spec, vfs.get());
+    ASSERT_THAT(model, NotNull()) << mjs_getError(spec);
+    EXPECT_THAT(CompareSpec(authored, spec), IsEmpty());
+    mj_deleteModel(model);
+  }
+
+  // a compilation which fails at its very end, in the keyframes
+  for (mjSpec* s : {spec, authored}) {
+    mjs_asKey(mjs_findElement(s, mjOBJ_KEY, "bent"))->qpos->push_back(0);
+  }
+  EXPECT_THAT(mj_compile(spec, vfs.get()), IsNull());
+  EXPECT_THAT(CompareSpec(authored, spec), IsEmpty());
+
+  mj_deleteSpec(authored);
+  mj_deleteSpec(spec);
+  mj_deleteVFS(vfs.get());
+}
+
+// the model holds pairs and excludes sorted, the spec in the authored order
+TEST_F(MujocoTest, CompileKeepsPairOrder) {
+  static constexpr char xml[] = R"(
+  <mujoco>
+    <worldbody>
+      <body name="a">
+        <joint/>
+        <geom name="a" size=".1"/>
+      </body>
+      <body name="b" pos="1 0 0">
+        <joint/>
+        <geom name="b" size=".1"/>
+      </body>
+      <body name="c" pos="2 0 0">
+        <joint/>
+        <geom name="c" size=".1"/>
+      </body>
+    </worldbody>
+    <contact>
+      <pair name="late" geom1="b" geom2="c"/>
+      <pair name="early" geom1="a" geom2="b"/>
+      <exclude name="late" body1="b" body2="c"/>
+      <exclude name="early" body1="a" body2="b"/>
+    </contact>
+  </mujoco>
+  )";
+
+  std::array<char, 1000> er;
+  mjSpec* spec = mj_parseXMLString(xml, 0, er.data(), er.size());
+  ASSERT_THAT(spec, NotNull()) << er.data();
+  mjModel* model = mj_compile(spec, nullptr);
+  ASSERT_THAT(model, NotNull()) << mjs_getError(spec);
+
+  for (mjtObj type : {mjOBJ_PAIR, mjOBJ_EXCLUDE}) {
+    // the model is sorted
+    EXPECT_EQ(mj_name2id(model, type, "early"), 0);
+    EXPECT_EQ(mj_name2id(model, type, "late"), 1);
+
+    // the spec is not
+    mjsElement* first = mjs_firstElement(spec, type);
+    EXPECT_STREQ(mjs_getString(mjs_getName(first)), "late");
+
+    // a name finds its element, whose id is its row in the model
+    for (const char* name : {"late", "early"}) {
+      mjsElement* element = mjs_findElement(spec, type, name);
+      ASSERT_THAT(element, NotNull());
+      EXPECT_STREQ(mjs_getString(mjs_getName(element)), name);
+      EXPECT_EQ(mjs_getId(element), mj_name2id(model, type, name));
+    }
+  }
+
+  // a value edited in the model is copied back to its own pair
+  model->pair_margin[mj_name2id(model, mjOBJ_PAIR, "late")] = 0.5;
+  EXPECT_EQ(mj_copyBack(spec, model), 1);
+  std::array<char, 2000> saved;
+  mj_saveXMLString(spec, saved.data(), saved.size(), er.data(), er.size());
+  EXPECT_THAT(saved.data(),
+              ::testing::ContainsRegex("name=\"late\".*margin=\"0.5\""));
+
+  // compiling again gives the same model
+  mjModel* again = mj_compile(spec, nullptr);
+  ASSERT_THAT(again, NotNull()) << mjs_getError(spec);
+  EXPECT_EQ(mj_name2id(again, mjOBJ_PAIR, "early"), 0);
+  EXPECT_EQ(mj_name2id(again, mjOBJ_EXCLUDE, "early"), 0);
+
+  mj_deleteModel(again);
+  mj_deleteModel(model);
+  mj_deleteSpec(spec);
+}
+
+// changing the file of an asset after a compile takes effect in the next one,
+// and the name which the parser derived from the first file stays
+TEST_F(MujocoTest, RecompileEditMeshFile) {
+  static constexpr char cube[] = R"(
+  v -1 -1  1
+  v  1 -1  1
+  v -1  1  1
+  v  1  1  1
+  v -1  1 -1
+  v  1  1 -1
+  v -1 -1 -1
+  v  1 -1 -1)";
+  static constexpr char tetra[] = R"(
+  v 0 0 0
+  v 1 0 0
+  v 0 1 0
+  v 0 0 1)";
+  static constexpr char xml[] = R"(
+  <mujoco>
+    <asset>
+      <mesh file="cube.obj"/>
+    </asset>
+    <worldbody>
+      <geom type="mesh" mesh="cube"/>
+    </worldbody>
+  </mujoco>
+  )";
+  static constexpr char xml_tetra[] = R"(
+  <mujoco>
+    <asset>
+      <mesh name="cube" file="tetra.obj"/>
+    </asset>
+    <worldbody>
+      <geom type="mesh" mesh="cube"/>
+    </worldbody>
+  </mujoco>
+  )";
+
+  auto vfs = std::make_unique<mjVFS>();
+  mj_defaultVFS(vfs.get());
+  mj_addBufferVFS(vfs.get(), "cube.obj", cube, sizeof(cube));
+  mj_addBufferVFS(vfs.get(), "tetra.obj", tetra, sizeof(tetra));
+
+  std::array<char, 1000> er;
+  mjSpec* spec = mj_parseXMLString(xml, vfs.get(), er.data(), er.size());
+  ASSERT_THAT(spec, NotNull()) << er.data();
+  mjModel* m1 = mj_compile(spec, vfs.get());
+  ASSERT_THAT(m1, NotNull()) << mjs_getError(spec);
+  EXPECT_EQ(m1->nmeshvert, 8);
+
+  mjsMesh* mesh = mjs_asMesh(mjs_findElement(spec, mjOBJ_MESH, "cube"));
+  ASSERT_THAT(mesh, NotNull());
+  mjs_setString(mesh->file, "tetra.obj");
+  mjModel* m2 = mj_compile(spec, vfs.get());
+  ASSERT_THAT(m2, NotNull()) << mjs_getError(spec);
+
+  mjSpec* spec_tetra =
+      mj_parseXMLString(xml_tetra, vfs.get(), er.data(), er.size());
+  ASSERT_THAT(spec_tetra, NotNull()) << er.data();
+  mjModel* expected = mj_compile(spec_tetra, vfs.get());
+  ASSERT_THAT(expected, NotNull()) << mjs_getError(spec_tetra);
+  std::string field;
+  EXPECT_EQ(CompareModel(m2, expected, field), 0) << field;
+
+  mj_deleteModel(m1);
+  mj_deleteModel(m2);
+  mj_deleteModel(expected);
+  mj_deleteSpec(spec_tetra);
+  mj_deleteSpec(spec);
+  mj_deleteVFS(vfs.get());
 }
 
 // ------------------- test cache with modified assets -------------------------
@@ -3828,30 +4099,84 @@ TEST_F(MujocoTest, AttachUnnamedAssets) {
   v -1 -1 -1
   v  1 -1 -1)";
 
+  static constexpr char xml[] = R"(
+  <mujoco>
+    <asset>
+      <mesh file="cube.obj"/>
+    </asset>
+    <worldbody>
+      <frame name="frame">
+        <geom type="mesh" mesh="cube"/>
+      </frame>
+    </worldbody>
+  </mujoco>
+  )";
+
   auto vfs = std::make_unique<mjVFS>();
   mj_defaultVFS(vfs.get());
   mj_addBufferVFS(vfs.get(), "cube.obj", cube, sizeof(cube));
 
-  mjSpec* child = mj_makeSpec();
-  mjsMesh* mesh = mjs_addMesh(child, 0);
-  mjsFrame* frame = mjs_addFrame(mjs_findBody(child, "world"), 0);
-  mjsGeom* geom = mjs_addGeom(mjs_findBody(child, "world"), 0);
-  mjs_setFrame(geom->element, frame);
-  mjs_setString(mesh->file, "cube.obj");
-  mjs_setString(geom->meshname, "cube");
-  geom->type = mjGEOM_MESH;
+  // the parser has named the mesh after its file
+  std::array<char, 1000> er;
+  mjSpec* child = mj_parseXMLString(xml, vfs.get(), er.data(), er.size());
+  ASSERT_THAT(child, NotNull()) << er.data();
+  mjsElement* mesh = mjs_firstElement(child, mjOBJ_MESH);
+  EXPECT_STREQ(mjs_getString(mjs_getName(mesh)), "cube");
 
+  // the name takes the prefix of the attachment
   mjSpec* spec = mj_makeSpec();
-  mjs_attach(mjs_findBody(spec, "world")->element, frame->element, "_", "");
+  mjs_attach(mjs_findBody(spec, "world")->element,
+             mjs_findFrame(child, "frame")->element, "_", "");
 
   mjModel* model = mj_compile(spec, vfs.get());
-  EXPECT_THAT(model, NotNull());
+  ASSERT_THAT(model, NotNull()) << mjs_getError(spec);
   EXPECT_THAT(model->nmesh, 1);
   EXPECT_STREQ(mj_id2name(model, mjOBJ_MESH, 0), "_cube");
 
   mj_deleteVFS(vfs.get());
   mj_deleteSpec(spec);
   mj_deleteSpec(child);
+  mj_deleteModel(model);
+}
+
+// an asset created through the API is not named after its file
+TEST_F(MujocoTest, ApiAssetNeedsName) {
+  static constexpr char cube[] = R"(
+  v -1 -1  1
+  v  1 -1  1
+  v -1  1  1
+  v  1  1  1
+  v -1  1 -1
+  v  1  1 -1
+  v -1 -1 -1
+  v  1 -1 -1)";
+
+  auto vfs = std::make_unique<mjVFS>();
+  mj_defaultVFS(vfs.get());
+  mj_addBufferVFS(vfs.get(), "cube.obj", cube, sizeof(cube));
+
+  mjSpec* spec = mj_makeSpec();
+  mjsMesh* mesh = mjs_addMesh(spec, nullptr);
+  mjs_setString(mesh->file, "cube.obj");
+  mjsGeom* geom = mjs_addGeom(mjs_findBody(spec, "world"), nullptr);
+  geom->type = mjGEOM_MESH;
+  mjs_setString(geom->meshname, "cube");
+
+  // the mesh has no name, and the error says what to do
+  EXPECT_THAT(mjs_findElement(spec, mjOBJ_MESH, "cube"), IsNull());
+  EXPECT_THAT(mj_compile(spec, vfs.get()), IsNull());
+  EXPECT_THAT(mjs_getError(spec),
+              HasSubstr("mesh with file 'cube.obj' has no name"));
+  EXPECT_THAT(mjs_getString(mjs_getName(mesh->element)), IsEmpty());
+
+  // with a name it compiles
+  mjs_setName(mesh->element, "cube");
+  mjModel* model = mj_compile(spec, vfs.get());
+  ASSERT_THAT(model, NotNull()) << mjs_getError(spec);
+  EXPECT_STREQ(mj_id2name(model, mjOBJ_MESH, 0), "cube");
+
+  mj_deleteVFS(vfs.get());
+  mj_deleteSpec(spec);
   mj_deleteModel(model);
 }
 

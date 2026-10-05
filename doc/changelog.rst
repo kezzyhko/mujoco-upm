@@ -5,43 +5,65 @@ Changelog
 Upcoming Version (not yet released)
 -----------------------------------
 
+Compiler
+^^^^^^^^
+.. admonition:: Breaking API changes
+   :class: attention
+
+   - An asset added to an :ref:`mjSpec` through the API is no longer named after its ``file`` when the spec is
+     compiled. A mesh, height field or texture which is left without a name is now a compilation error, as it already
+     was for one without a file. MJCF is unaffected: the XML parser still names assets after their files.
+
+     **Migration:** Name the asset when adding it, e.g. ``spec.add_mesh(name='link', file='link.stl')`` in Python or
+     :ref:`mjs_setName` in C.
+
+Bug fixes
+^^^^^^^^^
+- Compiling an :ref:`mjSpec` no longer reorders its contact :ref:`pairs<contact-pair>` and
+  :ref:`excludes<contact-exclude>`; :ref:`mjs_findElement` could then return a different one than the one named.
+
+Version 3.15.0 (October 5, 2026)
+--------------------------------
+
 General
 ^^^^^^^
-- :ref:`.mjz <MJZArchives>` archives written on Windows now always use ``/`` separators.
-- Assets in a :ref:`meshdir<compiler-meshdir>` or :ref:`texturedir<compiler-texturedir>` now resolve correctly in
-  :ref:`.mjz <MJZArchives>` archives when rewritten or when the directory path is absolute, uses ``..``, or uses a URI
-  scheme.
+1. :commit:`1aa68e1ca` :ref:`.mjz <MJZArchives>` archives written on Windows now always use ``/`` separators.
+2. :commit:`1aa68e1ca` Assets in a :ref:`meshdir<compiler-meshdir>` or :ref:`texturedir<compiler-texturedir>` now
+   resolve correctly in :ref:`.mjz <MJZArchives>` archives when rewritten or when the directory path is absolute, uses
+   ``..``, or uses a URI scheme.
 
 Engine
 ^^^^^^
 .. admonition:: Breaking API changes
    :class: attention
 
-   - Actuator :ref:`dampratio<actuator-position-dampratio>` now computes the reflected inertia :math:`m` at
-     ``mjModel.qpos0`` as the operational-space inertia :math:`(J M^{-1} J^T)^{-1}` (averaged across force outputs for
-     multi-output actuators such as :ref:`orientation<actuator-orientation>`), rather than summing
-     :math:`\text{dof\_M0}_j / J_j^2` across degrees of freedom. This accounts for tendon and actuator armature as well
-     as off-diagonal inertial coupling, and avoids extreme damping values when a multi-DOF transmission has small
-     Jacobian entries. In practice, actuators using ``dampratio`` on multi-link kinematic chains may exhibit lower
-     damping than before, while actuators driving tendons or sites that span multiple joints will be damped much more
-     accurately instead of being overdamped.
+   3. :commit:`b3dd9e617` Actuator :ref:`dampratio<actuator-position-dampratio>` now computes the reflected inertia
+      :math:`m` at ``mjModel.qpos0`` as the operational-space inertia :math:`(J M^{-1} J^T)^{-1}` (averaged across force
+      outputs for multi-output actuators such as :ref:`orientation<actuator-orientation>`), rather than summing
+      :math:`\text{dof\_M0}_j / J_j^2` across degrees of freedom. This accounts for tendon and actuator armature as well
+      as off-diagonal inertial coupling, and avoids extreme damping values when a multi-DOF transmission has small
+      Jacobian entries. In practice, actuators using ``dampratio`` on multi-link kinematic chains may exhibit lower
+      damping than before, while actuators driving tendons or sites that span multiple joints will be damped much more
+      accurately instead of being overdamped.
 
-   - Removed the deprecated ``internal`` flex collision option and associated ``evpair`` structures.
+   4. :commit:`5023a4a50` Removed the deprecated ``internal`` flex collision option and associated ``evpair``
+      structures.
 
-- Added experimental simplified Stable Neo-Hookean elasticity for non-interpolated 3D flexes, enabled only through
-  ``mjsFlex.elastic3d = 1``. It projects the material Hessian to positive semidefiniteness for the solver and Rayleigh
-  damping, and preserves the Saint Venant-Kirchhoff (StVK) default (``0``).
-  SNH requires the discrete integrator. The setting is not available in MJCF.
-- The cached flex bending factor now retains cross-coordinate couplings between differently oriented vertex bodies.
-- Flex bending and stretching now include the motion and reaction forces of articulated vertex attachments. The discrete
-  integrator supports these attachments with the CG solver; fixed and independent XYZ-slide attachments retain their
-  optimized assembly. Elastic flexes attached to mocap bodies produce a compiler error.
-- Added single-shot :ref:`multicontact<coMultiCCD>` for collisions with capsule geoms.
-- Added the :ref:`enclosed<sensor-insidesite-enclosed>` attribute to :ref:`insidesite<sensor-insidesite>` sensors,
-  measuring how much an object juts out of a site (using directed Hausdorff distance) and reporting signed
-  clearance/protrusion.
-- Fixed 64-bit model size narrowing in binary MJB serialization: :ref:`mj_saveModel` and :ref:`mj_loadModelBuffer` now
-  accept :ref:`mjtSize` for ``buffer_sz``, supporting models larger than 2 GiB.
+5. :commit:`1b973add4` Added experimental simplified Stable Neo-Hookean elasticity for non-interpolated 3D flexes,
+   enabled only through ``mjsFlex.elastic3d = 1``. It projects the material Hessian to positive semidefiniteness for the
+   solver and Rayleigh damping, and preserves the Saint Venant-Kirchhoff (StVK) default (``0``).
+   SNH requires the discrete integrator. The setting is not available in MJCF.
+6. :commit:`2742de438` The cached flex bending factor now retains cross-coordinate couplings between differently
+   oriented vertex bodies.
+7. :commit:`eed008905` Flex bending and stretching now include the motion and reaction forces of articulated vertex
+   attachments. The discrete integrator supports these attachments with the CG solver; fixed and independent XYZ-slide
+   attachments retain their optimized assembly. Elastic flexes attached to mocap bodies produce a compiler error.
+8. :commit:`6224e95f6` Added single-shot :ref:`multicontact<coMultiCCD>` for collisions with capsule geoms.
+9. :commit:`ebfb4662d` Added the :ref:`enclosed<sensor-insidesite-enclosed>` attribute to
+   :ref:`insidesite<sensor-insidesite>` sensors, measuring how much an object juts out of a site (using directed
+   Hausdorff distance) and reporting signed clearance/protrusion.
+10. :commit:`f80ef4244` Fixed 64-bit model size narrowing in binary MJB serialization: :ref:`mj_saveModel` and
+    :ref:`mj_loadModelBuffer` now accept :ref:`mjtSize` for ``buffer_sz``, supporting models larger than 2 GiB.
 
 Version 3.14.0 (September 22, 2026)
 -----------------------------------
@@ -2390,7 +2412,7 @@ New features
    The :ref:`flexcomp<body-flexcomp>` element, similar to :ref:`composite<body-composite>` is a convenience macro for
    creating deformables, and supports the GMSH tetrahedral file format.
 
-   - Added `shell <https://github.com/deepmind/mujoco/blob/main/plugin/elasticity/shell.cc>`__ passive force plugin,
+   - Added `shell <https://github.com/google-deepmind/mujoco/blob/45fc15b8447b56d3e6f12d3a158e2bc0d4d30dc8/plugin/elasticity/shell.cc>`__ passive force plugin,
      computing bending forces using a constant precomputed Hessian (cotangent operator).
 
    **Note**: This feature is still under development and subject to change. In particular, deformable object
@@ -2989,12 +3011,12 @@ General
    `engine_forward_test.cc <https://github.com/google-deepmind/mujoco/blob/main/test/engine/engine_forward_test.cc>`__.
 #. :commit:`3b89b0fd` Improved particle :ref:`composite<body-composite>` type, which now permits a user-specified
    geometry and multiple joints. See the two new examples:
-   `particle_free.xml <https://github.com/google-deepmind/mujoco/blob/main/model/composite/particle_free.xml>`__ and
-   `particle_free2d.xml <https://github.com/google-deepmind/mujoco/blob/main/model/composite/particle_free2d.xml>`__.
+   `particle_free.xml <https://github.com/google-deepmind/mujoco/blob/0fcd20f0da67ede7b16ef7e439a28be67505a037/model/composite/particle_free.xml>`__ and
+   `particle_free2d.xml <https://github.com/google-deepmind/mujoco/blob/0fcd20f0da67ede7b16ef7e439a28be67505a037/model/composite/particle_free2d.xml>`__.
 #. :commit:`7b0fbc63` Performance improvements for non-AVX configurations:
 
    - 14% faster ``mj_solveLD`` using `restrict <https://en.wikipedia.org/wiki/Restrict>`__. See `engine_core_smooth_benchmark_test
-     <https://github.com/google-deepmind/mujoco/blob/main/test/benchmark/engine_core_smooth_benchmark_test.cc>`__.
+     <https://github.com/google-deepmind/mujoco/blob/main/test/benchmark/solveLD_benchmark_test.cc>`__.
    - 50% faster ``mju_dotSparse`` using manual loop unroll. See `engine_util_sparse_benchmark_test
      <https://github.com/google-deepmind/mujoco/blob/main/test/benchmark/engine_util_sparse_benchmark_test.cc>`__.
 #. :commit:`d0b1a973` Added new :at:`solid` passive force plugin:

@@ -960,29 +960,16 @@ TEST_F(XMLReaderTest, MaterialTextureFailTest) {
                                       "cannot have layer sub-elements"));
 }
 
-TEST_F(XMLReaderTest, LargeTextureTest) {
-  static constexpr char xml[] = R"(
-  <mujoco>
-  <asset>
-    <!--
-      Use a texture width that exceeds the size representable by an int.
-      For cube textures, the height is ignored and set to width*6.
-      The default number of channels is 3.
-      The width in this test is chosen so that 6*width*width*3 is too large to
-      be represented as a 32-bit integer.
-    -->
-    <texture name="tex" builtin="gradient" width="10923" height="2"/>
-  </asset>
-  </mujoco>
-  )";
-
-  std::array<char, 1024> error;
-  MjModelPtr model = LoadModelFromString(xml, error.data(), error.size());
-
-  EXPECT_THAT(model.get(), NotNull());
-}
-
 TEST_F(XMLReaderTest, LargeTextureAddressTest) {
+#if defined(__has_feature)
+  #if __has_feature(address_sanitizer) || __has_feature(memory_sanitizer) || \
+      __has_feature(thread_sanitizer)
+  GTEST_SKIP() << "Skipping large texture allocation under sanitizers";
+  #endif
+#elif defined(ADDRESS_SANITIZER) || defined(MEMORY_SANITIZER) || \
+    defined(THREAD_SANITIZER)
+  GTEST_SKIP() << "Skipping large texture allocation under sanitizers";
+#endif
   static constexpr char xml[] = R"(
   <mujoco>
   <asset>
@@ -1299,6 +1286,50 @@ TEST_F(XMLReaderTest, TendonArmatureGeomWrap) {
 }
 
 // ------------------------ test frame parsing ---------------------------------
+// an asset with a file and no name is named after the file when it is parsed
+TEST_F(XMLReaderTest, AssetNamedAfterFile) {
+  static constexpr char xml[] = R"(
+  <mujoco>
+    <asset>
+      <mesh file="meshes/cube.obj"/>
+      <mesh name="given" file="meshes/cube.obj"/>
+      <texture type="2d" file="textures/tiles.png"/>
+      <texture type="skybox" builtin="gradient" width="2" height="12"/>
+      <hfield file="terrain.png" size="1 1 1 1"/>
+    </asset>
+  </mujoco>
+  )";
+  std::array<char, 1024> error;
+  mjSpec* spec = mj_parseXMLString(xml, 0, error.data(), error.size());
+  ASSERT_THAT(spec, NotNull()) << error.data();
+
+  auto names = [spec](mjtObj type) {
+    std::vector<std::string> names;
+    for (mjsElement* element = mjs_firstElement(spec, type); element;
+         element = mjs_nextElement(spec, element)) {
+      names.push_back(mjs_getString(mjs_getName(element)));
+    }
+    return names;
+  };
+  EXPECT_THAT(names(mjOBJ_MESH), ElementsAre("cube", "given"));
+  EXPECT_THAT(names(mjOBJ_TEXTURE), ElementsAre("tiles", ""));
+  EXPECT_THAT(names(mjOBJ_HFIELD), ElementsAre("terrain"));
+  mj_deleteSpec(spec);
+
+  // two files with the same name cannot both give it to their mesh
+  static constexpr char xml_repeated[] = R"(
+  <mujoco>
+    <asset>
+      <mesh file="left/cube.obj"/>
+      <mesh file="right/cube.obj"/>
+    </asset>
+  </mujoco>
+  )";
+  spec = mj_parseXMLString(xml_repeated, 0, error.data(), error.size());
+  EXPECT_THAT(spec, IsNull());
+  EXPECT_THAT(error.data(), HasSubstr("repeated name 'cube' in mesh"));
+}
+
 TEST_F(XMLReaderTest, ParseFrame) {
   static constexpr char xml[] = R"(
   <mujoco>
@@ -1594,6 +1625,58 @@ TEST_F(XMLReaderTest, ParseReplicatePartialReference) {
   EXPECT_THAT(m->nexclude, 2);
   EXPECT_THAT(m->ntendon, 2);
   EXPECT_THAT(m->nsensor, 2);
+}
+
+TEST_F(XMLReaderTest, ReplicateCannotHaveJoints) {
+  static constexpr char joint_xml[] = R"(
+  <mujoco>
+    <worldbody>
+      <replicate count="2" offset="2 0 0">
+        <joint type="hinge"/>
+        <geom size=".1"/>
+      </replicate>
+    </worldbody>
+  </mujoco>
+  )";
+  std::array<char, 1024> error;
+  MjModelPtr model = LoadModelFromString(joint_xml, error.data(), error.size());
+  ASSERT_THAT(model.get(), IsNull());
+  EXPECT_THAT(error.data(),
+              HasSubstr("joint cannot be a direct child of replicate"));
+  EXPECT_THAT(error.data(), HasSubstr("line 5"));
+
+  static constexpr char freejoint_xml[] = R"(
+  <mujoco>
+    <worldbody>
+      <body name="b">
+        <replicate count="2" offset="2 0 0">
+          <freejoint/>
+          <geom size=".1"/>
+        </replicate>
+      </body>
+    </worldbody>
+  </mujoco>
+  )";
+  model = LoadModelFromString(freejoint_xml, error.data(), error.size());
+  ASSERT_THAT(model.get(), IsNull());
+  EXPECT_THAT(error.data(),
+              HasSubstr("joint cannot be a direct child of replicate"));
+
+  static constexpr char body_joint_xml[] = R"(
+  <mujoco>
+    <worldbody>
+      <replicate count="2" offset="1 0 0">
+        <body>
+          <joint type="hinge"/>
+          <geom size=".1"/>
+        </body>
+      </replicate>
+    </worldbody>
+  </mujoco>
+  )";
+  model = LoadModelFromString(body_joint_xml, error.data(), error.size());
+  ASSERT_THAT(model.get(), NotNull()) << error.data();
+  EXPECT_EQ(model->njnt, 2);
 }
 
 TEST_F(XMLReaderTest, ParseReplicateDefaultPropagate) {
@@ -2854,6 +2937,45 @@ TEST_F(ActuatorParseTest, RequirePositiveKv) {
   EXPECT_THAT(error.data(), HasSubstr("line 10"));
 }
 
+TEST_F(ActuatorParseTest, IntvelocityRejectsInvalidDamping) {
+  static constexpr char xml_kv_dampratio[] = R"(
+  <mujoco>
+    <worldbody>
+      <body>
+        <geom size="1"/>
+        <joint name="jnt" type="slide" axis="1 0 0"/>
+      </body>
+    </worldbody>
+    <actuator>
+      <intvelocity joint="jnt" kv="1" dampratio="1"/>
+    </actuator>
+  </mujoco>
+  )";
+  std::array<char, 1024> error;
+  MjModelPtr model =
+      LoadModelFromString(xml_kv_dampratio, error.data(), error.size());
+  EXPECT_THAT(model.get(), IsNull());
+  EXPECT_THAT(error.data(),
+              HasSubstr("kv and dampratio cannot both be defined"));
+
+  static constexpr char xml_negative_kv[] = R"(
+  <mujoco>
+    <worldbody>
+      <body>
+        <geom size="1"/>
+        <joint name="jnt" type="slide" axis="1 0 0"/>
+      </body>
+    </worldbody>
+    <actuator>
+      <intvelocity joint="jnt" kv="-1"/>
+    </actuator>
+  </mujoco>
+  )";
+  model = LoadModelFromString(xml_negative_kv, error.data(), error.size());
+  EXPECT_THAT(model.get(), IsNull());
+  EXPECT_THAT(error.data(), HasSubstr("kv cannot be negative"));
+}
+
 TEST_F(ActuatorParseTest, PositionIntvelocityVelocityDefaultsPropagate) {
   static constexpr char xml[] = R"(
   <mujoco>
@@ -2999,6 +3121,30 @@ TEST_F(ActuatorParseTest, IntvelocityNoActrangeIsValid) {
   ASSERT_THAT(model.get(), NotNull()) << error.data();
   // actlimited resolves to false when no actrange is provided
   EXPECT_EQ(model->actuator_actlimited[0], 0);
+}
+
+TEST_F(ActuatorParseTest, IntvelocityInheritrangeAllowsCtrlrange) {
+  static constexpr char xml[] = R"(
+  <mujoco>
+    <worldbody>
+      <body>
+        <geom size="1"/>
+        <joint name="jnt" type="slide" axis="1 0 0" range="-2 2"/>
+      </body>
+    </worldbody>
+    <actuator>
+      <intvelocity joint="jnt" ctrlrange="-1 1" inheritrange="1"/>
+    </actuator>
+  </mujoco>
+  )";
+  std::array<char, 1024> error;
+  MjModelPtr model = LoadModelFromString(xml, error.data(), error.size());
+  ASSERT_THAT(model.get(), NotNull()) << error.data();
+  EXPECT_EQ(model->actuator_biastype[0], mjBIAS_AFFINE);
+  EXPECT_EQ(model->actuator_ctrlrange[0], -1.0);
+  EXPECT_EQ(model->actuator_ctrlrange[1], 1.0);
+  EXPECT_EQ(model->actuator_actrange[0], -2.0);
+  EXPECT_EQ(model->actuator_actrange[1], 2.0);
 }
 
 TEST_F(ActuatorParseTest, IntvelocityDefaultsPropagate) {
