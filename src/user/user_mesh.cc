@@ -205,9 +205,9 @@ mjCMesh::mjCMesh(mjCModel* _model, mjCDef* _def) {
   center_       = nullptr;
   graph_        = nullptr;
   needhull_     = false;
+  needsdf_      = false;
   maxhullvert_  = -1;
   processed_    = false;
-  visual_       = true;
   needreorient_ = true;
 
   // reset to default if given
@@ -354,8 +354,10 @@ void mjCMesh::LoadSDF() {
   std::vector<const char*> names(pplugin->nattribute, 0);
   std::vector<const char*> values(pplugin->nattribute, 0);
   for (int i = 0; i < pplugin->nattribute; i++) {
+    // an attribute which is not configured is empty, and is not added to the configuration
     names[i]  = pplugin->attributes[i];
-    values[i] = plugin_instance->config_attribs[names[i]].c_str();
+    auto it   = plugin_instance->config_attribs.find(names[i]);
+    values[i] = it != plugin_instance->config_attribs.end() ? it->second.c_str() : "";
   }
 
   if (pplugin->sdf_attribute) {
@@ -411,6 +413,7 @@ void mjCMesh::LoadSDF() {
 
   needreorient_ = false;
   needsdf       = false;
+  needsdf_      = false;
   normal_       = std::move(usernormal);
   face_         = std::move(userface);
   ProcessVertices(uservert);
@@ -652,7 +655,6 @@ void mjCMesh::TryCompile(const mjVFS* vfs) {
 
   bool fromCache = false;
   CopyFromSpec();
-  visual_         = true;
   mjCCache* cache = reinterpret_cast<mjCCache*>(mj_getCache()->impl_);
 
   Clock::time_point t0 = Clock::now();
@@ -740,7 +742,7 @@ void mjCMesh::TryCompile(const mjVFS* vfs) {
     // we need to compute it here. If inversely it has an octree but we *do not*
     // need one, we clear it.
     t0 = Clock::now();
-    if (!needsdf) {
+    if (!needsdf && !needsdf_) {
       octree_.Clear();
     } else if (octree_.NumNodes() == 0) {
       std::vector<double> dvert(vert_.begin(), vert_.end());
@@ -866,11 +868,6 @@ void mjCMesh::CopyPolygonNormals(mjtNum* arr) {
     arr[i + 1] = (mjtNum)polygon_normals_[i + 1];
     arr[i + 2] = (mjtNum)polygon_normals_[i + 2];
   }
-}
-
-
-void mjCMesh::DelTexcoord() {
-  texcoord_.clear();
 }
 
 
@@ -1475,7 +1472,7 @@ void mjCMesh::Process() {
 
   t0 = Clock::now();
   // make octree
-  if (needsdf) {
+  if (needsdf || needsdf_) {
     octree_.SetFace(dvert, face_);
     octree_.SetMaxDepth(spec.octree_maxdepth);
     octree_.CreateOctree(aamm_);
@@ -3007,11 +3004,10 @@ void mjCSkin::Compile(const mjVFS* vfs) {
 
   // resolve material name
   mjCBase* pmat = model->FindObject(mjOBJ_MATERIAL, material_);
-  if (pmat) {
-    matid = pmat->id;
-  } else if (!material_.empty()) {
+  if (!pmat && !material_.empty()) {
     throw mjCError(this, "unknown material '%s' in skin", material_.c_str());
   }
+  matid = pmat ? pmat->id : -1;
 
   // set total vertex weights to 0
   std::vector<float> vw;
@@ -3656,8 +3652,8 @@ void quadratureGaussLegendre(
     weights[1] = dpdx;
   } else {
     points[0]  = p0;
-    points[1]  = -dpdx / sqrt(3. / 5.) + p0;
-    points[2]  = dpdx / sqrt(3. / 5.) + p0;
+    points[1]  = -dpdx * sqrt(3. / 5.) + p0;
+    points[2]  = dpdx * sqrt(3. / 5.) + p0;
     weights[0] = 8. / 9. * dpdx;
     weights[1] = 5. / 9. * dpdx;
     weights[2] = 5. / 9. * dpdx;
@@ -3788,7 +3784,7 @@ void inline ComputeLinearStiffness(
         }
 
         // tensor contraction of the gradients of elastic strains
-        // (d(F+F')/dx : d(F+F')/dx)
+        // lambda * div(u) * div(v) + 2*mu * sym(grad(u)) : sym(grad(v))
         for (int i = 0; i < n; i++) {
           for (int j = 0; j < n; j++) {
             Matrix du;
@@ -3804,7 +3800,7 @@ void inline ComputeLinearStiffness(
                 dv[l][1]                           = invJ[1] * F[j][1];
                 dv[l][2]                           = invJ[2] * F[j][2];
                 K[ndof * (3 * i + k) + 3 * j + l] -= la * trace(du) * trace(dv) * dvol;
-                K[ndof * (3 * i + k) + 3 * j + l] -= mu * trace(inner(sym(du), sym(dv))) * dvol;
+                K[ndof * (3 * i + k) + 3 * j + l] -= 2 * mu * trace(inner(sym(du), sym(dv))) * dvol;
                 mjuu_zerovec(du[k].data(), 3);
                 mjuu_zerovec(dv[l].data(), 3);
               }
@@ -3898,8 +3894,7 @@ void inline ComputeLinearStiffness2D(std::vector<double>& K,
               dv[l][axis1] = invJ1 * F[j][1];
 
               K[ndof * (3 * i + k) + 3 * j + l] -= la * trace(du) * trace(dv) * dvol;
-              // mu (not 2*mu): same convention as 3D ComputeLinearStiffness
-              K[ndof * (3 * i + k) + 3 * j + l] -= mu * trace(inner(sym(du), sym(dv))) * dvol;
+              K[ndof * (3 * i + k) + 3 * j + l] -= 2 * mu * trace(inner(sym(du), sym(dv))) * dvol;
               mjuu_zerovec(du[k].data(), 3);
               mjuu_zerovec(dv[l].data(), 3);
             }
@@ -4163,11 +4158,6 @@ void mjCFlex::CopyFromSpec() {
 
 bool mjCFlex::HasTexcoord() const {
   return !texcoord_.empty();
-}
-
-
-void mjCFlex::DelTexcoord() {
-  texcoord_.clear();
 }
 
 
@@ -4641,11 +4631,10 @@ void mjCFlex::Compile(const mjVFS* vfs) {
 
   // resolve material name
   mjCBase* pmat = model->FindObject(mjOBJ_MATERIAL, material_);
-  if (pmat) {
-    matid = pmat->id;
-  } else if (!material_.empty()) {
+  if (!pmat && !material_.empty()) {
     throw mjCError(this, "unknown material '%s' in flex", material_.c_str());
   }
+  matid = pmat ? pmat->id : -1;
 
   // resolve body ids
   ResolveReferences(model);

@@ -530,6 +530,36 @@ TEST_F(XMLReaderTest, AllowsSpaces) {
   ASSERT_THAT(model.get(), NotNull());
 }
 
+TEST_F(XMLReaderTest, QuatReplacesDefaultOrientation) {
+  static constexpr char xml[] = R"(
+  <mujoco>
+    <default>
+      <geom size="1" euler="0 0 90"/>
+      <site euler="0 0 90"/>
+      <camera euler="0 0 90"/>
+    </default>
+
+    <worldbody>
+      <geom name="inherits"/>
+      <geom name="replaces" quat="1 0 0 0"/>
+      <site name="inherits"/>
+      <site name="replaces" quat="1 0 0 0"/>
+      <camera name="inherits"/>
+      <camera name="replaces" quat="1 0 0 0"/>
+    </worldbody>
+  </mujoco>
+  )";
+  std::array<char, 1024> error;
+  MjModelPtr model = LoadModelFromString(xml, error.data(), error.size());
+  ASSERT_THAT(model.get(), NotNull()) << error.data();
+  EXPECT_NE(model->geom_quat[0], 1);
+  EXPECT_THAT(AsVector(model->geom_quat + 4, 4), ElementsAre(1, 0, 0, 0));
+  EXPECT_NE(model->site_quat[0], 1);
+  EXPECT_THAT(AsVector(model->site_quat + 4, 4), ElementsAre(1, 0, 0, 0));
+  EXPECT_NE(model->cam_quat[0], 1);
+  EXPECT_THAT(AsVector(model->cam_quat + 4, 4), ElementsAre(1, 0, 0, 0));
+}
+
 TEST_F(XMLReaderTest, InvalidDoubleOrientation) {
   std::string prefix = "<mujoco><worldbody><";
   std::string suffix = "/></worldbody></mujoco>";
@@ -1571,13 +1601,11 @@ TEST_F(XMLReaderTest, ParseReplicate) {
   EXPECT_EQ(m->body_quat[4 * n + 2], 0);
   EXPECT_EQ(m->body_quat[4 * n + 3], 1);
 
-  // check that the keyframe is resized
-  EXPECT_THAT(m->nkey, 102);
+  // check that the keyframe is not replicated and is completed with defaults
+  EXPECT_THAT(m->nkey, 1);
   EXPECT_THAT(m->nq, 101);
-  for (int i = 0; i < m->nkey; i++) {
-    for (int j = 0; j < m->nq; j++) {
-      EXPECT_THAT(m->key_qpos[i * m->nq + j], i == j ? 1 : 0) << i << " " << j;
-    }
+  for (int j = 0; j < m->nq; j++) {
+    EXPECT_THAT(m->key_qpos[j], j == 0 ? 1 : 0) << j;
   }
 }
 
@@ -1947,6 +1975,162 @@ TEST_F(XMLReaderTest, ParseReplicateWithTendon) {
   EXPECT_THAT(m->ntendon, 8);
   mj_deleteModel(m);
   mj_deleteSpec(spec);
+}
+
+// a keyframe describes the model with its replicas in place
+TEST_F(XMLReaderTest, ParseReplicateKeyframe) {
+  static constexpr char xml[] = R"(
+  <mujoco>
+    <worldbody>
+      <body name="before">
+        <joint type="slide"/>
+        <geom size="1"/>
+      </body>
+      <replicate count="2" offset="3 0 0">
+        <body name="replica">
+          <joint name="replica" type="slide"/>
+          <geom size="1"/>
+        </body>
+        <body name="mocap" mocap="true"/>
+      </replicate>
+      <body name="after">
+        <joint type="slide"/>
+        <geom size="1"/>
+      </body>
+    </worldbody>
+
+    <actuator>
+      <general joint="replica" dyntype="filter" dynprm="1"/>
+    </actuator>
+
+    <keyframe>
+      <key name="key" qpos="1 2 3 4" qvel="5 6 7 8" act="1 2" ctrl="3 4" mpos="1 2 3 4 5 6" mquat="0 1 0 0 0 0 1 0"/>
+    </keyframe>
+  </mujoco>
+  )";
+  std::array<char, 1024> error;
+  MjModelPtr m = LoadModelFromString(xml, error.data(), error.size());
+  ASSERT_THAT(m.get(), NotNull()) << error.data();
+  ASSERT_EQ(m->nq, 4);
+  ASSERT_EQ(m->na, 2);
+  ASSERT_EQ(m->nmocap, 2);
+
+  // the keyframe is not replicated and has the values which were written
+  ASSERT_EQ(m->nkey, 1);
+  EXPECT_STREQ(mj_id2name(m.get(), mjOBJ_KEY, 0), "key");
+  EXPECT_THAT(AsVector(m->key_qpos, 4), ElementsAre(1, 2, 3, 4));
+  EXPECT_THAT(AsVector(m->key_qvel, 4), ElementsAre(5, 6, 7, 8));
+  EXPECT_THAT(AsVector(m->key_act, 2), ElementsAre(1, 2));
+  EXPECT_THAT(AsVector(m->key_ctrl, 2), ElementsAre(3, 4));
+  EXPECT_THAT(AsVector(m->key_mpos, 6), ElementsAre(1, 2, 3, 4, 5, 6));
+  EXPECT_THAT(AsVector(m->key_mquat, 8), ElementsAre(0, 1, 0, 0, 0, 0, 1, 0));
+}
+
+// the model of issue #3071: a replicate in an included file is expanded
+// before the bodies which follow it are parsed
+TEST_F(XMLReaderTest, ParseReplicateKeyframeInclude) {
+  static constexpr char robot_xml[] = R"(
+  <mujoco model="robot">
+    <worldbody>
+      <body name="arm">
+        <joint name="j1" type="hinge" axis="0 0 1"/>
+        <geom type="box" size="0.1 0.1 0.1"/>
+        <body name="replicate_body">
+          <replicate count="2" sep="-">
+            <site name="s"/>
+          </replicate>
+        </body>
+      </body>
+    </worldbody>
+  </mujoco>
+  )";
+
+  static constexpr char scene_xml[] = R"(
+  <mujoco model="scene">
+    <include file="robot.xml"/>
+
+    <worldbody>
+      <body name="cube" pos="0 0 1">
+        <freejoint/>
+        <inertial pos="0 0 0" mass="1" diaginertia="1 1 1"/>
+        <geom type="box" size="0.1 0.1 0.1"/>
+      </body>
+    </worldbody>
+
+    <keyframe>
+      <key name="test" qpos="0.5 1 2 3 0 1 0 0"/>
+    </keyframe>
+  </mujoco>
+  )";
+
+  auto vfs = std::make_unique<mjVFS>();
+  mj_defaultVFS(vfs.get());
+  mj_addBufferVFS(vfs.get(), "robot.xml", robot_xml, sizeof(robot_xml));
+
+  std::array<char, 1024> error;
+  MjModelPtr m =
+      LoadModelFromString(scene_xml, error.data(), error.size(), vfs.get());
+  mj_deleteVFS(vfs.get());
+  ASSERT_THAT(m.get(), NotNull()) << error.data();
+  ASSERT_EQ(m->nq, 8);
+  ASSERT_EQ(m->nkey, 1);
+  EXPECT_THAT(AsVector(m->key_qpos, 8), ElementsAre(0.5, 1, 2, 3, 0, 1, 0, 0));
+}
+
+// the keyframes of a model which is attached inside a replicate are added
+// once and set the first replica
+TEST_F(XMLReaderTest, ParseReplicateAttachKeyframe) {
+  static constexpr char child_xml[] = R"(
+  <mujoco>
+    <worldbody>
+      <body name="body">
+        <joint name="joint" type="slide"/>
+        <geom size="1"/>
+      </body>
+    </worldbody>
+
+    <actuator>
+      <general joint="joint" dyntype="filter" dynprm="1"/>
+    </actuator>
+
+    <keyframe>
+      <key name="key" qpos="1" act="2" ctrl="3"/>
+    </keyframe>
+  </mujoco>
+  )";
+
+  static constexpr char xml[] = R"(
+  <mujoco>
+    <asset>
+      <model name="child" file="child.xml"/>
+    </asset>
+
+    <worldbody>
+      <replicate count="2" offset="3 0 0">
+        <attach model="child" body="body" prefix="child_"/>
+      </replicate>
+    </worldbody>
+  </mujoco>
+  )";
+
+  auto vfs = std::make_unique<mjVFS>();
+  mj_defaultVFS(vfs.get());
+  mj_addBufferVFS(vfs.get(), "child.xml", child_xml, sizeof(child_xml));
+
+  std::array<char, 1024> error;
+  MjModelPtr m =
+      LoadModelFromString(xml, error.data(), error.size(), vfs.get());
+  mj_deleteVFS(vfs.get());
+  ASSERT_THAT(m.get(), NotNull()) << error.data();
+  ASSERT_EQ(m->nq, 2);
+  ASSERT_EQ(m->na, 2);
+  ASSERT_EQ(m->nu, 2);
+
+  ASSERT_EQ(m->nkey, 1);
+  EXPECT_STREQ(mj_id2name(m.get(), mjOBJ_KEY, 0), "child_key");
+  EXPECT_THAT(AsVector(m->key_qpos, 2), ElementsAre(1, 0));
+  EXPECT_THAT(AsVector(m->key_act, 2), ElementsAre(2, 0));
+  EXPECT_THAT(AsVector(m->key_ctrl, 2), ElementsAre(3, 0));
 }
 
 // ---------------------- test spec assets parsing -----------------------------
@@ -2757,6 +2941,43 @@ TEST_F(ActuatorParseTest, PositionTimeconstInheritrange) {
   std::array<char, 1024> error;
   MjModelPtr model = LoadModelFromString(xml, error.data(), error.size());
   ASSERT_THAT(model.get(), NotNull());
+}
+
+// a general actuator which is a position servo inherits its range like the
+// shortcuts which create one
+TEST_F(ActuatorParseTest, GeneralInheritrange) {
+  static constexpr char xml[] = R"(
+  <mujoco>
+    <default>
+      <default class="inherits">
+        <general inheritrange="0.5"/>
+      </default>
+    </default>
+
+    <worldbody>
+      <body>
+        <joint name="slide" type="slide" range="0 2"/>
+        <geom size="1"/>
+      </body>
+    </worldbody>
+
+    <actuator>
+      <position joint="slide" inheritrange="2"/>
+      <general joint="slide" inheritrange="2" biastype="affine" biasprm="0 -1"/>
+      <general joint="slide" class="inherits" biastype="affine" biasprm="0 -1"/>
+      <general joint="slide" inheritrange="2" dyntype="integrator" biastype="affine" biasprm="0 -1"/>
+    </actuator>
+  </mujoco>
+  )";
+  std::array<char, 1024> error;
+  MjModelPtr model = LoadModelFromString(xml, error.data(), error.size());
+  ASSERT_THAT(model.get(), NotNull()) << error.data();
+  EXPECT_THAT(AsVector(model->actuator_ctrlrange, 8),
+              ElementsAre(-1, 3, -1, 3, 0.5, 1.5, 0, 0));
+  EXPECT_THAT(AsVector(model->actuator_actrange + 6, 2), ElementsAre(-1, 3));
+  EXPECT_THAT(AsVector(model->actuator_ctrllimited, 4),
+              ElementsAre(1, 1, 1, 0));
+  EXPECT_EQ(model->actuator_actlimited[3], 1);
 }
 
 TEST_F(ActuatorParseTest, PositionTimeconstDefault) {
@@ -4282,6 +4503,30 @@ TEST_F(XMLReaderTest, SelfAttachFrame) {
 
   mj_deleteModel(m);
   mj_deleteSpec(spec);
+}
+
+// a keyframe describes the model with its self-attached subtrees in place
+TEST_F(XMLReaderTest, SelfAttachKeyframe) {
+  static constexpr char xml[] = R"(
+    <mujoco model="self-attach-keyframe">
+      <worldbody>
+        <body name="body1">
+          <joint type="slide"/>
+          <geom size="1"/>
+        </body>
+        <attach body="body1" prefix="attached_"/>
+      </worldbody>
+      <keyframe>
+        <key name="key" qpos="1 2"/>
+      </keyframe>
+    </mujoco>
+  )";
+  std::array<char, 1024> error;
+  MjModelPtr m = LoadModelFromString(xml, error.data(), error.size());
+  ASSERT_THAT(m.get(), NotNull()) << error.data();
+  ASSERT_EQ(m->nq, 2);
+  ASSERT_EQ(m->nkey, 1);
+  EXPECT_THAT(AsVector(m->key_qpos, 2), ElementsAre(1, 2));
 }
 
 TEST_F(XMLReaderTest, CustomTextFromAttribute) {

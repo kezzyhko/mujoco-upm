@@ -155,7 +155,7 @@ MJAPI mjtSize mj_encode(const mjSpec* s, const mjModel* m, const char* filename,
 // Nullable: vfs
 MJAPI mjModel* mj_compile(mjSpec* s, const mjVFS* vfs);
 
-// Copy real-valued arrays from model to spec; return 1 on success.
+// Copy the values which were changed in a model to the spec it was compiled from; return 1 on success.
 MJAPI int mj_copyBack(mjSpec* s, const mjModel* m);
 
 // Recompile spec to model, preserving the state; return 0 on success.
@@ -1967,6 +1967,18 @@ MJAPI int mjs_setFrame(mjsElement* dest, mjsFrame* frame);
 // Resolve alternative orientations to quat; return error if any.
 MJAPI const char* mjs_resolveOrientation(double quat[4], mjtByte degree, const char* sequence,
                                          const mjsOrientation* orientation);
+
+// Fuse the static bodies of the spec with their parents, return 0 on success.
+// Nullable: vfs
+MJAPI int mjs_fuseStatic(mjSpec* s, const mjVFS* vfs);
+
+// Discard the visual elements of the spec, return 0 on success.
+// Nullable: vfs
+MJAPI int mjs_discardVisual(mjSpec* s, const mjVFS* vfs);
+
+// Make the inertial which compilation infers for a body part of the spec, return 0 on success.
+// Nullable: vfs
+MJAPI int mjs_adoptInertial(mjsBody* body, const mjVFS* vfs);
 
 // Transform body into a frame.
 MJAPI mjsFrame* mjs_bodyToFrame(mjsBody** body);

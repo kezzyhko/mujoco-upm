@@ -202,11 +202,10 @@ and namespaced appropriately. Detailed examples of models using replicate can be
 Direct children of replicate are replicated into its parent body. Joints are therefore not allowed as direct children;
 wrap them in a :ref:`body<body>`.
 
-There are some caveats concerning :ref:`keyframes<keyframe>` when using replicate. Since :ref:`mjs_attach` is used to
-self-attach multiple times the enclosed kinematic tree, if this tree contains further :ref:`attach<body-attach>`
-elements, keyframes will not be replicated nor namespaced by :ref:`replicate<replicate>`, but they will be attached and
-namespaced once by the innermost call of :ref:`mjs_attach`. See the limitations discussed in
-:ref:`attachment<meAttachment>`.
+:ref:`Keyframes<keyframe>` are not replicated: a keyframe describes the model with all replicas in place, so its vectors
+follow the layout of the compiled model. If the enclosed tree contains :ref:`attach<body-attach>` elements, the
+keyframes of the attached model are added once, namespaced by the :el:`attach` element only, and set the state of the
+first replica. See the limitations discussed in :ref:`attachment<meAttachment>`.
 
 .. _replicate-count:
 
@@ -800,11 +799,12 @@ has any effect. The settings here are global and apply to the entire model.
 .. _compiler-settotalmass:
 
 :at:`settotalmass`: :at-val:`real, "-1"`
-   If this value is positive, the compiler will scale the masses and inertias of all bodies in the model, so that the
-   total mass equals the value specified here. The world body has mass 0 and does not participate in any mass-related
-   computations. This scaling is performed last, after all other operations affecting the body mass and inertia. The
-   same scaling operation can be applied at runtime to the compiled mjModel with the function
-   :ref:`mj_setTotalmass`.
+   This attribute is deprecated and will be removed in a future release; compiling a model which sets it gives a
+   warning. If this value is positive, the compiler will scale the masses and inertias of all bodies in the model, so
+   that the total mass equals the value specified here. The world body has mass 0 and does not participate in any
+   mass-related computations. This scaling is performed last, after all other operations affecting the body mass and
+   inertia. The same scaling operation can be applied at runtime to the compiled mjModel with the function
+   :ref:`mj_setTotalmass`, followed by :ref:`mj_setConst`.
 
 .. _compiler-balanceinertia:
 
@@ -885,18 +885,24 @@ has any effect. The settings here are global and apply to the entire model.
    This attribute instructs the compiler to discard all model elements which are purely visual and have no effect on the
    physics (with one exception, see below). This often enables smaller :ref:`mjModel` structs and faster simulation.
 
-   - All materials are discarded.
-   - All textures are discarded.
+   - All materials and textures are discarded, unless they are referenced by a sensor or a custom
+     :ref:`tuple<custom-tuple>`.
    - All geoms with :ref:`contype<body-geom-contype>` |-| = |-| :ref:`conaffinity<body-geom-conaffinity>` |-| =0 are
-     discarded, if they are not referenced in another MJCF element. If a discarded geom was used for inferring body
-     inertia, an explicit :ref:`inertial<body-inertial>` element is added to the body.
-   - All meshes which are not referenced by any geom (in particular those discarded above) are discarded.
+     discarded, if they are not referenced in another MJCF element and do not use the ellipsoid
+     :ref:`fluid model<body-geom-fluidshape>`. If a discarded geom was used for inferring body inertia, an explicit
+     :ref:`inertial<body-inertial>` element is added to the body. This is not possible when
+     :ref:`inertiafromgeom<compiler-inertiafromgeom>` is "true", which is then a compilation error.
+   - All meshes which are not used by a remaining geom or by a site, and are not referenced in another MJCF element,
+     are discarded (in particular those of the geoms discarded above).
 
    The resulting compiled model will have exactly the same dynamics as the original model. The only engine-level
    computation which might change is the output of :ref:`raycasting<mj_ray>` computations, as used for example by
    :ref:`rangefinder<sensor-rangefinder>` sensors, since raycasting reports distances to visual geoms. When visualizing
    models compiled with this flag, it is important to remember that collision geoms are often placed in a
    :ref:`group<body-geom-group>` which is invisible by default.
+
+   Discarding is an operation on the model itself, :ref:`mjs_discardVisual`, which is applied before compiling. A model
+   which is saved or compiled again afterwards is the one without the visual elements.
 
 .. _compiler-usethread:
 
@@ -912,6 +918,19 @@ has any effect. The settings here are global and apply to the entire model.
 
    - They are referenced by another element in the model.
    - They contain a site which is referenced by a :ref:`force<sensor-force>` or :ref:`torque<sensor-torque>` sensor.
+   - Their :ref:`fuse<body-fuse>` attribute is "false".
+   - They have a :ref:`plugin<body-plugin>` or a :ref:`sleep<body-sleep>` policy.
+   - They have mass, and either a :ref:`gravcomp<body-gravcomp>` different from that of their parent, or the model is in
+     a fluid (non-zero :ref:`density<option-density>` or :ref:`viscosity<option-viscosity>`); in a fluid, bodies with
+     an ellipsoid-fluid geom are kept too.
+   - :ref:`inertiafromgeom<compiler-inertiafromgeom>` is "true" and the compiler adjusted their inertia or their
+     parent's (:ref:`boundmass<compiler-boundmass>`, :ref:`boundinertia<compiler-boundinertia>`,
+     :ref:`balanceinertia<compiler-balanceinertia>`), so that the geoms of both in one body would have a different
+     inertia.
+
+   Fusing is an operation on the model itself, :ref:`mjs_fuseStatic`, which is applied before compiling: each fused
+   body becomes a :ref:`frame<frame>` in its parent. A model which is saved or compiled again afterwards is the fused
+   one.
 
    This optimization is particularly useful when importing URDF models which often have many dummy bodies, but can also
    be used to optimize MJCF models. After optimization, the new model has identical kinematics and dynamics as the
@@ -954,6 +973,24 @@ has any effect. The settings here are global and apply to the entire model.
 
 :at:`saveinertial`: :at-val:`[false, true], "false"`
    If set to "true", the compiler will save explicit :ref:`inertial <body-inertial>` clauses for all bodies.
+
+.. _compiler-savecompiled:
+
+:at:`savecompiled`: :at-val:`[false, true], "true"`
+   This attribute and the next one say how the model is saved as MJCF; like :at:`saveinertial`, they are not saved
+   themselves. If "true", the values which compilation made of the model are saved: for example the size of a geom
+   which was fitted to a mesh, or the pose of a body after :ref:`alignment<compiler-alignfree>` with its free joint.
+   If "false", the model is saved as it is written in the :ref:`mjSpec`, and the saved file compiles to the same
+   model; the spec need not have been compiled.
+
+.. _compiler-savecanonical:
+
+:at:`savecanonical`: :at-val:`[false, true], "true"`
+   If "true", orientations are saved as quaternions, angles in radians, sizes and poses which were given with
+   :at:`fromto` as :at:`size`, :at:`pos` and :at:`quat`, and a :at:`fullinertia` as :at:`diaginertia` and
+   :at:`quat`. If "false", they are saved in the notation in which they were written. This attribute has an effect
+   only if :ref:`savecompiled<compiler-savecompiled>` is "false": compiled values are always saved in the canonical
+   notation.
 
 .. _compiler-conflict:
 
@@ -2225,6 +2262,14 @@ defined. Its body name is automatically defined as "world".
    cannot dynamically lose its simple state at runtime (which would require reallocation of sparse matrix structures),
    any runtime parameter change that violates the simple conditions will trigger a validation error unless
    ``simple="false"`` was explicitly declared in the XML.
+
+.. _body-fuse:
+
+:at:`fuse`: :at-val:`[false, auto], "auto"`
+   Whether this body can be fused with its parent when static bodies are fused, by the
+   :ref:`fusestatic<compiler-fusestatic>` compiler option or by :ref:`mjs_fuseStatic`. With the default :at-val:`auto`
+   a static body is fused unless one of the conditions listed there prevents it. Setting this attribute to
+   :at-val:`false` keeps the body.
 
 .. _body-user:
 
@@ -4163,9 +4208,6 @@ the saved XML file. Note that this element is a subset of the functionality of t
 
    - All assets from the child model will be copied in, whether they are referenced or not.
    - Circular references are not checked for and will lead to infinite loops.
-   - When attaching a model with :ref:`keyframes<keyframe>`, model compilation is required for the re-indexing to be
-     finalized. If a second attachment is performed without compilation, the keyframes from the first attachment will be
-     lost.
 
 .. _body-attach-model:
 
@@ -5844,6 +5886,16 @@ specify them independently.
 :at:`ffrange`: :at-val:`real(2), "0 0"`
    Range of the feedforward input of a :ref:`pid<actuator-pid>` actuator.
 
+.. _actuator-general-inheritrange:
+
+:at:`inheritrange`: :at-val:`real, "0"`
+   Sets the range of a position servo from the range of its joint or tendon, as described in
+   :ref:`position/inheritrange<actuator-position-inheritrange>`: the :at:`ctrlrange`, or the :at:`actrange` if
+   :at:`dyntype` is "integrator". It has an effect on an actuator with affine bias and either fixed gain, where
+   ``gainprm[0]`` equals ``-biasprm[1]``, or gaintype "pid": the actuators which the
+   :ref:`position<actuator-position>`, :ref:`intvelocity<actuator-intvelocity>` and :ref:`pid<actuator-pid>` shortcuts
+   create.
+
 .. _actuator-general-input:
 
 :at:`input`: :at-val:`string, optional`
@@ -6059,9 +6111,8 @@ This element has one custom attribute in addition to the common attributes:
    :at:`ctrlrange` to :at-val:`[0.1, 0.9]` and :at-val:`[-0.1, 1.1]`, respectively. Values smaller than 1 are useful for
    not hitting the limits; values larger than 1 are useful for maintaining control authority at the limits (being able
    to push on them). This attribute is exclusive with :at:`ctrlrange` and available only for joint and tendon
-   transmissions which have :at:`range` defined. Note that while :at:`inheritrange` is available both as a
-   :ref:`position<actuator-position>` attribute and in the :ref:`default class<default-position-inheritrange>`,
-   saved XMLs always convert it to explicit :at:`ctrlrange` at the actuator.
+   transmissions which have :at:`range` defined. A model which is saved :ref:`as it was compiled
+   <compiler-savecompiled>` has the explicit :at:`ctrlrange` at the actuator in place of this attribute.
 
 .. _actuator-pid:
 
@@ -10308,6 +10359,8 @@ if omitted.
 .. _default-general-velrange:
 
 .. _default-general-ffrange:
+
+.. _default-general-inheritrange:
 
 .. _default-general-input:
 
