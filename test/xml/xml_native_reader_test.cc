@@ -17,6 +17,7 @@
 #include <array>
 #include <cmath>
 #include <cstdint>
+#include <cstring>
 #include <limits>
 #include <memory>
 #include <string>
@@ -1595,6 +1596,58 @@ TEST_F(XMLReaderTest, ParseReplicatePartialReference) {
   EXPECT_THAT(m->nsensor, 2);
 }
 
+TEST_F(XMLReaderTest, ReplicateCannotHaveJoints) {
+  static constexpr char joint_xml[] = R"(
+  <mujoco>
+    <worldbody>
+      <replicate count="2" offset="2 0 0">
+        <joint type="hinge"/>
+        <geom size=".1"/>
+      </replicate>
+    </worldbody>
+  </mujoco>
+  )";
+  std::array<char, 1024> error;
+  MjModelPtr model = LoadModelFromString(joint_xml, error.data(), error.size());
+  ASSERT_THAT(model.get(), IsNull());
+  EXPECT_THAT(error.data(),
+              HasSubstr("joint cannot be a direct child of replicate"));
+  EXPECT_THAT(error.data(), HasSubstr("line 5"));
+
+  static constexpr char freejoint_xml[] = R"(
+  <mujoco>
+    <worldbody>
+      <body name="b">
+        <replicate count="2" offset="2 0 0">
+          <freejoint/>
+          <geom size=".1"/>
+        </replicate>
+      </body>
+    </worldbody>
+  </mujoco>
+  )";
+  model = LoadModelFromString(freejoint_xml, error.data(), error.size());
+  ASSERT_THAT(model.get(), IsNull());
+  EXPECT_THAT(error.data(),
+              HasSubstr("joint cannot be a direct child of replicate"));
+
+  static constexpr char body_joint_xml[] = R"(
+  <mujoco>
+    <worldbody>
+      <replicate count="2" offset="1 0 0">
+        <body>
+          <joint type="hinge"/>
+          <geom size=".1"/>
+        </body>
+      </replicate>
+    </worldbody>
+  </mujoco>
+  )";
+  model = LoadModelFromString(body_joint_xml, error.data(), error.size());
+  ASSERT_THAT(model.get(), NotNull()) << error.data();
+  EXPECT_EQ(model->njnt, 2);
+}
+
 TEST_F(XMLReaderTest, ParseReplicateDefaultPropagate) {
   static constexpr char xml[] = R"(
   <mujoco>
@@ -2106,6 +2159,28 @@ TEST_F(XMLReaderTest, ResizeKeyframeAfterParsing) {
   mj_deleteVFS(vfs.get());
 }
 
+TEST_F(XMLReaderTest, CheckTextureGridlayoutParsing) {
+  static constexpr char xml[] = R"(
+  <mujoco>
+    <asset>
+      <texture name="test_skybox" type="skybox" file="dummy_image.png"
+               gridsize="2 4" gridlayout="LFRB.D.."/>
+    </asset>
+  </mujoco>
+  )";
+
+  std::array<char, 1024> error;
+  mjSpec* spec = mj_parseXMLString(xml, 0, error.data(), error.size());
+  EXPECT_THAT(spec, NotNull()) << error.data();
+  auto skybox_spec =
+      mjs_asTexture(mjs_findElement(spec, mjOBJ_TEXTURE, "test_skybox"));
+  EXPECT_THAT(skybox_spec, NotNull()) << error.data();
+  EXPECT_EQ(std::strlen(skybox_spec->gridlayout), 8);
+  EXPECT_TRUE(std::strcmp(skybox_spec->gridlayout, "LFRB.D..") == 0);
+
+  mj_deleteSpec(spec);
+}
+
 // ----------------------- test camera parsing ---------------------------------
 
 TEST_F(XMLReaderTest, CameraInvalidFovyAndSensorsize) {
@@ -2295,13 +2370,13 @@ TEST_F(XMLReaderTest, ReadsSkinGroups) {
       <body pos="1 -1 .6" name="B0_parent">
         <flexcomp name="B0" type="grid" count="4 4 1" spacing=".2 .2 .2" group="2" radius=".1" dim="2">
           <edge equality="true"/>
-          <contact internal="false" selfcollide="none"/>
+          <contact selfcollide="none"/>
         </flexcomp>
       </body>
       <body pos="-1 1 .6" name="B1_parent">
         <flexcomp name="B1" type="grid" count="4 4 1" spacing=".2 .2 .2" group="4" radius=".1" dim="2">
           <edge equality="true"/>
-          <contact internal="false" selfcollide="none"/>
+          <contact selfcollide="none"/>
         </flexcomp>
       </body>
     </worldbody>
@@ -2831,6 +2906,45 @@ TEST_F(ActuatorParseTest, RequirePositiveKv) {
   EXPECT_THAT(error.data(), HasSubstr("line 10"));
 }
 
+TEST_F(ActuatorParseTest, IntvelocityRejectsInvalidDamping) {
+  static constexpr char xml_kv_dampratio[] = R"(
+  <mujoco>
+    <worldbody>
+      <body>
+        <geom size="1"/>
+        <joint name="jnt" type="slide" axis="1 0 0"/>
+      </body>
+    </worldbody>
+    <actuator>
+      <intvelocity joint="jnt" kv="1" dampratio="1"/>
+    </actuator>
+  </mujoco>
+  )";
+  std::array<char, 1024> error;
+  MjModelPtr model =
+      LoadModelFromString(xml_kv_dampratio, error.data(), error.size());
+  EXPECT_THAT(model.get(), IsNull());
+  EXPECT_THAT(error.data(),
+              HasSubstr("kv and dampratio cannot both be defined"));
+
+  static constexpr char xml_negative_kv[] = R"(
+  <mujoco>
+    <worldbody>
+      <body>
+        <geom size="1"/>
+        <joint name="jnt" type="slide" axis="1 0 0"/>
+      </body>
+    </worldbody>
+    <actuator>
+      <intvelocity joint="jnt" kv="-1"/>
+    </actuator>
+  </mujoco>
+  )";
+  model = LoadModelFromString(xml_negative_kv, error.data(), error.size());
+  EXPECT_THAT(model.get(), IsNull());
+  EXPECT_THAT(error.data(), HasSubstr("kv cannot be negative"));
+}
+
 TEST_F(ActuatorParseTest, PositionIntvelocityVelocityDefaultsPropagate) {
   static constexpr char xml[] = R"(
   <mujoco>
@@ -2976,6 +3090,30 @@ TEST_F(ActuatorParseTest, IntvelocityNoActrangeIsValid) {
   ASSERT_THAT(model.get(), NotNull()) << error.data();
   // actlimited resolves to false when no actrange is provided
   EXPECT_EQ(model->actuator_actlimited[0], 0);
+}
+
+TEST_F(ActuatorParseTest, IntvelocityInheritrangeAllowsCtrlrange) {
+  static constexpr char xml[] = R"(
+  <mujoco>
+    <worldbody>
+      <body>
+        <geom size="1"/>
+        <joint name="jnt" type="slide" axis="1 0 0" range="-2 2"/>
+      </body>
+    </worldbody>
+    <actuator>
+      <intvelocity joint="jnt" ctrlrange="-1 1" inheritrange="1"/>
+    </actuator>
+  </mujoco>
+  )";
+  std::array<char, 1024> error;
+  MjModelPtr model = LoadModelFromString(xml, error.data(), error.size());
+  ASSERT_THAT(model.get(), NotNull()) << error.data();
+  EXPECT_EQ(model->actuator_biastype[0], mjBIAS_AFFINE);
+  EXPECT_EQ(model->actuator_ctrlrange[0], -1.0);
+  EXPECT_EQ(model->actuator_ctrlrange[1], 1.0);
+  EXPECT_EQ(model->actuator_actrange[0], -2.0);
+  EXPECT_EQ(model->actuator_actrange[1], 2.0);
 }
 
 TEST_F(ActuatorParseTest, IntvelocityDefaultsPropagate) {
@@ -4377,6 +4515,34 @@ message {
   mj_deleteModel(m);
   mj_deleteModel(m_orig);
   mj_deleteSpec(saved_spec);
+  mj_deleteSpec(spec);
+}
+
+TEST_F(XMLReaderTest, DeepBodyNesting) {
+  constexpr int kDepth = 100;
+  std::string xml = "<mujoco><worldbody>";
+  for (int i = 0; i < kDepth; ++i) {
+    xml +=
+        "<body pos=\"0 .05 0\"><joint type=\"hinge\" armature=\"0.1\"/>"
+        "<geom type=\"capsule\" size=\"0.01 0.02\"/>";
+  }
+  for (int i = 0; i < kDepth; ++i) {
+    xml += "</body>";
+  }
+  xml += "</worldbody></mujoco>";
+
+  std::array<char, 1024> error;
+  mjSpec* spec =
+      mj_parseXMLString(xml.c_str(), nullptr, error.data(), error.size());
+  ASSERT_THAT(spec, NotNull()) << error.data();
+
+  mjModel* m = mj_compile(spec, nullptr);
+  ASSERT_THAT(m, NotNull()) << mjs_getError(spec);
+  EXPECT_EQ(m->nbody, kDepth + 1);
+  EXPECT_EQ(m->njnt, kDepth);
+  EXPECT_EQ(m->ngeom, kDepth);
+
+  mj_deleteModel(m);
   mj_deleteSpec(spec);
 }
 

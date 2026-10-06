@@ -406,6 +406,37 @@ TEST_F(KeyframeTest, BadSize) {
   EXPECT_THAT(error, HasSubstr("invalid qpos size, expected 0, got 1"));
 }
 
+TEST_F(KeyframeTest, JointDefaultOverride) {
+  static constexpr char xml[] = R"(
+  <mujoco>
+    <default>
+      <default class="cubelet">
+        <joint type="ball"/>
+        <geom type="box" size=".1 .1 .05"/>
+      </default>
+    </default>
+    <worldbody>
+      <body name="cube" pos="0 0 1" childclass="cubelet">
+        <freejoint/>
+        <geom/>
+        <body name="layer">
+          <joint name="turn" type="hinge" axis="1 0 0"/>
+          <geom pos="0 0 .2"/>
+        </body>
+      </body>
+    </worldbody>
+    <keyframe>
+      <key qpos="0 0 1 1 0 0 0 0.5"/>
+    </keyframe>
+  </mujoco>
+  )";
+  char error[1024];
+  MjModelPtr model = LoadModelFromString(xml, error, sizeof(error));
+  ASSERT_THAT(model.get(), NotNull()) << error;
+  EXPECT_EQ(model->nq, 8);
+  EXPECT_MJTNUM_EQ(model->key_qpos[7], 0.5);
+}
+
 // ------------- test relative frame sensor compilation-------------------------
 
 using RelativeFrameSensorParsingTest = MujocoTest;
@@ -1253,6 +1284,40 @@ TEST_F(MjCSiteTest, MeshSiteMaterialInheritance) {
   EXPECT_EQ(model->site_matid[0], 0);
 }
 
+TEST_F(MjCGeomTest, FittedPrimitiveHasNoMeshDataid) {
+  static constexpr char xml[] = R"(
+  <mujoco>
+    <asset>
+      <mesh name="blob"
+        vertex="0 0 .3  .2 0 0  0 .2 0  -.2 0 0  0 -.2 0  0 0 -.3"
+        face="0 1 2  0 2 3  0 3 4  0 4 1  5 2 1  5 3 2  5 4 3  5 1 4"/>
+    </asset>
+    <worldbody>
+      <body><geom type="sphere" mesh="blob"/></body>
+      <body><geom type="capsule" mesh="blob"/></body>
+      <body><geom type="ellipsoid" mesh="blob"/></body>
+      <body><geom type="cylinder" mesh="blob"/></body>
+      <body><geom type="box" mesh="blob"/></body>
+      <body><geom type="mesh" mesh="blob"/></body>
+    </worldbody>
+  </mujoco>
+  )";
+  std::array<char, 1024> error;
+  MjModelPtr model = LoadModelFromString(xml, error.data(), error.size());
+  ASSERT_THAT(model.get(), NotNull()) << error.data();
+  ASSERT_EQ(model->ngeom, 6);
+
+  // fitted primitives must not reference the mesh they were fitted to
+  for (int i = 0; i < 5; i++) {
+    EXPECT_NE(model->geom_type[i], mjGEOM_MESH);
+    EXPECT_EQ(model->geom_dataid[i], -1) << "geom " << i;
+  }
+
+  // an actual mesh geom still references its mesh
+  EXPECT_EQ(model->geom_type[5], mjGEOM_MESH);
+  EXPECT_EQ(model->geom_dataid[5], 0);
+}
+
 // ------------- test joints --------------------------------------------------
 
 using MjCJointTest = MujocoTest;
@@ -1422,6 +1487,65 @@ TEST_F(MjCTextureTest, TexturesLoad) {
   std::array<char, 1024> error;
   MjModelPtr m = LoadModelFromString(xml, error.data(), error.size());
   ASSERT_THAT(m.get(), NotNull()) << error.data();
+}
+
+TEST_F(MjCTextureTest, BuiltinMustHaveThreeChannels) {
+  for (int nchannel : {1, 4}) {
+    mjSpec* spec = mj_makeSpec();
+    mjsTexture* texture = mjs_addTexture(spec);
+    mjs_setName(texture->element, "texture");
+    texture->type = mjTEXTURE_2D;
+    texture->builtin = mjBUILTIN_FLAT;
+    texture->width = 2;
+    texture->height = 1;
+    texture->nchannel = nchannel;
+    EXPECT_THAT(mj_compile(spec, nullptr), IsNull());
+    EXPECT_THAT(mjs_getError(spec),
+                HasSubstr("builtin textures must have 3 channels"));
+    mj_deleteSpec(spec);
+  }
+}
+
+TEST_F(MjCTextureTest, CubeFromFileMustHaveThreeChannels) {
+  // 1 x 1 RGB PNG file
+  static constexpr unsigned char pixel[] = {
+      0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x00, 0x00, 0x0d,
+      0x49, 0x48, 0x44, 0x52, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01,
+      0x08, 0x02, 0x00, 0x00, 0x00, 0x90, 0x77, 0x53, 0xde, 0x00, 0x00, 0x00,
+      0x0c, 0x49, 0x44, 0x41, 0x54, 0x78, 0xda, 0x63, 0xf8, 0xdf, 0xc0, 0x00,
+      0x00, 0x04, 0x01, 0x01, 0x80, 0xfb, 0xd7, 0xcb, 0xf1, 0x00, 0x00, 0x00,
+      0x00, 0x49, 0x45, 0x4e, 0x44, 0xae, 0x42, 0x60, 0x82};
+
+  // load VFS on the heap
+  auto vfs = std::make_unique<mjVFS>();
+  mj_defaultVFS(vfs.get());
+  mj_addBufferVFS(vfs.get(), "pixel.png", pixel, sizeof(pixel));
+  mj_addBufferVFS(vfs.get(), "blob.ktx", pixel, 1);
+
+  // a KTX file is loaded as a single-channel blob, whatever nchannel is
+  struct Case {
+    const char* file;
+    int nchannel;
+  };
+  const Case cases[] = {{"pixel.png", 1}, {"pixel.png", 4}, {"blob.ktx", 3}};
+  for (const Case& c : cases) {
+    for (bool separate : {false, true}) {
+      mjSpec* spec = mj_makeSpec();
+      mjsTexture* texture = mjs_addTexture(spec);
+      mjs_setName(texture->element, "texture");
+      texture->type = mjTEXTURE_CUBE;
+      texture->nchannel = c.nchannel;
+      if (separate) {
+        mjs_setInStringVec(texture->cubefiles, 0, c.file);
+      } else {
+        mjs_setString(texture->file, c.file);
+      }
+      EXPECT_THAT(mj_compile(spec, vfs.get()), IsNull());
+      EXPECT_THAT(mjs_getError(spec), HasSubstr("must have 3 channels"));
+      mj_deleteSpec(spec);
+    }
+  }
+  mj_deleteVFS(vfs.get());
 }
 
 // ------------- test quaternion normalization----------------------------------

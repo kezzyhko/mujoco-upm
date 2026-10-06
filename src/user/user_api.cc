@@ -1278,8 +1278,11 @@ const char* mjs_setToIntVelocity(mjsActuator* actuator,
                                  double       dampratio[1],
                                  double       timeconst[1],
                                  double       inheritrange) {
-  mjs_setToPosition(actuator, kp, kv, dampratio, timeconst, inheritrange);
-  actuator->dyntype = mjDYN_INTEGRATOR;
+  // inheritrange sets actrange, not ctrlrange: skip the position range check
+  const char* err = mjs_setToPosition(actuator, kp, kv, dampratio, timeconst, 0);
+  if (err[0]) return err;
+  actuator->dyntype      = mjDYN_INTEGRATOR;
+  actuator->inheritrange = inheritrange;
 
   if (inheritrange > 0) {
     if (actuator->actrange[0] || actuator->actrange[1]) {
@@ -1792,11 +1795,16 @@ const char* mjs_resolveOrientation(double                quat[4],
 
 // Transform body into a frame.
 mjsFrame* mjs_bodyToFrame(mjsBody** body) {
-  mjCBody*  bodyC   = static_cast<mjCBody*>((*body)->element);
-  mjCFrame* frameC  = bodyC->ToFrame();
-  *bodyC->model    -= (*body)->element;
-  *body             = nullptr;
-  return &frameC->spec;
+  mjCBody* bodyC = static_cast<mjCBody*>((*body)->element);
+  try {
+    mjCFrame* frameC  = bodyC->ToFrame();
+    *bodyC->model    -= (*body)->element;
+    *body             = nullptr;
+    return &frameC->spec;
+  } catch (mjCError& e) {
+    bodyC->model->SetError(e);
+    return nullptr;
+  }
 }
 
 void mjs_setUserValue(mjsElement* element, const char* key, const void* data) {

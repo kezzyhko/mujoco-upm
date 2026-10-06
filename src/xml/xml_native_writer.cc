@@ -142,6 +142,12 @@ void mjXWriter::OneFlex(XMLElement* elem, const mjCFlex* flex) {
   string  text;
   mjCFlex defflex;
 
+  if (flex->elastic3d) {
+    throw mjXError(0,
+                   "Stable Neo-Hookean elasticity is mjSpec-only and cannot be "
+                   "written to MJCF");
+  }
+
   // common attributes
   WriteAttrTxt(elem, "name", flex->name);
   WriteAttrTable(elem,
@@ -1013,6 +1019,9 @@ string mjXWriter::Write(char* error, size_t error_sz) {
 
 // compiler section
 void mjXWriter::Compiler(XMLElement* root) {
+  mjSpec defspec;
+  mjs_defaultSpec(&defspec);
+
   XMLElement* section = InsertEnd(root, "compiler");
 
   // settings
@@ -1027,6 +1036,11 @@ void mjXWriter::Compiler(XMLElement* root) {
   if (model->compiler.boundinertia) {
     WriteAttr(section, "boundinertia", 1, &model->compiler.boundinertia);
   }
+  WriteAttr(section,
+            "inertiagrouprange",
+            2,
+            model->compiler.inertiagrouprange,
+            defspec.compiler.inertiagrouprange);
   if (model->compiler.alignfree) { WriteAttrTxt(section, "alignfree", "true"); }
   if (!model->compiler.autolimits) { WriteAttrTxt(section, "autolimits", "false"); }
   WriteAttrKey(section,
@@ -2128,6 +2142,7 @@ void mjXWriter::Sensor(XMLElement* root) {
         WriteAttrTxt(elem, "objtype", mju_type2Str(sensor->objtype));
         WriteAttrTxt(elem, "objname", sensor->get_objname());
         WriteAttrTxt(elem, "site", sensor->get_refname());
+        if (sensor->intprm[0]) { WriteAttrTxt(elem, "enclosed", "true"); }
         break;
       case mjSENS_GEOMDIST:
         elem = InsertEnd(section, "distance");
