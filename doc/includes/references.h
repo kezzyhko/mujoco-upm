@@ -113,8 +113,8 @@ typedef struct mjData_ {
   int     nefc;              // number of constraints
   int     nJ;                // number of non-zeros in constraint Jacobian
 
-  // effective metric: per-step activity flag and sizes, set by mjd_effBuild
-  int     efm_active;        // implicit effective metric M+K is active (see mjd_effBuild)
+  // effective metric: per-step activity flag and sizes, set by mj_effBuild
+  int     efm_active;        // implicit effective metric M+K is active (see mj_effBuild)
   int     nefmK;             // number of non-zeros in effective-stiffness CSR
   int     nefmcon;           // packed length of the contact rank-1 rows
   int     nefmT;             // number of tendons with terms in the metric
@@ -1644,7 +1644,6 @@ typedef struct mjrfLightParams_ {
   float spot_softness;             // spot light edge softness, fraction of cone angle in [0, 1]
   int shadow_map_size;             // size of shadow map texture, 0 to use default size
   float bulb_radius;               // bulb radius, used for soft shadows
-  float vsm_blur_width;            // variance shadow map blur width
 } mjrfLightParams;
 typedef struct mjrfMaterial_ {
   float color[4];               // object color; defaults to white
@@ -1744,6 +1743,20 @@ typedef enum mjtConflict {         // conflict resolution for attach
   mjCONFLICT_MERGE,                // merge: min/max/error per field
   mjCONFLICT_ERROR,                // error on any conflict
 } mjtConflict;
+typedef enum mjtActuator {         // actuator element, which owns its shortcut parameters
+  mjACTUATOR_GENERAL = 0,          // general
+  mjACTUATOR_MOTOR,                // motor
+  mjACTUATOR_POSITION,             // position servo
+  mjACTUATOR_VELOCITY,             // velocity servo
+  mjACTUATOR_INTVELOCITY,          // integrated-velocity servo
+  mjACTUATOR_DAMPER,               // damper
+  mjACTUATOR_CYLINDER,             // cylinder
+  mjACTUATOR_MUSCLE,               // muscle
+  mjACTUATOR_ADHESION,             // adhesion
+  mjACTUATOR_PID,                  // pid servo
+  mjACTUATOR_ORIENTATION,          // orientation servo
+  mjACTUATOR_DCMOTOR               // dc motor
+} mjtActuator;
 typedef enum mjtCTimer {           // compiler timing categories
   // top-level timers (wall-clock)
   mjCTIMER_TOTAL = 0,              // total compile time
@@ -2276,6 +2289,7 @@ typedef struct mjsWrap_ {          // wrapping object specification
 } mjsWrap;
 typedef struct mjsActuator_ {      // actuator specification
   mjsElement* element;             // element type
+  mjtActuator type;                // element the actuator is written with
 
   // gain, bias
   mjtGain gaintype;                // gain type
@@ -2585,12 +2599,13 @@ typedef enum mjtCtrlChart {       // so3 input signature (actuator_ctrlspec): or
   mjCHART_EXPMAP      = 1,        // exponential-map orientation target: 3 controls
   mjCHART_QUAT        = 2         // quaternion orientation target: 4 controls
 } mjtCtrlChart;
-typedef enum mjtCtrlInput {       // servo input signature (actuator_ctrlspec): present-input bits
+typedef enum mjtCtrlInput {       // input signature (actuator_ctrlspec): present/declared inputs
   mjINPUT_POS         = 1,        // position setpoint input
   mjINPUT_VEL         = 2,        // velocity setpoint input
   mjINPUT_FF          = 4,        // feedforward input, in the actuator's output space
   mjINPUT_VOLTAGE     = 8,        // raw terminal voltage input (dcmotor)
-  mjINPUT_NONE        = 16        // explicitly no inputs: purely passive (dcmotor)
+  mjINPUT_NONE        = 16,       // explicitly no inputs: purely passive (dcmotor)
+  mjINPUT_PRESSURE    = 32        // pressure input (cylinder)
 } mjtCtrlInput;
 typedef enum mjtObj {             // type of MujoCo object
   mjOBJ_UNKNOWN       = 0,        // unknown object type
@@ -3636,7 +3651,6 @@ void mjrf_setLightRange(mjrfLight* light, float range);
 void mjrf_setLightCutoffAngle(mjrfLight* light, float cutoff);
 void mjrf_setLightSoftness(mjrfLight* light, float softness);
 void mjrf_setLightBulbRadius(mjrfLight* light, float radius);
-void mjrf_setLightBlurWidth(mjrfLight* light, float blur_width);
 void mjrf_setLightShadowMapSize(mjrfLight* light, int map_size);
 void mjrf_setLightTransform(mjrfLight* light, const float position[3], const float direction[3]);
 int mjrf_getLightType(const mjrfLight* light);

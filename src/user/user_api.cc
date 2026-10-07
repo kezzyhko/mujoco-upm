@@ -1283,15 +1283,27 @@ mjsDefault* mjs_addDefault(mjSpec* s, const char* classname, const mjsDefault* p
 }
 
 
+// a shortcut owns the control model and its activation layout: start them from the general defaults
+static void SetControl(mjsActuator* actuator, mjtActuator type) {
+  mjuu_zerovec(actuator->gainprm, mjNGAIN);
+  mjuu_zerovec(actuator->biasprm, mjNBIAS);
+  mjuu_zerovec(actuator->dynprm, mjNDYN);
+  actuator->gainprm[0] = 1;
+  actuator->dynprm[0]  = 1;
+  actuator->gaintype   = mjGAIN_FIXED;
+  actuator->biastype   = mjBIAS_NONE;
+  actuator->dyntype    = mjDYN_NONE;
+  actuator->ctrlspec   = 0;
+  actuator->actdim     = -1;
+  actuator->actearly   = 0;
+  actuator->actlimited = mjLIMITED_AUTO;
+  actuator->type       = type;
+}
+
+
 // set actuator to motor
 const char* mjs_setToMotor(mjsActuator* actuator) {
-  // unit gain
-  actuator->gainprm[0] = 1;
-
-  // implied parameters
-  actuator->dyntype  = mjDYN_NONE;
-  actuator->gaintype = mjGAIN_FIXED;
-  actuator->biastype = mjBIAS_NONE;
+  SetControl(actuator, mjACTUATOR_MOTOR);
   return "";
 }
 
@@ -1303,6 +1315,7 @@ const char* mjs_setToPosition(mjsActuator* actuator,
                               double       dampratio[1],
                               double       timeconst[1],
                               double       inheritrange) {
+  SetControl(actuator, mjACTUATOR_POSITION);
   actuator->gainprm[0] = kp;
   actuator->biasprm[1] = -kp;
 
@@ -1330,6 +1343,7 @@ const char* mjs_setToPosition(mjsActuator* actuator,
     }
   }
 
+  actuator->ctrlspec = mjINPUT_POS;
   actuator->gaintype = mjGAIN_FIXED;
   actuator->biastype = mjBIAS_AFFINE;
   return "";
@@ -1346,7 +1360,9 @@ const char* mjs_setToIntVelocity(mjsActuator* actuator,
   // inheritrange sets actrange, not ctrlrange: skip the position range check
   const char* err = mjs_setToPosition(actuator, kp, kv, dampratio, timeconst, 0);
   if (err[0]) return err;
+  actuator->ctrlspec     = mjINPUT_VEL;
   actuator->dyntype      = mjDYN_INTEGRATOR;
+  actuator->type         = mjACTUATOR_INTVELOCITY;
   actuator->inheritrange = inheritrange;
 
   if (inheritrange > 0) {
@@ -1362,6 +1378,7 @@ const char* mjs_setToIntVelocity(mjsActuator* actuator,
 const char* mjs_setToOrientation(
     mjsActuator* actuator, double kp, double kv[1], double dampratio[1], int ctrlspec) {
   if (kv && dampratio) { return "kv and dampratio cannot both be defined"; }
+  SetControl(actuator, mjACTUATOR_ORIENTATION);
   actuator->gainprm[0] = kp;
   actuator->biasprm[1] = -kp;
   if (kv) {
@@ -1391,6 +1408,7 @@ const char* mjs_setToPID(mjsActuator* actuator,
                          double       inheritrange,
                          int          ctrlspec) {
   if (kv && dampratio) { return "kv and dampratio cannot both be defined"; }
+  SetControl(actuator, mjACTUATOR_PID);
   actuator->biasprm[1] = -kp;
   if (kv) {
     if (*kv < 0) return "kv cannot be negative";
@@ -1408,7 +1426,7 @@ const char* mjs_setToPID(mjsActuator* actuator,
   actuator->gainprm[0] = ki_value;
   actuator->dynprm[1]  = slew_value;
   actuator->dyntype    = (ki_value || slew_value) ? mjDYN_PID : mjDYN_NONE;
-  if (ki_value && imax) { actuator->dynprm[0] = *imax; }
+  actuator->dynprm[0]  = (ki_value && imax) ? *imax : 0;
 
   actuator->inheritrange = inheritrange;
   if (inheritrange > 0) {
@@ -1426,11 +1444,10 @@ const char* mjs_setToPID(mjsActuator* actuator,
 
 // Set to velocity actuator.
 const char* mjs_setToVelocity(mjsActuator* actuator, double kv) {
-  mjuu_zerovec(actuator->biasprm, mjNBIAS);
+  SetControl(actuator, mjACTUATOR_VELOCITY);
   actuator->gainprm[0] = kv;
   actuator->biasprm[2] = -kv;
-  actuator->dyntype    = mjDYN_NONE;
-  actuator->gaintype   = mjGAIN_FIXED;
+  actuator->ctrlspec   = mjINPUT_VEL;
   actuator->biastype   = mjBIAS_AFFINE;
   return "";
 }
@@ -1438,12 +1455,11 @@ const char* mjs_setToVelocity(mjsActuator* actuator, double kv) {
 
 // Set to damper actuator.
 const char* mjs_setToDamper(mjsActuator* actuator, double kv) {
-  mjuu_zerovec(actuator->gainprm, mjNGAIN);
+  SetControl(actuator, mjACTUATOR_DAMPER);
+  actuator->gainprm[0]  = 0;
   actuator->gainprm[2]  = -kv;
   actuator->ctrllimited = mjLIMITED_TRUE;
-  actuator->dyntype     = mjDYN_NONE;
   actuator->gaintype    = mjGAIN_AFFINE;
-  actuator->biastype    = mjBIAS_NONE;
 
   if (kv < 0) { return "damping coefficient cannot be negative"; }
   if (actuator->ctrlrange[0] < 0 || actuator->ctrlrange[1] < 0) {
@@ -1456,12 +1472,13 @@ const char* mjs_setToDamper(mjsActuator* actuator, double kv) {
 // Set to cylinder actuator.
 const char* mjs_setToCylinder(
     mjsActuator* actuator, double timeconst, double bias, double area, double diameter) {
+  SetControl(actuator, mjACTUATOR_CYLINDER);
   actuator->dynprm[0]  = timeconst;
   actuator->biasprm[0] = bias;
   actuator->gainprm[0] = area;
   if (diameter >= 0) { actuator->gainprm[0] = mjPI / 4 * diameter * diameter; }
+  actuator->ctrlspec = mjINPUT_PRESSURE;
   actuator->dyntype  = mjDYN_FILTER;
-  actuator->gaintype = mjGAIN_FIXED;
   actuator->biastype = mjBIAS_AFFINE;
   return "";
 }
@@ -1479,18 +1496,20 @@ const char* mjs_setToMuscle(mjsActuator* actuator,
                             double       vmax,
                             double       fpmax,
                             double       fvmax) {
-  // set muscle defaults if same as global defaults
-  if (actuator->dynprm[0] == 1) actuator->dynprm[0] = 0.01;    // tau act
-  if (actuator->dynprm[1] == 0) actuator->dynprm[1] = 0.04;    // tau deact
-  if (actuator->gainprm[0] == 1) actuator->gainprm[0] = 0.75;  // range[0]
-  if (actuator->gainprm[1] == 0) actuator->gainprm[1] = 1.05;  // range[1]
-  if (actuator->gainprm[2] == 0) actuator->gainprm[2] = -1;    // force
-  if (actuator->gainprm[3] == 0) actuator->gainprm[3] = 200;   // scale
-  if (actuator->gainprm[4] == 0) actuator->gainprm[4] = 0.5;   // lmin
-  if (actuator->gainprm[5] == 0) actuator->gainprm[5] = 1.6;   // lmax
-  if (actuator->gainprm[6] == 0) actuator->gainprm[6] = 1.5;   // vmax
-  if (actuator->gainprm[7] == 0) actuator->gainprm[7] = 1.3;   // fpmax
-  if (actuator->gainprm[8] == 0) actuator->gainprm[8] = 1.2;   // fvmax
+  SetControl(actuator, mjACTUATOR_MUSCLE);
+
+  // muscle defaults
+  actuator->dynprm[0]  = 0.01;  // tau act
+  actuator->dynprm[1]  = 0.04;  // tau deact
+  actuator->gainprm[0] = 0.75;  // range[0]
+  actuator->gainprm[1] = 1.05;  // range[1]
+  actuator->gainprm[2] = -1;    // force
+  actuator->gainprm[3] = 200;   // scale
+  actuator->gainprm[4] = 0.5;   // lmin
+  actuator->gainprm[5] = 1.6;   // lmax
+  actuator->gainprm[6] = 1.5;   // vmax
+  actuator->gainprm[7] = 1.3;   // fpmax
+  actuator->gainprm[8] = 1.2;   // fvmax
 
   if (tausmooth < 0) { return "muscle tausmooth cannot be negative"; }
 
@@ -1519,10 +1538,9 @@ const char* mjs_setToMuscle(mjsActuator* actuator,
 
 // Set to adhesion actuator.
 const char* mjs_setToAdhesion(mjsActuator* actuator, double gain) {
+  SetControl(actuator, mjACTUATOR_ADHESION);
   actuator->gainprm[0]  = gain;
   actuator->ctrllimited = mjLIMITED_TRUE;
-  actuator->gaintype    = mjGAIN_FIXED;
-  actuator->biastype    = mjBIAS_NONE;
 
   if (gain < 0) return "adhesion gain cannot be negative";
   if (actuator->ctrlrange[0] < 0 || actuator->ctrlrange[1] < 0)
@@ -1580,6 +1598,7 @@ const char* mjs_setToDCMotor(mjsActuator* actuator,
   if (R <= 0) return "DC motor: resistance R must be positive";
 
   // set types
+  SetControl(actuator, mjACTUATOR_DCMOTOR);
   actuator->dyntype  = mjDYN_DCMOTOR;
   actuator->gaintype = mjGAIN_DCMOTOR;
   actuator->biastype = mjBIAS_DCMOTOR;

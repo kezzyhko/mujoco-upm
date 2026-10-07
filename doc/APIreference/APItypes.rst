@@ -362,7 +362,8 @@ Orientation input charts of so3 actuators. These values are used in ``m->actuato
 mjtCtrlInput
 ~~~~~~~~~~~~
 
-Input bitflags of servo-family (pd, dcmotor) actuators. These values are used in ``m->actuator_ctrlspec``.
+Input bitflags of actuators: the input subset of pid and dcmotor actuators, and the declared input of actuators with
+fixed or affine gain. These values are used in ``m->actuator_ctrlspec``.
 
 .. mujoco-include:: mjtCtrlInput
 
@@ -980,6 +981,17 @@ mjtConflict
 Conflict resolution mode for attach.
 
 .. mujoco-include:: mjtConflict
+
+.. _mjtActuator:
+
+mjtActuator
+~~~~~~~~~~~
+
+The :ref:`actuator element<actuator>` an actuator is written with: :ref:`general<actuator-general>` or one of its
+:ref:`shortcuts<CActShortcuts>`. Set by the ``mjs_setTo*`` functions and by the parser; shortcut parameters are inherited
+only from a default written with the same shortcut.
+
+.. mujoco-include:: mjtActuator
 
 
 .. _mjtCTimer:

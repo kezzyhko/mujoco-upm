@@ -491,6 +491,14 @@ void App::ApplyTimelineScrub() {
 }
 
 bool App::Update() {
+  const auto now = std::chrono::steady_clock::now();
+  if (last_frame_time_.time_since_epoch().count() != 0) {
+    const double dt = std::chrono::duration<double>(now - last_frame_time_).count();
+    const double fps = dt > 0 ? 1.0 / dt : 0;
+    fps_ = fps_ > 0 ? 0.9 * fps_ + 0.1 * fps : fps;
+  }
+  last_frame_time_ = now;
+
   const Window::Status status = window_->NewFrame();
 
   std::unique_lock<std::mutex> lock(physics_mutex_);
@@ -1278,7 +1286,7 @@ void App::BuildGui() {
   }
 
   if (tmp_.editor_panel) {
-    if (ImGui::Begin("Editor", &tmp_.editor_panel)) {
+    if (ImGui::Begin("Editor (\xEF\x83\x83)", &tmp_.editor_panel)) {
       SpecEditorGui();
     }
     ImGui::End();
@@ -1354,10 +1362,9 @@ void App::BuildGui() {
     const float scale = ImGui::GetWindowDpiScale();
     if (BeginOverlay("Info", OverlayPos::kBottomLeft,
                                workspace_rect, 180.0f * scale)) {
-      const float fps = renderer_->GetFps();
-      InfoGui(
-          model(), data(),
-          step_control_.GetPauseState() == PauseState::kNormalPaused, fps);
+      InfoGui(model(), data(),
+              step_control_.GetPauseState() == PauseState::kNormalPaused, fps_,
+              renderer_->GetGpuFrameMs());
     }
     EndOverlay();
   }
@@ -2199,7 +2206,7 @@ void App::MainMenuGui() {
       if (ImGui::MenuItem("Inspector", "Shift+Tab", tmp_.inspector_panel)) {
         tmp_.inspector_panel = !tmp_.inspector_panel;
       }
-      if (ImGui::MenuItem("Editor", nullptr, tmp_.editor_panel)) {
+      if (ImGui::MenuItem("Editor (\xEF\x83\x83)", nullptr, tmp_.editor_panel)) {
         tmp_.editor_panel = !tmp_.editor_panel;
         if (tmp_.editor_panel) {
           tmp_.inspector_panel = true;

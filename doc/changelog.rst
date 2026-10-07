@@ -98,10 +98,19 @@ Bug fixes
 - Fixed attaching by reference, the default of :ref:`mjs_attach`: :ref:`mj_recompile` gave the attached elements
   the state of other elements of the parent, and attaching another body or frame of the same model failed or left
   out the elements which refer to it. Attaching what the parent already has is now an error.
+- :ref:`mjs_attach` and the :ref:`attach<body-attach>` element now apply the prefix and suffix to the name and
+  material of skins and to the material of tendons and meshes. Attaching a model in which one of these has a
+  material used to fail to compile.
 - A copy of a compiled :ref:`mjSpec` made with :ref:`mj_copySpec` now holds what the compilation gave the original:
   saving it no longer crashes, and :ref:`mj_recompile` with the model and data of the original keeps their state.
 - :ref:`mjs_bodyToFrame` no longer loses inertia which is inferred from geoms when only one of the two bodies has
   an explicit inertial.
+- :ref:`mjs_delete` now deletes a :ref:`plugin instance<plugin-instance>` together with the last element that
+  references it, and keeps it otherwise. Previously a deletion could fail, leave an unused instance behind or free
+  one which was still referenced, so that the next compilation failed or crashed.
+- :ref:`mjs_delete` of a body no longer keeps the elements that referenced it (e.g. contact pairs, tendons, sensors)
+  when the spec had been compiled with :ref:`discardvisual<compiler-discardvisual>`, or edited after it was
+  compiled. The next compilation failed.
 - :ref:`mj_copyBack` and :ref:`mj_saveLastXML` no longer lose a change to the reference pose of a free joint in
   ``mjModel.qpos0``, or write out of bounds for a :ref:`numeric<custom-numeric>` which has less data than its
   ``size``.
@@ -113,13 +122,81 @@ Bug fixes
   orientation as ``euler``, ``axisangle``, ``xyaxes`` or ``zaxis``.
 - Saving MJCF no longer changes or loses the following: the order of the elements of a body which has
   :ref:`frames<frame>`, which gave the saved model other ids; ``class="main"`` inside another ``childclass``; the
-  :ref:`nchannel<asset-texture-nchannel>` of a texture; and the names of energy sensors, which could not be loaded.
+  :ref:`nchannel<asset-texture-nchannel>` of a texture; the names of energy sensors, which could not be loaded;
+  ``inertiafromgeom="false"``, and the inertia of the bodies of an attached model which has another
+  ``inertiafromgeom``; the frame of the :ref:`surfacevel<body-geom-surfacevel>` of mesh geoms; the precision of
+  mesh, flex, skin and height field data; and the empty cells of a :ref:`flexcomp<body-flexcomp>` with trilinear or
+  quadratic dofs.
+- Saving the compiled values of an :ref:`mjSpec` which was structurally edited since it was compiled (elements
+  added, deleted or attached) is now an error until it is compiled again; it used to crash or save wrong values. A
+  spec which is saved as it is written needs no compilation.
 
 Actuation
 ^^^^^^^^^
+- Actuators with "fixed" or "affine" :ref:`gaintype<actuator-general-gaintype>` can declare what their control is with
+  :ref:`input<actuator-general-input>`: a position setpoint ("pos"), a velocity setpoint ("vel") or a pressure
+  ("pressure"); without a declaration it is a command. The declaration does not affect the simulation. The
+  :ref:`position<actuator-position>`, :ref:`velocity<actuator-velocity>`, :ref:`intvelocity<actuator-intvelocity>`
+  and :ref:`cylinder<actuator-cylinder>` shortcuts declare their inputs, which are recorded in
+  ``mjModel.actuator_ctrlspec`` and kept when a model is saved; :ref:`mj_actuatorInputName` returns the declaration. An
+  input signature inherited from a default class is now discarded when the gaintype changes.
 - Added the :ref:`inheritrange<actuator-general-inheritrange>` attribute to the :ref:`general<actuator-general>`
   actuator, which so far only the :ref:`position<actuator-position>`, :ref:`intvelocity<actuator-intvelocity>` and
   :ref:`pid<actuator-pid>` shortcuts had.
+- Actuator :ref:`shortcuts<CActShortcuts>` now inherit their parameters (``kp``, ``kv``, ``area``, ...) only from a
+  :ref:`default<default>` written with the same shortcut or with :ref:`general<actuator-general>`, looking up the
+  class hierarchy for one, and otherwise use their documented defaults; mechanical attributes like ``ctrlrange`` and
+  ``gear`` are inherited from any default, as before. A :ref:`motor<actuator-motor>` in a class with a
+  :ref:`position<actuator-position>` default used to be a position servo (:issue:`3561`). Every shortcut now sets its
+  full documented table, including its dynamics and activation layout, and a :ref:`pid<actuator-pid>` without ``kp``
+  has the documented gain of 1, not 0. Added ``mjsActuator.type`` (:ref:`mjtActuator`), the element an actuator is
+  written with.
+- A model saved in the notation it was written in (:ref:`savecanonical<compiler-savecanonical>` "false") now writes
+  each actuator, and each actuator default, with the shortcut it was written with (``<position kp="10"/>``), with its
+  own attributes, whenever reading the shortcut back gives the same actuator; otherwise it is written as
+  :ref:`general<actuator-general>`. The canonical notation writes every actuator as general, as before.
+- A :ref:`pid<actuator-pid>` actuator with both :ref:`ki<actuator-pid-ki>` and :ref:`slewmax<actuator-pid-slewmax>`
+  now compiles; its two activation states were rejected.
+
+Filament Rendering
+^^^^^^^^^^^^^^^^^^
+.. admonition:: Breaking API changes
+   :class: attention
+
+   - Removed ``mjrf_setLightBlurWidth`` and ``mjrfLightParams::vsm_blur_width``. This includes the python counterparts
+     ``mjrf.Light.setBlurWidth`` and ``mjrf.LightParams.vsm_blur_width``. This effectively removes the option to specify
+     soft shadows with VSM.
+
+     **Migration:** Users should use PCSS shadows instead of VSM shadows for soft shadows by setting the custom flag
+     ``filament.shadow.type`` to ``pcss``. PCSS shadows provide similar quality shadows, but are more performant.
+
+   - The following custom flags have been renamed for consistency:
+
+     `filament.clearColor => filament.clear_color`
+
+     `filament.fog.cutOffDistance => filament.fog.cut_off_distance`
+
+     `filament.fog.maximumOpacity => filament.fog.maximum_opacity`
+
+     `filament.fog.heightFalloff => filament.fog.height_falloff`
+
+     `filament.fog.inScatteringStart => filament.fog.in_scattering_start`
+
+     `filament.fog.inScatteringSize => filament.fog.in_scattering_size`
+
+   - The following custom flags now use the strings "low", "medium", "high", or "ultra" instead of integers (0-3):
+
+     `filament.ao.quality`
+
+     `filament.ao.low_pass_filter`
+
+     `filament.ao.upsampling`
+
+     `filament.bloom.quality`
+
+   - The following custom flag now use the strings "pcf", "vsm", or "pcss" instead of integers (0-3):
+
+     `filament.shadows.type`
 
 Python bindings
 ^^^^^^^^^^^^^^^
@@ -132,6 +209,11 @@ Models
   example models using multicell trilinear flexes: a cantilever material comparison, an elastic slider-crank, and a
   tendon-loaded dipper arm. Inspired by `Miles Macklin's Reduced Elastic Links experiments
   <https://reports.mmacklin.com/newton-reduced/reduced_elastic_links_implementation.html>`__.
+
+Documentation
+^^^^^^^^^^^^^
+- The :ref:`XML reference<CDimension>` now gives the physical dimension of every real-valued attribute, declared in the
+  MJCF schema.
 
 Version 3.15.0 (October 5, 2026)
 --------------------------------

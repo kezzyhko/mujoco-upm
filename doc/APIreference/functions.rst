@@ -203,7 +203,8 @@ the required size. See :ref:`mj_saveXML` for what is saved.
 Save spec to XML file, return 0 on success, -1 otherwise. The compiler attributes
 :ref:`savecompiled<compiler-savecompiled>` and :ref:`savecanonical<compiler-savecanonical>` of the spec say whether
 the model is saved as it was compiled or as it is written in the spec, and in which notation; see
-:ref:`Model Encoding & Saving <meSaving>`. Saving the compiled values requires that the spec first be compiled.
+:ref:`Model Encoding & Saving <meSaving>`. Saving the compiled values requires that the spec first be compiled, and
+compiled again after it is structurally edited (elements added, deleted or attached).
 
 .. _mju_getXMLDependencies:
 
@@ -3558,15 +3559,6 @@ Sets the softness of the light, in the range [0, 1]. Only used for spot lights.
 
 Sets the radius of the light bulb.
 
-.. _mjrf_setLightBlurWidth:
-
-`mjrf_setLightBlurWidth <#mjrf_setLightBlurWidth>`__
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-
-.. mujoco-include:: mjrf_setLightBlurWidth
-
-Sets the width of the blur applied to the light's shadow map, in texels.
-
 .. _mjrf_setLightShadowMapSize:
 
 `mjrf_setLightShadowMapSize <#mjrf_setLightShadowMapSize>`__
@@ -5249,7 +5241,8 @@ Add frame to body.
 .. mujoco-include:: mjs_delete
 
 Remove object corresponding to the given element; return 0 on success. Deleting a body or a frame also deletes
-everything inside it, along with all the elements that reference a deleted element.
+everything inside it, along with all the elements that reference a deleted element. A
+:ref:`plugin instance<plugin-instance>` is deleted along with the last element that references it.
 
 .. _AddNonTreeElements:
 

@@ -309,6 +309,7 @@ public enum mjtCtrlInput : int{
   mjINPUT_FF = 4,
   mjINPUT_VOLTAGE = 8,
   mjINPUT_NONE = 16,
+  mjINPUT_PRESSURE = 32,
 }
 public enum mjtObj : int{
   mjOBJ_UNKNOWN = 0,
@@ -608,6 +609,20 @@ public enum mjtConflict : int{
   mjCONFLICT_WARNING = 0,
   mjCONFLICT_MERGE = 1,
   mjCONFLICT_ERROR = 2,
+}
+public enum mjtActuator : int{
+  mjACTUATOR_GENERAL = 0,
+  mjACTUATOR_MOTOR = 1,
+  mjACTUATOR_POSITION = 2,
+  mjACTUATOR_VELOCITY = 3,
+  mjACTUATOR_INTVELOCITY = 4,
+  mjACTUATOR_DAMPER = 5,
+  mjACTUATOR_CYLINDER = 6,
+  mjACTUATOR_MUSCLE = 7,
+  mjACTUATOR_ADHESION = 8,
+  mjACTUATOR_PID = 9,
+  mjACTUATOR_ORIENTATION = 10,
+  mjACTUATOR_DCMOTOR = 11,
 }
 public enum mjtCTimer : int{
   mjCTIMER_TOTAL = 0,

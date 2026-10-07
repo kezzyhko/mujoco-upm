@@ -2570,6 +2570,10 @@ void mjCBody::PoseToSpec(bool position, bool orientation) {
 
 // write to the spec the inertial which compiles to the compiled one
 void mjCBody::InertialToSpec(bool massonly) {
+  // the inertia which the model has is given to the body from now on
+  inertia_inferred_ = false;
+  inertia_given_    = true;
+
   // an inertial which the spec gives stays as it was written if only the mass is new
   if (massonly && mjuu_defined(spec.ipos[0])) {
     spec.mass = mass;
@@ -2893,11 +2897,15 @@ void mjCBody::Compile(void) {
     geoms[i]->Compile();
   }
 
-  // set inertial frame from geoms if necessary
-  if (id > 0 && (compiler->inertiafromgeom == mjINERTIAFROMGEOM_TRUE ||
-                 (!mjuu_defined(ipos[0]) && compiler->inertiafromgeom == mjINERTIAFROMGEOM_AUTO))) {
-    InertiaFromGeom();
-  }
+  // set inertial frame from geoms if necessary; how the body got its inertia is kept, for saving
+  // the compiled values also once the spec is edited
+  inertia_inferred_ =
+      id > 0 && (compiler->inertiafromgeom == mjINERTIAFROMGEOM_TRUE ||
+                 (!mjuu_defined(ipos[0]) && compiler->inertiafromgeom == mjINERTIAFROMGEOM_AUTO));
+  inertia_given_     = !inertia_inferred_ && mjuu_defined(ipos[0]);
+  inertia_groups_[0] = compiler->inertiagrouprange[0];
+  inertia_groups_[1] = compiler->inertiagrouprange[1];
+  if (inertia_inferred_) { InertiaFromGeom(); }
 
   // ipos undefined: copy body frame into inertial
   if (!mjuu_defined(ipos[0])) {
@@ -6617,6 +6625,9 @@ void mjCTendon::PointToLocal() {
 
 void mjCTendon::NameSpace(const mjCModel* m) {
   mjCBase::NameSpace(m);
+  if (!spec_material_.empty() && model != m) {
+    spec_material_ = m->prefix + spec_material_ + m->suffix;
+  }
   prefix = m->prefix;
   suffix = m->suffix;
 }
@@ -7541,11 +7552,28 @@ void mjCActuator::Compile(void) {
                    id);
   }
 
-  // input signature selection is so3-, pid- or dcmotor-only
-  if (ctrlspec && gaintype != mjGAIN_SO3 && gaintype != mjGAIN_PID && gaintype != mjGAIN_DCMOTOR) {
+  // fixed and affine gains: one declared input, pos, vel or pressure; none declared: a command
+  if (gaintype == mjGAIN_FIXED || gaintype == mjGAIN_AFFINE) {
+    if (ctrlspec &&
+        ctrlspec != mjINPUT_POS &&
+        ctrlspec != mjINPUT_VEL &&
+        ctrlspec != mjINPUT_PRESSURE) {
+      throw mjCError(this,
+                     "fixed and affine gains take one input, 'pos', 'vel' or 'pressure', in "
+                     "actuator '%s' (id = %d)",
+                     name.c_str(),
+                     id);
+    }
+    ctrlspec_ = ctrlspec;
+  }
+
+  // muscle and user gains take no input signature
+  else if (ctrlspec &&
+           gaintype != mjGAIN_SO3 &&
+           gaintype != mjGAIN_PID &&
+           gaintype != mjGAIN_DCMOTOR) {
     throw mjCError(this,
-                   "input is only available for so3, pid and dcmotor actuators, "
-                   "actuator '%s' (id = %d)",
+                   "input is not available for muscle and user gains, actuator '%s' (id = %d)",
                    name.c_str(),
                    id);
   }
@@ -7657,8 +7685,12 @@ void mjCActuator::Compile(void) {
 
   // check and set actdim
   if (!plugin.active) {
-    if (actdim > 1 && dyntype != mjDYN_USER && dyntype != mjDYN_DCMOTOR && !so3_) {
-      throw mjCError(this, "actdim > 1 is only allowed for dyntype 'user' and 'dcmotor'");
+    if (actdim > 1 &&
+        dyntype != mjDYN_USER &&
+        dyntype != mjDYN_DCMOTOR &&
+        dyntype != mjDYN_PID &&
+        !so3_) {
+      throw mjCError(this, "actdim > 1 is only allowed for dyntype 'user', 'dcmotor' and 'pid'");
     }
     if (actdim == 1 && dyntype == mjDYN_NONE) {
       throw mjCError(this, "invalid actdim 1 in stateless actuator");

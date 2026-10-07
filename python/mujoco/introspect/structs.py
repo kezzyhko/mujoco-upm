@@ -5724,7 +5724,7 @@ STRUCTS: Mapping[str, StructDecl] = dict([
              StructFieldDecl(
                  name='efm_active',
                  type=ValueType(name='int'),
-                 doc='implicit effective metric M+K is active (see mjd_effBuild)',  # pylint: disable=line-too-long
+                 doc='implicit effective metric M+K is active (see mj_effBuild)',  # pylint: disable=line-too-long
              ),
              StructFieldDecl(
                  name='nefmK',
@@ -9770,6 +9770,11 @@ STRUCTS: Mapping[str, StructDecl] = dict([
                      inner_type=ValueType(name='mjsElement'),
                  ),
                  doc='element type',
+             ),
+             StructFieldDecl(
+                 name='type',
+                 type=ValueType(name='mjtActuator'),
+                 doc='element the actuator is written with',
              ),
              StructFieldDecl(
                  name='gaintype',

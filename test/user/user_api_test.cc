@@ -573,6 +573,61 @@ TEST_F(MujocoTest, SetToPID) {
   mj_deleteSpec(spec);
 }
 
+TEST_F(MujocoTest, SetToDeclaresInput) {
+  mjSpec* spec = mj_makeSpec();
+  mjsActuator* actuator = mjs_addActuator(spec, 0);
+  double timeconst[2] = {-1, -1};
+  double range[2] = {-1, -1};
+
+  // setpoint and pressure shortcuts declare an input, command ones clear it
+  mjs_setToPosition(actuator, 1, nullptr, nullptr, nullptr, 0);
+  EXPECT_EQ(actuator->ctrlspec, mjINPUT_POS);
+  mjs_setToMotor(actuator);
+  EXPECT_EQ(actuator->ctrlspec, 0);
+  mjs_setToVelocity(actuator, 1);
+  EXPECT_EQ(actuator->ctrlspec, mjINPUT_VEL);
+  mjs_setToDamper(actuator, 1);
+  EXPECT_EQ(actuator->ctrlspec, 0);
+  mjs_setToIntVelocity(actuator, 1, nullptr, nullptr, nullptr, 0);
+  EXPECT_EQ(actuator->ctrlspec, mjINPUT_VEL);
+  mjs_setToMuscle(actuator, timeconst, 0, range, -1, -1, -1, -1, -1, -1, -1);
+  EXPECT_EQ(actuator->ctrlspec, 0);
+  mjs_setToCylinder(actuator, 1, 0, 1, -1);
+  EXPECT_EQ(actuator->ctrlspec, mjINPUT_PRESSURE);
+  mjs_setToAdhesion(actuator, 1);
+  EXPECT_EQ(actuator->ctrlspec, 0);
+
+  mj_deleteSpec(spec);
+}
+
+TEST_F(MujocoTest, SetToOwnsControlModel) {
+  mjSpec* spec = mj_makeSpec();
+  mjsActuator* actuator = mjs_addActuator(spec, 0);
+  EXPECT_EQ(actuator->type, mjACTUATOR_GENERAL);
+
+  // a position servo with damping and filter dynamics
+  double kv = 10, timeconst = 0.1;
+  mjs_setToPosition(actuator, 100, &kv, nullptr, &timeconst, 0);
+  EXPECT_EQ(actuator->type, mjACTUATOR_POSITION);
+  EXPECT_EQ(actuator->dyntype, mjDYN_FILTEREXACT);
+
+  // a motor set afterwards is a plain motor
+  mjs_setToMotor(actuator);
+  EXPECT_EQ(actuator->type, mjACTUATOR_MOTOR);
+  EXPECT_EQ(actuator->gainprm[0], 1);
+  EXPECT_EQ(actuator->biasprm[1], 0);
+  EXPECT_EQ(actuator->biasprm[2], 0);
+  EXPECT_EQ(actuator->biastype, mjBIAS_NONE);
+  EXPECT_EQ(actuator->dyntype, mjDYN_NONE);
+  EXPECT_EQ(actuator->dynprm[0], 1);
+
+  // intvelocity is its own type
+  mjs_setToIntVelocity(actuator, 1, nullptr, nullptr, nullptr, 0);
+  EXPECT_EQ(actuator->type, mjACTUATOR_INTVELOCITY);
+
+  mj_deleteSpec(spec);
+}
+
 static constexpr char xml_plugin_1[] = R"(
   <mujoco model="MuJoCo Model">
     <worldbody>
@@ -676,6 +731,379 @@ TEST_F(MujocoTest, DetachPlugin) {
   mj_deleteModel(model);
   mj_deleteSpec(parent);
   mj_deleteSpec(child);
+}
+
+TEST_F(MujocoTest, DetachPluginKeepsRemainingInstances) {
+  static constexpr char xml[] = R"(
+  <mujoco>
+    <extension>
+      <plugin plugin="mujoco.pid">
+        <instance name="pid1"/>
+        <instance name="pid2"/>
+      </plugin>
+    </extension>
+    <worldbody>
+      <body name="body1">
+        <joint name="joint1" type="slide"/>
+        <geom size=".1"/>
+      </body>
+      <body name="body2">
+        <joint name="joint2" type="slide"/>
+        <geom size=".1"/>
+      </body>
+    </worldbody>
+    <actuator>
+      <plugin plugin="mujoco.pid" instance="pid1" joint="joint1"/>
+      <plugin plugin="mujoco.pid" instance="pid2" joint="joint2"/>
+    </actuator>
+  </mujoco>)";
+
+  std::array<char, 1000> err;
+  mjSpec* spec = mj_parseXMLString(xml, 0, err.data(), err.size());
+  ASSERT_THAT(spec, NotNull()) << err.data();
+
+  // the first instance is deleted with the actuator, the second one is kept
+  mjsBody* body = mjs_findBody(spec, "body1");
+  EXPECT_EQ(mjs_delete(spec, body->element), 0) << mjs_getError(spec);
+  mjModel* model = mj_compile(spec, nullptr);
+  ASSERT_THAT(model, NotNull()) << mjs_getError(spec);
+  EXPECT_EQ(model->nplugin, 1);
+
+  mj_deleteModel(model);
+  mj_deleteSpec(spec);
+}
+
+TEST_F(MujocoTest, DeleteBodyKeepsPluginReferencedByPointer) {
+  mjSpec* spec = mj_makeSpec();
+  mjs_activatePlugin(spec, "mujoco.pid");
+  mjsBody* world = mjs_findBody(spec, "world");
+
+  // a body with the actuated joint and an unrelated body
+  mjsBody* body = mjs_addBody(world, 0);
+  mjsJoint* joint = mjs_addJoint(body, 0);
+  mjs_setName(joint->element, "joint");
+  joint->type = mjJNT_SLIDE;
+  mjs_addGeom(body, 0)->size[0] = 0.1;
+  mjsBody* other = mjs_addBody(world, 0);
+  mjs_addGeom(other, 0)->size[0] = 0.1;
+
+  // a named instance that the actuator references only through its element
+  mjsPlugin* plugin = mjs_addPlugin(spec);
+  mjs_setName(plugin->element, "pid");
+  mjs_setString(plugin->plugin_name, "mujoco.pid");
+  mjsActuator* actuator = mjs_addActuator(spec, 0);
+  mjs_setString(actuator->target, "joint");
+  actuator->trntype = mjTRN_JOINT;
+  mjs_setString(actuator->plugin.plugin_name, "mujoco.pid");
+  actuator->plugin.element = plugin->element;
+  actuator->plugin.active = true;
+
+  // deleting the unrelated body keeps the instance
+  EXPECT_EQ(mjs_delete(spec, other->element), 0) << mjs_getError(spec);
+  ASSERT_THAT(mjs_findElement(spec, mjOBJ_PLUGIN, "pid"), NotNull());
+  mjModel* model = mj_compile(spec, nullptr);
+  ASSERT_THAT(model, NotNull()) << mjs_getError(spec);
+  EXPECT_EQ(model->nplugin, 1);
+  EXPECT_EQ(model->actuator_plugin[0], 0);
+
+  mj_deleteModel(model);
+  mj_deleteSpec(spec);
+}
+
+TEST_F(MujocoTest, DeleteBodyDeletesImplicitPlugins) {
+  static constexpr char xml[] = R"(
+  <mujoco>
+    <extension>
+      <plugin plugin="mujoco.pid"/>
+      <plugin plugin="mujoco.sdf.torus"/>
+      <plugin plugin="mujoco.sensor.touch_grid"/>
+    </extension>
+    <asset>
+      <mesh name="mesh" vertex="0 0 0 1 0 0 0 1 0 0 0 1"/>
+    </asset>
+    <worldbody>
+      <body>
+        <joint name="kept"/>
+        <geom size=".1"/>
+      </body>
+      <frame name="frame">
+        <body name="body">
+          <joint name="joint"/>
+          <geom size=".1"/>
+          <site name="site"/>
+          <body>
+            <geom type="sdf" mesh="mesh">
+              <plugin plugin="mujoco.sdf.torus"/>
+            </geom>
+          </body>
+        </body>
+      </frame>
+    </worldbody>
+    <actuator>
+      <plugin name="kept" plugin="mujoco.pid" joint="kept"/>
+      <plugin plugin="mujoco.pid" joint="joint"/>
+    </actuator>
+    <sensor>
+      <plugin plugin="mujoco.sensor.touch_grid" objtype="site" objname="site">
+        <config key="size" value="2 2"/>
+        <config key="fov" value="45 45"/>
+        <config key="gamma" value="0"/>
+        <config key="nchannel" value="1"/>
+      </plugin>
+    </sensor>
+  </mujoco>)";
+
+  for (mjtObj type : {mjOBJ_BODY, mjOBJ_FRAME}) {
+    for (bool compile : {false, true}) {
+      std::array<char, 1000> err;
+      mjSpec* spec = mj_parseXMLString(xml, 0, err.data(), err.size());
+      ASSERT_THAT(spec, NotNull()) << err.data();
+      if (compile) {
+        mjModel* model = mj_compile(spec, nullptr);
+        ASSERT_THAT(model, NotNull()) << mjs_getError(spec);
+        EXPECT_EQ(model->nplugin, 4);
+        mj_deleteModel(model);
+      }
+
+      // the instances of the geom in the subtree, and of the actuator and the
+      // sensor removed because they reference it, are deleted with it
+      const char* name = type == mjOBJ_BODY ? "body" : "frame";
+      mjsElement* element = mjs_findElement(spec, type, name);
+      EXPECT_EQ(mjs_delete(spec, element), 0) << mjs_getError(spec);
+      mjsElement* kept = mjs_findElement(spec, mjOBJ_ACTUATOR, "kept");
+      mjsElement* plugin = mjs_firstElement(spec, mjOBJ_PLUGIN);
+      EXPECT_EQ(plugin, mjs_asActuator(kept)->plugin.element);
+      ASSERT_THAT(mjs_nextElement(spec, plugin), IsNull());
+      mjModel* model = mj_compile(spec, nullptr);
+      ASSERT_THAT(model, NotNull()) << mjs_getError(spec);
+      EXPECT_EQ(model->nplugin, 1);
+
+      mj_deleteModel(model);
+      mj_deleteSpec(spec);
+    }
+  }
+}
+
+TEST_F(MujocoTest, DeleteActuatorBeforeCompileDeletesImplicitPlugin) {
+  static constexpr char xml[] = R"(
+  <mujoco>
+    <extension>
+      <plugin plugin="mujoco.pid"/>
+    </extension>
+    <worldbody>
+      <body>
+        <joint name="joint"/>
+        <geom size=".1"/>
+      </body>
+    </worldbody>
+    <actuator>
+      <plugin plugin="mujoco.pid" joint="joint"/>
+    </actuator>
+  </mujoco>)";
+
+  // the instance is deleted with the actuator from a spec that was never
+  // compiled, or from an uncompiled copy of a compiled spec
+  for (bool copy : {false, true}) {
+    std::array<char, 1000> err;
+    mjSpec* spec = mj_parseXMLString(xml, 0, err.data(), err.size());
+    ASSERT_THAT(spec, NotNull()) << err.data();
+    if (copy) {
+      mjModel* model = mj_compile(spec, nullptr);
+      ASSERT_THAT(model, NotNull()) << mjs_getError(spec);
+      mj_deleteModel(model);
+      mjSpec* original = spec;
+      spec = mj_copySpec(original);
+      mj_deleteSpec(original);
+    }
+
+    mjsElement* actuator = mjs_firstElement(spec, mjOBJ_ACTUATOR);
+    EXPECT_EQ(mjs_delete(spec, actuator), 0) << mjs_getError(spec);
+    ASSERT_THAT(mjs_firstElement(spec, mjOBJ_PLUGIN), IsNull());
+    mjModel* model = mj_compile(spec, nullptr);
+    ASSERT_THAT(model, NotNull()) << mjs_getError(spec);
+    EXPECT_EQ(model->nplugin, 0);
+
+    mj_deleteModel(model);
+    mj_deleteSpec(spec);
+  }
+}
+
+TEST_F(MujocoTest, DeleteBodyDeletesPluginReferencedByPointer) {
+  mjSpec* spec = mj_makeSpec();
+  mjs_activatePlugin(spec, "mujoco.elasticity.cable");
+
+  // a named instance that only a body references, through its element
+  mjsBody* body = mjs_addBody(mjs_findBody(spec, "world"), 0);
+  mjs_addGeom(body, 0)->size[0] = 0.1;
+  mjsPlugin* plugin = mjs_addPlugin(spec);
+  mjs_setName(plugin->element, "cable");
+  mjs_setString(plugin->plugin_name, "mujoco.elasticity.cable");
+  mjs_setString(body->plugin.plugin_name, "mujoco.elasticity.cable");
+  body->plugin.element = plugin->element;
+  body->plugin.active = true;
+
+  // the instance is deleted once, with the body
+  EXPECT_EQ(mjs_delete(spec, body->element), 0) << mjs_getError(spec);
+  EXPECT_THAT(mjs_firstElement(spec, mjOBJ_PLUGIN), IsNull());
+  mjModel* model = mj_compile(spec, nullptr);
+  ASSERT_THAT(model, NotNull()) << mjs_getError(spec);
+  EXPECT_EQ(model->nplugin, 0);
+
+  mj_deleteModel(model);
+  mj_deleteSpec(spec);
+}
+
+TEST_F(MujocoTest, DeleteActuatorKeepsSharedPlugin) {
+  for (bool by_name : {false, true}) {
+    mjSpec* spec = mj_makeSpec();
+    mjs_activatePlugin(spec, "mujoco.pid");
+    mjsBody* body = mjs_addBody(mjs_findBody(spec, "world"), 0);
+    mjsJoint* joint = mjs_addJoint(body, 0);
+    mjs_setName(joint->element, "joint");
+    mjs_addGeom(body, 0)->size[0] = 0.1;
+
+    // two actuators that share a named instance, the first one through its
+    // element, the second one through its element or by name
+    mjsPlugin* plugin = mjs_addPlugin(spec);
+    mjs_setName(plugin->element, "pid");
+    mjs_setString(plugin->plugin_name, "mujoco.pid");
+    mjsActuator* actuator[2];
+    for (int i = 0; i < 2; i++) {
+      actuator[i] = mjs_addActuator(spec, 0);
+      mjs_setString(actuator[i]->target, "joint");
+      actuator[i]->trntype = mjTRN_JOINT;
+      mjs_setString(actuator[i]->plugin.plugin_name, "mujoco.pid");
+      actuator[i]->plugin.active = true;
+    }
+    actuator[0]->plugin.element = plugin->element;
+    if (by_name) {
+      mjs_setString(actuator[1]->plugin.name, "pid");
+    } else {
+      actuator[1]->plugin.element = plugin->element;
+    }
+    mjModel* model = mj_compile(spec, nullptr);
+    ASSERT_THAT(model, NotNull()) << mjs_getError(spec);
+    mj_deleteModel(model);
+
+    // deleting the first actuator keeps the instance for the second one
+    EXPECT_EQ(mjs_delete(spec, actuator[0]->element), 0) << mjs_getError(spec);
+    ASSERT_THAT(mjs_findElement(spec, mjOBJ_PLUGIN, "pid"), NotNull());
+    model = mj_compile(spec, nullptr);
+    ASSERT_THAT(model, NotNull()) << mjs_getError(spec);
+    EXPECT_EQ(model->nplugin, 1);
+    EXPECT_EQ(model->actuator_plugin[0], 0);
+    mj_deleteModel(model);
+
+    // deleting the second one deletes the instance
+    EXPECT_EQ(mjs_delete(spec, actuator[1]->element), 0) << mjs_getError(spec);
+    EXPECT_THAT(mjs_firstElement(spec, mjOBJ_PLUGIN), IsNull());
+
+    mj_deleteSpec(spec);
+  }
+}
+
+TEST_F(MujocoTest, DeleteBodyKeepsPluginOfDefault) {
+  mjSpec* spec = mj_makeSpec();
+  mjs_activatePlugin(spec, "mujoco.pid");
+  mjsBody* world = mjs_findBody(spec, "world");
+  for (const char* name : {"joint1", "joint2"}) {
+    mjsBody* body = mjs_addBody(world, 0);
+    mjsJoint* joint = mjs_addJoint(body, 0);
+    mjs_setName(joint->element, name);
+    mjs_addGeom(body, 0)->size[0] = 0.1;
+  }
+
+  // a default class that points to a named instance, used by an actuator
+  mjsPlugin* plugin = mjs_addPlugin(spec);
+  mjs_setName(plugin->element, "pid");
+  mjs_setString(plugin->plugin_name, "mujoco.pid");
+  mjsDefault* def = mjs_addDefault(spec, "pid", nullptr);
+  mjs_setString(def->actuator->plugin.plugin_name, "mujoco.pid");
+  def->actuator->plugin.element = plugin->element;
+  def->actuator->plugin.active = true;
+  mjsActuator* actuator = mjs_addActuator(spec, def);
+  mjs_setString(actuator->target, "joint1");
+  actuator->trntype = mjTRN_JOINT;
+
+  // deleting the body of the actuator keeps the instance of the class
+  mjsBody* body1 = mjs_getParent(mjs_findElement(spec, mjOBJ_JOINT, "joint1"));
+  EXPECT_EQ(mjs_delete(spec, body1->element), 0) << mjs_getError(spec);
+  ASSERT_THAT(mjs_findElement(spec, mjOBJ_PLUGIN, "pid"), NotNull());
+  actuator = mjs_addActuator(spec, def);
+  mjs_setString(actuator->target, "joint2");
+  actuator->trntype = mjTRN_JOINT;
+  mjModel* model = mj_compile(spec, nullptr);
+  ASSERT_THAT(model, NotNull()) << mjs_getError(spec);
+  EXPECT_EQ(model->nplugin, 1);
+  EXPECT_EQ(model->actuator_plugin[0], 0);
+
+  mj_deleteModel(model);
+  mj_deleteSpec(spec);
+}
+
+TEST_F(MujocoTest, DeleteBodyKeepsUnreferencedPlugin) {
+  for (const char* name : {"", "pid"}) {
+    mjSpec* spec = mj_makeSpec();
+    mjs_activatePlugin(spec, "mujoco.pid");
+    mjsBody* world = mjs_findBody(spec, "world");
+    mjsBody* body = mjs_addBody(world, 0);
+    mjsJoint* joint = mjs_addJoint(body, 0);
+    mjs_setName(joint->element, "joint");
+    mjs_addGeom(body, 0)->size[0] = 0.1;
+    mjsBody* other = mjs_addBody(world, 0);
+    mjs_addGeom(other, 0)->size[0] = 0.1;
+
+    // an instance that no element references yet is kept
+    mjsPlugin* plugin = mjs_addPlugin(spec);
+    mjs_setName(plugin->element, name);
+    mjs_setString(plugin->plugin_name, "mujoco.pid");
+    EXPECT_EQ(mjs_delete(spec, other->element), 0) << mjs_getError(spec);
+    ASSERT_THAT(mjs_firstElement(spec, mjOBJ_PLUGIN), NotNull());
+
+    // and can be referenced afterwards
+    mjsActuator* actuator = mjs_addActuator(spec, 0);
+    mjs_setString(actuator->target, "joint");
+    actuator->trntype = mjTRN_JOINT;
+    mjs_setString(actuator->plugin.plugin_name, "mujoco.pid");
+    actuator->plugin.element = plugin->element;
+    actuator->plugin.active = true;
+    mjModel* model = mj_compile(spec, nullptr);
+    ASSERT_THAT(model, NotNull()) << mjs_getError(spec);
+    EXPECT_EQ(model->nplugin, 1);
+
+    mj_deleteModel(model);
+    mj_deleteSpec(spec);
+  }
+}
+
+TEST_F(MujocoTest, BodyToFrameDeletesImplicitPlugin) {
+  static constexpr char xml[] = R"(
+  <mujoco>
+    <extension>
+      <plugin plugin="mujoco.elasticity.cable"/>
+    </extension>
+    <worldbody>
+      <body name="body">
+        <geom size=".1"/>
+        <plugin plugin="mujoco.elasticity.cable"/>
+      </body>
+    </worldbody>
+  </mujoco>)";
+
+  std::array<char, 1000> err;
+  mjSpec* spec = mj_parseXMLString(xml, 0, err.data(), err.size());
+  ASSERT_THAT(spec, NotNull()) << err.data();
+
+  // the instance is deleted with the body, frames have no plugins
+  mjsBody* body = mjs_findBody(spec, "body");
+  ASSERT_THAT(mjs_bodyToFrame(&body), NotNull()) << mjs_getError(spec);
+  ASSERT_THAT(mjs_firstElement(spec, mjOBJ_PLUGIN), IsNull());
+  mjModel* model = mj_compile(spec, nullptr);
+  ASSERT_THAT(model, NotNull()) << mjs_getError(spec);
+  EXPECT_EQ(model->nplugin, 0);
+
+  mj_deleteModel(model);
+  mj_deleteSpec(spec);
 }
 
 TEST_F(MujocoTest, AttachExplicitPlugin) {
@@ -2558,7 +2986,7 @@ void TestDetachBody(bool compile) {
   std::array<char, 1024> s;
   EXPECT_EQ(mj_saveXMLString(child, s.data(), 1024, e.data(), 1024), -1);
   EXPECT_THAT(e.data(), compile
-                            ? HasSubstr("Model has pending keyframes")
+                            ? HasSubstr("must be recompiled")
                             : HasSubstr("Only compiled model can be written"));
 
   // compile new model
@@ -2581,6 +3009,71 @@ void TestDetachBody(bool compile) {
 TEST_F(MujocoTest, DetachBody) {
   TestDetachBody(/*compile=*/false);
   TestDetachBody(/*compile=*/true);
+}
+
+TEST_F(MujocoTest, DeleteBodyAfterCompile) {
+  static constexpr char xml[] = R"(
+  <mujoco>
+    <compiler discardvisual="true"/>
+    <worldbody>
+      <geom name="floor" type="plane" size="1 1 1"/>
+      <site name="site"/>
+      <body>
+        <geom size=".1" contype="0" conaffinity="0"/>
+      </body>
+      <body name="body">
+        <geom name="geom" size=".1"/>
+        <site name="site_body"/>
+      </body>
+    </worldbody>
+    <contact>
+      <pair geom1="geom" geom2="floor"/>
+    </contact>
+    <tendon>
+      <spatial>
+        <site site="site"/>
+        <geom geom="geom"/>
+        <site site="site_body"/>
+      </spatial>
+    </tendon>
+    <sensor>
+      <framepos objtype="geom" objname="geom"/>
+    </sensor>
+  </mujoco>)";
+
+  std::array<char, 1000> err;
+  mjSpec* spec = mj_parseXMLString(xml, 0, err.data(), err.size());
+  ASSERT_THAT(spec, NotNull()) << err.data();
+  mjModel* model = mj_compile(spec, nullptr);
+  ASSERT_THAT(model, NotNull()) << mjs_getError(spec);
+
+  // the elements that reference the body are deleted with it, also after the
+  // visual geom that precedes it was discarded by the compiler
+  mjsBody* body = mjs_findBody(spec, "body");
+  EXPECT_EQ(mjs_delete(spec, body->element), 0) << mjs_getError(spec);
+  EXPECT_THAT(mjs_firstElement(spec, mjOBJ_PAIR), IsNull());
+  EXPECT_THAT(mjs_firstElement(spec, mjOBJ_TENDON), IsNull());
+  EXPECT_THAT(mjs_firstElement(spec, mjOBJ_SENSOR), IsNull());
+  mjModel* deleted = mj_compile(spec, nullptr);
+  ASSERT_THAT(deleted, NotNull()) << mjs_getError(spec);
+
+  // same for elements added after compiling
+  mjsBody* added = mjs_addBody(mjs_findBody(spec, "world"), nullptr);
+  mjs_setName(added->element, "added");
+  mjsGeom* geom = mjs_addGeom(added, nullptr);
+  mjs_setName(geom->element, "added");
+  mjsPair* pair = mjs_addPair(spec, nullptr);
+  mjs_setString(pair->geomname1, "added");
+  mjs_setString(pair->geomname2, "floor");
+  EXPECT_EQ(mjs_delete(spec, added->element), 0) << mjs_getError(spec);
+  EXPECT_THAT(mjs_firstElement(spec, mjOBJ_PAIR), IsNull());
+  mjModel* readded = mj_compile(spec, nullptr);
+  EXPECT_THAT(readded, NotNull()) << mjs_getError(spec);
+
+  mj_deleteSpec(spec);
+  mj_deleteModel(model);
+  mj_deleteModel(deleted);
+  mj_deleteModel(readded);
 }
 
 void TestDeleteFrame(bool compile) {
@@ -5216,6 +5709,86 @@ TEST_F(MujocoTest, ApiAssetNeedsName) {
   mj_deleteVFS(vfs.get());
   mj_deleteSpec(spec);
   mj_deleteModel(model);
+}
+
+TEST_F(MujocoTest, AttachMaterialReferences) {
+  static constexpr char xml_child[] = R"(
+  <mujoco>
+    <asset>
+      <material name="material" rgba="1 0 0 1"/>
+      <mesh name="mesh" material="material" vertex="0 0 0 1 0 0 0 1 0 0 0 1"/>
+    </asset>
+    <worldbody>
+      <body name="body">
+        <joint/>
+        <geom type="mesh" mesh="mesh"/>
+        <site name="site0"/>
+        <site name="site1" pos="1 0 0"/>
+      </body>
+    </worldbody>
+    <tendon>
+      <spatial material="material">
+        <site site="site0"/>
+        <site site="site1"/>
+      </spatial>
+    </tendon>
+    <deformable>
+      <skin name="skin" material="material" vertex="0 0 0 1 0 0 0 1 0" face="0 1 2">
+        <bone body="body" bindpos="0 0 0" bindquat="1 0 0 0" vertid="0 1 2" vertweight="1 1 1"/>
+      </skin>
+    </deformable>
+  </mujoco>)";
+
+  // attach two children whose skin, tendon and mesh reference a material, by
+  // deep copy and by reference
+  std::array<char, 1000> er;
+  std::array<mjModel*, 2> models;
+  for (bool deepcopy : {true, false}) {
+    mjSpec* parent = mj_makeSpec();
+    mjs_setDeepCopy(parent, deepcopy);
+    std::array<mjSpec*, 2> children;
+    for (int i = 0; i < 2; i++) {
+      children[i] = mj_parseXMLString(xml_child, 0, er.data(), er.size());
+      ASSERT_THAT(children[i], NotNull()) << er.data();
+      mjsFrame* frame = mjs_addFrame(mjs_findBody(parent, "world"), 0);
+      mjsBody* body = mjs_findBody(children[i], "body");
+      mjsElement* attached =
+          mjs_attach(frame->element, body->element, i ? "b-" : "a-", "");
+      EXPECT_THAT(attached, NotNull()) << mjs_getError(parent);
+    }
+
+    // skin names and material references are namespaced
+    mjModel* model = mj_compile(parent, 0);
+    ASSERT_THAT(model, NotNull()) << mjs_getError(parent);
+    ASSERT_THAT(model->nskin, 2);
+    ASSERT_THAT(model->ntendon, 2);
+    ASSERT_THAT(model->ngeom, 2);
+    EXPECT_STREQ(mj_id2name(model, mjOBJ_SKIN, 0), "a-skin");
+    EXPECT_STREQ(mj_id2name(model, mjOBJ_SKIN, 1), "b-skin");
+    for (int i = 0; i < 2; i++) {
+      const char* material = i ? "b-material" : "a-material";
+      EXPECT_STREQ(mj_id2name(model, mjOBJ_MATERIAL, model->skin_matid[i]),
+                   material);
+      EXPECT_STREQ(mj_id2name(model, mjOBJ_MATERIAL, model->tendon_matid[i]),
+                   material);
+      EXPECT_STREQ(mj_id2name(model, mjOBJ_MATERIAL, model->geom_matid[i]),
+                   material);
+    }
+    models[deepcopy] = model;
+
+    mj_deleteSpec(parent);
+    for (mjSpec* child : children) {
+      mj_deleteSpec(child);
+    }
+  }
+
+  // deep copy and attachment by reference give the same model
+  std::string field = "";
+  EXPECT_LE(CompareModel(models[0], models[1], field), 0)
+      << "Different field: " << field;
+
+  mj_deleteModel(models[0]);
+  mj_deleteModel(models[1]);
 }
 
 TEST_F(MujocoTest, InitTexture) {

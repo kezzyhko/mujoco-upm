@@ -151,13 +151,12 @@ _setup_ext_deps_args() {
 
 configure_mujoco() {
     echo "Configuring MuJoCo..."
-    # Disable IPO/LTO to cut build time. Skip this on Windows MSVC: turning off
-    # MSVC's whole-program optimization (/GL) exposes a latent heap corruption in
-    # SetConstTest.SleepingNotAllowed (a real bug worth a separate investigation).
+    # Disable global IPO/LTO to avoid expensive whole-program optimization link
+    # passes on third-party dependencies, Studio, and the 65 test binaries. On
+    # Windows MSVC, CMakeLists.txt keeps INTERPROCEDURAL_OPTIMIZATION enabled on
+    # the core mujoco DLL target to avoid an MSVC /EHsc + longjmp unwinding crash
+    # in SetConstTest.SleepingNotAllowed.
     local ipo_off="-DCMAKE_INTERPROCEDURAL_OPTIMIZATION:BOOL=OFF"
-    if [[ "${RUNNER_OS}" == "Windows" && "${CMAKE_ARGS}" != *clang* ]]; then
-        ipo_off=""
-    fi
 
     # Use cached external dependencies from actions/cache.
     local ext_deps_args=()
@@ -358,7 +357,7 @@ build_python_bindings() {
     MUJOCO_PATH="${TMPDIR}/mujoco_install" \
     MUJOCO_PLUGIN_PATH="${TMPDIR}/mujoco_install/mujoco_plugin" \
     MUJOCO_CMAKE_ARGS="-DCMAKE_INTERPROCEDURAL_OPTIMIZATION:BOOL=OFF ${CCACHE_ARGS} ${CMAKE_ARGS} ${ext_deps_args[*]}" \
-    pip wheel -v --no-deps mujoco-*.tar.gz
+    pip wheel -v --no-deps --no-build-isolation mujoco-*.tar.gz
 }
 
 
@@ -443,7 +442,7 @@ package_wasm() {
 package_mjx() {
     echo "Packaging MJX..."
     source ${TMPDIR}/venv/bin/activate &&
-    python -m build .
+    python -m build --no-isolation .
 }
 
 
@@ -790,11 +789,9 @@ build_studio_wasm() {
 build_engine() {
     echo "Building the MuJoCo engine..."
     local prefix="${TMPDIR:-$(pwd)/build}/mujoco_install"
-    # See configure_mujoco for why IPO stays on for Windows MSVC.
+    # See configure_mujoco for why global IPO is off while CMakeLists.txt keeps
+    # IPO on the core mujoco target on Windows MSVC.
     local ipo_off="-DCMAKE_INTERPROCEDURAL_OPTIMIZATION:BOOL=OFF"
-    if [[ "${RUNNER_OS}" == "Windows" && "${CMAKE_ARGS}" != *clang* ]]; then
-        ipo_off=""
-    fi
     cmake -S . -B build -G Ninja \
         -DCMAKE_BUILD_TYPE:STRING=Release \
         ${ipo_off} \
@@ -826,9 +823,6 @@ build_simulate_app() {
     if [[ ! -f build_simulate/CMakeCache.txt ]]; then
         echo "Configuring the engine + simulate build..."
         local ipo_off="-DCMAKE_INTERPROCEDURAL_OPTIMIZATION:BOOL=OFF"
-        if [[ "${RUNNER_OS}" == "Windows" && "${CMAKE_ARGS}" != *clang* ]]; then
-            ipo_off=""
-        fi
         cmake -S . -B build_simulate -G Ninja \
             -DCMAKE_BUILD_TYPE:STRING=Release \
             ${ipo_off} \

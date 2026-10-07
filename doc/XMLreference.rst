@@ -90,6 +90,36 @@ will appear in the reference documentation as
       <p style="display: none"></p>
 
 
+.. _CDimension:
+
+Attribute dimensions
+~~~~~~~~~~~~~~~~~~~~
+
+MuJoCo does not fix a system of units, see :ref:`Units`. The table below gives the physical dimension of every
+real-valued attribute in terms of length :math:`L`, mass :math:`M` and time :math:`T`, and the symbols
+
+============ ===========================================================================================================
+:math:`A`    Plane angle, dimensionless. Orientations and the :at:`range`, :at:`ref` and :at:`springref` of hinge and
+             ball joints are read in the unit set by :ref:`compiler/angle<compiler-angle>`. Other angles are radians,
+             unless their description says otherwise.
+:math:`Q`    The coordinate of the joint, tendon or actuator transmission: an angle for hinge and ball joints, a length
+             for slide joints and spatial tendons. The coordinate of a :ref:`fixed tendon<tendon-fixed>` is
+             :ref:`coef<fixed-joint-coef>` times the coordinates of its joints.
+:math:`F`    The generalized force conjugate to :math:`Q`, of dimension :math:`M\,L^2\,T^{-2}\,Q^{-1}`: a torque when
+             :math:`Q` is an angle, a force when it is a length.
+============ ===========================================================================================================
+
+Integer attributes are counts, indices or flags, and dimensionless. Raw asset data is in the asset's own units:
+mesh :at:`vertex` and :at:`refpos` and flexcomp :at:`point` and :at:`origin` are dimensionless, and :at:`scale`,
+which converts them to lengths, has dimension :math:`L`. A dimension marked *varies* depends on other attributes of the
+element, for example the outputs selected by a sensor's :at:`data`; *other* marks quantities not expressible in these
+terms, such as user data and the electrical parameters of :ref:`dcmotor<actuator-dcmotor>`.
+
+.. collapse:: Dimensions of all attributes
+
+   .. include:: XMLunits.rst
+
+
 .. _CXSD:
 
 XSD schema
@@ -154,9 +184,8 @@ exceptions:
    objects that the tendon passes through or wraps around.
 -  The order of repeated sections matters when the same attribute is set multiple times to different values. In that
    case the last setting takes effect for the entire model.
--  The order of multiple actuator shortcuts in the same defaults class matters, because each shortcut sets the
-   attributes of the single :ref:`general <actuator-general>` element in that defaults class, overriding the previous
-   settings.
+-  The order of multiple actuator elements in the same defaults class matters, because a class has a single actuator
+   default and each shortcut resets its gain, bias and dynamics parameters; see :ref:`CActShortcuts`.
 
 In the remainder of this chapter we describe all valid MJCF elements and their attributes. Some elements can be used in
 multiple contexts, in which case their meaning depends on the parent element. This is why we always show the parent as a
@@ -987,10 +1016,10 @@ has any effect. The settings here are global and apply to the entire model.
 
 :at:`savecanonical`: :at-val:`[false, true], "true"`
    If "true", orientations are saved as quaternions, angles in radians, sizes and poses which were given with
-   :at:`fromto` as :at:`size`, :at:`pos` and :at:`quat`, and a :at:`fullinertia` as :at:`diaginertia` and
-   :at:`quat`. If "false", they are saved in the notation in which they were written. This attribute has an effect
-   only if :ref:`savecompiled<compiler-savecompiled>` is "false": compiled values are always saved in the canonical
-   notation.
+   :at:`fromto` as :at:`size`, :at:`pos` and :at:`quat`, a :at:`fullinertia` as :at:`diaginertia` and :at:`quat`, and
+   every actuator as :el:`general`. If "false", they are saved in the notation in which they were written. This
+   attribute has an effect only if :ref:`savecompiled<compiler-savecompiled>` is "false": compiled values are always
+   saved in the canonical notation.
 
 .. _compiler-conflict:
 
@@ -4018,7 +4047,7 @@ saving the XML:
 .. _body-flexcomp-scale:
 
 :at:`scale`: :at-val:`real(3), "1 1 1"`
-   Scaling of all point coordinates, for types that specify coordinates explicitly. Scaling is applied after the pose
+   Scaling of all point coordinates, for types that specify coordinates explicitly. Scaling is applied before the pose
    transformation.
 
 .. _body-flexcomp-radius:
@@ -5903,7 +5932,13 @@ specify them independently.
    ``mjModel.actuator_ctrlspec``. For gaintype "so3" it selects the orientation chart: "expmap" (3 controls, the
    default) or "quat" (4 controls); see :ref:`orientation/input<actuator-orientation-input>`. For gaintypes "pid" and
    "dcmotor" it is a token list selecting the input subset; see :ref:`pid/input<actuator-pid-input>` and
-   :ref:`dcmotor/input<actuator-dcmotor-input>`.
+   :ref:`dcmotor/input<actuator-dcmotor-input>`. For gaintypes "fixed" and "affine" it declares what the single control
+   is, and does not affect the simulation: "pos", a position setpoint; "vel", a velocity setpoint; "pressure", a
+   pressure, the gain being an area. Without a declaration the control is a command, scaled by the gain. The
+   :ref:`position<actuator-position>`, :ref:`velocity<actuator-velocity>`, :ref:`intvelocity<actuator-intvelocity>` and
+   :ref:`cylinder<actuator-cylinder>` shortcuts declare "pos", "vel", "vel" and "pressure" respectively, and
+   :ref:`mj_actuatorInputName` returns the declaration. An input signature inherited from a default class is discarded
+   when the gaintype changes; ``input=""`` restores the gaintype's default.
 
 .. _actuator-general-actearly:
 
@@ -6005,6 +6040,7 @@ Attribute Setting             Attribute Setting
 dyntype   none or filterexact dynprm    timeconst 0 0
 gaintype  fixed               gainprm   kp 0 0
 biastype  affine              biasprm   0 -kp -kv
+input     pos
 ========= =================== ========= =============
 
 On purely rotational transmissions, setpoints are interpreted on the circle; see :ref:`gear<actuator-general-gear>`.
@@ -6367,6 +6403,7 @@ Attribute Setting Attribute Setting
 dyntype   none    dynprm    1 0 0
 gaintype  fixed   gainprm   kv 0 0
 biastype  affine  biasprm   0 0 -kv
+input     vel
 ========= ======= ========= =======
 
 This element has one custom attribute in addition to the common attributes:
@@ -6446,6 +6483,7 @@ Attribute Setting     Attribute Setting
 dyntype   integrator  dynprm    1 0 0
 gaintype  fixed       gainprm   kp 0 0
 biastype  affine      biasprm   0 -kp -kv
+input     vel
 ========= =========== ========= =========
 
 Activation clamping is controlled by :at:`actlimited` and :at:`actrange`, like any stateful actuator. On purely
@@ -6623,16 +6661,18 @@ This element has one custom attribute in addition to the common attributes:
 :el-prefix:`actuator/` |-| **cylinder** |*|
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-This element is suitable for modeling pneumatic or hydraulic cylinders. The underlying :el:`general` attributes are
-set as follows:
+This element is suitable for modeling pneumatic or hydraulic cylinders. The control is the commanded pressure; the
+activation is the pressure in the cylinder, which follows the control with time constant :at:`timeconst`, and the force
+is the pressure times :at:`area`, plus the bias. The underlying :el:`general` attributes are set as follows:
 
-========= ======= ========= =============
-Attribute Setting Attribute Setting
-========= ======= ========= =============
-dyntype   filter  dynprm    timeconst 0 0
-gaintype  fixed   gainprm   area 0 0
-biastype  affine  biasprm   bias(3)
-========= ======= ========= =============
+========= ======== ========= =============
+Attribute Setting  Attribute Setting
+========= ======== ========= =============
+dyntype   filter   dynprm    timeconst 0 0
+gaintype  fixed    gainprm   area 0 0
+biastype  affine   biasprm   bias(3)
+input     pressure
+========= ======== ========= =============
 
 
 This element has four custom attributes in addition to the common attributes:
@@ -10405,9 +10445,11 @@ if omitted.
 :el-prefix:`default/` |-| **motor** |?|
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-This and the next three elements set the attributes of the :ref:`general <actuator-general>` element using
-:ref:`Actuator shortcuts <CActShortcuts>`. It does not make sense to use more than one such shortcut in the same
-defaults class, because they set the same underlying attributes, replacing any previous settings. All
+This and the following shortcut elements set the single actuator default of the class, see
+:ref:`Actuator shortcuts <CActShortcuts>`. Any actuator in the class inherits its mechanical attributes; the shortcut's
+own parameters are inherited only by actuators written with the same shortcut or with :ref:`general <actuator-general>`.
+Using more than one shortcut in the same defaults class is not useful, because each resets the gain, bias and dynamics
+parameters set by the previous one. All
 :ref:`motor <actuator-motor>` attributes are available here except: name, class, joint, jointinparent, site, refsite,
 tendon, slidersite, cranksite.
 
