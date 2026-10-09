@@ -350,6 +350,8 @@
       <xs:enumeration value="pos"/>
       <xs:enumeration value="normal"/>
       <xs:enumeration value="tangent"/>
+      <xs:enumeration value="linvel"/>
+      <xs:enumeration value="angvel"/>
     </xs:restriction>
   </xs:simpleType>
   <xs:simpleType name="kwlist_condata">
@@ -471,6 +473,13 @@
       <xs:enumeration value="supersphere"/>
       <xs:enumeration value="wedge"/>
       <xs:enumeration value="plate"/>
+      <xs:enumeration value="grid"/>
+      <xs:enumeration value="box"/>
+      <xs:enumeration value="cylinder"/>
+      <xs:enumeration value="ellipsoid"/>
+      <xs:enumeration value="square"/>
+      <xs:enumeration value="disc"/>
+      <xs:enumeration value="circle"/>
     </xs:restriction>
   </xs:simpleType>
 

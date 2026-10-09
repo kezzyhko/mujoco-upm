@@ -414,7 +414,9 @@ public enum mjtConDataField : int{
   mjCONDATA_POS = 4,
   mjCONDATA_NORMAL = 5,
   mjCONDATA_TANGENT = 6,
-  mjNCONDATA = 7,
+  mjCONDATA_LINVEL = 7,
+  mjCONDATA_ANGVEL = 8,
+  mjNCONDATA = 9,
 }
 public enum mjtRayDataField : int{
   mjRAYDATA_DIST = 0,
@@ -570,6 +572,13 @@ public enum mjtMeshBuiltin : int{
   mjMESH_BUILTIN_SUPERTORUS = 5,
   mjMESH_BUILTIN_WEDGE = 6,
   mjMESH_BUILTIN_PLATE = 7,
+  mjMESH_BUILTIN_GRID = 8,
+  mjMESH_BUILTIN_BOX = 9,
+  mjMESH_BUILTIN_CYLINDER = 10,
+  mjMESH_BUILTIN_ELLIPSOID = 11,
+  mjMESH_BUILTIN_SQUARE = 12,
+  mjMESH_BUILTIN_DISC = 13,
+  mjMESH_BUILTIN_CIRCLE = 14,
 }
 public enum mjtBuiltin : int{
   mjBUILTIN_NONE = 0,
@@ -1084,6 +1093,7 @@ public unsafe struct mjModel_ {
   public UInt64 nflexbending;
   public UInt64 nefm0dof;
   public UInt64 nefm0L;
+  public UInt64 nefmCvert;
   public UInt64 nflexelemedge;
   public UInt64 nflexshelldata;
   public UInt64 nflextexcoord;
@@ -1372,6 +1382,7 @@ public unsafe struct mjModel_ {
   public int* efm0_L_rowadr;
   public int* efm0_L_colind;
   public double* efm0_L;
+  public int* efmC_perm;
   public double* flex_damping;
   public double* flex_edgestiffness;
   public double* flex_edgedamping;

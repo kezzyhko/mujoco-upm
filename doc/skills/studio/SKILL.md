@@ -166,8 +166,10 @@ shutdown:
         to construct and lay out Dear ImGui / ImPlot widgets (keep handlers
         focused on ImGui/ImPlot calls; prepare GUI data in `UpdateEvent`).
     6.  `ExitEvent` — dispatched once when the viewer shuts down, whether the
-        exit came from the sim side or from the window being closed. Handle it
-        to release resources (threads, pools, GPU handles).
+        exit came from the sim side, from the window being closed, or from a
+        viewer plugin handler raising (the exception is then re-raised on the
+        sim side by `ViewerHandle.close()`). Handle it to release resources
+        (threads, pools, GPU handles).
 -   **Simulation Lifecycle Events** (dispatched on the sim side to
     `sim_plugins`):
     1.  `SimInitEvent` (`viewer_handle.SimInitEvent`) — dispatched once by
@@ -563,6 +565,16 @@ C++):
     the `/state` WebSocket stream.
 -   **No Display Forwarding**: No need for X11 forwarding, VNC, or remote
     desktop setups.
+
+> [!WARNING]
+>
+> **Trust Model (Local & Trusted Networks Only):**
+> `WebViewer` has no authentication or encryption (plain HTTP and WebSockets)
+> and listens on all network interfaces, so anyone who can reach its port can
+> connect. Connected browsers can see host-side information such as model file
+> paths, exception messages, and logs. Use it locally, on trusted networks, or
+> through an authenticated tunnel, and do not expose the port to untrusted
+> networks. The startup banner repeats this as a short warning.
 
 ## 8. Common Gotchas & Best Practices
 

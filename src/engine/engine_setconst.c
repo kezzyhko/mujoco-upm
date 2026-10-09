@@ -27,6 +27,7 @@
 #include "engine/engine_forward.h"
 #include "engine/engine_io.h"
 #include "engine/engine_memory.h"
+#include "engine/engine_metric.h"
 #include "engine/engine_util_blas.h"
 #include "engine/engine_util_errmem.h"
 #include "engine/engine_util_solve.h"
@@ -1518,8 +1519,8 @@ static void setEfm0Factor(mjModel* m, mjData* d) {
   if (rank != nbd) {
     // The factor is consumed only when no per-step flex stiffness is assembled (bending-only
     // models): with stretch (or assemblable interp) present, mj_effBuild assembles the full
-    // metric every step and the per-step blocks replace this factor, so an indefinite
-    // M + K_bend (e.g. curved-rest bending with light vertices) is harmless there.
+    // metric every step and the per-step blocks replace this factor, so a singular
+    // M + K_bend (e.g. vanishing vertex masses) is harmless there.
     if (mjd_flexStiff_any(m, mjd_flexInterpAssemblable(m))) {
       mj_freeStack(d);
       return;
@@ -1569,6 +1570,9 @@ void mj_setConst(mjModel* m, mjData* d) {
 
   // precompute the constant part of the implicit effective metric factor
   setEfm0Factor(m, d);
+
+  // the vertex ordering of the metric's sparse factor
+  mj_effCholSetConst(m, d);
 }
 
 

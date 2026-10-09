@@ -104,6 +104,15 @@ mjSpec* mj_parse(
   // or that are fetched on a need-be basis via URI.
   if (resource) {
     cleanup += [resource]() { mju_closeResource(resource); };
+
+    // A resource provider may only determine the content's format when it
+    // opens the resource, and record it as the extension of the resource's
+    // name (e.g. mjdb://kind/origin/uid becomes mjdb://kind/origin/uid.xml).
+    // XML has no decoder, so hand such resources to the XML parser.
+    auto resolved = mujoco::user::FilePath(resource->name);
+    if (resolved.Ext() == ".xml" || resolved.Ext() == ".urdf") {
+      return mj_parseXML(filename, vfs, error, error_sz);
+    }
   } else {
     resource  = (mjResource*)mju_malloc(sizeof(mjResource));
     cleanup  += [resource]() {
@@ -139,9 +148,9 @@ mjSpec* mj_parse(
     memcpy(resource->name, fullname.c_str(), sizeof(char) * (n + 1));
   }
 
-  mjSpec* spec = mju_decodeResource(resource, content_type, vfs);
+  mjSpec* spec = mju_decodeResource(resource, content_type, vfs, error, error_sz);
   if (spec == nullptr) {
-    if (error) {
+    if (error && error_sz > 0 && !error[0]) {
       strncpy(error, "could not decode content", error_sz);
       error[error_sz - 1] = '\0';
     }
@@ -900,6 +909,7 @@ mjsFlex* mjs_makeFlex(mjsBody*     body,
   }
 
   // physics
+  fcomp.has_dim               = (dim > 0);
   fcomp.def.spec.flex->dim    = dim;
   fcomp.def.spec.flex->radius = radius;
   if (mass > 0) fcomp.mass = mass;
@@ -1135,6 +1145,140 @@ int mjs_makeMesh(mjsMesh* mesh, mjtMeshBuiltin builtin, double* params, int npar
       }
       int nedge = static_cast<int>(params[0]);
       meshC->MakeCone(nedge, params[1]);
+      return 0;
+    }
+
+    case mjMESH_BUILTIN_GRID: {
+      if (nparams != 6 && nparams != 7) {
+        m->SetError(
+            mjCError(0, "Grid mesh type requires 6 or 7 parameters (count[3], spacing[3], [dim])"));
+        return -1;
+      }
+      int    count[3]   = {static_cast<int>(params[0]),
+                           static_cast<int>(params[1]),
+                           static_cast<int>(params[2])};
+      double spacing[3] = {params[3], params[4], params[5]};
+      int    dim        = (nparams == 7) ? static_cast<int>(params[6]) : 3;
+      if (dim < 1 || dim > 3) {
+        m->SetError(mjCError(0, "Grid dim must be 1, 2, or 3"));
+        return -1;
+      }
+      for (int i = 0; i < dim; i++) {
+        if (count[i] < 1) {
+          m->SetError(mjCError(0, "Grid count must be positive"));
+          return -1;
+        }
+      }
+      for (int i = dim; i < 3; i++) {
+        if (count[i] != 1) {
+          m->SetError(mjCError(0, "Grid count must be 1 along dimensions beyond dim"));
+          return -1;
+        }
+      }
+      meshC->MakeGrid(count, spacing, dim, false);
+      if (dim > 1 && (dim == 3 ? mesh->usertet : mesh->userface)->empty()) {
+        m->SetError(mjCError(0, "Failed to create grid mesh"));
+        return -1;
+      }
+      if (dim < 3 && mesh->inertia == mjMESH_INERTIA_LEGACY) {
+        mesh->inertia = mjMESH_INERTIA_SHELL;
+      }
+      return 0;
+    }
+
+    case mjMESH_BUILTIN_BOX:
+    case mjMESH_BUILTIN_CYLINDER:
+    case mjMESH_BUILTIN_ELLIPSOID: {
+      if (nparams != 6 && nparams != 7) {
+        m->SetError(mjCError(0,
+                             "Box/cylinder/ellipsoid mesh type requires 6 or 7 parameters "
+                             "(count[3], spacing[3], [dim])"));
+        return -1;
+      }
+      int    count[3]   = {static_cast<int>(params[0]),
+                           static_cast<int>(params[1]),
+                           static_cast<int>(params[2])};
+      double spacing[3] = {params[3], params[4], params[5]};
+      int    dim        = (nparams == 7) ? static_cast<int>(params[6]) : 3;
+      if (dim < 2 || dim > 3) {
+        m->SetError(mjCError(0, "Mesh dim must be 2 or 3 for box/cylinder/ellipsoid"));
+        return -1;
+      }
+      for (int i = 0; i < 3; i++) {
+        if (count[i] < 2) {
+          m->SetError(mjCError(0, "Box/cylinder/ellipsoid count must be at least 2"));
+          return -1;
+        }
+      }
+      if (builtin == mjMESH_BUILTIN_BOX) {
+        meshC->MakeBox(count, spacing, dim, false, true);
+      } else if (builtin == mjMESH_BUILTIN_CYLINDER) {
+        meshC->MakeCylinder(count, spacing, dim, false, true);
+      } else {
+        meshC->MakeEllipsoid(count, spacing, dim, false, true);
+      }
+      if ((dim == 3 ? mesh->usertet : mesh->userface)->empty()) {
+        m->SetError(mjCError(0, "Failed to create box/cylinder/ellipsoid mesh"));
+        return -1;
+      }
+      if (dim < 3 && mesh->inertia == mjMESH_INERTIA_LEGACY) {
+        mesh->inertia = mjMESH_INERTIA_SHELL;
+      }
+      return 0;
+    }
+
+    case mjMESH_BUILTIN_SQUARE:
+    case mjMESH_BUILTIN_DISC: {
+      if (nparams != 6) {
+        m->SetError(
+            mjCError(0, "Square/disc mesh type requires 6 parameters (count[3], spacing[3])"));
+        return -1;
+      }
+      int    count[3]   = {static_cast<int>(params[0]),
+                           static_cast<int>(params[1]),
+                           static_cast<int>(params[2])};
+      double spacing[3] = {params[3], params[4], params[5]};
+      for (int i = 0; i < 2; i++) {
+        if (count[i] < 1) {
+          m->SetError(mjCError(0, "Count must be positive"));
+          return -1;
+        }
+      }
+      if (count[2] != 1) {
+        m->SetError(mjCError(0, "Square/disc count[2] must be 1"));
+        return -1;
+      }
+      if (builtin == mjMESH_BUILTIN_SQUARE) {
+        meshC->MakeGrid(count, spacing, 2, false);
+      } else {
+        meshC->MakeDisc(count, spacing, false);
+      }
+      if (mesh->userface->empty()) {
+        m->SetError(mjCError(0, "Failed to create square/disc mesh"));
+        return -1;
+      }
+      if (mesh->inertia == mjMESH_INERTIA_LEGACY) { mesh->inertia = mjMESH_INERTIA_SHELL; }
+      return 0;
+    }
+
+    case mjMESH_BUILTIN_CIRCLE: {
+      if (nparams != 6) {
+        m->SetError(mjCError(0, "Circle mesh type requires 6 parameters (count[3], spacing[3])"));
+        return -1;
+      }
+      int    count[3]   = {static_cast<int>(params[0]),
+                           static_cast<int>(params[1]),
+                           static_cast<int>(params[2])};
+      double spacing[3] = {params[3], params[4], params[5]};
+      if (count[0] < 4) {
+        m->SetError(mjCError(0, "Circle count must be at least 4 (3 nodes)"));
+        return -1;
+      }
+      meshC->MakeCircle(count, spacing);
+      if (mesh->usernode->empty()) {
+        m->SetError(mjCError(0, "Failed to create circle mesh"));
+        return -1;
+      }
       return 0;
     }
 

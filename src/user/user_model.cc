@@ -824,6 +824,9 @@ mjCModel& mjCModel::operator+=(mjCDef& subtree) {
 
 // remove default class from array
 mjCModel& mjCModel::operator-=(const mjCDef& subtree) {
+  // check that the default belongs to this model before modifying anything
+  if (subtree.model != this) { throw mjCError(nullptr, "default is not in this model"); }
+
   // check we aren't trying to remove the 'main' default
   if (subtree.id == 0) { throw mjCError(0, "cannot remove the global default ('main')"); }
 
@@ -1293,6 +1296,7 @@ void mjCModel::Clear() {
   nflexbending   = 0;
   nefm0dof       = 0;
   nefm0L         = 0;
+  nefmCvert      = 0;
   nflexelemedge  = 0;
   nflexshelldata = 0;
   nflextexcoord  = 0;
@@ -2263,6 +2267,16 @@ void mjCModel::SetSizes() {
 
     nefm0dof = n;
     nefm0L   = nnz;
+  }
+
+  // sparse metric factor ordering slots, filled by mj_setConst (mj_effCholSetConst): only models
+  // that enable IPC use the factor, on 2D flexes; the covered vertices are disjoint dof triples
+  nefmCvert = 0;
+  if (option.enableflags & mjENBL_IPC) {
+    for (int i = 0; i < nflex; i++) {
+      if (flexes_[i]->dim == 2) { nefmCvert += flexes_[i]->nvert; }
+    }
+    nefmCvert = mjMIN(nefmCvert, nv / 3);
   }
 
   // mesh counts
@@ -6106,6 +6120,7 @@ void mjCModel::TryCompile(mjModel*& m, mjData*& d, const mjVFS* vfs) {
                nflexbending,
                nefm0dof,
                nefm0L,
+               nefmCvert,
                nflexelemedge,
                nflexshelldata,
                nflextexcoord,

@@ -629,6 +629,7 @@ typedef struct mjModel_ {
   mjtSize nflexbending;           // number of bending parameters in all flexes
   mjtSize nefm0dof;               // number of dofs covered by the constant metric factor
   mjtSize nefm0L;                 // number of non-zeros in the constant metric factor
+  mjtSize nefmCvert;              // number of sparse metric factor ordering slots
   mjtSize nflexelemedge;          // number of element edge ids in all flexes
   mjtSize nflexshelldata;         // number of shell fragment vertex ids in all flexes
   mjtSize nflextexcoord;          // number of vertices with texture coordinates
@@ -957,6 +958,7 @@ typedef struct mjModel_ {
   int*      efm0_L_rowadr;        // constant metric factor row addresses     (nefm0dof x 1)
   int*      efm0_L_colind;        // constant metric factor column indices    (nefm0L x 1)
   mjtNum*   efm0_L;               // factor of M + (dt^2+dt*d)*K_bend         (nefm0L x 1)
+  int*      efmC_perm;            // sparse factor order: vertex dof or -1    (nefmCvert x 1)
   mjtNum*   flex_damping;         // Rayleigh's damping coefficient           (nflex x 1)
   mjtNum*   flex_edgestiffness;   // edge stiffness                           (nflex x 1)
   mjtNum*   flex_edgedamping;     // edge damping                             (nflex x 1)
@@ -1703,6 +1705,13 @@ typedef enum mjtMeshBuiltin {      // type of built-in procedural mesh
   mjMESH_BUILTIN_SUPERTORUS,       // supertorus
   mjMESH_BUILTIN_WEDGE,            // wedge
   mjMESH_BUILTIN_PLATE,            // plate
+  mjMESH_BUILTIN_GRID,             // grid (1D, 2D, or 3D)
+  mjMESH_BUILTIN_BOX,              // box
+  mjMESH_BUILTIN_CYLINDER,         // cylinder
+  mjMESH_BUILTIN_ELLIPSOID,        // ellipsoid
+  mjMESH_BUILTIN_SQUARE,           // square
+  mjMESH_BUILTIN_DISC,             // disc
+  mjMESH_BUILTIN_CIRCLE            // circle
 } mjtMeshBuiltin;
 typedef enum mjtBuiltin {          // type of built-in procedural texture
   mjBUILTIN_NONE = 0,              // no built-in texture
@@ -2130,6 +2139,8 @@ typedef struct mjsMesh_ {          // mesh specification
   mjIntVec* userface;              // user vertex indices
   mjIntVec* userfacenormal;        // user face normal indices
   mjIntVec* userfacetexcoord;      // user texcoord indices
+  mjDoubleVec* usernode;           // user volume node coordinates
+  mjIntVec* usertet;               // user tetrahedral cell indices
   mjsPlugin plugin;                // sdf plugin
   mjString* material;              // name of material
   int octree_maxdepth;             // max octree depth
@@ -2736,6 +2747,8 @@ typedef enum mjtConDataField {    // data fields returned by contact sensors
   mjCONDATA_POS,                  // contact position
   mjCONDATA_NORMAL,               // contact frame normal
   mjCONDATA_TANGENT,              // contact frame first tangent
+  mjCONDATA_LINVEL,               // contact linear velocity
+  mjCONDATA_ANGVEL,               // contact angular velocity
 
   mjNCONDATA                      // number of contact sensor data fields
 } mjtConDataField;
@@ -4158,7 +4171,7 @@ mjtSize mju_writeResource(const char* name, const void* buffer, mjtSize nbytes,
 void mju_getResourceDir(mjResource* resource, const char** dir, int* ndir);
 int mju_isModifiedResource(const mjResource* resource, const char* timestamp);
 mjSpec* mju_decodeResource(mjResource* resource, const char* content_type,
-                           const mjVFS* vfs);
+                           const mjVFS* vfs, char* error, int error_sz);
 void mju_threadpool(mjData* d, int nthread);
 mjsElement* mjs_attach(mjsElement* parent, const mjsElement* child,
                        const char* prefix, const char* suffix);

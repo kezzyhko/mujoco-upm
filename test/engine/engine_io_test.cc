@@ -17,9 +17,12 @@
 #include "src/engine/engine_io.h"
 
 #include <array>
+#include <atomic>
 #include <climits>
+#include <cstddef>
 #include <cstdint>
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <filesystem>  // NOLINT
 #include <string>
@@ -28,7 +31,7 @@
 #include <gmock/gmock.h>
 #include <gtest/gtest-spi.h>  // IWYU pragma: keep
 #include <gtest/gtest.h>
-#include <absl/strings/str_format.h>
+#include "absl/strings/str_format.h"
 #include <mujoco/mjxmacro.h>
 #include <mujoco/mujoco.h>
 #include "src/engine/engine_memory.h"
@@ -246,6 +249,128 @@ TEST_F(EngineIoTest, MjvCopyData) {
   mj_deleteData(data2);
 }
 
+// number of blocks allocated by MisalignedMalloc and not yet freed
+std::atomic<int> misaligned_nblock{0};
+
+// user allocator with blocks that are 16-byte aligned, like those of malloc,
+// but never 64-byte aligned
+void* MisalignedMalloc(std::size_t size) {
+  char* raw = static_cast<char*>(std::malloc(size + 128));
+  if (!raw) {
+    return nullptr;
+  }
+
+  // start the block 16 bytes past a 64-byte boundary, keep raw just before it
+  std::uintptr_t boundary =
+      (reinterpret_cast<std::uintptr_t>(raw) + 63) & ~std::uintptr_t{63};
+  void** block = reinterpret_cast<void**>(boundary + 16);
+  block[-1] = raw;
+  misaligned_nblock++;
+  return block;
+}
+
+void MisalignedFree(void* block) {
+  misaligned_nblock--;
+  std::free(static_cast<void**>(block)[-1]);
+}
+
+// installs the misaligned allocator, restores the previous one on destruction
+class MisalignedAllocator {
+ public:
+  MisalignedAllocator() {
+    mju_user_malloc = MisalignedMalloc;
+    mju_user_free = MisalignedFree;
+  }
+  ~MisalignedAllocator() {
+    mju_user_malloc = prev_malloc_;
+    mju_user_free = prev_free_;
+  }
+
+ private:
+  void* (*prev_malloc_)(std::size_t) = mju_user_malloc;
+  void (*prev_free_)(void*) = mju_user_free;
+};
+
+// expect the arrays in the buffers of two mjData to be bitwise equal
+void ExpectBuffersEqual(const mjModel* m, const mjData* d1, const mjData* d2) {
+#define X(type, name, nr, nc)                                                  \
+  EXPECT_EQ(std::memcmp(d1->name, d2->name, sizeof(type) * (m->nr) * (nc)), 0) \
+      << "mjData::" #name " differs";
+  MJDATA_POINTERS
+#undef X
+}
+
+TEST_F(EngineIoTest, MisalignedUserAllocator) {
+  static constexpr char xml[] = R"(
+  <mujoco>
+    <worldbody>
+      <geom type="plane" size="1 1 1"/>
+      <body pos="0 0 0.1">
+        <freejoint/>
+        <geom type="box" size="0.1 0.1 0.1"/>
+      </body>
+    </worldbody>
+  </mujoco>
+  )";
+  constexpr int kSteps = 10;
+  char error[1024];
+
+  // reference model and data, made with the default allocator
+  MjModelPtr model_ref = LoadModelFromString(xml, error, sizeof(error));
+  ASSERT_THAT(model_ref.get(), NotNull()) << error;
+  mj_freeLastXML();
+  MjDataPtr data_ref = MakeData(model_ref);
+  for (int i = 0; i < kSteps; i++) {
+    mj_step(model_ref.get(), data_ref.get());
+  }
+  ASSERT_GT(data_ref->nefc, 0);
+
+  {
+    // objects declared after the allocator are freed before it is uninstalled
+    MisalignedAllocator allocator;
+
+    MjModelPtr model = LoadModelFromString(xml, error, sizeof(error));
+    ASSERT_THAT(model.get(), NotNull()) << error;
+    mj_freeLastXML();
+    MjDataPtr data = MakeData(model);
+    ASSERT_THAT(data.get(), NotNull());
+    for (int i = 0; i < kSteps; i++) {
+      mj_step(model.get(), data.get());
+    }
+
+    // the buffers are misaligned, their arrays are 64-byte aligned
+    ASSERT_EQ(reinterpret_cast<std::uintptr_t>(model->buffer) % 64, 16);
+    ASSERT_EQ(reinterpret_cast<std::uintptr_t>(data->buffer) % 64, 16);
+#define X(type, name, nr, nc) \
+  EXPECT_EQ(reinterpret_cast<std::uintptr_t>(model->name) % 64, 0) << #name;
+    MJMODEL_POINTERS
+#undef X
+#define X(type, name, nr, nc) \
+  EXPECT_EQ(reinterpret_cast<std::uintptr_t>(data->name) % 64, 0) << #name;
+    MJDATA_POINTERS
+#undef X
+
+    // same trajectory as with the default allocator
+    EXPECT_EQ(data->nefc, data_ref->nefc);
+    ExpectBuffersEqual(model.get(), data.get(), data_ref.get());
+
+    // copy and load across allocators
+    mj_copyModel(model_ref.get(), model.get());
+    MjDataPtr copy(mj_copyData(nullptr, model.get(), data_ref.get()));
+    ExpectBuffersEqual(model.get(), copy.get(), data_ref.get());
+    EXPECT_EQ(std::memcmp(copy->efc_force, data_ref->efc_force,
+                          sizeof(mjtNum) * data_ref->nefc),
+              0);
+    std::vector<char> mjb(mj_sizeModel(model_ref.get()));
+    mj_saveModel(model_ref.get(), nullptr, mjb.data(), mjb.size());
+    MjModelPtr loaded(mj_loadModelBuffer(mjb.data(), mjb.size()));
+    EXPECT_THAT(loaded.get(), NotNull());
+  }
+
+  // all blocks were freed before the allocator was uninstalled
+  EXPECT_EQ(misaligned_nblock.load(), 0);
+}
+
 using ValidateReferencesTest = MujocoTest;
 
 TEST_F(ValidateReferencesTest, BodyReferences) {
@@ -394,6 +519,80 @@ TEST_F(ValidateReferencesTest, Texture) {
   model->tex_adr[0] = 0;
   model->tex_height[0] = 4;
   EXPECT_THAT(mj_validateReferences(model.get()), HasSubstr("tex_adr"));
+}
+
+TEST_F(ValidateReferencesTest, Mesh) {
+  static const char xml[] = R"(
+  <mujoco>
+    <asset>
+      <mesh name="m" vertex="0 0 0  1 0 0  0 1 0  0 0 1"
+                      face="0 1 2  0 1 3  0 2 3  1 2 3"
+                      texcoord="0 0  1 0  0 1  1 1"/>
+    </asset>
+    <worldbody>
+      <geom type="mesh" mesh="m"/>
+    </worldbody>
+  </mujoco>
+  )";
+
+  std::array<char, 1024> error;
+  MjModelPtr model = LoadModelFromString(xml, error.data(), error.size());
+  ASSERT_THAT(model.get(), NotNull())
+      << "Failed to load model: " << error.data();
+
+  EXPECT_THAT(mj_validateReferences(model.get()), IsNull());
+
+  // A mesh face vertex index is a mesh-local index into [0, mesh_vertnum).
+  // These are read verbatim from a binary (MJB) model, so an out-of-range value
+  // must be rejected here (it would otherwise cause an out-of-bounds read when
+  // the mesh is ray-cast, rendered or collided).
+  int saved = model->mesh_face[0];
+  model->mesh_face[0] = model->mesh_vertnum[0];  // one past the end
+  EXPECT_THAT(mj_validateReferences(model.get()), HasSubstr("mesh_face"));
+  model->mesh_face[0] = -1;
+  EXPECT_THAT(mj_validateReferences(model.get()), HasSubstr("mesh_face"));
+  model->mesh_face[0] = saved;
+  EXPECT_THAT(mj_validateReferences(model.get()), IsNull());
+
+  // Face normal indices are mesh-local indices into [0, mesh_normalnum) and
+  // are used the same way (mesh_normal + 3*(mesh_facenormal[...] + normaladr)).
+  saved = model->mesh_facenormal[0];
+  model->mesh_facenormal[0] = model->mesh_normalnum[0];  // one past the end
+  EXPECT_THAT(mj_validateReferences(model.get()), HasSubstr("mesh_facenormal"));
+  model->mesh_facenormal[0] = -1;
+  EXPECT_THAT(mj_validateReferences(model.get()), HasSubstr("mesh_facenormal"));
+  model->mesh_facenormal[0] = saved;
+  EXPECT_THAT(mj_validateReferences(model.get()), IsNull());
+
+  // Face texcoord indices are mesh-local indices into [0, mesh_texcoordnum),
+  // used only when the mesh has texcoords (mesh_texcoordadr != -1).
+  ASSERT_GE(model->mesh_texcoordadr[0], 0);
+  saved = model->mesh_facetexcoord[0];
+  model->mesh_facetexcoord[0] = model->mesh_texcoordnum[0];  // one past the end
+  EXPECT_THAT(mj_validateReferences(model.get()),
+              HasSubstr("mesh_facetexcoord"));
+  model->mesh_facetexcoord[0] = -1;
+  EXPECT_THAT(mj_validateReferences(model.get()),
+              HasSubstr("mesh_facetexcoord"));
+
+  // A mesh without texcoords (mesh_texcoordadr == -1) never reads
+  // mesh_facetexcoord, so its contents are not validated in that case.
+  int saved_adr = model->mesh_texcoordadr[0];
+  int saved_num = model->mesh_texcoordnum[0];
+  model->mesh_texcoordadr[0] = -1;
+  model->mesh_texcoordnum[0] = 0;
+  EXPECT_THAT(mj_validateReferences(model.get()), IsNull());
+  model->mesh_texcoordadr[0] = saved_adr;
+  model->mesh_texcoordnum[0] = saved_num;
+  model->mesh_facetexcoord[0] = saved;
+  EXPECT_THAT(mj_validateReferences(model.get()), IsNull());
+
+  // adr == -1 is only valid for empty elements
+  saved = model->mesh_faceadr[0];
+  model->mesh_faceadr[0] = -1;
+  EXPECT_THAT(mj_validateReferences(model.get()), HasSubstr("mesh_faceadr"));
+  model->mesh_faceadr[0] = saved;
+  EXPECT_THAT(mj_validateReferences(model.get()), IsNull());
 }
 
 TEST_F(ValidateReferencesTest, GeomPairs) {

@@ -5,6 +5,22 @@ Changelog
 Upcoming Version (not yet released)
 -----------------------------------
 
+General
+^^^^^^^
+- Added support for building MuJoCo with `Bazel <https://bazel.build/>`__ (initially covers core library, ``simulate``,
+  plugins, and samples).
+
+.. admonition:: Breaking API changes
+   :class: attention
+
+   - :ref:`mjfDecode`, the ``decode`` callback of :ref:`mjpDecoder` plugins, and :ref:`mju_decodeResource` now take
+     ``char* error, int error_sz`` arguments. A decoder which fails writes its reason into ``error``, which is then
+     reported by :ref:`mj_parse` and in mesh compilation errors, rather than only as a warning with a generic error.
+
+     **Migration:** Add the two arguments to custom decoders and write failure messages into ``error`` (if not
+     ``NULL``) instead of calling :ref:`mju_warning`. Pass an error buffer, or ``NULL, 0``, to
+     :ref:`mju_decodeResource`.
+
 Engine
 ^^^^^^
 - Corrected the shear contribution to solid and membrane stiffness for interpolated flexes, and the three-point Gauss
@@ -14,6 +30,20 @@ Engine
   wrapping near wrap onset and for inside wrapping. Thanks to :github:user:`M-Colley` for reporting and analyzing the
   issues in :doc:`MJWarp <mjwarp/index>` issues `1713 <https://github.com/google-deepmind/mujoco_warp/issues/1713>`__
   and `1714 <https://github.com/google-deepmind/mujoco_warp/issues/1714>`__.
+- Flex contacts are now reduced to ``mjMAXCONPAIR`` per geom only for rigid and interpolated flexes, which have few
+  degrees of freedom. Other flexes keep all their contacts. Since version 3.6.0 the contacts of every flex were reduced,
+  and in the midphase for all geoms of a body together, so a cloth dropped on a plane or on many static geoms in the
+  world body was held by at most 50 contacts and fell through.
+- The :ref:`contact<sensor-contact>` sensor now supports ``linvel`` and ``angvel`` :ref:`data<sensor-contact-data>`
+  fields for reporting relative contact velocities, and its computation stage (:ref:`mjtStage`) is now inferred from the
+  requested :ref:`data<sensor-contact-data>` and :ref:`reduce<sensor-contact-reduce>` attributes.
+- Fixed floating-point cancellation in capsule-capsule collision detection for parallel and near-parallel axes. Thanks
+  to :github:user:`ayonga` for reporting the issue in :doc:`MJWarp <mjwarp/index>` issue
+  `1758 <https://github.com/google-deepmind/mujoco_warp/issues/1758>`__.
+- Fixed "mjModel buffer size mismatch" and "mjData buffer size mismatch" errors when an allocator installed with
+  :ref:`mju_user_malloc` returns memory that is not 64-byte aligned, as ``malloc`` often does. ``mjModel.nbuffer`` and
+  ``mjData.nbuffer`` now include up to 63 bytes of leading padding, so arrays are 64-byte aligned regardless of the
+  buffer address.
 
 Compiler
 ^^^^^^^^
@@ -81,6 +111,10 @@ Compiler
   ellipsoid :ref:`fluid model<body-geom-fluidshape>` are kept.
 - Added :ref:`mjs_adoptInertial`, which makes the inertial that compilation infers from the geoms of a body part of
   the :ref:`mjSpec`, so that it no longer follows later changes to the geoms.
+- Added procedural mesh types ``grid``, ``box``, ``cylinder``, ``ellipsoid``, ``square``, ``disc`` and ``circle`` to
+  :ref:`mesh/builtin<asset-mesh-builtin>` and :ref:`mjs_makeMesh`, generating the same shapes as the corresponding
+  :ref:`flexcomp<body-flexcomp>` types. The ``circle`` and 1D ``grid`` types only contain nodes. Types without volume
+  change a ``legacy`` mesh inertia to ``shell``.
 
 Bug fixes
 ^^^^^^^^^
@@ -131,6 +165,9 @@ Bug fixes
 - Saving the compiled values of an :ref:`mjSpec` which was structurally edited since it was compiled (elements
   added, deleted or attached) is now an error until it is compiled again; it used to crash or save wrong values. A
   spec which is saved as it is written needs no compilation.
+- :ref:`mj_parse` now parses an XML file whose name has no ``.xml`` extension when the resource provider which opens it
+  identifies it as XML, e.g. by adding the extension to the resource's name. Such files used to fail with "could not
+  decode content".
 
 Actuation
 ^^^^^^^^^
@@ -1383,36 +1420,38 @@ General
    2. :commit:`192da874` Remove ``_full_compat`` from ``mjx.put_data`` and ``mjx.put_model``.
    3. :commit:`b56cf98e` ``nconmax`` and ``njmax`` fields in ``mjx.make_data`` now default to ``None`` instead of -1.
       ``nconmax`` will be deprecated in favor of ``naconmax`` in a future release.
+   4. :commit:`401bf431` The ``Simulate::InjectNoise`` method needs to set the target of exponential decay to a value
+      from ``key_ctrl`` if a valid key is provided as input, else -1.
 
 
-4. :commit:`fe8384b6` Joint decorators and spatial tendons which have limits defined and whose current value (angle or
+5. :commit:`fe8384b6` Joint decorators and spatial tendons which have limits defined and whose current value (angle or
    length) exceeds the limit, are recolored by using the :ref:`constraint impedance<soParameters>` :math:`d` to mix the
    existing color with :ref:`visual/rgba/constraint<visual-rgba-constraint>`. For spatial tendons, this visualization
    aid is active only if no :ref:`material<tendon-spatial-material>` is set and :ref:`rgba<tendon-spatial-rgba>` is
    default.
-5. :commit:`6320b959` Added :ref:`mju_getXMLDependencies` for computing a list of unique asset dependencies from an MJCF
+6. :commit:`6320b959` Added :ref:`mju_getXMLDependencies` for computing a list of unique asset dependencies from an MJCF
    file.
-6. :commit:`e4704cd2` Added the code sample ``dependencies`` which provides command line utility for printing the result
+7. :commit:`e4704cd2` Added the code sample ``dependencies`` which provides command line utility for printing the result
    of :ref:`mju_getXMLDependencies`.
-7. :commit:`bd68f0c6` The minimum C++ standard required to compile MuJoCo is now C++20, this has been the case within
+8. :commit:`bd68f0c6` The minimum C++ standard required to compile MuJoCo is now C++20, this has been the case within
    Google since 2023 but the CMake update was forgotten.
 
 .. admonition:: Breaking ABI changes
    :class: attention
 
-   8. :commit:`431f9657` The attribute ``mjOption.apirate`` was unused and has been removed.
-   9. :commit:`b56cf98e` MJX ``nconmax`` and ``njmax`` fields in ``mjx.make_data`` now default to ``None`` instead of
-      -1.
+   9. :commit:`431f9657` The attribute ``mjOption.apirate`` was unused and has been removed.
+   10. :commit:`b56cf98e` MJX ``nconmax`` and ``njmax`` fields in ``mjx.make_data`` now default to ``None`` instead of
+       -1.
 
 MJX
 ^^^
-10. :commit:`6ae9cc80` Fix :issue:`2508`, ``qLD`` shapes mismatched mjModel during ``get_data_into``.
-11. :commit:`b56cf98e` Pull in MuJoCo Warp update to ``io.py``, and use ``naconmax`` instead of ``nconmax`` to set the
+11. :commit:`6ae9cc80` Fix :issue:`2508`, ``qLD`` shapes mismatched mjModel during ``get_data_into``.
+12. :commit:`b56cf98e` Pull in MuJoCo Warp update to ``io.py``, and use ``naconmax`` instead of ``nconmax`` to set the
     maximum number of contacts over all environments.
 
 Bug fixes
 ^^^^^^^^^
-12. :commit:`98682ae2` Fix :issue:`2881`, :at:`fitaabb` was adding an offset to the mesh and applying an incorrect frame
+13. :commit:`98682ae2` Fix :issue:`2881`, :at:`fitaabb` was adding an offset to the mesh and applying an incorrect frame
     transformation. Also, unify the meaning of fitting a geom to a mesh AABB: it now means to find the smallest geom
     such that its AABB contains the mesh AABB.
 

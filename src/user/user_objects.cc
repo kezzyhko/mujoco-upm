@@ -8049,7 +8049,6 @@ mjtStage sensorNeedstage(mjtSensor type) {
     case mjSENS_FRAMELINACC:
     case mjSENS_FRAMEANGACC:
     case mjSENS_CONTACT:
-    case mjSENS_TACTILE:
       return mjSTAGE_ACC;
 
     case mjSENS_VELOCIMETER:
@@ -8064,6 +8063,7 @@ mjtStage sensorNeedstage(mjtSensor type) {
     case mjSENS_FRAMEANGVEL:
     case mjSENS_SUBTREELINVEL:
     case mjSENS_SUBTREEANGMOM:
+    case mjSENS_TACTILE:
       return mjSTAGE_VEL;
 
     case mjSENS_MAGNETOMETER:
@@ -8417,8 +8417,22 @@ void mjCSensor::Compile(void) {
 
       // check for non-positive num
       if (intprm[2] <= 0) {
-        throw mjCError(this, "num (intprm[2]) must be positive in sensor, got %d", nullptr, dim);
+        throw mjCError(this,
+                       "num (intprm[2]) must be positive in sensor, got %d",
+                       nullptr,
+                       intprm[2]);
       }
+
+      // set needstage from requested data and reduction criterion
+      bool need_acc = (dataspec & (1 << mjCONDATA_FORCE)) ||
+                      (dataspec & (1 << mjCONDATA_TORQUE)) ||
+                      reduce == 2 ||
+                      reduce == 3;
+      bool need_vel = (dataspec & (1 << mjCONDATA_LINVEL)) || (dataspec & (1 << mjCONDATA_ANGVEL));
+      if (reduce == 3 && need_vel) {
+        throw mjCError(this, "netforce reduction is incompatible with linvel or angvel");
+      }
+      needstage = need_acc ? mjSTAGE_ACC : (need_vel ? mjSTAGE_VEL : mjSTAGE_POS);
     } break;
 
     case mjSENS_E_POTENTIAL:
