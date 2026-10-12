@@ -21,6 +21,20 @@ General
      ``NULL``) instead of calling :ref:`mju_warning`. Pass an error buffer, or ``NULL, 0``, to
      :ref:`mju_decodeResource`.
 
+   - Shortened the names of :ref:`mjpResourceProvider` functions. ``mjp_getResourceProvider`` is renamed to
+     :ref:`mjp_findProvider`, consistent with other prefix and extension lookups.
+
+     **Migration:** Rename as follows:
+
+     - ``mjp_defaultResourceProvider`` → :ref:`mjp_defaultProvider`
+     - ``mjp_registerResourceProvider`` → :ref:`mjp_registerProvider`
+     - ``mjp_resourceProviderCount`` → :ref:`mjp_providerCount`
+     - ``mjp_getResourceProvider`` → :ref:`mjp_findProvider`
+     - ``mjp_getResourceProviderAtSlot`` → :ref:`mjp_getProviderAtSlot`
+     - ``mjp_registerArchiveResourceProvider`` → :ref:`mjp_registerArchiveProvider`
+     - ``mjp_findArchiveResourceProvider`` → :ref:`mjp_findArchiveProvider`
+     - ``mjp_archiveResourceProviderCount`` → :ref:`mjp_archiveProviderCount`
+
 Engine
 ^^^^^^
 - Corrected the shear contribution to solid and membrane stiffness for interpolated flexes, and the three-point Gauss
@@ -44,6 +58,11 @@ Engine
   :ref:`mju_user_malloc` returns memory that is not 64-byte aligned, as ``malloc`` often does. ``mjModel.nbuffer`` and
   ``mjData.nbuffer`` now include up to 63 bytes of leading padding, so arrays are 64-byte aligned regardless of the
   buffer address.
+- :ref:`mj_setConst` now computes the bounding volumes of geoms and bodies, the collision masks and margins of bodies,
+  and the added mass of geoms in the ellipsoid :ref:`fluid model<flEllipsoid>`. Changes to the size, pose, margin and
+  gap of geoms, to the inertial frames of bodies and to the size of height fields are then safe; previously contacts
+  could be missed. :ref:`mj_setConst` also computes the constants of sleeping bodies, which it skipped, and resolves the
+  automatic :ref:`sleep policy<body-sleep>` of trees anew.
 
 Compiler
 ^^^^^^^^
@@ -219,6 +238,41 @@ Filament Rendering
      :ref:`visual/quality/@offsamples<visual-quality-offsamples>` (``<= 1`` disables MSAA) and can be changed at
      runtime with :ref:`mjrf_setSceneMsaa`.
 
+   - The following ``mjrf`` functions and types have been renamed so that the owning object consistently appears
+     first (``mjrf_<verb><Owner><Thing>``) and light setters match MJCF attribute names:
+
+     ``mjrf_addRenderableToScene → mjrf_addSceneRenderable``
+
+     ``mjrf_removeRenderableFromScene → mjrf_removeSceneRenderable``
+
+     ``mjrf_addLightToScene → mjrf_addSceneLight``
+
+     ``mjrf_removeLightFromScene → mjrf_removeSceneLight``
+
+     ``mjrf_setLightCutoffAngle → mjrf_setLightCutoff``
+
+     ``mjrf_setLightShadowsEnabled → mjrf_setLightCastShadow``
+
+     ``mjrfReadPixelsRequest → mjrfReadRequest``
+
+     The Python counterparts changed accordingly: ``mjrf.ReadPixelsRequest → mjrf.ReadRequest``,
+     ``Light.set_cutoff_angle → Light.set_cutoff``,
+     ``Light.set_shadows_enabled → Light.set_cast_shadow``.
+
+   - The following ``mjrf`` names have been aligned with existing MuJoCo vocabulary:
+
+     ``mjrf_setMeshData → mjrf_uploadMesh`` and ``mjrf_setTextureData → mjrf_uploadTexture`` (cf. ``mjr_uploadMesh``)
+
+     ``mjrf_setRenderableTransform → mjrf_setRenderablePose`` and ``mjrf_setLightTransform → mjrf_setLightPose``
+
+     ``mjrf_setLightEnabled → mjrf_setLightActive`` (cf. ``mjModel.light_active``)
+
+     ``mjrfMaterial.decor_ux → mjrfMaterial.decor``
+
+     The ``ModelObjects`` support class is now ``ModelResources``. The Python counterparts changed accordingly:
+     ``Mesh.set_data``/``Texture.set_data → upload``, ``set_transform → set_pose``, ``Light.set_enabled → set_active``,
+     ``Material.decor_ux → decor``, ``mjrf.ModelObjects → mjrf.ModelResources``.
+
    - The following custom flags have been renamed for consistency:
 
      `filament.clearColor → filament.clear_color`
@@ -321,7 +375,7 @@ General
    solver, while ``elastic2d`` elasticity is integrated implicitly through the effective metric. The contacts the mode
    resolves are frictionless. The mode keeps contact multipliers across steps that no state specification covers, so
    ``mj_getState``/``mj_setState`` do not capture its full state and exact replay is not supported.
-2. :commit:`2fec92237` Introduced :ref:`archive resource providers<mjp_registerArchiveResourceProvider>`
+2. :commit:`2fec92237` Introduced :ref:`archive resource providers<mjp_registerArchiveProvider>`
    (``mjp_registerArchiveResourceProvider``). Archive providers use the
    :ref:`mjpResourceProvider` interface to mount and read archive containers (such as
    ``.mjz``/``.zip``), decoupling container handling from format decoders and enabling
@@ -729,7 +783,7 @@ Engine
    13. :commit:`fa36015b` Removed unneeded `mjvScene` argument from :ref:`mjv_moveCamera`.
    14. :commit:`ba9a6503` Split up :ref:`mjrfMeshData` into `mjrfMeshData` and `mjrfMeshConfig` to allow reuploading of
        mesh data without having to recreate the mesh object. Introduces :ref:`mjrf_defaultMeshConfig` and
-       :ref:`mjrf_setMeshData` functions.
+       ``mjrf_setMeshData`` functions.
    15. :commit:`ba9a6503` Removed `bytes` field from :ref:`mjrVertexAttribute`.
 
 .. admonition:: Breaking ABI changes

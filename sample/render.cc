@@ -44,7 +44,7 @@
 #include "render/filament/support/mjrf_ptr.h"
 #include "render/filament/support/model_decorations.h"
 #include "render/filament/support/model_lights.h"
-#include "render/filament/support/model_objects.h"
+#include "render/filament/support/model_resources.h"
 #include "render/filament/support/model_renderables.h"
 
 // bitmap font definitions for CPU text overlay with Filament backend
@@ -58,7 +58,7 @@ using std::vector;
 
 using ::mujoco::ModelDecorations;
 using ::mujoco::ModelLights;
-using ::mujoco::ModelObjects;
+using ::mujoco::ModelResources;
 using ::mujoco::ModelRenderables;
 
 
@@ -446,7 +446,7 @@ class FileResource {
 static void RegisterFilamentAssetProvider() {
 
   mjpResourceProvider provider;  // NOLINT
-  mjp_defaultResourceProvider(&provider);
+  mjp_defaultProvider(&provider);
   provider.open = [](mjResource* resource) {
     FileResource* f = new FileResource(ResolveAsset(resource->name));
     if (f->Size() == 0) {
@@ -464,7 +464,7 @@ static void RegisterFilamentAssetProvider() {
     resource->data = nullptr;
   };
   provider.prefix = "filament";
-  mjp_registerResourceProvider(&provider);
+  mjp_registerProvider(&provider);
 }
 
 
@@ -493,9 +493,9 @@ static vector<unsigned char> RenderFilament(const mjModel*   m,
   mjrf_configureSceneFromModel(scene.get(), m);
 
   // create scene components
-  auto model_objects     = std::make_unique<ModelObjects>(m, ctx.get());
-  auto model_lights      = std::make_unique<ModelLights>(scene.get(), model_objects.get());
-  auto model_renderables = std::make_unique<ModelRenderables>(scene.get(), model_objects.get());
+  auto model_resources   = std::make_unique<ModelResources>(m, ctx.get());
+  auto model_lights      = std::make_unique<ModelLights>(scene.get(), model_resources.get());
+  auto model_renderables = std::make_unique<ModelRenderables>(scene.get(), model_resources.get());
   auto model_decorations = std::make_unique<ModelDecorations>(ctx.get(), scene.get(), m);
 
   // 2D text label callback
@@ -561,8 +561,8 @@ static vector<unsigned char> RenderFilament(const mjModel*   m,
   vector<unsigned char> rgb(width * height * 3);
 
   // prepare read pixels request
-  mjrfReadPixelsRequest read_request;
-  mjrf_defaultReadPixelsRequest(&read_request);
+  mjrfReadRequest read_request;
+  mjrf_defaultReadRequest(&read_request);
   read_request.target    = render_target.get();
   read_request.output    = rgb.data();
   read_request.num_bytes = width * height * 3;

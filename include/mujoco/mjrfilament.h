@@ -105,10 +105,10 @@ typedef struct mjrfReadPixelsRequest_ {
   mjtSize num_bytes;                     // size of output buffer
   mjrfCallback read_completed;           // callback when read is complete; can use to free output
   void* user_data;                       // user data for read_completed_callback
-} mjrfReadPixelsRequest;
+} mjrfReadRequest;
 
-// Initializes the mjrfReadPixelsRequest to default values.
-void mjrf_defaultReadPixelsRequest(mjrfReadPixelsRequest* request);
+// Initializes the mjrfReadRequest to default values.
+void mjrf_defaultReadRequest(mjrfReadRequest* request);
 
 // Unique handle assigned to each render request; used to block until request is completed or query
 // the status of the request.
@@ -123,7 +123,7 @@ typedef uint64_t mjrfFrameHandle;
 // Callbacks will be invoked from within this function, though there is no guarantee on which
 // invocation of this function it will be done.
 mjrfFrameHandle mjrf_render(mjrfContext* ctx, const mjrfRenderRequest* req, int nreq,
-                            const mjrfReadPixelsRequest* read_req, int nread_req);
+                            const mjrfReadRequest* read_req, int nread_req);
 
 // Waits for all rendering operations to complete for the given frame handle, triggering any
 // callbacks as needed.
@@ -156,7 +156,7 @@ typedef struct mjrfTextureConfig_ {
 void mjrf_defaultTextureConfig(mjrfTextureConfig* config);
 
 // Creates a filament texture. Note that the texture will not be created on the GPU until
-// `mjrf_setTextureData()` is called.
+// `mjrf_uploadTexture()` is called.
 mjrfTexture* mjrf_createTexture(mjrfContext* ctx, const mjrfTextureConfig* config);
 
 // Destroys the texture.
@@ -174,7 +174,7 @@ typedef struct mjrfTextureData_ {
 void mjrf_defaultTextureData(mjrfTextureData* data);
 
 // Uploads the given texture data to the texture.
-void mjrf_setTextureData(mjrfTexture* texture, const mjrfTextureData* data);
+void mjrf_uploadTexture(mjrfTexture* texture, const mjrfTextureData* data);
 
 // Returns the width of the texture.
 int mjrf_getTextureWidth(const mjrfTexture* texture);
@@ -226,7 +226,7 @@ typedef struct mjrfMeshData_ {
 void mjrf_defaultMeshData(mjrfMeshData* data);
 
 // Uploads the given mesh data to the mesh.
-void mjrf_setMeshData(mjrfMesh* mesh, const mjrfMeshData* data);
+void mjrf_uploadMesh(mjrfMesh* mesh, const mjrfMeshData* data);
 
 // Parameters for creating a scene (mjrfScene).
 typedef struct mjrfSceneParams_ {
@@ -243,16 +243,16 @@ mjrfScene* mjrf_createScene(mjrfContext* ctx, const mjrfSceneParams* params);
 void mjrf_destroyScene(mjrfScene* scene);
 
 // Adds a light to the scene.
-void mjrf_addLightToScene(mjrfScene* scene, mjrfLight* light);
+void mjrf_addSceneLight(mjrfScene* scene, mjrfLight* light);
 
 // Removes the light from the scene.
-void mjrf_removeLightFromScene(mjrfScene* scene, mjrfLight* light);
+void mjrf_removeSceneLight(mjrfScene* scene, mjrfLight* light);
 
 // Adds a renderable to the scene.
-void mjrf_addRenderableToScene(mjrfScene* scene, mjrfRenderable* renderable);
+void mjrf_addSceneRenderable(mjrfScene* scene, mjrfRenderable* renderable);
 
 // Removes the renderable from the scene.
-void mjrf_removeRenderableFromScene(mjrfScene* scene, mjrfRenderable* renderable);
+void mjrf_removeSceneRenderable(mjrfScene* scene, mjrfRenderable* renderable);
 
 // Sets the skybox (cube texture) for the scene.
 void mjrf_setSceneSkybox(mjrfScene* scene, const mjrfTexture* texture);
@@ -286,11 +286,11 @@ mjrfLight* mjrf_createLight(mjrfContext* ctx, const mjrfLightParams* params);
 // Destroys the light.
 void mjrf_destroyLight(mjrfLight* light);
 
-// Enables or disables the light.
-void mjrf_setLightEnabled(mjrfLight* light, mjtBool enabled);
+// Activates or deactivates the light.
+void mjrf_setLightActive(mjrfLight* light, mjtBool active);
 
 // Enables or disables whether or not the light casts shadows.
-void mjrf_setLightShadowsEnabled(mjrfLight* light, mjtBool enabled);
+void mjrf_setLightCastShadow(mjrfLight* light, mjtBool enabled);
 
 // Sets the RGB color of the light.
 void mjrf_setLightColor(mjrfLight* light, const float color[3]);
@@ -302,7 +302,7 @@ void mjrf_setLightIntensity(mjrfLight* light, float intensity);
 void mjrf_setLightRange(mjrfLight* light, float range);
 
 // Sets the cutoff angle of the light, in degrees. Only used for spot lights.
-void mjrf_setLightCutoffAngle(mjrfLight* light, float cutoff);
+void mjrf_setLightCutoff(mjrfLight* light, float cutoff);
 
 // Sets the softness of the light, in the range [0, 1]. Only used for spot lights.
 void mjrf_setLightSoftness(mjrfLight* light, float softness);
@@ -314,7 +314,7 @@ void mjrf_setLightBulbRadius(mjrfLight* light, float radius);
 void mjrf_setLightShadowMapSize(mjrfLight* light, int map_size);
 
 // Sets the position and direction of the light.
-void mjrf_setLightTransform(mjrfLight* light, const float position[3], const float direction[3]);
+void mjrf_setLightPose(mjrfLight* light, const float position[3], const float direction[3]);
 
 // Returns the type of the light (mjrLightType).
 int mjrf_getLightType(const mjrfLight* light);
@@ -334,7 +334,7 @@ typedef struct mjrfMaterial_ {
   float glossiness;             // glossiness factor [0, 1]; disabled if < 0
   float emissive;               // emissive/glow factor [0, 1]; disabled if < 0
   float reflectance;            // blend factor for reflective surfaces [0, 1]; applies only to planes
-  mjtBool decor_ux;             // for ux elements, does not apply any lighting
+  mjtBool decor;                // ux/decor element: unlit, drawn on the decor layer, no shadows
   mjtBool selected;             // for "selected" ux elements, adds additional styling
   const mjrfTexture* color_texture;       // color/albedo texture (RGB8)
   const mjrfTexture* opacity_texture;     // opacity texture (A8)
@@ -385,9 +385,9 @@ void mjrf_setRenderableMaterial(mjrfRenderable* renderable, const mjrfMaterial* 
 // Copies the material properties of the renderable into the given mjrfMaterial.
 void mjrf_getRenderableMaterial(mjrfRenderable* renderable, mjrfMaterial* material);
 
-// Sets the transform position and rotation of the renderable.
-void mjrf_setRenderableTransform(mjrfRenderable* renderable, const float position[3],
-                                 const float rotation[9]);
+// Sets the position and rotation of the renderable.
+void mjrf_setRenderablePose(mjrfRenderable* renderable, const float position[3],
+                            const float rotation[9]);
 
 // Sets the size of the renderable. Note that, for most renderables, this is equivalent to setting
 // the scale. However, for some geom-based renderables, the size scale is not applied uniformly

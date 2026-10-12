@@ -1595,7 +1595,7 @@ typedef struct mjrfReadPixelsRequest_ {
   mjtSize num_bytes;                     // size of output buffer
   mjrfCallback read_completed;           // callback when read is complete; can use to free output
   void* user_data;                       // user data for read_completed_callback
-} mjrfReadPixelsRequest;
+} mjrfReadRequest;
 typedef struct mjrfFrameStats_ {
   double frame_rate;              // frame rate, in frames per second
 } mjrfFrameStats;
@@ -1661,7 +1661,7 @@ typedef struct mjrfMaterial_ {
   float glossiness;             // glossiness factor [0, 1]; disabled if < 0
   float emissive;               // emissive/glow factor [0, 1]; disabled if < 0
   float reflectance;            // blend factor for reflective surfaces [0, 1]; applies only to planes
-  mjtBool decor_ux;             // for ux elements, does not apply any lighting
+  mjtBool decor;                // ux/decor element: unlit, drawn on the decor layer, no shadows
   mjtBool selected;             // for "selected" ux elements, adds additional styling
   const mjrfTexture* color_texture;       // color/albedo texture (RGB8)
   const mjrfTexture* opacity_texture;     // opacity texture (A8)
@@ -3623,9 +3623,9 @@ mjrfContext* mjrf_createContext(const mjrfContextConfig* config);
 void mjrf_destroyContext(mjrfContext* ctx);
 void mjrf_getRendererInfo(mjrfContext* ctx, mjrRendererInfo* info);
 void mjrf_defaultRenderRequest(mjrfRenderRequest* request);
-void mjrf_defaultReadPixelsRequest(mjrfReadPixelsRequest* request);
+void mjrf_defaultReadRequest(mjrfReadRequest* request);
 mjrfFrameHandle mjrf_render(mjrfContext* ctx, const mjrfRenderRequest* req, int nreq,
-                      const mjrfReadPixelsRequest* read_req, int nread_req);
+                      const mjrfReadRequest* read_req, int nread_req);
 void mjrf_waitForFrame(mjrfContext* ctx, mjrfFrameHandle frame);
 void mjrf_setClearColor(mjrfContext* ctx, const float color[3]);
 void mjrf_defaultFrameStats(mjrfFrameStats* stats);
@@ -3634,7 +3634,7 @@ void mjrf_defaultTextureConfig(mjrfTextureConfig* config);
 mjrfTexture* mjrf_createTexture(mjrfContext* ctx, const mjrfTextureConfig* config);
 void mjrf_destroyTexture(mjrfTexture* texture);
 void mjrf_defaultTextureData(mjrfTextureData* data);
-void mjrf_setTextureData(mjrfTexture* texture, const mjrfTextureData* data);
+void mjrf_uploadTexture(mjrfTexture* texture, const mjrfTextureData* data);
 int mjrf_getTextureWidth(const mjrfTexture* texture);
 int mjrf_getTextureHeight(const mjrfTexture* texture);
 int mjrf_getTextureSamplerType(const mjrfTexture* texture);
@@ -3642,30 +3642,30 @@ void mjrf_defaultMeshConfig(mjrfMeshConfig* config);
 mjrfMesh* mjrf_createMesh(mjrfContext* ctx, const mjrfMeshConfig* config);
 void mjrf_destroyMesh(mjrfMesh* mesh);
 void mjrf_defaultMeshData(mjrfMeshData* data);
-void mjrf_setMeshData(mjrfMesh* mesh, const mjrfMeshData* data);
+void mjrf_uploadMesh(mjrfMesh* mesh, const mjrfMeshData* data);
 void mjrf_defaultSceneParams(mjrfSceneParams* params);
 mjrfScene* mjrf_createScene(mjrfContext* ctx, const mjrfSceneParams* params);
 void mjrf_destroyScene(mjrfScene* scene);
-void mjrf_addLightToScene(mjrfScene* scene, mjrfLight* light);
-void mjrf_removeLightFromScene(mjrfScene* scene, mjrfLight* light);
-void mjrf_addRenderableToScene(mjrfScene* scene, mjrfRenderable* renderable);
-void mjrf_removeRenderableFromScene(mjrfScene* scene, mjrfRenderable* renderable);
+void mjrf_addSceneLight(mjrfScene* scene, mjrfLight* light);
+void mjrf_removeSceneLight(mjrfScene* scene, mjrfLight* light);
+void mjrf_addSceneRenderable(mjrfScene* scene, mjrfRenderable* renderable);
+void mjrf_removeSceneRenderable(mjrfScene* scene, mjrfRenderable* renderable);
 void mjrf_setSceneSkybox(mjrfScene* scene, const mjrfTexture* texture);
 void mjrf_configureSceneFromModel(mjrfScene* scene, const mjModel* model);
 void mjrf_setSceneMsaa(mjrfScene* scene, int samples);
 void mjrf_defaultLightParams(mjrfLightParams* params);
 mjrfLight* mjrf_createLight(mjrfContext* ctx, const mjrfLightParams* params);
 void mjrf_destroyLight(mjrfLight* light);
-void mjrf_setLightEnabled(mjrfLight* light, mjtBool enabled);
-void mjrf_setLightShadowsEnabled(mjrfLight* light, mjtBool enabled);
+void mjrf_setLightActive(mjrfLight* light, mjtBool active);
+void mjrf_setLightCastShadow(mjrfLight* light, mjtBool enabled);
 void mjrf_setLightColor(mjrfLight* light, const float color[3]);
 void mjrf_setLightIntensity(mjrfLight* light, float intensity);
 void mjrf_setLightRange(mjrfLight* light, float range);
-void mjrf_setLightCutoffAngle(mjrfLight* light, float cutoff);
+void mjrf_setLightCutoff(mjrfLight* light, float cutoff);
 void mjrf_setLightSoftness(mjrfLight* light, float softness);
 void mjrf_setLightBulbRadius(mjrfLight* light, float radius);
 void mjrf_setLightShadowMapSize(mjrfLight* light, int map_size);
-void mjrf_setLightTransform(mjrfLight* light, const float position[3], const float direction[3]);
+void mjrf_setLightPose(mjrfLight* light, const float position[3], const float direction[3]);
 int mjrf_getLightType(const mjrfLight* light);
 void mjrf_defaultMaterial(mjrfMaterial* material);
 void mjrf_defaultRenderableParams(mjrfRenderableParams* params);
@@ -3677,8 +3677,8 @@ void mjrf_setRenderableGeomMesh(mjrfRenderable* renderable, int type, int nstack
                           int nquad);
 void mjrf_setRenderableMaterial(mjrfRenderable* renderable, const mjrfMaterial* material);
 void mjrf_getRenderableMaterial(mjrfRenderable* renderable, mjrfMaterial* material);
-void mjrf_setRenderableTransform(mjrfRenderable* renderable, const float position[3],
-                           const float rotation[9]);
+void mjrf_setRenderablePose(mjrfRenderable* renderable, const float position[3],
+                      const float rotation[9]);
 void mjrf_setRenderableSize(mjrfRenderable* renderable, const float size[3]);
 void mjrf_defaultRenderTargetConfig(mjrfRenderTargetConfig* config);
 mjrfRenderTarget* mjrf_createRenderTarget(mjrfContext* ctx, const mjrfRenderTargetConfig* config);
@@ -4148,20 +4148,20 @@ int mjp_registerPlugin(const mjpPlugin* plugin);
 int mjp_pluginCount(void);
 const mjpPlugin* mjp_getPlugin(const char* name, int* slot);
 const mjpPlugin* mjp_getPluginAtSlot(int slot);
-void mjp_defaultResourceProvider(mjpResourceProvider* provider);
-int mjp_registerResourceProvider(const mjpResourceProvider* provider);
-int mjp_resourceProviderCount(void);
-const mjpResourceProvider* mjp_getResourceProvider(const char* resource_name);
-const mjpResourceProvider* mjp_getResourceProviderAtSlot(int slot);
+void mjp_defaultProvider(mjpResourceProvider* provider);
+int mjp_registerProvider(const mjpResourceProvider* provider);
+int mjp_providerCount(void);
+const mjpResourceProvider* mjp_findProvider(const char* resource_name);
+const mjpResourceProvider* mjp_getProviderAtSlot(int slot);
 void mjp_registerDecoder(const mjpDecoder* decoder);
 void mjp_defaultDecoder(mjpDecoder* decoder);
 const mjpDecoder* mjp_findDecoder(const mjResource* resource, const char* content_type);
 void mjp_registerEncoder(const mjpEncoder* encoder);
 void mjp_defaultEncoder(mjpEncoder* encoder);
 const mjpEncoder* mjp_findEncoder(const char* filename, const char* content_type);
-void mjp_registerArchiveResourceProvider(const mjpResourceProvider* provider);
-const mjpResourceProvider* mjp_findArchiveResourceProvider(const char* resource_name);
-int mjp_archiveResourceProviderCount(void);
+void mjp_registerArchiveProvider(const mjpResourceProvider* provider);
+const mjpResourceProvider* mjp_findArchiveProvider(const char* resource_name);
+int mjp_archiveProviderCount(void);
 mjResource* mju_openResource(const char* dir, const char* name,
                              const mjVFS* vfs, char* error, size_t nerror);
 void mju_closeResource(mjResource* resource);
