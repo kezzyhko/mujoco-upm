@@ -172,7 +172,6 @@ class WebViewer(viewer_protocol.Viewer):
       endpoint: endpoints.ViewerEndpoint,
       *,
       model: mujoco.MjModel | None = None,
-      model_path: str = '',
       plugins: list[Any] | None = None,
       camera: mujoco.MjvCamera | None = None,
       vis_options: mujoco.MjvOption | None = None,
@@ -187,7 +186,6 @@ class WebViewer(viewer_protocol.Viewer):
       config: Viewer window configuration.
       endpoint: The viewer endpoint for communication with the sim side.
       model: Optional initial MjModel. Forwarded to the base Viewer.
-      model_path: Optional path to the model file.
       plugins: Optional list of plugin instances.
       camera: Camera parameters. Internal object is created if None.
       vis_options: Visualization options. Internal object is created if None.
@@ -202,7 +200,6 @@ class WebViewer(viewer_protocol.Viewer):
         config,
         endpoint,
         model=model,
-        model_path=model_path,
         plugins=plugins,
         camera=camera,
         vis_options=vis_options,
@@ -369,7 +366,8 @@ class WebViewer(viewer_protocol.Viewer):
     written to a temporary directory here, preserving names and relative
     paths — a dropped folder's asset references resolve, and the mjz/zip
     decoder can locate an archive's root XML by the archive's own name —
-    and the regular drop-loading flow (ViewerApp -> parser.parse) applies.
+    and the regular drop-loading flow applies (ViewerApp sends a
+    LoadModelEvent; the sim thread parses the file).
     """
     try:
       files = self._drop_queue.get_nowait()
