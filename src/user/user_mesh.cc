@@ -296,6 +296,9 @@ void mjCMesh::NameSpace(const mjCModel* m) {
 
 void mjCMesh::CopyFromSpec() {
   *static_cast<mjsMesh*>(this) = spec;
+  if (InstanceDiagonal()) {
+    for (int i = 0; i < 3; i++) { scale[i] *= instancemap_[4 * i]; }
+  }
 
   file_         = spec_file_;
   content_type_ = spec_content_type_;
@@ -319,6 +322,12 @@ void mjCMesh::CopyFromSpec() {
   szgraph_ = 0;
   center_  = nullptr;
   graph_   = nullptr;
+  halfedge_.clear();
+  tree_ = mjCBoundingVolumeHierarchy();
+  face_aabb_.clear();
+  octree_.Clear();
+  mjuu_setvec(aamm_, 1e10, 1e10, 1e10);
+  mjuu_setvec(aamm_ + 3, -1e10, -1e10, -1e10);
 }
 
 
@@ -342,6 +351,9 @@ void mjCMesh::LoadSDF() {
                    id);
   }
 
+  if (instancemap_ != decltype(instancemap_){1, 0, 0, 0, 1, 0, 0, 0, 1}) {
+    throw mjCError(this, "SDF mesh '%s' cannot be scaled by a frame", name.c_str());
+  }
   if (scale[0] != 1 || scale[1] != 1 || scale[2] != 1) {
     throw mjCError(this,
                    "attribute scale is not compatible with SDFs in mesh '%s', (id = %d)",
@@ -500,7 +512,34 @@ void mjCMesh::CacheMesh(mjCCache* cache, const mjResource* resource) {
         const mjCMesh* mesh = static_cast<const mjCMesh*>(data);
         delete mesh;
       });
-  cache->Insert("", resource->name, resource, cached_data, size);
+  cache->Insert("", CacheId(resource), resource, cached_data, size);
+}
+
+
+// id of the mesh in the asset cache: that of its file, and its factor for an instance at another
+// scale
+std::string mjCMesh::CacheId(const mjResource* resource) const {
+  const auto& m = instancemap_;
+  if (InstanceDiagonal() && m[0] == m[4] && m[4] == m[8]) {
+    if (m[0] == 1) { return resource->name; }
+    char factor[32];
+    std::snprintf(factor, sizeof(factor), "@%a", m[0]);
+    return std::string(resource->name) + factor;
+  }
+  std::string id = std::string(resource->name) + "@";
+  for (double x : m) {
+    char factor[32];
+    std::snprintf(factor, sizeof(factor), "%a,", x);
+    id += factor;
+  }
+  return id;
+}
+
+
+// true if the map of this instance is diagonal, which then multiplies the scale of the mesh
+bool mjCMesh::InstanceDiagonal() const {
+  const auto& m = instancemap_;
+  return !m[1] && !m[2] && !m[3] && !m[5] && !m[6] && !m[7];
 }
 
 namespace {
@@ -1046,7 +1085,7 @@ bool mjCMesh::LoadCachedMesh(mjCCache* cache, const mjResource* resource) {
   };
 
   // check that cached asset has all data
-  return cache->PopulateData(resource->name, resource, process_mesh);
+  return cache->PopulateData(CacheId(resource), resource, process_mesh);
 }
 
 
@@ -1257,6 +1296,26 @@ void mjCMesh::ApplyTransformations(double* dvert) {
       normal_[3 * i + 0] /= scale[0];
       normal_[3 * i + 1] /= scale[1];
       normal_[3 * i + 2] /= scale[2];
+    }
+  }
+
+  // the map of an instance which does not multiply the scale; normals by the inverse transpose
+  if (!InstanceDiagonal()) {
+    const double* m = instancemap_.data();
+    for (int i = 0; i < nvert(); i++) { mjuu_mulvecmat(&dvert[3 * i], &dvert[3 * i], m); }
+    double cof[9] = {m[4] * m[8] - m[5] * m[7],
+                     m[5] * m[6] - m[3] * m[8],
+                     m[3] * m[7] - m[4] * m[6],
+                     m[2] * m[7] - m[1] * m[8],
+                     m[0] * m[8] - m[2] * m[6],
+                     m[1] * m[6] - m[0] * m[7],
+                     m[1] * m[5] - m[2] * m[4],
+                     m[2] * m[3] - m[0] * m[5],
+                     m[0] * m[4] - m[1] * m[3]};
+    for (int i = 0; i < nnormal(); i++) {
+      double n[3] = {normal_[3 * i], normal_[3 * i + 1], normal_[3 * i + 2]};
+      mjuu_mulvecmat(n, n, cof);
+      for (int k = 0; k < 3; k++) { normal_[3 * i + k] = (float)n[k]; }
     }
   }
 
@@ -3501,6 +3560,41 @@ void mjCSkin::ResolveReferences(const mjCModel* m) {
 }
 
 
+// scale the compiled copy by the gauge of the bones: the vertices and the bind poses are given in
+// the same coordinates, in which the offsets of the vertices from the bones scale with the bones,
+// whose maps, expressed there through their bind orientations, must agree
+void mjCSkin::ApplyGauge() {
+  scaled_ = false;
+  if (bodyid.empty()) { return; }
+  std::vector<mjCGauge> gauges;
+  for (int i = 0; i < bodyid.size(); i++) {
+    const float* q       = bindquat_.data() + 4 * i;
+    double       conj[4] = {q[0], -q[1], -q[2], -q[3]};
+    gauges.push_back(model->Bodies()[bodyid[i]]->ContentGauge().Rotated(conj));
+  }
+  const mjCGauge& g = gauges[0];
+  for (const mjCGauge& b : gauges) {
+    bool same = b.uniform == g.uniform && b.shape == g.shape;
+    for (int k = 0; k < 9 && same && !g.uniform; k++) {
+      same = std::abs(b.map[k] - g.map[k]) <= 1e-6 * g.shape;
+    }
+    if (!same) { throw mjCError(this, "the bones of a skin must have the same scale"); }
+  }
+  if (g.uniform && g.shape == 1) { return; }
+  auto points = [&g](std::vector<float>& pos) {
+    for (int i = 0; i < pos.size() / 3; i++) {
+      double x[3] = {pos[3 * i], pos[3 * i + 1], pos[3 * i + 2]};
+      g.Point(x);
+      for (int k = 0; k < 3; k++) { pos[3 * i + k] = (float)x[k]; }
+    }
+  };
+  points(vert_);
+  points(bindpos_);
+  inflate *= g.Shape(1);
+  scaled_  = true;
+}
+
+
 // compiler
 void mjCSkin::Compile(const mjVFS* vfs) {
   CopyFromSpec();
@@ -3571,6 +3665,7 @@ void mjCSkin::Compile(const mjVFS* vfs) {
 
   // resolve body names
   ResolveReferences(model);
+  ApplyGauge();
 
   // resolve material name
   mjCBase* pmat = model->FindObject(mjOBJ_MATERIAL, material_);

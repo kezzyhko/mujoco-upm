@@ -4366,6 +4366,95 @@ transformation they encode is accumulated in their direct children; frames are p
 :at:`quat`, :at:`axisangle`, :at:`xyaxes`, :at:`zaxis`, :at:`euler`
    See :ref:`COrientation`.
 
+.. _frame-scale:
+
+:at:`scale`: :at-val:`real(1 or 3), "1"`
+   Resizes everything inside the frame. Bodies, geoms, sites, joints and all other contents are scaled about the frame's
+   origin, while the frame's own :at:`pos` and orientation, which are in its parent's coordinates, are not. Scaling
+   happens at compile time: the spec keeps the authored values, so changing the scale and recompiling starts again from
+   them, and a model saved as written keeps the attribute.
+
+   Three attributes work together. :at:`scale` sets the factor :math:`s` of lengths, :ref:`massscale<frame-massscale>`
+   the factor :math:`m` of masses, by default :math:`s^3` (the same material), and :ref:`scaling<frame-scaling>` decides
+   whether forces, stiffnesses and actuator gains follow (``similar``, the default) or keep their authored values
+   (``geometry``). Typical uses:
+
+   .. list-table::
+      :header-rows: 1
+      :widths: 60 40
+
+      * - intent
+        - attributes
+      * - a copy which moves like the original, in proportionally scaled gravity
+        - ``scale="s"``
+      * - a larger or smaller body of the same material, with the same motors and springs
+        - ``scale="s" scaling="geometry"``
+      * - a larger or smaller body of the same mass
+        - ``scale="s" scaling="geometry" massscale="1"``
+      * - a heavier or lighter body of the same size, e.g. a payload
+        - ``massscale="k" scaling="geometry"``
+      * - a change of the units of length and mass
+        - ``scale="s" massscale="k"``
+      * - a body stretched along the frame's axes, see below
+        - ``scale="sx sy sz" scaling="geometry"``
+
+   Scales of nested frames compose by multiplication. A single value applies to all three axes. Values must be finite
+   and positive.
+
+   Three different values stretch the contents along the frame's axes, which requires :at:`scaling` "geometry".
+   Positions are mapped exactly and orientations are kept, so each shape inside is stretched in its own coordinates,
+   which only some shapes can represent:
+
+   - meshes always, with an instance of the mesh for each distinct stretch;
+   - boxes, ellipsoids, planes and height fields aligned with the frame's axes;
+   - capsules and cylinders aligned with the frame's axes and stretched equally across their own axis. The caps of a
+     capsule stay hemispherical: with :math:`a` the factor across its axis and :math:`c` the factor along it, its
+     radius :math:`r` becomes :math:`a r` and its half-length :math:`h` becomes :math:`c h`, so that its total length
+     is :math:`2 (c h + a r)` rather than :math:`2 c (h + r)`;
+   - spheres only when scaled uniformly; use an ellipsoid otherwise.
+
+   Hinge and slide joints must also be aligned with the frame's axes. Anything else is a compile error; alignment is
+   checked to within about 2 degrees. Sites are never an error: a site box, ellipsoid, capsule or cylinder is stretched
+   by the factor along each of its own axes, with the radius of a capsule or cylinder taking the geometric mean of the
+   two factors across it, which is approximate when the site is not aligned. Explicit inertias transform exactly.
+   Sphere sites, and lengths without a direction like margins, contact widths and tendon widths, take the geometric mean
+   of the three factors.
+
+   A mesh or height field used at several scales compiles to an instance per scale; the first keeps its name and the
+   others are named ``name@1``, ``name@2``, ... A model saved compiled writes a mesh instance which is not stretched
+   along its own axes as vertices and faces; its texture coordinates are kept only if they are given per vertex, and its
+   normals are recomputed. The bones of a skin must have the same scale, and elements with plugins and tactile sensors
+   cannot be scaled.
+
+.. _frame-scaling:
+
+:at:`scaling`: :at-val:`[similar, geometry], "similar"`
+   What changes along with size and mass. With :math:`s` the :at:`scale` and :math:`m` the :at:`massscale`:
+
+   similar
+     A change of the units of length and mass: every quantity of dimension :math:`L^a M^b T^c` is multiplied by
+     :math:`s^a m^b`. Positions and sizes are multiplied by :math:`s`, masses by :math:`m`, rotational inertias and
+     torques by :math:`m s^2`, forces by :math:`m s`, the stiffness of a slide joint by :math:`m`; times and angles are
+     unchanged. The scaled model moves exactly like the original would in gravity :math:`g/s`. Gravity itself is not
+     scaled, so relative to the model's own forces it is weaker by :math:`1/s`.
+   geometry
+     Only geometry and inertia change: lengths are multiplied by :math:`s`, masses by :math:`m` and rotational inertias
+     by :math:`m s^2`, while stiffness, damping, armature, friction loss, force limits and actuator gains keep their
+     authored values. Quantities specified in the time domain, like :ref:`springdamper<body-joint-springdamper>` or a
+     servo's :at:`dampratio`, keep that specification, so the stiffness and damping computed from them follow the
+     inertia.
+
+   The policy applies to this frame's :at:`scale` and :at:`massscale` only, and is not inherited by nested frames.
+
+.. _frame-massscale:
+
+:at:`massscale`: :at-val:`real, "0"`
+   Factor :math:`m` of the masses of the frame's contents: masses are multiplied by :math:`m`, rotational inertias by
+   :math:`m s^2` and densities by :math:`m / s^3`. The default 0 means :math:`m = s_x s_y s_z`, the ratio of volumes,
+   which keeps densities constant. Under ``similar`` scaling :math:`m` is also the factor of the unit of mass, which
+   forces follow. Values must be finite and non-negative. Factors of nested frames compose by multiplication, so
+   :at:`massscale` "1" in an inner frame is relative to the enclosing frames.
+
 
 
 .. _contact:
