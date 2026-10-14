@@ -73,6 +73,11 @@ static void InitImGui(SDL_Window* window, float content_scale,
   io.IniFilename = nullptr;
   io.ConfigDpiScaleFonts = true;
   io.ConfigDpiScaleViewports = true;
+  // Match SDL2's double-click thresholds so trackpad double-taps register;
+  // MouseSingleClickDelay (0.50s default) must exceed MouseDoubleClickTime.
+  io.MouseDoubleClickTime = 0.50f;
+  io.MouseDoubleClickMaxDist = 32.0f * content_scale;
+  io.MouseSingleClickDelay = 0.60f;
 #if defined(__EMSCRIPTEN__)
   if (PlatformIsApple()) {
     io.ConfigMacOSXBehaviors = true;
@@ -116,9 +121,13 @@ Window::Window(std::string_view title, int width, int height, Config config)
     SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 0);
     SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_ES);
   } else if (IsOpenGl(config_.gfx_mode)) {
+    // On Windows, SDL_WINDOW_OPENGL makes SDL call SetPixelFormat on the HWND,
+    // which can only be set once and would block Filament's PlatformWGL.
+#if !defined(__WIN32__)
     window_flags |= SDL_WINDOW_OPENGL;
     SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 3);
     SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 0);
+#endif
   } else {
     mju_error("Unsupported window config: %d", config_.gfx_mode);
   }

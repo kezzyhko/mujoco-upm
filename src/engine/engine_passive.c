@@ -23,9 +23,9 @@
 #include "engine/engine_core_constraint.h"
 #include "engine/engine_core_util.h"
 #include "engine/engine_crossplatform.h"
-#include "engine/engine_derivative.h"
 #include "engine/engine_inline.h"
 #include "engine/engine_memory.h"
+#include "engine/engine_metric.h"
 #include "engine/engine_plugin.h"
 #include "engine/engine_sleep.h"
 #include "engine/engine_support.h"
@@ -867,7 +867,7 @@ int mj_contactPassive(const mjModel* m, mjData* d) {
     return 0;
   }
 
-  mjd_effContactForce(d, d->qfrc_spring);
+  mj_effContactForce(d, d->qfrc_spring);
   return 1;
 }
 
@@ -1335,35 +1335,6 @@ void readFluidGeomInteraction(const mjtNum* geom_fluid_coefs,
   virtual_inertia[0]   = geom_fluid_coefs[i++];
   virtual_inertia[1]   = geom_fluid_coefs[i++];
   virtual_inertia[2]   = geom_fluid_coefs[i++];
-  if (i != mjNFLUID) {
-    mjERROR("wrong number of entries.");
-  }
-}
-
-
-// write components into geom_fluid_coefs array
-void writeFluidGeomInteraction (mjtNum* geom_fluid_coefs,
-                                const mjtNum* geom_fluid_coef,
-                                const mjtNum* blunt_drag_coef,
-                                const mjtNum* slender_drag_coef,
-                                const mjtNum* ang_drag_coef,
-                                const mjtNum* kutta_lift_coef,
-                                const mjtNum* magnus_lift_coef,
-                                const mjtNum virtual_mass[3],
-                                const mjtNum virtual_inertia[3]) {
-  int i = 0;
-  geom_fluid_coefs[i++] = geom_fluid_coef[0];
-  geom_fluid_coefs[i++] = blunt_drag_coef[0];
-  geom_fluid_coefs[i++] = slender_drag_coef[0];
-  geom_fluid_coefs[i++] = ang_drag_coef[0];
-  geom_fluid_coefs[i++] = kutta_lift_coef[0];
-  geom_fluid_coefs[i++] = magnus_lift_coef[0];
-  geom_fluid_coefs[i++] = virtual_mass[0];
-  geom_fluid_coefs[i++] = virtual_mass[1];
-  geom_fluid_coefs[i++] = virtual_mass[2];
-  geom_fluid_coefs[i++] = virtual_inertia[0];
-  geom_fluid_coefs[i++] = virtual_inertia[1];
-  geom_fluid_coefs[i++] = virtual_inertia[2];
   if (i != mjNFLUID) {
     mjERROR("wrong number of entries.");
   }

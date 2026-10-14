@@ -26,7 +26,7 @@
 #include <mujoco/mjrfilament.h>
 #include <mujoco/mujoco.h>
 #include "engine/engine_vis_visualize.h"
-#include "render/filament/mjrfilament_cpp.h"
+#include "render/filament/support/mjrf_ptr.h"
 #include "render/filament/support/filament_util.h"
 
 namespace mujoco {
@@ -449,7 +449,7 @@ UniquePtr<mjrfMesh> CreateFlexMesh(mjrfContext* ctx, const mjModel* model,
   SetBounds(&mesh_data, min_pt, max_pt);
 
   auto mesh = CreateMesh(ctx, mesh_config);
-  mjrf_setMeshData(mesh.get(), &mesh_data);
+  mjrf_uploadMesh(mesh.get(), &mesh_data);
   return mesh;
 }
 
@@ -477,7 +477,7 @@ UniquePtr<mjrfMesh> CreateSkinMesh(mjrfContext* ctx, const mjModel* model,
   SetBounds(&mesh_data, min_pt, max_pt);
 
   auto mesh = CreateMesh(ctx, mesh_config);
-  mjrf_setMeshData(mesh.get(), &mesh_data);
+  mjrf_uploadMesh(mesh.get(), &mesh_data);
   return mesh;
 }
 

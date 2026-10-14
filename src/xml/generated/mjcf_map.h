@@ -231,6 +231,23 @@ inline constexpr mjMap mark_map[] = {
 };
 inline constexpr int mark_sz = 4;
 
+// enum actuatortype
+inline constexpr mjMap actuatortype_map[] = {
+  {"general",      mjACTUATOR_GENERAL},
+  {"motor",        mjACTUATOR_MOTOR},
+  {"position",     mjACTUATOR_POSITION},
+  {"velocity",     mjACTUATOR_VELOCITY},
+  {"intvelocity",  mjACTUATOR_INTVELOCITY},
+  {"damper",       mjACTUATOR_DAMPER},
+  {"cylinder",     mjACTUATOR_CYLINDER},
+  {"muscle",       mjACTUATOR_MUSCLE},
+  {"adhesion",     mjACTUATOR_ADHESION},
+  {"pid",          mjACTUATOR_PID},
+  {"orientation",  mjACTUATOR_ORIENTATION},
+  {"dcmotor",      mjACTUATOR_DCMOTOR},
+};
+inline constexpr int actuatortype_sz = 12;
+
 // enum dyn
 inline constexpr mjMap dyn_map[] = {
   {"none",         mjDYN_NONE},
@@ -271,12 +288,13 @@ inline constexpr int inputchart_sz = 2;
 
 // enum inputbit
 inline constexpr mjMap inputbit_map[] = {
-  {"pos",      mjINPUT_POS},
-  {"vel",      mjINPUT_VEL},
-  {"ff",       mjINPUT_FF},
-  {"voltage",  mjINPUT_VOLTAGE},
+  {"pos",       mjINPUT_POS},
+  {"vel",       mjINPUT_VEL},
+  {"ff",        mjINPUT_FF},
+  {"voltage",   mjINPUT_VOLTAGE},
+  {"pressure",  mjINPUT_PRESSURE},
 };
-inline constexpr int inputbit_sz = 4;
+inline constexpr int inputbit_sz = 5;
 
 // enum bias
 inline constexpr mjMap bias_map[] = {
@@ -334,8 +352,10 @@ inline constexpr mjMap condata_map[] = {
   {"pos",      mjCONDATA_POS},
   {"normal",   mjCONDATA_NORMAL},
   {"tangent",  mjCONDATA_TANGENT},
+  {"linvel",   mjCONDATA_LINVEL},
+  {"angvel",   mjCONDATA_ANGVEL},
 };
-inline constexpr int condata_sz = 7;
+inline constexpr int condata_sz = 9;
 
 // enum raydata
 inline constexpr mjMap raydata_map[] = {
@@ -374,6 +394,13 @@ inline constexpr mjMap conflict_map[] = {
   {"error",    mjCONFLICT_ERROR},
 };
 inline constexpr int conflict_sz = 3;
+
+// enum scaling
+inline constexpr mjMap scaling_map[] = {
+  {"similar",   mjSCALING_SIMILAR},
+  {"geometry",  mjSCALING_GEOMETRY},
+};
+inline constexpr int scaling_sz = 2;
 
 // enum lrmode
 inline constexpr mjMap lrmode_map[] = {
@@ -437,8 +464,14 @@ inline constexpr mjMap meshbuiltin_map[] = {
   {"supersphere",  mjMESH_BUILTIN_SUPERSPHERE},
   {"wedge",        mjMESH_BUILTIN_WEDGE},
   {"plate",        mjMESH_BUILTIN_PLATE},
+  {"grid",         mjMESH_BUILTIN_GRID},
+  {"box",          mjMESH_BUILTIN_BOX},
+  {"cylinder",     mjMESH_BUILTIN_CYLINDER},
+  {"ellipsoid",    mjMESH_BUILTIN_ELLIPSOID},
+  {"square",       mjMESH_BUILTIN_SQUARE},
+  {"disc",         mjMESH_BUILTIN_DISC},
 };
-inline constexpr int meshbuiltin_sz = 8;
+inline constexpr int meshbuiltin_sz = 14;
 
 // enum fcomp
 inline constexpr mjMap fcomp_map[] = {

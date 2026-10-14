@@ -554,6 +554,123 @@ TEST_F(MjCollisionTest, MaxContact) {
   EXPECT_EQ(mj_maxContact(m.get(), cylinder, mesh, -1), 4);
 }
 
+// flex lying on a plane and on 16 spheres of the world body
+std::string FlexOnGeoms(const std::string& flex) {
+  return R"(
+  <mujoco>
+    <worldbody>
+      <geom name="plane" type="plane" size="0 0 1" pos="0 0 .05"/>
+      <replicate count="4" offset=".2 0 0">
+        <replicate count="4" offset="0 .2 0">
+          <geom size=".05" pos="-.3 -.3 0"/>
+        </replicate>
+      </replicate>
+      )" +
+         flex + R"(
+    </worldbody>
+  </mujoco>
+  )";
+}
+
+// contacts with the plane, all contacts, maximum contacts with one sphere
+struct FlexContacts {
+  int nplane = 0;
+  int ncon = 0;
+  int maxsphere = 0;
+};
+
+FlexContacts CountFlexContacts(const mjModel* m, mjData* d) {
+  mj_fwdPosition(m, d);
+  int plane = mj_name2id(m, mjOBJ_GEOM, "plane");
+  std::vector<int> ngeom(m->ngeom, 0);
+  FlexContacts count;
+  count.ncon = d->ncon;
+  for (int i = 0; i < d->ncon; i++) {
+    int g = d->contact[i].geom[0] >= 0 ? d->contact[i].geom[0]
+                                       : d->contact[i].geom[1];
+    ngeom[g]++;
+  }
+  for (int g = 0; g < m->ngeom; g++) {
+    if (g == plane) {
+      count.nplane = ngeom[g];
+    } else if (m->geom_type[g] == mjGEOM_SPHERE) {
+      count.maxsphere = std::max(count.maxsphere, ngeom[g]);
+    }
+  }
+  return count;
+}
+
+TEST_F(MjCollisionTest, VertexFlexContactsAreNotLimited) {
+  char error[1024];
+  MjModelPtr m = LoadModelFromString(FlexOnGeoms(R"(
+      <flexcomp name="cloth" type="grid" count="15 15 1" spacing=".05 .05 .05" dim="2"
+                pos="0 0 .053" radius=".005">
+        <edge equality="true"/>
+        <contact selfcollide="none"/>
+      </flexcomp>)"),
+                                     error, sizeof(error));
+  ASSERT_THAT(m.get(), NotNull()) << error;
+  ASSERT_EQ(m->flex_rigid[0], 0);
+  ASSERT_EQ(m->flex_interp[0], 0);
+
+  MjDataPtr d_bvh = MakeData(m);
+  FlexContacts bvh = CountFlexContacts(m.get(), d_bvh.get());
+
+  // every vertex touches the plane, all contacts are kept
+  EXPECT_EQ(bvh.nplane, m->flex_vertnum[0]);
+  EXPECT_GT(bvh.ncon - bvh.nplane, 0);
+
+  // same contacts without midphase
+  m->opt.disableflags |= mjDSBL_MIDPHASE;
+  MjDataPtr d_all = MakeData(m);
+  FlexContacts all = CountFlexContacts(m.get(), d_all.get());
+  EXPECT_EQ(all.nplane, bvh.nplane);
+  EXPECT_EQ(all.ncon, bvh.ncon);
+}
+
+TEST_F(MjCollisionTest, ReducibleFlexContactLimitIsPerGeom) {
+  // rigid cloth in a free body, trilinear soft box with its bottom layer on the
+  // geoms
+  const char* rigid = R"(
+      <body name="cloth" pos="0 0 .053">
+        <freejoint/>
+        <inertial pos="0 0 0" mass="1" diaginertia=".1 .1 .1"/>
+        <flexcomp name="cloth" type="grid" count="15 15 1" spacing=".05 .05 .05" dim="2"
+                  radius=".005" rigid="true">
+          <contact selfcollide="none"/>
+        </flexcomp>
+      </body>)";
+  const char* trilinear = R"(
+      <flexcomp name="box" type="grid" count="15 15 2" spacing=".05 .05 .05" dim="3"
+                pos="0 0 .078" radius=".005" mass="1" dof="trilinear">
+        <contact selfcollide="none"/>
+      </flexcomp>)";
+  for (const char* attrib : {rigid, trilinear}) {
+    char error[1024];
+    MjModelPtr m =
+        LoadModelFromString(FlexOnGeoms(attrib), error, sizeof(error));
+    ASSERT_THAT(m.get(), NotNull()) << attrib << ": " << error;
+    ASSERT_TRUE(m->flex_rigid[0] || m->flex_interp[0]) << attrib;
+
+    MjDataPtr d_bvh = MakeData(m);
+    FlexContacts bvh = CountFlexContacts(m.get(), d_bvh.get());
+
+    // every vertex touches the plane, mjMAXCONPAIR contacts are kept
+    EXPECT_EQ(bvh.nplane, mjMAXCONPAIR) << attrib;
+
+    // the spheres have more contacts, each sphere at most mjMAXCONPAIR
+    EXPECT_GT(bvh.ncon - bvh.nplane, mjMAXCONPAIR) << attrib;
+    EXPECT_LE(bvh.maxsphere, mjMAXCONPAIR) << attrib;
+
+    // same contacts without midphase
+    m->opt.disableflags |= mjDSBL_MIDPHASE;
+    MjDataPtr d_all = MakeData(m);
+    FlexContacts all = CountFlexContacts(m.get(), d_all.get());
+    EXPECT_EQ(all.nplane, bvh.nplane) << attrib;
+    EXPECT_EQ(all.ncon, bvh.ncon) << attrib;
+  }
+}
+
 TEST_F(MjCollisionTest, Flex3DActiveLayersMidphaseDisabled) {
   constexpr char xml[] = R"(
   <mujoco>
@@ -595,6 +712,64 @@ TEST_F(MjCollisionTest, Flex3DActiveLayersMidphaseDisabled) {
       }
     }
   }
+}
+
+TEST_F(MjCollisionTest, ParallelCapsuleCapsule) {
+  constexpr char xml[] = R"(
+  <mujoco>
+    <worldbody>
+      <body euler="30 45 60">
+        <geom name="a" type="capsule" size="0.01 2.0" pos="0 0.005 0"/>
+      </body>
+      <body euler="30 0 0">
+        <body euler="0 45 60">
+          <geom name="b" type="capsule" size="0.01 1.5" pos="0 -0.005 0.3"/>
+          <geom name="c" type="capsule" size="0.01 1.5" pos="0 -0.095 0.3"/>
+          <geom name="d" type="capsule" size="0.01 1.5" pos="0 -0.095 0.3" euler="0 0.1 0"/>
+          <geom name="e" type="capsule" size="0.01 1.5" pos="0 -0.015 0.3" euler="0 0.01 0"/>
+        </body>
+      </body>
+    </worldbody>
+    <contact>
+      <pair geom1="a" geom2="b"/>
+    </contact>
+  </mujoco>
+  )";
+  char error[1024];
+  MjModelPtr m = LoadModelFromString(xml, error, sizeof(error));
+  ASSERT_THAT(m.get(), NotNull()) << error;
+  MjDataPtr d = MakeData(m);
+  ASSERT_THAT(d, NotNull());
+
+  mj_forward(m.get(), d.get());
+
+  // Penetrating rotated parallel capsules (a, b) should generate 2 contacts.
+  ASSERT_EQ(d->ncon, 2);
+  EXPECT_THAT(d->contact[0].dist, MjNear(-0.01, 1e-12, 1e-5));
+  EXPECT_THAT(d->contact[1].dist, MjNear(-0.01, 1e-12, 1e-5));
+
+  // Separated rotated parallel capsules (a, c) have surface distance 0.08.
+  int a = mj_name2id(m.get(), mjOBJ_GEOM, "a");
+  int c = mj_name2id(m.get(), mjOBJ_GEOM, "c");
+  EXPECT_THAT(mj_geomDistance(m.get(), d.get(), a, c, 0.2, nullptr),
+              MjNear(0.08, 1e-12, 1e-5));
+
+  // Near-parallel (0.1 deg) capsules (a, d): surface distance 0.08, closest
+  // point on d is at its center cross-section (distance 0.01 from d's xpos).
+  int d_id = mj_name2id(m.get(), mjOBJ_GEOM, "d");
+  mjtNum fromto[6];
+  EXPECT_THAT(mj_geomDistance(m.get(), d.get(), a, d_id, 0.2, fromto),
+              MjNear(0.08, 1e-12, 1e-5));
+  EXPECT_THAT(mju_dist3(fromto + 3, d->geom_xpos + 3 * d_id),
+              MjNear(0.01, 1e-12, 1e-2));
+
+  // Near-parallel (0.01 deg) capsules (a, e): surface distance 0.0, closest
+  // point on e is at its center cross-section (distance 0.01 from e's xpos).
+  int e_id = mj_name2id(m.get(), mjOBJ_GEOM, "e");
+  EXPECT_THAT(mj_geomDistance(m.get(), d.get(), a, e_id, 0.2, fromto),
+              MjNear(0.0, 1e-12, 1e-5));
+  EXPECT_THAT(mju_dist3(fromto + 3, d->geom_xpos + 3 * e_id),
+              MjNear(0.01, 1e-12, 1e-1));
 }
 
 }  // namespace

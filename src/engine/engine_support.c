@@ -43,8 +43,8 @@
 
 //-------------------------- Constants -------------------------------------------------------------
 
- #define mjVERSION 3015000
-#define mjVERSIONSTRING "3.15.0"
+ #define mjVERSION 3016000
+#define mjVERSIONSTRING "3.16.0"
 
 // names of disable flags
 const char* mjDISABLESTRING[mjNDISABLE] = {
@@ -119,7 +119,9 @@ const int mjCONDATA_SIZE[mjNCONDATA] = {
   1,  // mjCONDATA_DIST
   3,  // mjCONDATA_POS
   3,  // mjCONDATA_NORMAL
-  3   // mjCONDATA_TANGENT
+  3,  // mjCONDATA_TANGENT
+  3,  // mjCONDATA_LINVEL
+  3   // mjCONDATA_ANGVEL
 };
 
 

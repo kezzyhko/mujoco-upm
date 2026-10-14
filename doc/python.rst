@@ -275,6 +275,13 @@ that create a new :ref:`mjModel` instance: ``mujoco.MjModel.from_xml_string``, `
 functions accept the path to either an XML or MJB model file. All three functions optionally accept a Python
 dictionary which is converted into a MuJoCo :ref:`Virtualfilesystem` for use during model compilation.
 
+Assigning to a struct attribute writes into the underlying C memory rather than rebinding the attribute. For array
+fields, ``model.opt.gravity = value`` is equivalent to ``model.opt.gravity[:] = value``. Likewise, the sub-struct
+attributes of ``MjModel`` (``opt``, ``vis``, ``stat``) and ``MjVisual`` (``global_``, ``quality``, ``headlight``,
+``map``, ``scale``, ``rgba``) can be assigned to, for example ``model.opt = new_opt``, which copies the fields of
+``new_opt`` into the model's own ``mjOption`` struct in place. Any existing references and NumPy array views into the
+destination struct remain valid and reflect the new values; later modifications to ``new_opt`` do not propagate.
+
 
 
 .. _PyFunctions:
@@ -424,12 +431,104 @@ aliases defined in the Python API.
 Rendering
 ---------
 
-MuJoCo itself expects users to set up a working OpenGL context before calling any of its ``mjr_`` rendering routine.
-The Python bindings provide a basic class ``mujoco.GLContext`` that helps users set up such a context for offscreen
-rendering. To create a context, call ``ctx = mujoco.GLContext(max_width, max_height)``. Once the context is created,
-it must be made current before MuJoCo rendering functions can be called, which you can do so via ``ctx.make_current()``.
-Note that a context can only be made current on one thread at any given time, and all subsequent rendering calls must be
-made on the same thread.
+MuJoCo provides two rendering APIs: the :ref:`classic rendering<OpenGLrendering>` API (which uses OpenGL 1.5) and the
+:ref:`filament rendering<FilamentRendering>` API (which provides more modern physically-based rendering capabilities).
+
+.. _PyFilamentRender:
+
+Filament Rendering
+------------------
+
+The Python ``mjrf`` module exposes the ``mjrf_`` :ref:`C API<FilamentRenderingApi>` to python. It can be imported using
+``from mujoco import mjrf``. This module also provides the following conveniences around the C library:
+
+- Enums are exposed directly but without the ``mjr`` prefix. So, for example, :ref:`mjrGraphicsApi` becomes
+  ``mjrf.GraphicsApi`` and ``mjGRAPHICS_API_DEFAULT`` becomes ``mjrf.GraphicsApi.GRAPHICS_API_DEFAULT``.
+
+- Tuple/list/numpy array types are automatically converted into the corresponding native C types (e.g. ``float*``).
+
+- ``mjrf`` C structs are treated in two different ways. Basic structs (e.g. :ref:`mjrRect`, ``mjrCamera``, etc.) are
+  considered to be simple POD data types and are bound directly as python types allowing copies to be made as needed.
+
+- ``mjrf`` types that have explicit create/destroy functions in the C API (e.g. :ref:`mjrfContext`, :ref:`mjrfTexture`,
+  etc.) are treated as "Objects". When created in python, their lifetimes are managed by python; calling ``del`` on the
+  objects will destroy the underlying C object. However, when they are returned from an API call, they are returned as
+  references such that python will not manage their lifetimes.
+
+- In cases where the ``mjrf_`` C function takes a pointer to an object as its first argument, we bind the function as a
+  method of the object itself. So, for example, :ref:`mjrf_setLightActive(mjrfLight*, bool)<mjrf_setLightActive>`
+  becomes ``Light.set_active(bool)``.
+
+- Some functions (e.g. ``mjrf.ReadRequest.set_buffer``) require users to provide a buffer. Users are responsible
+  for ensuring the lifetime of the buffer outlives the request to which it is associated.
+
+We also provide a `ModelScene
+<https://github.com/google-deepmind/mujoco/blob/main/python/mujoco/rendering/filament/model_scene.py>`__ helper class
+under ``mujoco.rendering.filament``. This class can be used to add and update :ref:`mjrfRenderable` and :ref:`mjrfLight`
+objects in an :ref:`mjrfScene` based on the contents of an :ref:`mjModel` and :ref:`mjData`.
+
+Similarly, we also provide a `Renderer
+<https://github.com/google-deepmind/mujoco/blob/main/python/mujoco/rendering/filament/renderer.py>`__ class under
+``mujoco.rendering.filament``. This class can be used to manage the lifetimes of key objects (such as the
+:ref:`mjrfContext` and :ref:`mjrfScene`) and provides useful functions for controlling the camera and reading pixels.
+
+Here is a mimimal example for rendering an mjModel with the filament renderer:
+
+.. code-block:: python
+
+   import mujoco
+   from mujoco import mjrf
+   from mujoco.rendering.filament import model_scene
+   from mujoco.rendering.filament import renderer
+   import numpy as np
+
+   def render(model: mujoco.MjModel, data: MjData, width: int, height: int) -> np.ndarray:
+     # create the rendering context
+     ctx = mjrf.Context(mjrf.ContextConfig())
+
+     # create a renderer
+     r = renderer.Renderer(ctx)
+
+     # add lights and renderables defined in the model to a scene in the renderer
+     ms = model_scene.ModelScene(ctx, model, r.scene("scn"))
+
+     # create the pixel buffer into which we'll render the image
+     pixels = np.empty((height, width, 3), dtype=np.uint8)
+
+     # associate the pixel buffer with a render target
+     r.target("out", pixels)
+
+     # define a view that connects the scene we want to render to an output target
+     r.view("v1", scene="scn", target="out")
+
+     # define the camera for the view we want to render
+     vcam = mujoco.MjvCamera()
+     mujoco.mjv_defaultFreeCamera(model, vcam)
+     vcam.type = int(mujoco.mjtCamera.mjCAMERA_FIXED)
+     vcam.fixedcamid = 0
+     r.update_camera("v1", mujoco.mjv_camera2GLCamera(model, data, vcam))
+
+     # update the lights and renderables with the current `data` state
+     ms.update(data)
+
+     # render the scene; blocks until the render has completed writing to the render target
+     r.render()
+
+     # return the pixels
+     return pixels
+
+.. _PyClassicRender:
+
+Classic Rendering
+-----------------
+
+The MuJoCo classic renderer expects users to set up a working OpenGL context before calling any of its ``mjr_``
+:ref:`rendering routines<OpenGLrendering>`. The Python bindings provide a basic class ``mujoco.GLContext`` that helps
+users set up such a context for offscreen rendering. To create a context, call ``ctx = mujoco.GLContext(max_width,
+max_height)``. Once the context is
+created, it must be made current before MuJoCo rendering functions can be called, which you can do so via
+``ctx.make_current()``. Note that a context can only be made current on one thread at any given time, and all subsequent
+rendering calls must be made on the same thread.
 
 The context is freed automatically when the ``ctx`` object is deleted, but in some multi-threaded scenario it may be
 necessary to explicitly free the underlying OpenGL context. To do so, call ``ctx.free()``, after which point it is the
@@ -577,7 +676,11 @@ For reference, the deprecated ``assets`` dictionary approach looked like this:
 Save to XML
 -----------
 
-Compiled ``MjSpec`` objects can be saved to XML string with the ``to_xml()`` method:
+``MjSpec`` objects can be saved to an XML string with the ``to_xml()`` method. By default the values which
+compilation made of the model are saved; set ``spec.compiler.savecompiled = False`` to save the model as it is written
+in the spec instead, see :ref:`Model Encoding & Saving <meSaving>`. Unlike :ref:`mj_saveXMLString`, ``to_xml()``
+compiles the spec before it saves it: the spec must compile, with its assets, and the compilation changes it as
+:ref:`mj_compile` says, for example by applying :ref:`fusestatic<compiler-fusestatic>`.
 
 .. code-block:: python
 
@@ -615,6 +718,17 @@ The ``encode()`` method accepts the target filename, an optional compiled ``mode
 ``vfs`` (:ref:`MjVFS`), and an optional ``content_type``. The target format is automatically determined by the file
 extension (``.xml``, ``.mjb``, ``.txt``, ``.mjz``) or content type.
 
+Values which were changed in a compiled model can be written to the spec itself with ``copy_back()``. They are then in
+the models which are compiled from the spec afterwards and in what it saves; see :ref:`mj_copyBack` for what is copied
+and how:
+
+.. code-block:: python
+
+   model = spec.compile()
+   model.geom('my_geom').size[0] = 2
+   spec.copy_back(model)
+   print(spec.geom('my_geom').size[0])  # 2.0
+
 Attachment
 ----------
 
@@ -636,6 +750,9 @@ in the parent and therefore modifying the child will modify the parent. This is 
 :ref:`attach<body-attach>` and :ref:`replicate<replicate>` meta-elements in MJCF, which create deep copies while
 attaching. However, it is possible to override the default behavior by setting ``spec.copy_during_attach`` to
 ``True``. In this case, the child spec is copied and the references to the child will not point to the parent.
+Without copying, a child spec can be attached as a whole only once, since its elements move to the parent; its bodies
+and frames which are not attached yet can still be attached, if they contain nothing which is attached already. An
+element of the parent, including one attached to it, can be attached to the parent only as a copy.
 
 .. code-block:: python
 
@@ -647,16 +764,18 @@ attaching. However, it is possible to override the default behavior by setting `
    frame = parent.worldbody.add_frame()
    site = parent.worldbody.add_site()
 
-   # Create the child spec.
+   # Create the child specs.
    child = mujoco.MjSpec()
    child_body = child.worldbody.add_body()
    child_frame = child.worldbody.add_frame()
+   child2 = mujoco.MjSpec()
+   child3 = mujoco.MjSpec()
 
-   # Attach the child to the parent in different ways.
+   # Attach the children to the parent in different ways.
    body_in_frame = frame.attach_body(child_body, 'child-', '')
    frame_in_body = body.attach_frame(child_frame, 'child-', '')
-   worldframe_in_site = parent.attach(child, site=site, prefix='child-')
-   worldframe_in_frame = parent.attach(child, frame=frame, prefix='child-')
+   worldframe_in_site = parent.attach(child2, site=site, prefix='child2-')
+   worldframe_in_frame = parent.attach(child3, frame=frame, prefix='child3-')
 
 .. _PyEditConvenience:
 
@@ -904,6 +1023,8 @@ Therefore, non-increasing time values can be used to detect diverged rollouts.
 The ``rollout`` function is designed to be computationally stateless, so all inputs of the stepping pipeline are set and
 any values already present in the given ``MjData`` instance will have no effect on the output.
 
+``rollout`` threads across rollouts, so an ``MjData`` with a :ref:`mju_threadpool` installed is rejected.
+
 By default ``rollout.rollout`` creates a new thread pool every call if ``len(data) > 1``. To reuse the thread pool
 over multiple calls use the ``persistent_pool`` argument. ``rollout.rollout`` is not thread safe when using
 a persistent pool. The basic usage form is
@@ -1128,8 +1249,8 @@ mujoco-py migration
 ===================
 
 In mujoco-py, the main entry point is the `MjSim <https://github.com/openai/mujoco-py/blob/master/mujoco_py/mjsim.pyx>`_
-class.  Users construct a stateful ``MjSim`` instance from an MJCF model (similar to ``dm_control.Physics``), and this
-instance holds references to an ``mjModel`` instance and its associated ``mjData``.  In contrast, the MuJoCo Python
+class. Users construct a stateful ``MjSim`` instance from an MJCF model (similar to ``dm_control.Physics``), and this
+instance holds references to an ``mjModel`` instance and its associated ``mjData``. In contrast, the MuJoCo Python
 bindings (``mujoco``) take a more low-level approach, as explained above: following the design principle of the C
 library, the ``mujoco`` module itself is stateless, and merely wraps the underlying native structs and functions.
 

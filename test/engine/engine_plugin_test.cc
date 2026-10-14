@@ -26,8 +26,8 @@
 
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
-#include <absl/strings/str_format.h>
-#include <absl/strings/str_replace.h>
+#include "absl/strings/str_format.h"
+#include "absl/strings/str_replace.h"
 #include <mujoco/mujoco.h>
 #include "test/fixture.h"
 
@@ -712,11 +712,76 @@ TEST_F(EnginePluginTest, FilteredActuatorPlugin) {
               MjNear(0.5 + expected_act_dot * m->opt.timestep, 1e-6, 1e-4));
 }
 
-TEST_F(EnginePluginTest, ArchiveResourceProviderRegistration) {
-  int initial_count = mjp_archiveResourceProviderCount();
+// a plugin of a compiled child attached by reference starts from its initial
+// state when the parent is recompiled, as an attached copy does
+TEST_F(EnginePluginTest, RecompileAttachByReference) {
+  static constexpr char xml_parent[] = R"(
+  <mujoco>
+    <extension>
+      <plugin plugin="mujoco.test.sensor"/>
+    </extension>
+    <worldbody>
+      <frame name="f"/>
+    </worldbody>
+    <sensor>
+      <plugin plugin="mujoco.test.sensor"/>
+    </sensor>
+  </mujoco>
+  )";
+  static constexpr char xml_child[] = R"(
+  <mujoco>
+    <extension>
+      <plugin plugin="mujoco.test.sensor"/>
+    </extension>
+    <worldbody>
+      <body name="x"/>
+    </worldbody>
+    <sensor>
+      <plugin plugin="mujoco.test.sensor"/>
+    </sensor>
+  </mujoco>
+  )";
+
+  char error[1024] = {0};
+  for (bool deepcopy : {false, true}) {
+    mjSpec* parent = mj_parseXMLString(xml_parent, 0, error, sizeof(error));
+    ASSERT_THAT(parent, NotNull()) << error;
+    mjSpec* child = mj_parseXMLString(xml_child, 0, error, sizeof(error));
+    ASSERT_THAT(child, NotNull()) << error;
+    mjs_setDeepCopy(parent, deepcopy);
+    mjModel* m = mj_compile(child, nullptr);
+    ASSERT_THAT(m, NotNull()) << mjs_getError(child);
+    mj_deleteModel(m);
+
+    m = mj_compile(parent, nullptr);
+    ASSERT_THAT(m, NotNull()) << mjs_getError(parent);
+    mjData* d = mj_makeData(m);
+    ASSERT_EQ(m->npluginstate, 3);
+    d->plugin_state[0] = 7;
+    d->plugin_state[1] = 8;
+    d->plugin_state[2] = 9;
+
+    ASSERT_THAT(mjs_attach(mjs_findFrame(parent, "f")->element,
+                           mjs_findBody(child, "x")->element, "c_", ""),
+                NotNull())
+        << mjs_getError(parent);
+    ASSERT_EQ(mj_recompile(parent, nullptr, m, d), 0) << mjs_getError(parent);
+    ASSERT_EQ(m->npluginstate, 6);
+    EXPECT_THAT(AsVector(d->plugin_state, 6),
+                testing::ElementsAreArray({7, 8, 9, 1, 0, 0}));
+
+    mj_deleteData(d);
+    mj_deleteModel(m);
+    mj_deleteSpec(child);
+    mj_deleteSpec(parent);
+  }
+}
+
+TEST_F(EnginePluginTest, ArchiveProviderRegistration) {
+  int initial_count = mjp_archiveProviderCount();
 
   mjpResourceProvider provider;
-  mjp_defaultResourceProvider(&provider);
+  mjp_defaultProvider(&provider);
   provider.prefix = ".testarchive|.alsoarchive";
   provider.open = [](mjResource* res) {
     res->data = const_cast<char*>("test_handle");
@@ -729,17 +794,17 @@ TEST_F(EnginePluginTest, ArchiveResourceProviderRegistration) {
   };
   provider.close = [](mjResource* res) {};
 
-  mjp_registerArchiveResourceProvider(&provider);
+  mjp_registerArchiveProvider(&provider);
 
-  EXPECT_GT(mjp_archiveResourceProviderCount(), initial_count);
+  EXPECT_GT(mjp_archiveProviderCount(), initial_count);
 
   const mjpResourceProvider* found1 =
-      mjp_findArchiveResourceProvider("model.testarchive");
+      mjp_findArchiveProvider("model.testarchive");
   ASSERT_THAT(found1, NotNull());
   EXPECT_TRUE(found1->open != nullptr);
 
   const mjpResourceProvider* found2 =
-      mjp_findArchiveResourceProvider("model.alsoarchive");
+      mjp_findArchiveProvider("model.alsoarchive");
   ASSERT_THAT(found2, NotNull());
 }
 

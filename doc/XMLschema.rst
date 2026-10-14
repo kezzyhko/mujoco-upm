@@ -252,6 +252,12 @@
             :ref:`saveinertial<compiler-saveinertial>`
 
          .. grid-item::
+            :ref:`savecompiled<compiler-savecompiled>`
+
+         .. grid-item::
+            :ref:`savecanonical<compiler-savecanonical>`
+
+         .. grid-item::
             :ref:`assetdir<compiler-assetdir>`
 
          .. grid-item::
@@ -718,6 +724,9 @@
 
          .. grid-item::
             :ref:`simple<body-simple>`
+
+         .. grid-item::
+            :ref:`fuse<body-fuse>`
 
          .. grid-item::
             :ref:`user<body-user>`
@@ -1486,6 +1495,9 @@
 
             .. grid-item::
                :ref:`file<body-flexcomp-file>`
+
+            .. grid-item::
+               :ref:`mesh<body-flexcomp-mesh>`
 
             .. grid-item::
                :ref:`point<body-flexcomp-point>`
@@ -2392,6 +2404,9 @@
 
             .. grid-item::
                :ref:`ffrange<actuator-general-ffrange>`
+
+            .. grid-item::
+               :ref:`inheritrange<actuator-general-inheritrange>`
 
             .. grid-item::
                :ref:`dyntype<actuator-general-dyntype>`
@@ -6067,6 +6082,9 @@
 
             .. grid-item::
                :ref:`ffrange<default-general-ffrange>`
+
+            .. grid-item::
+               :ref:`inheritrange<default-general-inheritrange>`
 
             .. grid-item::
                :ref:`dyntype<default-general-dyntype>`

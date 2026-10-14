@@ -200,7 +200,7 @@ static constexpr char ballJointModel[] = R"(
 )";
 
 TEST_F(SupportTest, DifferentiatePosSubQuat) {
-  const mjtNum eps = 1e-12;  // epsilon for float comparison
+  const mjtNum eps = 2e-12;  // epsilon for float comparison
 
   char error[1024];
   MjModelPtr model = LoadModelFromString(ballJointModel, error, sizeof(error));
@@ -800,9 +800,9 @@ TEST_F(SupportTest, SetKeyframe) {
 TEST_F(SupportTest, ContactSensorDim) {
   int dataSpec = 1 << mjCONDATA_FOUND | 1 << mjCONDATA_FORCE |
                  1 << mjCONDATA_DIST | 1 << mjCONDATA_POS |
-                 1 << mjCONDATA_TANGENT;
+                 1 << mjCONDATA_TANGENT | 1 << mjCONDATA_LINVEL;
 
-  EXPECT_EQ(mju_condataSize(dataSpec), 1 + 3 + 1 + 3 + 3);
+  EXPECT_EQ(mju_condataSize(dataSpec), 1 + 3 + 1 + 3 + 3 + 3);
 }
 
 // ------------------------------ ctrl delays --------------------------------

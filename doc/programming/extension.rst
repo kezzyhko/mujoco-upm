@@ -383,7 +383,10 @@ A decoder is described by the :ref:`mjpDecoder` struct, which has the following 
   A callback of type :ref:`mjfDecode` that performs the actual decoding. It receives an :ref:`mjResource` and
   returns a newly allocated :ref:`mjSpec` containing the decoded asset data. The caller takes
   ownership of the returned spec and is responsible for freeing it with :ref:`mj_deleteSpec`. Returns ``NULL`` on
-  failure.
+  failure, in which case the decoder should write a human-readable reason into the ``error`` buffer of size
+  ``error_sz``, if ``error`` is not ``NULL``. This message is propagated to the user, e.g. via the ``error``
+  argument of :ref:`mj_parse` or as a compiler error for mesh assets. Non-fatal issues can be reported with
+  :ref:`mju_warning`.
 
 When a decoder is invoked for a mesh asset, the compiler will reference the first mesh element in the spec returned
 by the ``decode`` callback.
@@ -423,13 +426,14 @@ Below is a minimal decoder that reads a hypothetical binary mesh format:
 
 .. code-block:: C
 
+   #include <stdio.h>
    #include <mujoco.h>
 
-   static mjSpec* MyDecode(mjResource* resource, const mjVFS* vfs) {
+   static mjSpec* MyDecode(mjResource* resource, const mjVFS* vfs, char* error, int error_sz) {
      const void* bytes = NULL;
      int nbytes = mju_readResource(resource, &bytes);
      if (nbytes < 0) {
-       mju_warning("failed to read resource '%s'", resource->name);
+       if (error) snprintf(error, error_sz, "failed to read resource '%s'", resource->name);
        return NULL;
      }
 
@@ -531,9 +535,10 @@ plugin library is loaded.
 Resource providers
 ~~~~~~~~~~~~~~~~~~
 
-Resource providers extend MuJoCo to load assets (XML files, meshes, textures, and etc.) that don't necessarily come from
-the OS filesystem or the Virtual File System (:ref:`mjVFS`). For example, downloading assets from the Internet could be
-implemented as a resource provider. These extensions are handled abstractly in MuJoCo via the :ref:`mjResource` struct.
+Resource providers (:ref:`mjpResourceProvider`) extend MuJoCo to load assets (XML files, meshes, textures, and etc.)
+that don't necessarily come from the OS filesystem or the Virtual File System (:ref:`mjVFS`). For example, downloading
+assets from the Internet could be implemented as a resource provider. These extensions are handled abstractly in MuJoCo
+via the :ref:`mjResource` struct.
 
 .. _exProviderStructure:
 
@@ -541,8 +546,8 @@ Overview
 ^^^^^^^^
 
 Creating a new resource provider works by registering a :ref:`mjpResourceProvider` struct via
-:ref:`mjp_registerResourceProvider` in a global table. Once a resource provider is registered it can be used by all
-loading functions. The :ref:`mjpResourceProvider` struct stores three types of fields:
+:ref:`mjp_registerProvider` in a global table. Once a resource provider is registered it can be used by all loading
+functions. The :ref:`mjpResourceProvider` struct stores three types of fields:
 
 .. _Uniform Resource Identifier: https://en.wikipedia.org/wiki/Uniform_Resource_Identifier
 
@@ -632,7 +637,7 @@ Next we create the resource provider and register it with MuJoCo:
 
 .. code-block:: C
 
-   mjpResourceProvider resourceProvider = {
+   mjpResourceProvider provider = {
      .prefix = "data",
      .open = str_open_callback,
      .read = str_read_callback,
@@ -640,7 +645,7 @@ Next we create the resource provider and register it with MuJoCo:
    };
 
    // return positive number on success
-   if (!mjp_registerResourceProvider(&resourceProvider)) {
+   if (!mjp_registerProvider(&provider)) {
      // ...
      // return failure
    }

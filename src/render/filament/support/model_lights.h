@@ -19,15 +19,15 @@
 
 #include <mujoco/mjrfilament.h>
 #include <mujoco/mujoco.h>
-#include "render/filament/mjrfilament_cpp.h"
-#include "render/filament/support/model_objects.h"
+#include "render/filament/support/mjrf_ptr.h"
+#include "render/filament/support/model_resources.h"
 
 namespace mujoco {
 
 // Manages Light entities in an mjrfScene for an mjModel.
 class ModelLights {
  public:
-  ModelLights(mjrfScene* scene, ModelObjects* model_objects);
+  ModelLights(mjrfScene* scene, ModelResources* model_resources);
   ~ModelLights();
 
   // Updates the state of the lights in the scene.
@@ -53,7 +53,7 @@ class ModelLights {
   void UpdateShadowMapSize();
 
   mjrfScene* scene_ = nullptr;
-  ModelObjects* model_objects_ = nullptr;
+  ModelResources* model_resources_ = nullptr;
 
   UniquePtr<mjrfLight> fallback_ibl_{nullptr, nullptr};
   UniquePtr<mjrfLight> fallback_directional_{nullptr, nullptr};
@@ -61,7 +61,7 @@ class ModelLights {
   std::vector<UniquePtr<mjrfLight>> lights_;
   int shadowsize_ = 0;
   int shadow_map_size_ = 0;
-  float fallback_head_light_intensity_ = 0.f;
+  float fallback_head_light_intensity_ = 40'000.f;
   float headlight_intensity_ = 0.f;
   float fallback_scene_light_intensity_ = 80'000.f;
   float fallback_intensity_ = 0.f;

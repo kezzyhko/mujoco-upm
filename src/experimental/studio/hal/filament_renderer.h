@@ -22,11 +22,11 @@
 #include <mujoco/mjrfilament.h>
 #include <mujoco/mujoco.h>
 #include "experimental/studio/hal/graphics_mode.h"
-#include "render/filament/mjrfilament_cpp.h"
+#include "render/filament/support/mjrf_ptr.h"
 #include "render/filament/support/imgui_bridge.h"
 #include "render/filament/support/model_decorations.h"
 #include "render/filament/support/model_lights.h"
-#include "render/filament/support/model_objects.h"
+#include "render/filament/support/model_resources.h"
 #include "render/filament/support/model_renderables.h"
 
 namespace mujoco::studio {
@@ -74,8 +74,8 @@ class FilamentRenderer {
   // Rendering flags.
   mjtByte* GetRenderFlags() { return render_flags_; }
 
-  // Returns the current frame rate.
-  double GetFps();
+  // Returns the GPU time of the last rendered frame, in milliseconds.
+  double GetGpuFrameMs();
 
  private:
   // Resets the renderer; no rendering will occur until Init() is called again.
@@ -96,14 +96,15 @@ class FilamentRenderer {
   UniquePtr<mjrfScene> ux_scene_{nullptr, nullptr};
   UniquePtr<mjrfRenderTarget> render_target_{nullptr, nullptr};
   std::unique_ptr<ImguiBridge> imgui_bridge_;
-  std::unique_ptr<ModelObjects> model_objects_;
+  std::unique_ptr<ModelResources> model_resources_;
   std::unique_ptr<ModelLights> model_lights_;
   std::unique_ptr<ModelRenderables> model_renderables_;
   std::unique_ptr<ModelDecorations> model_decorations_;
   mjrfRenderRequest render_requests_[2];
   mjtByte render_flags_[mjNRNDFLAG];
   int framebuffer_mode_ = 0;
-  double fps_ = 0;
+  int offsamples_ = -1;
+  double gpu_frame_ms_ = 0;
 };
 
 }  // namespace mujoco::studio

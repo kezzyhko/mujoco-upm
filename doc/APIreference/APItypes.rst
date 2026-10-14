@@ -362,7 +362,8 @@ Orientation input charts of so3 actuators. These values are used in ``m->actuato
 mjtCtrlInput
 ~~~~~~~~~~~~
 
-Input bitflags of servo-family (pd, dcmotor) actuators. These values are used in ``m->actuator_ctrlspec``.
+Input bitflags of actuators: the input subset of pid and dcmotor actuators, and the declared input of actuators with
+fixed or affine gain. These values are used in ``m->actuator_ctrlspec``.
 
 .. mujoco-include:: mjtCtrlInput
 
@@ -981,6 +982,26 @@ Conflict resolution mode for attach.
 
 .. mujoco-include:: mjtConflict
 
+.. _mjtScaling:
+
+mjtScaling
+~~~~~~~~~~
+
+Physical policy of a frame's :ref:`scale<frame-scale>`, see :ref:`scaling<frame-scaling>`.
+
+.. mujoco-include:: mjtScaling
+
+.. _mjtActuator:
+
+mjtActuator
+~~~~~~~~~~~
+
+The :ref:`actuator element<actuator>` an actuator is written with: :ref:`general<actuator-general>` or one of its
+:ref:`shortcuts<CActShortcuts>`. Set by the ``mjs_setTo*`` functions and by the parser; shortcut parameters are inherited
+only from a default written with the same shortcut.
+
+.. mujoco-include:: mjtActuator
+
 
 .. _mjtCTimer:
 
@@ -1573,7 +1594,7 @@ depending on the values of the material properties. There there are three lighti
 metallic-roughness workflows.
 
 2. Specular-glossiness (non-PBR): this is a legacy model designed to be compatible with classic
-:ref:`mjr<Rendering>` renderer, though it is not 100% identical.
+:ref:`mjr<ClassicRendering>` renderer, though it is not 100% identical.
 
 3. Unlit: this model ignores lighting and is used for rendering UX or decorative elements like
 contact forces and labels.
@@ -1610,14 +1631,14 @@ A single rendering operation.
 .. mujoco-include:: mjrfRenderRequest
 
 
-.. _mjrfReadPixelsRequest:
+.. _mjrfReadRequest:
 
-mjrfReadPixelsRequest
+mjrfReadRequest
 ~~~~~~~~~~~~~~~~~~~~~
 
 A single pixel read operation.
 
-.. mujoco-include:: mjrfReadPixelsRequest
+.. mujoco-include:: mjrfReadRequest
 
 
 .. _mjrfFrameStats:
@@ -2369,12 +2390,13 @@ mjfDecode
 
 .. code-block:: C
 
-   typedef mjSpec* (*mjfDecode)(mjResource* resource, const mjVFS* vfs);
+   typedef mjSpec* (*mjfDecode)(mjResource* resource, const mjVFS* vfs, char* error, int error_sz);
 
 
 This callback is given an opened resource, and is responsible for decoding it into a :ref:`mjSpec`.
 Ownership of the resource and the returned spec is responsibility of the caller.
-When decoding fails, the callback should return NULL.
+When decoding fails, the callback should return NULL and, if ``error`` is not NULL, write a description of the
+failure into ``error`` (of size ``error_sz``).
 
 .. _mjfCanDecode:
 

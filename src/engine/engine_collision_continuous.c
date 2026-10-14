@@ -22,87 +22,24 @@
 #include <mujoco/mjmacro.h>
 #include <mujoco/mjmodel.h>
 #include <mujoco/mjtype.h>
-#include "engine/engine_memory.h"        // mj_arenaAllocByte, mjSTACKALLOC
-#include "engine/engine_util_blas.h"     // mju_dot3, mju_mulMatVec3
-#include "engine/engine_util_errmem.h"   // mju_warning
-
-static inline mjtNum min2(mjtNum a, mjtNum b) { return a < b ? a : b; }
+#include "engine/engine_collision_primitive.h"
+#include "engine/engine_memory.h"
+#include "engine/engine_util_blas.h"
+#include "engine/engine_util_errmem.h"
+#include "engine/engine_util_misc.h"
 
 
 // point-triangle: distance, closest point cp, barycentric weights w of cp (for the barrier
 // gradient).
-// TODO(consolidation): same closest-point-on-triangle math as mjraw_SphereTriangle
-// (engine_collision_primitive.c) and GJK's S2D -- NOT a duplicate by accident. The barrier
-// gradient/Hessian needs the BARYCENTRIC weights w (to spread the reaction onto the 3 verts), which
-// mjraw_SphereTriangle never forms (it finds the closest 3D point in a rotated frame, no w), and it
-// early-exits on margin so it can't return the unconditional signed distance this module uses in
-// broadphase/CCD. Reuse = factor the core out of mjraw_SphereTriangle AND add a barycentric output
-// (a collision-core change), not a drop-in arg add; deferred (regression-risky, small payoff).
 mjtNum mjc_PtTri(const mjtNum* p, const mjtNum* a, const mjtNum* b, const mjtNum* c, mjtNum* cp,
                  mjtNum* w) {
-  mjtNum ab[3], ac[3], ap[3];
+  mjc_triWeights(w, p, a, b, c);
   for (int k=0; k < 3; k++) {
-    ab[k] = b[k] - a[k];
-    ac[k] = c[k] - a[k];
-    ap[k] = p[k] - a[k];
+    cp[k] = w[0] * a[k] + w[1] * b[k] + w[2] * c[k];
   }
-  mjtNum d1 = mju_dot3(ab, ap), d2 = mju_dot3(ac, ap);
-  if (d1 <= 0 && d2 <= 0) {
-    w[0] = 1;
-    w[1] = 0;
-    w[2] = 0;
-  } else {
-    mjtNum bp[3];
-    for (int k=0; k < 3; k++) bp[k] = p[k] - b[k];
-    mjtNum d3 = mju_dot3(ab, bp), d4 = mju_dot3(ac, bp);
-    if (d3 >= 0 && d4 <= d3) {
-      w[0] = 0;
-      w[1] = 1;
-      w[2] = 0;
-    } else {
-      mjtNum vc = d1 * d4 - d3 * d2;
-      if (vc <= 0 && d1 >= 0 && d3 <= 0) {
-        mjtNum t = d1 / (d1 - d3);
-        w[0] = 1 - t;
-        w[1] = t;
-        w[2] = 0;
-      } else {
-        mjtNum cq[3];
-        for (int k=0; k < 3; k++) cq[k] = p[k] - c[k];
-        mjtNum d5 = mju_dot3(ab, cq), d6 = mju_dot3(ac, cq);
-        if (d6 >= 0 && d5 <= d6) {
-          w[0] = 0;
-          w[1] = 0;
-          w[2] = 1;
-        } else {
-          mjtNum vb = d5 * d2 - d1 * d6;
-          if (vb <= 0 && d2 >= 0 && d6 <= 0) {
-            mjtNum t = d2 / (d2 - d6);
-            w[0] = 1 - t;
-            w[1] = 0;
-            w[2] = t;
-          } else {
-            mjtNum va = d3 * d6 - d5 * d4;
-            if (va <= 0 && (d4 - d3) >= 0 && (d5 - d6) >= 0) {
-              mjtNum t = (d4 - d3) / ((d4 - d3) + (d5 - d6));
-              w[0] = 0;
-              w[1] = 1 - t;
-              w[2] = t;
-            } else {
-              mjtNum den = 1.0 / (va + vb + vc), t = vb * den, u = vc * den;
-              w[0] = 1 - t - u;
-              w[1] = t;
-              w[2] = u;
-            }
-          }
-        }
-      }
-    }
-  }
-  for (int k=0; k < 3; k++) cp[k] = w[0] * a[k] + w[1] * b[k] + w[2] * c[k];
   mjtNum dd[3];
-  for (int k=0; k < 3; k++) dd[k] = p[k] - cp[k];
-  return sqrt(mju_dot3(dd, dd));
+  mju_sub3(dd, p, cp);
+  return mju_sqrt(mju_dot3(dd, dd));
 }
 
 
@@ -798,6 +735,32 @@ static void addCand(mjcFlexPair con, const mjModel* m, mjData* d, const mjtNum* 
                     const mjtNum* dfrom, const mjtNum* dto, mjtNum ghat, mjcFlexPair** base,
                     int* nc, int* full) {
   if (*full) return;
+  // flex-flex pre-test: the distance between the two features' bounding boxes bounds their
+  // (midsurface) gap from below, so a pair whose boxes are beyond the detection threshold below
+  // fails it in any case. The margin keeps the test clear of the exact distance's round-off
+  if (con.type <= mjcFLEX_EDGE_EDGE) {
+    int n1 = con.type == mjcFLEX_EDGE_EDGE ? 2 : 1;
+    mjtNum lim = bandOffset(&con, radii) + thresh;
+    lim += 1e-9 * (lim > 0 ? lim : -lim) + 1e-12;
+    mjtNum dist2 = 0;
+    for (int c=0; c < 3; c++) {
+      mjtNum lo1 = x[3 * con.idx[0] + c], hi1 = lo1;
+      for (int q=1; q < n1; q++) {
+        mjtNum v = x[3 * con.idx[q] + c];
+        if (v < lo1) lo1 = v;
+        if (v > hi1) hi1 = v;
+      }
+      mjtNum lo2 = x[3 * con.idx[n1] + c], hi2 = lo2;
+      for (int q=n1+1; q < 4; q++) {
+        mjtNum v = x[3 * con.idx[q] + c];
+        if (v < lo2) lo2 = v;
+        if (v > hi2) hi2 = v;
+      }
+      mjtNum gap = lo2 - hi1 > lo1 - hi2 ? lo2 - hi1 : lo1 - hi2;
+      if (gap > 0) dist2 += gap * gap;
+    }
+    if (lim > 0 && dist2 > lim * lim) return;
+  }
   mjtNum n[3], cw[4];
   int idv[4], nidx;
   mjtNum g = mjc_pairGap(&con, m, d, x, gv, ge, radii, n, idv, cw, &nidx, thresh);
@@ -949,6 +912,21 @@ int mjc_candidates(const mjModel* m, mjData* d, const mjtNum* x, const mjtNum* g
     if (dl[v] > fsweep[k]) fsweep[k] = dl[v];
     if (stale > fstale[k]) fstale[k] = stale;
   }
+  // the points that meet the static geoms: their bounding box and largest margin (padded), so a
+  // geom whose box misses the padded point box has no candidate
+  mjtNum pglo[3] = {0, 0, 0}, pghi[3] = {0, 0, 0}, pgmarg = 0;
+  int npg = 0;
+  for (int v=0; v < nfv; v++) {
+    if (fidx[v] < 0 && !(pjnv && pjnv[v] > 0)) continue;
+    mjtNum marg = thresh + dl[v] + radii[v];
+    if (!npg || marg > pgmarg) pgmarg = marg;
+    for (int k=0; k < 3; k++) {
+      if (!npg || x[3 * v + k] < pglo[k]) pglo[k] = x[3 * v + k];
+      if (!npg || x[3 * v + k] > pghi[k]) pghi[k] = x[3 * v + k];
+    }
+    npg++;
+  }
+  pgmarg += 1e-9 * mju_abs(pgmarg) + 1e-9;
   for (int gi=0; gi < m->ngeom; gi++) {  // free point (flex vert) vs STATIC geom
     if (m->geom_contype[gi] == 0 && m->geom_conaffinity[gi] == 0) continue;  // skip non-colliding
     if (!mjc_GeomSupported(m->geom_type[gi])) continue;  // its native rows are kept instead
@@ -970,7 +948,13 @@ int mjc_candidates(const mjModel* m, mjData* d, const mjtNum* x, const mjtNum* g
       for (int k=0; k < 3; k++)
         wh[k] = mju_abs(gR[3 * k]) * la[3] + mju_abs(gR[3 * k + 1]) * la[4] +
                 mju_abs(gR[3 * k + 2]) * la[5];
+      int miss = 0;
+      for (int k=0; k < 3; k++) {
+        if (wc[k] - wh[k] - pgmarg > pghi[k] || wc[k] + wh[k] + pgmarg < pglo[k]) miss = 1;
+      }
+      if (miss) continue;
     }
+    if (!npg) continue;
     for (int v=0; v < nfv; v++) {  // free points and points riding a moving body
       if (fidx[v] < 0 && !(pjnv && pjnv[v] > 0)) continue;
       int f = flist[pt2flex[v]];
@@ -1107,7 +1091,7 @@ int mjc_candidates(const mjModel* m, mjData* d, const mjtNum* x, const mjtNum* g
       if (!fok[k * nfd + kv]) continue;  // filtered flex pair
       // per-pair band: the thinner flex sets it, capped by the global band; the reach adds the
       // travel of both sides, the BVH query the tree's staleness as well
-      mjtNum thv = 3.0 * min2(ghat, min2(radii[v], rk)) + dl[v] + fsweep[k];
+      mjtNum thv = 3.0 * mju_min(ghat, mju_min(radii[v], rk)) + dl[v] + fsweep[k];
       mjtNum bv = thv + radii[v] + fstale[k];
       mjtNum qh[3] = {bv, bv, bv};
       int n = bvhBox(m, d, fk, &x[3 * v], qh, stk, outel, ne_k);
@@ -1132,7 +1116,7 @@ int mjc_candidates(const mjModel* m, mjData* d, const mjtNum* x, const mjtNum* g
         int a1 = off_j + m->flex_edge[2 * (ea_j + e1)],
             b1 = off_j + m->flex_edge[2 * (ea_j + e1) + 1];
         // per-pair band plus the travel of both sides; the query adds the tree's staleness
-        mjtNum the = 3.0 * min2(ghat, min2(radii[a1], rk)) + (dl[a1] > dl[b1] ? dl[a1] : dl[b1]) +
+        mjtNum the = 3.0 * mju_min(ghat, mju_min(radii[a1], rk)) + (dl[a1] > dl[b1] ? dl[a1] : dl[b1]) +
                      fsweep[k];
         mjtNum qc[3], qh[3];
         for (int kk=0; kk < 3; kk++) {

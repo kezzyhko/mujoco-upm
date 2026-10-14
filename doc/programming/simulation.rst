@@ -721,9 +721,18 @@ Exceptions to the general rule that **real-valued** types **are safe to change**
    * - ``dof_armature``
      - Safe with :ref:`mj_setConst`.
      -
-   * - ``geom_pos`` |br| ``geom_quat`` |br| ``geom_size`` |br| ``geom_rbound`` |br| ``geom_aabb``
-     - Unsafe.
+   * - ``geom_pos`` |br| ``geom_quat`` |br| ``geom_size``
+     - Safe with :ref:`mj_setConst`.
+     - The bounding volumes of geoms and bodies follow, and so does the added mass of geoms in the ellipsoid
+       :ref:`fluid model<flEllipsoid>`; masses and inertias inferred from geoms do not. The bounds of mesh and SDF geoms
+       follow from their mesh, not their size.
+   * - ``geom_margin`` |br| ``geom_gap``
+     - Safe with :ref:`mj_setConst`.
      -
+   * - ``geom_contype`` |br| ``geom_conaffinity``
+     - Safe with :ref:`mj_setConst`.
+     - A geom which did not collide when the model was compiled, in a body whose other geoms did, cannot be made to
+       collide.
    * - ``geom_surfacevel``
      - Safe.
      - If passing from a state where all geoms have zero surface velocity to a state where some geoms have
@@ -759,8 +768,9 @@ Exceptions to the general rule that **real-valued** types **are safe to change**
      -
 
 Finally, if changes are made to mjModel at runtime, it may be desirable to save them back to the XML. The functions
-:ref:`mj_saveLastXML` and :ref:`mj_copyBack` do that in a limited sense: they copy all real-valued parameters from
-:ref:`mjModel` back to the :ref:`mjSpec` (the global internal spec in the former case, the user's copy in the latter).
+:ref:`mj_saveLastXML` and :ref:`mj_copyBack` do that in a limited sense: they copy the real-valued parameters which
+were changed in :ref:`mjModel` back to the :ref:`mjSpec` (the global internal spec in the former case, the user's copy
+in the latter), where they are saved and compiled again; see :ref:`mj_copyBack` for what is copied and how.
 This does not cover all possible changes that the user could have made. The only way to guarantee that all changes are
 saved is to save the model as a binary MJB file with the function :ref:`mj_saveModel`, or even better, make the changes
 directly in XML or :ref:`mjSpec`. So in summary, we have reasonable but not perfect mechanisms for saving model changes.

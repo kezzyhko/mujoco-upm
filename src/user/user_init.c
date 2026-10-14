@@ -44,6 +44,8 @@ void mjs_defaultSpec(mjSpec* spec) {
   spec->compiler.inertiafromgeom      = mjINERTIAFROMGEOM_AUTO;
   spec->compiler.inertiagrouprange[1] = mjNGROUP - 1;
   spec->compiler.saveinertial         = 0;
+  spec->compiler.savecompiled         = 1;
+  spec->compiler.savecanonical        = 1;
   mj_defaultLROpt(&spec->compiler.LRopt);
 
   // engine data
@@ -86,13 +88,17 @@ void mjs_defaultBody(mjsBody* body) {
 
   // simple optimization: auto
   body->simple = 1;
+
+  // fuse with parent when static: auto
+  body->fuse = 1;
 }
 
 
 // default frame attributes
 void mjs_defaultFrame(mjsFrame* frame) {
   memset(frame, 0, sizeof(mjsFrame));
-  frame->quat[0] = 1;
+  frame->quat[0]  = 1;
+  frame->scale[0] = frame->scale[1] = frame->scale[2] = 1;
 }
 
 
@@ -273,8 +279,8 @@ void mjs_defaultTexture(mjsTexture* texture) {
   texture->rgb1[0] = texture->rgb1[1] = texture->rgb1[2] = 0.8;
   texture->rgb2[0] = texture->rgb2[1] = texture->rgb2[2] = 0.5;
   texture->random                                        = 0.01;
-  texture->gridsize[0] = texture->gridsize[1]     = 1;
-  texture->nchannel                               = 3;
+  texture->gridsize[0] = texture->gridsize[1] = 1;
+  texture->nchannel                           = 3;
   memcpy(texture->gridlayout, "............", sizeof(texture->gridlayout));
 }
 

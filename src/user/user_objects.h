@@ -358,6 +358,63 @@ class mjCOctree : public mjCOctree_ {
 //------------------------- class mjCBase ----------------------------------------------------------
 // Generic functionality for all derived classes
 
+// accumulated scale of an element, composed along its ancestry, in the coordinates in which the
+// element is posed: the linear map of its shape and the geometric mean of its length factors, the
+// length and mass factors of its forces, and the factor of its masses and inertias. A uniform map
+// is the identity times the shape factor
+struct mjCGauge {
+  double shape   = 1;
+  double length  = 1;
+  double mass    = 1;
+  double inertia = 1;
+  bool   uniform = true;
+  double map[9]  = {1, 0, 0, 0, 1, 0, 0, 0, 1};
+
+  // gauge of a frame scale under the given policy, with the given mass factor (0: ratio of volumes)
+  static mjCGauge Of(const double scale[3], mjtScaling scaling, double massscale);
+
+  // factor of a shape-class quantity of dimension L^a M^b, without a direction
+  double Shape(double a, double b = 0) const;
+
+  // factor of a force-class quantity of dimension L^a M^b
+  double Force(double a, double b) const;
+
+  // scale a position or displacement
+  void Point(double x[3]) const;
+
+  // length factor along a direction
+  double Stretch(const double dir[3]) const;
+
+  // true if the map keeps a direction, within the alignment tolerance
+  bool Aligned(const double dir[3]) const;
+
+  // scale the size of a geom or site of the given type and orientation; returns an error message if
+  // its shape cannot represent its scaled self; sites instead stretch along their own axes, and
+  // sphere sites take the mean factor
+  const char* Size(double size[3], int type, const double quat[4], bool site = false) const;
+
+  // scale a mass and the diagonal or, if defined, the full inertia, given in the frame of iquat; a
+  // map which is not uniform gives the full inertia
+  void Inertia(double& mass, double inertia[3], double fullinertia[6], const double iquat[4]) const;
+
+  // the gauge in the coordinates of a frame with the given orientation
+  mjCGauge Rotated(const double quat[4]) const;
+
+  // geometric mean of the gauges of two participants, for quantities without a direction
+  static mjCGauge Mean(const mjCGauge& a, const mjCGauge& b);
+
+  bool IsIdentity() const {
+    return uniform && shape == 1 && length == 1 && mass == 1 && inertia == 1;
+  }
+  bool     IsForceIdentity() const { return length == 1 && mass == 1; }
+  mjCGauge Inverse() const;
+  mjCGauge operator*(const mjCGauge& other) const;
+};
+
+// gauge in force inside the lowest frame or body which contains all the given elements; a body
+// contains itself
+mjCGauge LowestContainerGauge(const std::vector<const mjCBase*>& elements);
+
 class mjCBase_ : public mjsElement {
  public:
   int         id;         // object id
@@ -399,6 +456,12 @@ class mjCBase : public mjCBase_ {
   // Returns parent of this object
   virtual mjCBase* GetParent() const { return nullptr; }
 
+  // gauge of this element: that of its innermost frame or else its parent, from the spec
+  mjCGauge Gauge() const;
+
+  // gauge of what this element contains, in its own coordinates
+  virtual mjCGauge ContentGauge() const { return Gauge(); }
+
   // Returns the model of this object
   mjsCompiler* FindCompiler(const mjsCompiler* compiler) const;
 
@@ -411,9 +474,12 @@ class mjCBase : public mjCBase_ {
 
   virtual ~mjCBase() = default;  // destructor
 
-  // reset keyframe references for allowing self-attach
-  virtual void ForgetKeyframes() {}
-  virtual void ForgetKeyframes() const {}
+  // forget the keyframe values of this element which are stored under the given names, or all
+  // others if keep is true
+  virtual void ForgetKeyframes(const std::vector<std::string>& names, bool keep = false) {}
+
+  // forget the id of this element and the addresses of its state in the compiled model
+  virtual void ResetId() { id = -1; }
 
   // increment and decrement reference count
   // release uses the argument to delete the plugin
@@ -486,11 +552,8 @@ class mjCBody_ : public mjCBase {
   int mocapid;   // mocap id, -1: not mocap
   int bodyadr_;  // address of body in model, -1: not compiled
 
-  int    contype;      // OR over geom contypes
-  int    conaffinity;  // OR over geom conaffinities
-  double margin;       // MAX over geom margins
-  double xpos0[3];     // global position in qpos0
-  double xquat0[4];    // global orientation in qpos0
+  double xpos0[3];   // global position in qpos0
+  double xquat0[4];  // global orientation in qpos0
 
   // used internally by compiler
   int lastdof;      // id of last dof
@@ -503,6 +566,25 @@ class mjCBody_ : public mjCBase {
   std::string         plugin_instance_name;
   std::vector<double> userdata_;
   std::vector<double> spec_userdata_;
+
+  // the inertial as compiled, in the body frame before a free joint is aligned with it, and with
+  // the mass and inertia before settotalmass scales those of all bodies
+  double ipos_compiled_[3]    = {0, 0, 0};
+  double iquat_compiled_[4]   = {1, 0, 0, 0};
+  double mass_compiled_       = 0;
+  double inertia_compiled_[3] = {0, 0, 0};
+
+  // compilation raised the mass or inertia to their bounds, or balanced the inertia
+  bool inertia_adjusted_ = false;
+
+  // how compilation gave the body its inertia: inferred from its geoms in the groups which it
+  // counted, as the spec gave it, or none (massless)
+  bool inertia_inferred_  = false;
+  bool inertia_given_     = false;
+  int  inertia_groups_[2] = {0, 0};
+
+  // compilation moved the frame of the body to its inertial frame, to align it with a free joint
+  bool aligned_ = false;
 
   // variables used for temporarily storing the state of the mocap bodies
   std::map<std::string, std::array<mjtNum, 3>> mpos_;   // saved mocap_pos
@@ -556,6 +638,10 @@ class mjCBody : public mjCBody_, private mjsBody {
   // set explicitinertial to true
   void MakeInertialExplicit();
 
+  // make the inertial which compilation calculated for this body part of the spec; the kinematic
+  // tree must have been compiled since the spec was last edited, see mjCModel::Resolve
+  void AdoptInertial();
+
   // compute the bounding volume hierarchy of the body.
   void ComputeBVH();
 
@@ -576,11 +662,11 @@ class mjCBody : public mjCBody_, private mjsBody {
                         mjtObj            type      = mjOBJ_UNKNOWN,
                         bool              recursive = false) const;
 
-  // reset keyframe references for allowing self-attach
-  void ForgetKeyframes() const;
+  // forget the keyframe values of this body and its subtree
+  void ForgetKeyframes(const std::vector<std::string>& names, bool keep = false);
 
   // create a frame and move all contents of this body into it
-  mjCFrame* ToFrame();
+  mjCFrame* ToFrame(bool mergeinertial = true);
 
   // get mocap position and quaternion
   mjtNum* mpos(const std::string& state_name);
@@ -608,18 +694,51 @@ class mjCBody : public mjCBody_, private mjsBody {
   // accumulate compiled inertia of another body into this body
   void AccumulateInertia(const mjsBody* other);
 
+  // gauge of what this body contains, in its coordinates
+  mjCGauge ContentGauge() const;
+
  private:
   mjCBody(const mjCBody& other, mjCModel* _model);  // copy constructor
   mjCBody& operator=(const mjCBody& other);         // copy assignment
 
   void Compile(void);          // compiler
+  void ApplyGauge();           // scale the compiled copy by the gauge
   void InertiaFromGeom(void);  // get inertial info from geoms
+
+  // true if compilation infers the inertial of this body from its geoms
+  bool InfersInertial() const;
 
   // get the inertial in the spec: center of mass in body coordinates and inertia matrix about it
   void SpecInertial(double com[3], double inert[6]) const;
 
-  // merge the inertial in the spec of a child body into the inertial in the spec of this body
+  // get the inertial which compilation calculated, in the same form; the kinematic tree must
+  // have been compiled since the spec was last edited
+  void CompiledInertial(double com[3], double inert[6]) const;
+
+  // true if compilation scales the inertial of this body, by its frame or by that of the inertial
+  bool ScaledInertial() const;
+
+  // merge the inertial of a child body into the inertial in the spec of this body; an inertial
+  // which is inferred from geoms is taken as compiled, one which is given as it is in the spec.
+  // Scaled inertials are all taken as compiled, and the sum is written in the units of this body
   void MergeInertial(const mjCBody* child);
+
+  // turn a compiled pose of this body into the pose in the spec which compiles to it: before the
+  // alignment with a free joint, and in the frame which the body is in
+  void PoseInSpec(double bodypos[3], double bodyquat[4]) const;
+
+  // the same for a compiled pose of an element of this body, which is in the given frame or in
+  // none. Given the unit quaternion, it returns the rotation which brings a direction of the
+  // element from the body to the spec
+  void ElementPoseInSpec(const mjCFrame* elementframe,
+                         double          elementpos[3],
+                         double          elementquat[4]) const;
+
+  // write to the spec what compiles to the compiled values of this body, for mj_copyBack: the
+  // position and the orientation which are new, so that the other stays as it is written; and
+  // the inertial, or only its mass
+  void PoseToSpec(bool position, bool orientation);
+  void InertialToSpec(bool massonly);
 
   // objects allocated by Add functions
   std::vector<mjCBody*>   bodies;   // child bodies
@@ -680,10 +799,21 @@ class mjCFrame : public mjCFrame_, private mjsFrame {
 
   bool IsAncestor(const mjCFrame* child) const;  // true if child is contained in this frame
 
+  // gauge of what this frame contains: its own composed with its scale
+  mjCGauge ContentGauge() const;
+
+  // express in this frame, as compiled, a pose which is given in its body
+  void ToLocal(double childpos[3], double childquat[4]) const;
+
+  // map a point or a direction given in the body of this frame from the coordinates of the spec to
+  // the compiled ones, which scale the contents of the frame, or back
+  void ScaleInBody(double x[3], bool point, bool inverse) const;
+
   mjsBody* last_attached;  // last attached body to this frame
 
  private:
   void Compile(void);  // compiler
+  void ApplyGauge();   // scale the compiled copy by the gauge
 
   mjCBody* body;  // body that owns the frame
 };
@@ -741,10 +871,19 @@ class mjCJoint : public mjCJoint_, private mjsJoint {
 
   mjtNum* qpos(const std::string& state_name);
   mjtNum* qvel(const std::string& state_name);
+  void    ForgetKeyframes(const std::vector<std::string>& names, bool keep = false);
+  void    ResetId();
 
  private:
   int  Compile(void);  // compiler; return dofnum
   void PointToLocal(void);
+
+  // scale the compiled copy by the gauge, or back
+  void ApplyGauge(bool inverse = false);
+
+  // write to the spec the anchor, the axis or both, which compile to the compiled ones: in the
+  // frame which the joint is in
+  void AnchorToSpec(bool anchor, bool direction);
 
   // variables that should not be copied during copy assignment
   int qposadr_;  // address of dof in data->qpos
@@ -760,7 +899,6 @@ class mjCGeom_ : public mjCBase {
   bool inferinertia;  // true if inertia should be computed from geom
 
  protected:
-  bool       visual_;          // true: geom does not collide and is unreferenced
   int        matid;            // id of geom's material
   mjCMesh*   mesh;             // geom's mesh
   mjCHField* hfield;           // geom's hfield
@@ -801,32 +939,41 @@ class mjCGeom : public mjCGeom_, private mjsGeom {
   mjsGeom  spec;               // variables set by user
   double   GetVolume() const;  // compute geom volume
   void     SetInertia(void);   // compute and set geom inertia
-  bool     IsVisual(void) const { return visual_; }
-  void     SetNotVisual(void) { visual_ = false; }
   void     SetParent(mjCBody* _body) { body = _body; }
   mjCBody* GetParent() const { return body; }
   mjtGeom  Type() const { return type; }
-
-  // Compute all coefs modeling the interaction with the surrounding fluid.
-  void SetFluidCoefs(void);
-  // Compute the kappa coefs of the added inertia due to the surrounding fluid.
-  double GetAddedMassKappa(double dx, double dy, double dz);
 
   // used by mjXWriter and mjCModel
   const std::vector<double>& get_userdata() const { return userdata_; }
   const std::string&         get_hfieldname() const { return spec_hfieldname_; }
   const std::string&         get_meshname() const { return spec_meshname_; }
   const std::string&         get_material() const;
-  void                       del_material() { spec_material_.clear(); }
+  void                       del_material() {
+    spec_material_.clear();
+    material_.clear();
+  }
 
  private:
   void   Compile(void);      // compiler
-  double GetRBound(void);    // compute bounding sphere radius
+  double GetRBound(void);    // bounding sphere radius of a mesh or SDF geom
   void   ComputeAABB(void);  // compute axis-aligned bounding box
   void   CopyFromSpec(void);
   void   PointToLocal(void);
   void   NameSpace(const mjCModel* m);
   void   CopyPlugin();
+
+  // scale the compiled copy by the gauge, or back
+  void ApplyGauge(bool inverse = false);
+
+  // map of the gauge in the frame of this geom, which its mesh or height field instance takes
+  std::array<double, 9> ShapeMap() const;
+
+  // write to the spec what compiles to the compiled values of this geom, for mj_copyBack: the
+  // position and the orientation which are new; and those of size, pose and surface velocity
+  // which are new. A size and pose which the spec gives as fromto, or by fitting to a mesh, are
+  // written in its place
+  void PoseToSpec(bool position, bool orientation);
+  void ShapeToSpec(bool newsize, bool position, bool orientation, bool newvelocity);
 
   // inherited
   using mjCBase::info;
@@ -893,6 +1040,16 @@ class mjCSite : public mjCSite_, private mjsSite {
   void CopyFromSpec();  // copy spec into attributes
   void PointToLocal(void);
   void NameSpace(const mjCModel* m);
+
+  // scale the compiled copy by the gauge, or back
+  void ApplyGauge(bool inverse = false);
+
+  // map of the gauge in the frame of this site, which its mesh instance takes
+  std::array<double, 9> ShapeMap() const;
+
+  // write to the spec what compiles to the compiled values of this site, as for a geom
+  void PoseToSpec(bool position, bool orientation);
+  void ShapeToSpec(bool newsize, bool position, bool orientation);
 };
 
 
@@ -938,6 +1095,17 @@ class mjCCamera : public mjCCamera_, private mjsCamera {
   void PointToLocal(void);
   void NameSpace(const mjCModel* m);
   void ResolveReferences(const mjCModel* m);
+
+  // scale the compiled copy by the gauge, or back
+  void ApplyGauge(bool inverse = false);
+
+  // write to the spec the position and the orientation which compile to the compiled ones, each
+  // only if asked
+  void PoseToSpec(bool position, bool orientation);
+
+  // write the compiled intrinsics as focal length and principal point, in units of length: to the
+  // spec, and to the compiled copy, which may have them in pixels
+  void IntrinsicToSpec(bool tospec);
 };
 
 
@@ -972,6 +1140,10 @@ class mjCLight : public mjCLight_, private mjsLight {
   // used by mjXWriter and mjCModel
   const std::string& get_targetbody() const { return targetbody_; }
   const std::string& get_texture() const { return texture_; }
+  void               del_texture() {
+    spec_texture_.clear();
+    texture_.clear();
+  }
 
   void     SetParent(mjCBody* _body) { body = _body; }
   mjCBody* GetParent() const { return body; }
@@ -982,6 +1154,13 @@ class mjCLight : public mjCLight_, private mjsLight {
   void PointToLocal(void);
   void NameSpace(const mjCModel* m);
   void ResolveReferences(const mjCModel* m);
+
+  // scale the compiled copy by the gauge, or back
+  void ApplyGauge(bool inverse = false);
+
+  // write to the spec the position and the direction which compile to the compiled ones, each
+  // only if asked
+  void PoseToSpec(bool position, bool direction);
 };
 
 
@@ -1073,7 +1252,13 @@ class mjCFlex : public mjCFlex_, private mjsFlex {
   const std::vector<double>&      get_node() const { return node_; }
 
   bool HasTexcoord() const;  // texcoord not null
-  void DelTexcoord();        // delete texcoord
+  void del_material() {
+    spec_material_.clear();
+    material_.clear();
+  }
+
+  // gauge of the lowest frame or body which contains the bodies of the vertices and nodes
+  mjCGauge BodyGauge() const;
 
   static constexpr int kNumEdges[3] = {1, 3, 6};  // number of edges per element indexed by dim
 
@@ -1085,10 +1270,12 @@ class mjCFlex : public mjCFlex_, private mjsFlex {
   void CreateShell(void);          // create shells
   void ComputeCellEmpty(const double* vpos,
                         const int*    elems,  // identify cells
-                        int           nv,
                         int           ne,
-                        int           fdim,             // with no mesh content
-                        const double* bbox = nullptr);  // optional precomputed bbox
+                        int           fdim,        // with no mesh content
+                        const double  minmax[6]);  // bounding box of the node grid
+
+  // scale the compiled copy: positions by the gauges of their bodies, the rest by that of the flex
+  void ApplyGauge();
 
   std::vector<double> vert0_;  // vertex positions in [0, 1]^d in the bounding box
   std::vector<double> node0_;  // node Cartesian positions
@@ -1114,30 +1301,33 @@ class mjCMesh_ : public mjCBase {
   std::string plugin_name;
   std::string plugin_instance_name;
 
-  std::string        content_type_ = "";   // content type of file
-  std::string        file_;                // mesh file
-  mjResource*        resource_ = nullptr;  // resource for mesh file
-  std::vector<float> vert_;                // vertex data
-  std::vector<float> normal_;              // normal data
-  std::vector<float> texcoord_;            // texcoord data
-  std::vector<int>   face_;                // vertex indices
-  std::vector<int>   facenormal_;          // normal indices
-  std::vector<int>   facetexcoord_;        // texcoord indices
-  std::string        material_;            // mesh fallback material
+  std::string         content_type_ = "";   // content type of file
+  std::string         file_;                // mesh file
+  mjResource*         resource_ = nullptr;  // resource for mesh file
+  std::vector<float>  vert_;                // vertex data
+  std::vector<float>  normal_;              // normal data
+  std::vector<float>  texcoord_;            // texcoord data
+  std::vector<int>    face_;                // vertex indices
+  std::vector<int>    facenormal_;          // normal indices
+  std::vector<int>    facetexcoord_;        // texcoord indices
+  std::vector<double> node_;                // volume nodes
+  std::vector<int>    tet_;                 // tetrahedral cells
+  std::string         material_;            // mesh fallback material
 
-  std::string        spec_content_type_;
-  std::string        spec_file_;
-  std::vector<float> spec_vert_;
-  std::vector<float> spec_normal_;
-  std::vector<float> spec_texcoord_;
-  std::vector<int>   spec_face_;
-  std::vector<int>   spec_facenormal_;
-  std::vector<int>   spec_facetexcoord_;
-  std::string        spec_material_;
+  std::string         spec_content_type_;
+  std::string         spec_file_;
+  std::vector<float>  spec_vert_;
+  std::vector<float>  spec_normal_;
+  std::vector<float>  spec_texcoord_;
+  std::vector<int>    spec_face_;
+  std::vector<int>    spec_facenormal_;
+  std::vector<int>    spec_facetexcoord_;
+  std::vector<double> spec_node_;
+  std::vector<int>    spec_tet_;
+  std::string         spec_material_;
 
   // used by the compiler
   bool                             needreorient_;  // needs reorientation
-  bool                             visual_;        // true: the mesh is only visual
   std::vector<std::pair<int, int>> halfedge_;      // half-edge data
 
   // mesh processed flags
@@ -1155,6 +1345,7 @@ class mjCMesh_ : public mjCBase {
   // size of mesh data to be copied into mjModel
   int  szgraph_ = 0;  // size of graph data in ints
   bool needhull_;     // needs convex hull for collisions
+  bool needsdf_;      // needs signed distance field for an sdf geom
   int  maxhullvert_;  // max vertex count of convex hull
 
   // bounding volume hierarchy tree
@@ -1164,6 +1355,12 @@ class mjCMesh_ : public mjCBase {
   // octree
   mjCOctree octree_;  // octree of the mesh
   double    mesh_timer_[mjNCTIMER] = {0};
+
+ public:
+  // the asset of the spec which this instance repeats at another scale, if compilation made it,
+  // and the linear map, in the frame of the geoms and sites which use this instance, of that scale
+  const mjCMesh*        primary_     = nullptr;
+  std::array<double, 9> instancemap_ = {1, 0, 0, 0, 1, 0, 0, 0, 1};
 };
 
 class mjCMesh : public mjCMesh_, private mjsMesh {
@@ -1192,29 +1389,48 @@ class mjCMesh : public mjCMesh_, private mjsMesh {
   void MakeWedge(int resolution[2], double fov[2], double gamma);
   void MakeRect(int resolution[2]);
   void MakeCone(int nedge, double radius);
+  void MakeGrid(const int count[3], const double spacing[3], int dim, bool needtex);
+  void MakeCircle(const int count[3], const double spacing[3]);
+  void MakeDisc(const int count[3], const double spacing[3], bool needtex);
+  void MakeBox(const int count[3], const double spacing[3], int dim, bool needtex, bool open);
+  void MakeCylinder(const int count[3], const double spacing[3], int dim, bool needtex, bool open);
+  void MakeEllipsoid(const int count[3], const double spacing[3], int dim, bool needtex, bool open);
 
   // accessors
-  const mjsPlugin&          Plugin() const { return plugin; }
-  const std::string&        ContentType() const { return content_type_; }
-  const std::string&        File() const { return file_; }
-  const double*             Refpos() const { return refpos; }
-  const double*             Refquat() const { return refquat; }
-  const double*             Scale() const { return scale; }
-  bool                      SmoothNormal() const { return smoothnormal; }
-  const std::vector<float>& Vert() const { return vert_; }
-  float                     Vert(int i) const { return vert_[i]; }
-  const std::vector<float>& UserVert() const { return spec_vert_; }
-  const std::vector<float>& UserNormal() const { return spec_normal_; }
-  const std::vector<float>& Texcoord() const { return texcoord_; }
-  const std::vector<int>&   FaceTexcoord() const { return facetexcoord_; }
-  const std::vector<float>& UserTexcoord() const { return spec_texcoord_; }
-  const std::vector<int>&   Face() const { return face_; }
-  const std::vector<int>&   UserFace() const { return spec_face_; }
-  mjtMeshInertia            Inertia() const { return spec.inertia; }
-  const std::string&        Material() const { return material_; }
+  const mjsPlugin&           Plugin() const { return plugin; }
+  const std::string&         ContentType() const { return content_type_; }
+  const std::string&         File() const { return file_; }
+  const double*              Refpos() const { return refpos; }
+  const double*              Refquat() const { return refquat; }
+  const double*              Scale() const { return scale; }
+  bool                       SmoothNormal() const { return smoothnormal; }
+  const std::vector<float>&  Vert() const { return vert_; }
+  float                      Vert(int i) const { return vert_[i]; }
+  const std::vector<float>&  UserVert() const { return spec_vert_; }
+  const std::vector<float>&  UserNormal() const { return spec_normal_; }
+  const std::vector<float>&  Texcoord() const { return texcoord_; }
+  const std::vector<int>&    FaceTexcoord() const { return facetexcoord_; }
+  const std::vector<float>&  UserTexcoord() const { return spec_texcoord_; }
+  const std::vector<int>&    Face() const { return face_; }
+  const std::vector<int>&    UserFace() const { return spec_face_; }
+  const std::vector<double>& Node() const { return node_; }
+  const std::vector<double>& UserNode() const { return spec_node_; }
+  std::vector<double>&       UserNode() { return spec_node_; }
+  const std::vector<int>&    Tet() const { return tet_; }
+  const std::vector<int>&    UserTet() const { return spec_tet_; }
+  mjtMeshInertia             Inertia() const { return spec.inertia; }
+  const std::string&         Material() const { return material_; }
+
+  // the frame of the compiled mesh in the coordinates of its geoms
+  const double* Pos() const { return pos_; }
+  const double* Quat() const { return quat_; }
+
+  // true if the map of this instance is diagonal, which then multiplies the scale of the mesh
+  bool InstanceDiagonal() const;
 
   // setters
   void SetNeedHull(bool needhull) { needhull_ = needhull; }
+  void SetNeedSDF(bool needsdf) { needsdf_ = needsdf; }
 
   // mesh properties computed by Compile
   const double* aamm() const { return aamm_; }
@@ -1224,6 +1440,8 @@ class mjCMesh : public mjCMesh_, private mjsMesh {
   int nnormal() const { return normal_.size() / 3; }
   int ntexcoord() const { return texcoord_.size() / 2; }
   int nface() const { return face_.size() / 3; }
+  int nnode() const { return node_.size() / 3; }
+  int ntet() const { return tet_.size() / 4; }
   int npolygon() const { return polygons_.size(); }
   int npolygonvert() const {
     int acc = 0;
@@ -1253,9 +1471,10 @@ class mjCMesh : public mjCMesh_, private mjsMesh {
   double  GetVolumeRef() const;                      // get volume
   void    FitGeom(mjCGeom* geom, double center[3]);  // approximate mesh with simple geom
   bool    HasTexcoord() const;                       // texcoord not null
-  void    DelTexcoord();                             // delete texcoord
-  bool    IsVisual(void) const { return visual_; }   // is geom visual
-  void    SetNotVisual(void) { visual_ = false; }    // mark mesh as not visual
+  void    del_material() {
+    spec_material_.clear();
+    material_.clear();
+  }
 
   void CopyVert(float* arr) const;        // copy vert data into array
   void CopyNormal(float* arr) const;      // copy normal data into array
@@ -1297,6 +1516,11 @@ class mjCMesh : public mjCMesh_, private mjsMesh {
   // store mesh into asset cache (OBJ files are only supported)
   void CacheMesh(mjCCache* cache, const mjResource* resource);
 
+  // id of the mesh in the asset cache: that of its file, and its factor for an instance at another
+  // scale
+  std::string CacheId(const mjResource* resource) const;
+
+
   // convert vertices to double precision and remove repeated vertices if requested
   void ProcessVertices(const std::vector<float>& vert, bool remove_repeated = false);
 
@@ -1313,6 +1537,7 @@ class mjCMesh : public mjCMesh_, private mjsMesh {
   void   MakeCenter(const double* dvert);      // compute face circumcircle data
   void   Process();                            // compute inertial properties
   void   ApplyTransformations(double* dvert);  // apply user transformations
+  void   TransformNodes(const double pos[3], const double quat[4]);  // transform nodes like verts
   double ComputeFaceCentroid(double[3], const double* dvert) const;
   void   CheckInitialMesh() const;  // check if initial mesh is valid
   void   CopyPlugin();
@@ -1371,6 +1596,9 @@ class mjCSkin_ : public mjCBase {
 
   int              matid;   // material id
   std::vector<int> bodyid;  // body ids
+
+  // compilation scaled the vertices and the bind poses with the bones
+  bool scaled_ = false;
 };
 
 class mjCSkin : public mjCSkin_, private mjsSkin {
@@ -1396,7 +1624,10 @@ class mjCSkin : public mjCSkin_, private mjsSkin {
   const std::vector<float>&              get_bindquat() const { return bindquat_; }
   const std::vector<std::vector<int>>&   get_vertid() const { return vertid_; }
   const std::vector<std::vector<float>>& get_vertweight() const { return vertweight_; }
-  void                                   del_material() { material_.clear(); }
+  void                                   del_material() {
+    spec_material_.clear();
+    material_.clear();
+  }
 
   void CopyFromSpec();
   void PointToLocal();
@@ -1406,6 +1637,9 @@ class mjCSkin : public mjCSkin_, private mjsSkin {
   void NameSpace(const mjCModel* m);
   void Compile(const mjVFS* vfs);      // compiler
   void LoadSKN(mjResource* resource);  // load skin in SKN BIN format
+
+  // scale the compiled copy by the gauge of the bones, which must be the same for all
+  void ApplyGauge();
 };
 
 
@@ -1422,6 +1656,12 @@ class mjCHField_ : public mjCBase {
   std::string        spec_file_;
   std::string        spec_content_type_;
   std::vector<float> spec_userdata_;
+
+ public:
+  // the asset of the spec which this instance repeats at another scale, if compilation made it,
+  // and the linear map, in the frame of the geoms which use this instance, of that scale
+  const mjCHField*      primary_     = nullptr;
+  std::array<double, 9> instancemap_ = {1, 0, 0, 0, 1, 0, 0, 0, 1};
 };
 
 class mjCHField : public mjCHField_, private mjsHField {
@@ -1440,7 +1680,6 @@ class mjCHField : public mjCHField_, private mjsHField {
 
   void CopyFromSpec(void);
   void PointToLocal(void);
-  void NameSpace(const mjCModel* m);
 
   std::string File() const { return file_; }
 
@@ -1461,7 +1700,8 @@ class mjCHField : public mjCHField_, private mjsHField {
 
 class mjCTexture_ : public mjCBase {
  protected:
-  std::vector<std::byte> data_;  // texture data (rgb, roughness, etc.)
+  std::vector<std::byte> data_;       // texture data (rgb, roughness, etc.)
+  std::vector<std::byte> spec_data_;  // texture data given by the user
 
   std::string              file_;
   std::string              content_type_;
@@ -1487,7 +1727,6 @@ class mjCTexture : public mjCTexture_, private mjsTexture {
 
   void   CopyFromSpec(void);
   void   PointToLocal(void);
-  void   NameSpace(const mjCModel* m);
   void   Compile(const mjVFS* vfs);
   double texture_time_ = 0;
 
@@ -1524,8 +1763,6 @@ class mjCTexture : public mjCTexture_, private mjsTexture {
                unsigned int&           w,
                unsigned int&           h,
                bool&                   is_srgb);
-
-  bool clear_data_;  // if true, data_ is empty and should be filled by Compile
 };
 
 
@@ -1559,6 +1796,7 @@ class mjCMaterial : public mjCMaterial_, private mjsMaterial {
   const std::string& get_texture(int i) const { return textures_[i]; }
   void               del_textures() {
     for (auto& t : textures_) t.clear();
+    for (auto& t : spec_textures_) t.clear();
   }
 
  private:
@@ -1604,6 +1842,9 @@ class mjCPair : public mjCPair_, private mjsPair {
 
  private:
   void Compile(void);  // compiler
+
+  // scale the compiled copy by the gauge, or back
+  void ApplyGauge(bool inverse = false);
 
   mjCGeom* geom1;  // geom1
   mjCGeom* geom2;  // geom2
@@ -1684,9 +1925,13 @@ class mjCEquality : public mjCEquality_, private mjsEquality {
   void PointToLocal();
   void ResolveReferences(const mjCModel* m);
   void NameSpace(const mjCModel* m);
+  void ResetId();
 
  private:
   void Compile(void);  // compiler
+
+  // scale the compiled copy by the gauge, or back
+  void ApplyGauge(bool inverse = false);
 };
 
 
@@ -1720,7 +1965,10 @@ class mjCTendon : public mjCTendon_, private mjsTendon {
 
   void               set_material(std::string _material) { material_ = _material; }
   const std::string& get_material() const { return material_; }
-  void               del_material() { material_.clear(); }
+  void               del_material() {
+    spec_material_.clear();
+    material_.clear();
+  }
 
   // API for adding wrapping objects
   void WrapSite(std::string wrapname, std::string_view wrapinfo = "");                    // site
@@ -1746,8 +1994,15 @@ class mjCTendon : public mjCTendon_, private mjsTendon {
   bool is_limited() const;
   bool is_actfrclimited() const;
 
+  // gauge of the lowest frame or body containing the path, and 1 if the length is a length
+  mjCGauge PathGauge() const;
+  int      Linear() const;
+
  private:
   void Compile(void);  // compiler
+
+  // scale the compiled copy by the gauge, or back
+  void ApplyGauge(bool inverse = false);
 };
 
 
@@ -1759,6 +2014,8 @@ class mjCWrap_ : public mjCBase {
   int         sideid;    // side site id; -1 if not applicable
   double      prm;       // parameter: divisor, coefficient
   std::string sidesite;  // name of side site
+
+  double prmscale = 1;  // factor of the parameter in the compiled model
 };
 
 class mjCWrap : public mjCWrap_, private mjsWrap {
@@ -1814,6 +2071,7 @@ class mjCPlugin : public mjCPlugin_ {
   mjCPlugin& operator=(const mjCPlugin& other);
 
   void PointToLocal();
+  void ResetId();
 
   mjsPlugin spec;
   mjCBase*  parent;       // parent object (only used when generating error message)
@@ -1844,6 +2102,12 @@ class mjCActuator_ : public mjCBase {
   bool    so3_;               // compiles to an SO3 transmission
   double  ctrlranges_[4][2];  // resolved per-input control ranges
   mjtByte ctrllimiteds_[4];   // resolved per-input limited flags
+
+  // gauge of the transmission target, and what it makes of the transmission and the control
+  mjCGauge gauge_;
+  int      linear_        = 0;             // 1 if the transmission length is a length
+  double   ctrlscales_[4] = {1, 1, 1, 1};  // factors of the controls
+  double   actscale_      = 1;             // factor of the activation
 
   std::map<std::string, std::vector<mjtNum>> act_;   // act at the previous step
   std::map<std::string, std::vector<mjtNum>> ctrl_;  // ctrl at the previous step
@@ -1896,8 +2160,11 @@ class mjCActuator : public mjCActuator_, private mjsActuator {
   void NameSpace(const mjCModel* m);
   void CopyPlugin();
 
-  // reset keyframe references for allowing self-attach
-  void ForgetKeyframes();
+  // scale the compiled copy by the gauge, or back
+  void ApplyGauge(bool inverse = false);
+
+  void ForgetKeyframes(const std::vector<std::string>& names, bool keep = false);
+  void ResetId();
 
   mjCBase* ptarget;  // transmission target
 };
@@ -1950,6 +2217,10 @@ class mjCSensor : public mjCSensor_, private mjsSensor {
   void ResolveReferences(const mjCModel* m);
   void NameSpace(const mjCModel* m);
   void CopyPlugin();
+  void ResetId();
+
+  // scale the compiled copy by the gauge, or back
+  void ApplyGauge(bool inverse = false);
 
   mjCBase* obj;  // sensorized object
   mjCBase* ref;  // sensorized reference
@@ -2056,8 +2327,31 @@ class mjCTuple : public mjCTuple_, private mjsTuple {
 //------------------------- class mjCKey -----------------------------------------------------------
 // Describes a keyframe
 
+// what a change to the tree stored of a keyframe, to be reassembled by the next compilation
+typedef struct mjKeyInfo_ {
+  std::string name;  // name under which the values are stored in the elements
+
+  double time;
+  bool   qpos;
+  bool   qvel;
+  bool   act;
+  bool   ctrl;
+  bool   mpos;
+  bool   mquat;
+} mjKeyInfo;
+
 class mjCKey_ : public mjCBase {
  protected:
+  // a keyframe is pending from a change to the tree, when its values are stored in the elements
+  // they belong to, until the next compilation reassembles its vectors
+  bool      ispending_ = false;
+  mjKeyInfo pending_;
+
+  // a pending keyframe of a model to which another was attached stays in place: it keeps its
+  // position among the keyframes, and it is still copied when its own model is attached; one
+  // which a deletion stored, or which came with an attached model, is kept last and attached as is
+  bool inplace_ = false;
+
   std::vector<double> qpos_;
   std::vector<double> qvel_;
   std::vector<double> act_;

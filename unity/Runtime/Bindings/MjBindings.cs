@@ -118,7 +118,7 @@ public const int mjMAXLINEPNT = 1001;
 public const int mjMAXPLANEGRID = 200;
 public const bool THIRD_PARTY_MUJOCO_MJXMACRO_H_ = true;
 public const bool THIRD_PARTY_MUJOCO_MUJOCO_H_ = true;
-public const int mjVERSION_HEADER = 3015000;
+public const int mjVERSION_HEADER = 3016000;
 
 
 // ------------------------------------Enums------------------------------------
@@ -309,6 +309,7 @@ public enum mjtCtrlInput : int{
   mjINPUT_FF = 4,
   mjINPUT_VOLTAGE = 8,
   mjINPUT_NONE = 16,
+  mjINPUT_PRESSURE = 32,
 }
 public enum mjtObj : int{
   mjOBJ_UNKNOWN = 0,
@@ -413,7 +414,9 @@ public enum mjtConDataField : int{
   mjCONDATA_POS = 4,
   mjCONDATA_NORMAL = 5,
   mjCONDATA_TANGENT = 6,
-  mjNCONDATA = 7,
+  mjCONDATA_LINVEL = 7,
+  mjCONDATA_ANGVEL = 8,
+  mjNCONDATA = 9,
 }
 public enum mjtRayDataField : int{
   mjRAYDATA_DIST = 0,
@@ -569,6 +572,12 @@ public enum mjtMeshBuiltin : int{
   mjMESH_BUILTIN_SUPERTORUS = 5,
   mjMESH_BUILTIN_WEDGE = 6,
   mjMESH_BUILTIN_PLATE = 7,
+  mjMESH_BUILTIN_GRID = 8,
+  mjMESH_BUILTIN_BOX = 9,
+  mjMESH_BUILTIN_CYLINDER = 10,
+  mjMESH_BUILTIN_ELLIPSOID = 11,
+  mjMESH_BUILTIN_SQUARE = 12,
+  mjMESH_BUILTIN_DISC = 13,
 }
 public enum mjtBuiltin : int{
   mjBUILTIN_NONE = 0,
@@ -608,6 +617,24 @@ public enum mjtConflict : int{
   mjCONFLICT_WARNING = 0,
   mjCONFLICT_MERGE = 1,
   mjCONFLICT_ERROR = 2,
+}
+public enum mjtScaling : int{
+  mjSCALING_SIMILAR = 0,
+  mjSCALING_GEOMETRY = 1,
+}
+public enum mjtActuator : int{
+  mjACTUATOR_GENERAL = 0,
+  mjACTUATOR_MOTOR = 1,
+  mjACTUATOR_POSITION = 2,
+  mjACTUATOR_VELOCITY = 3,
+  mjACTUATOR_INTVELOCITY = 4,
+  mjACTUATOR_DAMPER = 5,
+  mjACTUATOR_CYLINDER = 6,
+  mjACTUATOR_MUSCLE = 7,
+  mjACTUATOR_ADHESION = 8,
+  mjACTUATOR_PID = 9,
+  mjACTUATOR_ORIENTATION = 10,
+  mjACTUATOR_DCMOTOR = 11,
 }
 public enum mjtCTimer : int{
   mjCTIMER_TOTAL = 0,
@@ -1069,6 +1096,7 @@ public unsafe struct mjModel_ {
   public UInt64 nflexbending;
   public UInt64 nefm0dof;
   public UInt64 nefm0L;
+  public UInt64 nefmCvert;
   public UInt64 nflexelemedge;
   public UInt64 nflexshelldata;
   public UInt64 nflextexcoord;
@@ -1357,6 +1385,7 @@ public unsafe struct mjModel_ {
   public int* efm0_L_rowadr;
   public int* efm0_L_colind;
   public double* efm0_L;
+  public int* efmC_perm;
   public double* flex_damping;
   public double* flex_edgestiffness;
   public double* flex_edgedamping;
@@ -5946,6 +5975,8 @@ public unsafe struct mjsCompiler_ {
   public mjtInertiaFromGeom inertiafromgeom;
   public fixed int inertiagrouprange[2];
   public byte saveinertial;
+  public byte savecompiled;
+  public byte savecanonical;
   public byte alignfree;
   public mjtConflict conflict;
   public mjLROpt_ LRopt;
