@@ -1298,10 +1298,10 @@ mjData* mjv_copyData(mjData* dest, const mjModel* m, const mjData* src) {
 
 // clear data, set defaults
 static void _resetData(const mjModel* m, mjData* d, unsigned char debug_value) {
-  // error early if history buffers cannot be initialized
+  // warn if history buffers cannot be initialized
   mjtNum dt = m->opt.timestep;
   if (m->nhistory && dt <= 0) {
-    mjERROR("history buffers require positive timestep, got %g", dt);
+    mju_warning("history buffers require positive timestep, got %g", dt);
   }
 
   //------------------------------ save plugin state and data
@@ -1461,7 +1461,7 @@ static void _resetData(const mjModel* m, mjData* d, unsigned char debug_value) {
         mjtNum t0 = (phase == 0) ? -period : phase;
         for (int j = 0; j < n; j++) {
           mjtNum continuous_t = t0 - (n-1-j)*period;
-          times[j] = mju_ceil(continuous_t / dt) * dt;
+          times[j] = dt > 0 ? mju_ceil(continuous_t / dt) * dt : continuous_t;
         }
       } else {
         // no period: timestamps at [-n*dt, ..., -dt]
@@ -1479,6 +1479,24 @@ static void _resetData(const mjModel* m, mjData* d, unsigned char debug_value) {
   // copy qpos0 from model
   if (m->qpos0) {
     mju_copy(d->qpos, m->qpos0, m->nq);
+  }
+
+  // restore pluginstate and plugindata
+  if (d->nplugin) {
+    memcpy(d->plugin_state, plugin_state, sizeof(mjtNum) * m->npluginstate);
+    mju_free(plugin_state);
+    memcpy(d->plugin_data, plugindata, sizeof(uintptr_t) * m->nplugin);
+    mju_free(plugindata);
+
+    // restore the plugin array back into d and reset the instances
+    for (int i = 0; i < m->nplugin; ++i) {
+      d->plugin[i] = m->plugin[i];
+      const mjpPlugin* plugin = mjp_getPluginAtSlot(m->plugin[i]);
+      if (plugin->reset) {
+        plugin->reset(m, &d->plugin_state[m->plugin_stateadr[i]],
+                      (void*)(d->plugin_data[i]), i);
+      }
+    }
   }
 
   static int kAwake = -(1+mjMINAWAKE);  // tree_asleep value for fully awake tree
@@ -1517,26 +1535,23 @@ static void _resetData(const mjModel* m, mjData* d, unsigned char debug_value) {
 
       int nslept = mj_sleep(m, d);
 
-      // raise error if any failed to sleep
+      // warn if any failed to sleep, leave them awake
       if (nslept != num_asleep_init) {
-        // find root body of the first tree that could not be slept
+        // find root body of the first tree that could not be slept, wake the others
         int root = -1;
         for (int i=0; i < m->ntree; i++) {
           if (m->tree_sleep_policy[i] == mjSLEEP_INIT && d->tree_asleep[i] < 0) {
-            root = m->tree_bodyadr[i];
-            break;
+            if (root < 0) root = m->tree_bodyadr[i];
+            d->tree_asleep[i] = kAwake;
           }
         }
 
-        // free all memory held by d just before aborting
-        mj_deleteData(d);
-
-        // raise error and abort
+        // warn and continue
         const char* hasname = mj_id2name(m, mjOBJ_BODY, root);
         const char* name = hasname ? hasname : "";
-        mjERROR("%d trees were marked as sleep='init' but only %d could be slept.\n"
-                "Body '%s' (id=%d) is the root of the first tree that could not be slept.",
-                num_asleep_init, nslept, name, root);
+        mju_warning("%d trees were marked as sleep='init' but only %d could be slept. "
+                    "Body '%s' (id=%d) is the root of the first tree that could not be slept.",
+                    num_asleep_init, nslept, name, root);
       }
 
       // clear arrays to avoid MSAN errors upon mid-step wake
@@ -1569,24 +1584,6 @@ static void _resetData(const mjModel* m, mjData* d, unsigned char debug_value) {
 
   // check consistency of sparse matrix representations
   checkDBSparse(m);
-
-  // restore pluginstate and plugindata
-  if (d->nplugin) {
-    memcpy(d->plugin_state, plugin_state, sizeof(mjtNum) * m->npluginstate);
-    mju_free(plugin_state);
-    memcpy(d->plugin_data, plugindata, sizeof(uintptr_t) * m->nplugin);
-    mju_free(plugindata);
-
-    // restore the plugin array back into d and reset the instances
-    for (int i = 0; i < m->nplugin; ++i) {
-      d->plugin[i] = m->plugin[i];
-      const mjpPlugin* plugin = mjp_getPluginAtSlot(m->plugin[i]);
-      if (plugin->reset) {
-        plugin->reset(m, &d->plugin_state[m->plugin_stateadr[i]],
-                      (void*)(d->plugin_data[i]), i);
-      }
-    }
-  }
 
   // copy signature from model
   d->signature = m->signature;
