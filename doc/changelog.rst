@@ -35,6 +35,11 @@ Bug fixes
   - :ref:`mj_loadAllPluginLibraries` kept a lock if a library failed to load, so other threads deadlocked.
   - An unknown :ref:`role<material-layer-role>` of a material layer leaked memory instead of causing a parse error.
   - :ref:`mju_getXMLDependencies` leaked memory when reading or parsing an XML file failed.
+  - The Filament renderer called :ref:`mju_error` for a texture with an unsupported number of channels. It now skips the
+    texture with a warning, like the classic renderer.
+- Fixed volume (solid) interpolated flexes whose first cell is empty, e.g. a trilinear :ref:`flexcomp<body-flexcomp>`
+  from a mesh that does not fill the corner of its bounding box. Their elasticity was gated on the stiffness of the
+  first cell, which is zero for an empty cell, so the whole flex had no elastic forces and no implicit stiffness.
 
 Version 3.16.0 (October 14, 2026)
 ---------------------------------
