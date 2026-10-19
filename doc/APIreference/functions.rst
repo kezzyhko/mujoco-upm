@@ -1900,7 +1900,9 @@ m is only required to contain the size fields from MJMODEL_INTS.
 
 .. mujoco-include:: mjv_copyData
 
-Copy mjData, skip large arrays not required for visualization.
+Copy :ref:`mjData`, skipping large arrays not required for visualization, like the constraint Jacobian. The copy is
+meant for visualization, e.g. with :ref:`mjv_updateScene`; the skipped arrays are ``NULL``, so it is not a valid input
+to simulation functions.
 
 .. _mj_resetCtrl:
 
@@ -6038,7 +6040,8 @@ its parent, which has the pose of the body and holds its geoms, sites, cameras, 
 same coordinates as before. The inertia of the body is added to that of the parent. The compiled model has the same
 kinematics and dynamics, with fewer bodies. Bodies which cannot be fused without changing the model are kept, see
 :ref:`fusestatic<compiler-fusestatic>`, which applies this function before compiling. Pointers to the bodies which were
-fused are no longer valid. Assets are read as in :ref:`mj_compile`. Returns 0 on success; if it fails, nothing is fused.
+fused are no longer valid. Assets are read as in :ref:`mj_compile`. Returns the number of bodies fused, 0 if the spec
+is unchanged, or -1 on error, in which case nothing is fused.
 
 .. _mjs_discardVisual:
 
@@ -6053,7 +6056,8 @@ inferring the inertia of its body, that inertia becomes the explicit inertial of
 :ref:`mjs_adoptInertial`, so the compiled model has the same dynamics. See
 :ref:`discardvisual<compiler-discardvisual>`, which applies this function before compiling. Pointers to the elements
 which were discarded are no longer valid. Assets are read as in :ref:`mj_compile`, and only if inertia is inferred from
-a discarded geom. Returns 0 on success; if it fails, nothing is discarded.
+a discarded geom. Returns the number of elements discarded, 0 if the spec is unchanged, or -1 on error, in which case
+nothing is discarded.
 
 .. _mjs_adoptInertial:
 

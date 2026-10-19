@@ -60,9 +60,12 @@ static UniquePtr<mjrfTexture> MakeTexture(mjrfContext* ctx,
   return texture;
 }
 
-static UniquePtr<mjrfMesh> MakeQuadMesh(mjrfContext* ctx) {
+static UniquePtr<mjrfMesh> MakeQuadMesh(mjrfContext* ctx, bool small = false) {
   static const float vertices[] = {
       -256.0f, -256.0f, 256.0f, -256.0f, -256.0f, 256.0f, 256.0f, 256.0f,
+  };
+  static const float small_vertices[] = {
+      -4.0f, -4.0f, 4.0f, -4.0f, -4.0f, 4.0f, 4.0f, 4.0f,
   };
   static const float uvs[] = {
       0.0f, 0.0f, 1.0f, 0.0f, 0.0f, 1.0f, 1.0f, 1.0f,
@@ -92,7 +95,7 @@ static UniquePtr<mjrfMesh> MakeQuadMesh(mjrfContext* ctx) {
   mjrfMeshData data;
   mjrf_defaultMeshData(&data);
   data.num_vertices = 4;
-  data.vertices[0] = vertices;
+  data.vertices[0] = small ? small_vertices : vertices;
   data.vertices[1] = uvs;
   data.vertices[2] = colors;
   data.num_indices = 6;
@@ -127,6 +130,31 @@ mjrfContextConfig MakeOffscreenConfig() {
   config.software_rendering = true;
   config.graphics_api = mjGRAPHICS_API_VULKAN;
   return config;
+}
+
+void SetupView(Renderer::View* view, Renderer::SceneHandle scene,
+               Renderer::RenderTargetHandle target, int width, int height) {
+  view->scene = scene;
+  view->render_target = target;
+  view->post_processing = false;
+  view->shadows = false;
+  view->reflections = false;
+  view->camera.orthographic = true;
+  view->camera.pos[0] = 0.0f;
+  view->camera.pos[1] = 0.0f;
+  view->camera.pos[2] = 1.0f;
+  view->camera.forward[0] = 0.0f;
+  view->camera.forward[1] = 0.0f;
+  view->camera.forward[2] = -1.0f;
+  view->camera.up[0] = 0.0f;
+  view->camera.up[1] = 1.0f;
+  view->camera.up[2] = 0.0f;
+  view->camera.frustum_top = 0.0f;
+  view->camera.frustum_near = 0.0f;
+  view->camera.frustum_far = 1.0f;
+  view->camera.frustum_center = width / 2.0f;
+  view->camera.frustum_width = width / 2.0f;
+  view->camera.frustum_bottom = height;
 }
 
 TEST_F(RendererTest, ContextCreationAndDefaults) {
@@ -266,51 +294,6 @@ TEST_F(RendererTest, RenderTargetPixelFormatsAndDuplicateNames) {
               HasSubstr("Render target 'rgb8' already exists"));
 }
 
-TEST_F(RendererTest, ViewManagement) {
-  Renderer renderer(MakeOffscreenConfig());
-
-  EXPECT_EQ(renderer.GetViewHandle("main"), Renderer::kInvalidView);
-  EXPECT_EQ(renderer.GetView(Renderer::kInvalidView), nullptr);
-  EXPECT_EQ(renderer.GetView(Renderer::ViewHandle{-2}), nullptr);
-  EXPECT_EQ(renderer.GetView(Renderer::ViewHandle{0}), nullptr);
-  EXPECT_EQ(renderer.GetView(Renderer::ViewHandle{50}), nullptr);
-
-  // GetView creates a view initialized with default parameters.
-  Renderer::View* main_view = renderer.GetView("main");
-  ASSERT_NE(main_view, nullptr);
-  EXPECT_EQ(main_view->scene, Renderer::kInvalidScene);
-  EXPECT_EQ(main_view->render_target, Renderer::kWindowRenderTarget);
-  EXPECT_FLOAT_EQ(main_view->rel_viewport[0], 0.0f);
-  EXPECT_FLOAT_EQ(main_view->rel_viewport[1], 0.0f);
-  EXPECT_FLOAT_EQ(main_view->rel_viewport[2], 1.0f);
-  EXPECT_FLOAT_EQ(main_view->rel_viewport[3], 1.0f);
-  EXPECT_EQ(main_view->draw_mode, mjDRAW_MODE_DEFAULT);
-  EXPECT_TRUE(main_view->post_processing);
-  EXPECT_TRUE(main_view->reflections);
-  EXPECT_TRUE(main_view->shadows);
-  EXPECT_FALSE(main_view->headlight.has_value());
-
-  Renderer::ViewHandle main_handle = renderer.GetViewHandle("main");
-  EXPECT_NE(main_handle, Renderer::kInvalidView);
-  EXPECT_EQ(renderer.GetView(main_handle), main_view);
-
-  // Mutating the view persists across lookups by name or handle.
-  main_view->draw_mode = mjDRAW_MODE_WIREFRAME;
-  main_view->shadows = false;
-  EXPECT_EQ(renderer.GetView("main"), main_view);
-  EXPECT_EQ(renderer.GetView("main")->draw_mode, mjDRAW_MODE_WIREFRAME);
-  EXPECT_FALSE(renderer.GetView(main_handle)->shadows);
-
-  // Creating a second view yields a distinct handle and pointer.
-  Renderer::View* pip_view = renderer.GetView("pip");
-  ASSERT_NE(pip_view, nullptr);
-  EXPECT_NE(pip_view, main_view);
-  Renderer::ViewHandle pip_handle = renderer.GetViewHandle("pip");
-  EXPECT_NE(pip_handle, Renderer::kInvalidView);
-  EXPECT_NE(pip_handle, main_handle);
-  EXPECT_EQ(renderer.GetView(pip_handle), pip_view);
-}
-
 TEST_F(RendererTest, RenderFullscreen) {
   Renderer renderer(MakeOffscreenConfig());
 
@@ -334,16 +317,9 @@ TEST_F(RendererTest, RenderFullscreen) {
   ASSERT_NE(scene, nullptr);
   mjrf_addSceneRenderable(scene, renderable.get());
 
-  Renderer::View* view = renderer.GetView("view");
-  ASSERT_NE(view, nullptr);
-  view->render_target = target;
-  view->scene = renderer.GetSceneHandle("scene");
-  view->camera.orthographic = true;
-  view->post_processing = false;
-  view->shadows = false;
-  view->reflections = false;
+  Renderer::View views[1];
+  SetupView(&views[0], renderer.GetSceneHandle("scene"), target, 32, 32);
 
-  Renderer::ViewHandle views[] = {renderer.GetViewHandle("view")};
   renderer.Render(views);
 
   std::span<const std::byte> pixels = renderer.GetPixels(target);
@@ -392,61 +368,34 @@ TEST_F(RendererTest, RenderGrid) {
   mjrfScene* scene3 = renderer.GetScene("scene3");
   mjrf_addSceneRenderable(scene3, renderables[3].get());
 
-  Renderer::View* view0 = renderer.GetView("view0");
-  ASSERT_NE(view0, nullptr);
-  view0->render_target = target;
-  view0->scene = renderer.GetSceneHandle("scene0");
-  view0->rel_viewport[0] = 0.0f;
-  view0->rel_viewport[1] = 0.0f;
-  view0->rel_viewport[2] = 0.5f;
-  view0->rel_viewport[3] = 0.5f;
-  view0->camera.orthographic = true;
-  view0->post_processing = false;
-  view0->shadows = false;
-  view0->reflections = false;
+  Renderer::View views[4];
 
-  Renderer::View* view1 = renderer.GetView("view1");
-  ASSERT_NE(view1, nullptr);
-  view1->render_target = target;
-  view1->scene = renderer.GetSceneHandle("scene1");
-  view1->rel_viewport[0] = 0.0f;
-  view1->rel_viewport[1] = 0.5f;
-  view1->rel_viewport[2] = 0.5f;
-  view1->rel_viewport[3] = 0.5f;
-  view1->camera.orthographic = true;
-  view1->post_processing = false;
-  view1->shadows = false;
-  view1->reflections = false;
+  SetupView(&views[0], renderer.GetSceneHandle("scene0"), target, 32, 32);
+  views[0].render_target = target;
+  views[0].scene = renderer.GetSceneHandle("scene0");
+  views[0].rel_viewport[0] = 0.0f;
+  views[0].rel_viewport[1] = 0.0f;
+  views[0].rel_viewport[2] = 0.5f;
+  views[0].rel_viewport[3] = 0.5f;
 
-  Renderer::View* view2 = renderer.GetView("view2");
-  ASSERT_NE(view2, nullptr);
-  view2->render_target = target;
-  view2->scene = renderer.GetSceneHandle("scene2");
-  view2->rel_viewport[0] = 0.5f;
-  view2->rel_viewport[1] = 0.0f;
-  view2->rel_viewport[2] = 0.5f;
-  view2->rel_viewport[3] = 0.5f;
-  view2->camera.orthographic = true;
-  view2->post_processing = false;
-  view2->shadows = false;
-  view2->reflections = false;
+  SetupView(&views[1], renderer.GetSceneHandle("scene1"), target, 32, 32);
+  views[1].rel_viewport[0] = 0.0f;
+  views[1].rel_viewport[1] = 0.5f;
+  views[1].rel_viewport[2] = 0.5f;
+  views[1].rel_viewport[3] = 0.5f;
 
-  Renderer::View* view3 = renderer.GetView("view3");
-  ASSERT_NE(view3, nullptr);
-  view3->render_target = target;
-  view3->scene = renderer.GetSceneHandle("scene3");
-  view3->rel_viewport[0] = 0.5f;
-  view3->rel_viewport[1] = 0.5f;
-  view3->rel_viewport[2] = 0.5f;
-  view3->rel_viewport[3] = 0.5f;
-  view3->camera.orthographic = true;
-  view3->post_processing = false;
-  view3->shadows = false;
-  view3->reflections = false;
+  SetupView(&views[2], renderer.GetSceneHandle("scene2"), target, 32, 32);
+  views[2].rel_viewport[0] = 0.5f;
+  views[2].rel_viewport[1] = 0.0f;
+  views[2].rel_viewport[2] = 0.5f;
+  views[2].rel_viewport[3] = 0.5f;
 
-  Renderer::ViewHandle views[] = {
-      renderer.GetViewHandle("view0"), renderer.GetViewHandle("view1"),
-      renderer.GetViewHandle("view2"), renderer.GetViewHandle("view3")};
+  SetupView(&views[3], renderer.GetSceneHandle("scene3"), target, 32, 32);
+  views[3].rel_viewport[0] = 0.5f;
+  views[3].rel_viewport[1] = 0.5f;
+  views[3].rel_viewport[2] = 0.5f;
+  views[3].rel_viewport[3] = 0.5f;
+
   renderer.Render(views);
 
   std::span<const std::byte> pixels = renderer.GetPixels(target);
@@ -515,6 +464,93 @@ TEST_F(RendererTest, UnsupportedTextureChannelsSkipped) {
   mock_warning_handler.ExpectWarnings("2-channel");
   ModelResources resources(model.get(), renderer.GetContext());
   EXPECT_EQ(resources.GetTexture(0), nullptr);
+}
+
+TEST_F(RendererTest, TextureGeneratesMipmaps) {
+  Renderer renderer(MakeOffscreenConfig());
+  mjrfContext* ctx = renderer.GetContext();
+
+  // 64x64 texture where 1 in every 4x4 block is 240 and all other texels are 0.
+  // The box-filtered mip average at level >= 2 is 240 / 16 = 15, whereas
+  // sampling level 0 at the 4x4 render target pixel centers (u = 8, 24, 40, 56)
+  // would bilinearly sample one 240 texel and three 0 texels (240 / 4 = 60).
+  constexpr int kTexSize = 64;
+  std::vector<uint8_t> tex_bytes(kTexSize * kTexSize * 3, 0);
+  for (int y = 0; y < kTexSize; y += 4) {
+    for (int x = 0; x < kTexSize; x += 4) {
+      int idx = (y * kTexSize + x) * 3;
+      tex_bytes[idx + 0] = 240;
+      tex_bytes[idx + 1] = 240;
+      tex_bytes[idx + 2] = 240;
+    }
+  }
+
+  mjrfTextureConfig tex_config;
+  mjrf_defaultTextureConfig(&tex_config);
+  tex_config.width = kTexSize;
+  tex_config.height = kTexSize;
+  tex_config.format = mjPIXEL_FORMAT_RGB8;
+  tex_config.color_space = mjCOLORSPACE_LINEAR;
+  UniquePtr<mjrfTexture> texture = CreateTexture(ctx, tex_config);
+
+  mjrfTextureData tex_data;
+  mjrf_defaultTextureData(&tex_data);
+  tex_data.bytes = tex_bytes.data();
+  tex_data.num_bytes = tex_bytes.size();
+  mjrf_uploadTexture(texture.get(), &tex_data);
+
+  UniquePtr<mjrfMesh> mesh = MakeQuadMesh(ctx, /*small=*/true);
+  mjrfMaterial material;
+  mjrf_defaultMaterial(&material);
+  material.metallic = 0.0f;
+  material.emissive_texture = texture.get();
+
+  mjrfRenderableParams params;
+  mjrf_defaultRenderableParams(&params);
+  params.cast_shadow = false;
+  params.receive_shadow = false;
+  UniquePtr<mjrfRenderable> renderable = CreateRenderable(ctx, params);
+  mjrf_setRenderableMesh(renderable.get(), mesh.get(), 0, 0);
+  mjrf_setRenderableMaterial(renderable.get(), &material);
+
+  mjrfRenderTargetConfig target_config;
+  mjrf_defaultRenderTargetConfig(&target_config);
+  target_config.width = 4;
+  target_config.height = 4;
+  target_config.color_format = mjPIXEL_FORMAT_RGB8;
+  target_config.depth_format = mjPIXEL_FORMAT_DEPTH32F;
+  Renderer::RenderTargetHandle target =
+      renderer.CreateRenderTarget("offscreen", target_config);
+  ASSERT_NE(target, Renderer::kInvalidRenderTarget);
+
+  mjrfScene* scene = renderer.GetScene("scene");
+  mjrf_addSceneRenderable(scene, renderable.get());
+
+  Renderer::View views[1];
+  SetupView(&views[0], renderer.GetSceneHandle("scene"), target, 4, 4);
+  views[0].camera.frustum_bottom = 0.0f;
+  views[0].camera.frustum_top = 4.0f;
+  renderer.Render(views);
+
+  std::span<const std::byte> pixels = renderer.GetPixels(target);
+  ASSERT_EQ(pixels.size(), 4 * 4 * 3);
+  for (size_t i = 0; i < pixels.size(); ++i) {
+    EXPECT_NEAR(static_cast<uint8_t>(pixels[i]), 15, 2);
+  }
+
+  // UI (decor) materials sample level 0 directly without mipmapping.
+  mjrf_removeSceneRenderable(scene, renderable.get());
+  UniquePtr<mjrfRenderable> decor_renderable =
+      MakeRenderable(ctx, mesh.get(), texture.get());
+  mjrf_addSceneRenderable(scene, decor_renderable.get());
+  SetupView(&views[0], renderer.GetSceneHandle("scene"), target, 4, 4);
+  renderer.Render(views);
+
+  pixels = renderer.GetPixels(target);
+  ASSERT_EQ(pixels.size(), 4 * 4 * 3);
+  for (size_t i = 0; i < pixels.size(); ++i) {
+    EXPECT_NEAR(static_cast<uint8_t>(pixels[i]), 60, 2);
+  }
 }
 }  // namespace
 }  // namespace mujoco

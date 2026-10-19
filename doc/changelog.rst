@@ -13,6 +13,16 @@ Engine
 
 Compiler
 ^^^^^^^^
+
+.. admonition:: Breaking API changes
+   :class: attention
+
+   - :ref:`mjs_fuseStatic` and :ref:`mjs_discardVisual` now return the number of bodies fused or elements discarded,
+     and -1 on error. Previously they returned 0 on success, so a caller could not tell whether the spec changed. In
+     Python, ``MjSpec.fuse_static`` and ``MjSpec.discard_visual`` return the same number instead of ``None``.
+
+     **Migration:** Test for an error with ``< 0`` rather than ``!= 0``.
+
 - Mesh polygon normals (``mjModel.mesh_polynormal``) are now computed from the whole polygon outline using Newell's
   method rather than the first three vertices (:issue:`3691`).
 
@@ -46,6 +56,8 @@ Bug fixes
   have none, or recompiled after such an edit, now compiles the stiffness of its current configuration. It used to keep
   the strain constraint eigenmodes as its stiffness matrix, so a flex switched from shell to volumetric ignored
   ``young`` and ``poisson`` and was unstable.
+- Fixed a bug in the Filament renderer where textures did not allocate mipmap levels, preventing mipmap generation and
+  causing minification aliasing, and where sRGB textures were unconditionally excluded from mipmapping.
 
 Version 3.16.0 (October 14, 2026)
 ---------------------------------
