@@ -35,11 +35,17 @@ Bug fixes
   - :ref:`mj_loadAllPluginLibraries` kept a lock if a library failed to load, so other threads deadlocked.
   - An unknown :ref:`role<material-layer-role>` of a material layer leaked memory instead of causing a parse error.
   - :ref:`mju_getXMLDependencies` leaked memory when reading or parsing an XML file failed.
+  - Saving a spec with an equality type which the XML writer does not support, such as ``mjEQ_DISTANCE``, called
+    :ref:`mju_error`, which from :ref:`mj_saveLastXML` also left a lock held. It is now a write error.
   - The Filament renderer called :ref:`mju_error` for a texture with an unsupported number of channels. It now skips the
     texture with a warning, like the classic renderer.
 - Fixed volume (solid) interpolated flexes whose first cell is empty, e.g. a trilinear :ref:`flexcomp<body-flexcomp>`
   from a mesh that does not fill the corner of its bounding box. Their elasticity was gated on the stiffness of the
   first cell, which is zero for an empty cell, so the whole flex had no elastic forces and no implicit stiffness.
+- A flex made with a strain :ref:`equality<flexcomp-edge-equality>` (e.g. by ``body.make_flex``) and then edited to
+  have none, or recompiled after such an edit, now compiles the stiffness of its current configuration. It used to keep
+  the strain constraint eigenmodes as its stiffness matrix, so a flex switched from shell to volumetric ignored
+  ``young`` and ``poisson`` and was unstable.
 
 Version 3.16.0 (October 14, 2026)
 ---------------------------------

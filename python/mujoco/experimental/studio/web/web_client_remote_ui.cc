@@ -15,10 +15,20 @@
 #include "web_client_remote_ui.h"
 
 #include <algorithm>
+#include <cstddef>
+#include <cstdint>
+#include <cstdio>
 #include <cstring>
 #include <string>
+#include <unordered_map>
+#include <utility>
+#include <vector>
 
+#include <imgui.h>
+#include <NetImgui_CmdPackets.h>
+#include <NetImgui_Network.h>
 #include "google/logging.h"
+#include "google/network_status.h"
 
 namespace mujoco::studio {
 
@@ -46,6 +56,10 @@ void LogCmdReceived(CmdHeader::eCommands cmd_type, uint32_t cmd_size,
                     int draw_frames, int textures,
                     const PendingCom& pending_receive) {
   if (cmd_type == CmdHeader::eCommands::Version) {
+    if (cmd_size < sizeof(CmdVersion)) {
+      LOG(Warning, "Received truncated CmdVersion (size=%u)", cmd_size);
+      return;
+    }
     const CmdVersion* ver =
         reinterpret_cast<const CmdVersion*>(pending_receive.pCommand);
     LOG(Info,
@@ -181,6 +195,7 @@ void RemoteUi::ReceiveAndProcessCommands(int frame) {
     if (pending_receive_.IsReady()) {
       cmd_pending_read_ = CmdPendingRead();
       pending_receive_.pCommand = &cmd_pending_read_;
+      pending_receive_.SizeMax = sizeof(cmd_pending_read_);
       pending_receive_.bAutoFree = false;
     }
 
@@ -188,8 +203,8 @@ void RemoteUi::ReceiveAndProcessCommands(int frame) {
 
     Network::DataReceive(socket_, pending_receive_);
 
-    if (pending_receive_.pCommand->mSize > sizeof(CmdPendingRead) &&
-        pending_receive_.pCommand == &cmd_pending_read_) {
+    // Received the header of a command bigger than the header: allocate it.
+    if (pending_receive_.IsBiggerBufferNeeded()) {
       VLOG(2, "Allocating %u bytes for incoming cmd type=%d",
            pending_receive_.pCommand->mSize,
            static_cast<int>(pending_receive_.pCommand->mType));
@@ -197,6 +212,7 @@ void RemoteUi::ReceiveAndProcessCommands(int frame) {
           netImguiSizedNew<uint8_t>(pending_receive_.pCommand->mSize));
       *cmd_header = cmd_pending_read_;
       pending_receive_.pCommand = cmd_header;
+      pending_receive_.SizeMax = cmd_header->mSize;
       pending_receive_.bAutoFree = true;
     }
 
@@ -261,8 +277,9 @@ void RemoteUi::UpdateTextures() {
 void RemoteUi::ProcessCmdTexture(CmdTexture* cmd_texture) {
   if (!cmd_texture) return;
 
-  if (!cmd_texture->mpTextureData.IsPointer()) {
-    cmd_texture->mpTextureData.ToPointer();
+  if (!cmd_texture->ToPointers()) {
+    LOG(Warning, "ProcessCmdTexture: dropping invalid texture command");
+    return;
   }
 
   ClientTextureID tex_id = cmd_texture->mTextureClientID;
@@ -393,7 +410,11 @@ void RemoteUi::ProcessCmdDrawFrame(CmdDrawFrame* cmd_draw_frame) {
 
   // Take ownership to prevent pending_receive_ from deleting it prematurely.
   pending_receive_.bAutoFree = false;
-  cmd_draw_frame->ToPointers();
+  if (!cmd_draw_frame->ToPointers()) {
+    LOG(Warning, "ProcessCmdDrawFrame: dropping invalid draw frame");
+    netImguiDeleteSafe(cmd_draw_frame);
+    return;
+  }
 
   if (cmd_draw_frame->mCompressed) {
     if (last_uncompressed_frame_ != nullptr &&
@@ -403,6 +424,10 @@ void RemoteUi::ProcessCmdDrawFrame(CmdDrawFrame* cmd_draw_frame) {
           last_uncompressed_frame_.get(), cmd_draw_frame);
       netImguiDeleteSafe(cmd_draw_frame);
       cmd_draw_frame = uncompressed_frame;
+      if (!cmd_draw_frame) {  // Invalid compressed data, get a fresh keyframe.
+        request_keyframe_ = true;
+        return;
+      }
     } else {
       // Missing previous / reference frame data. Ignore this delta-encoded
       // drawframe and ask the client for a fresh uncompressed keyframe.
@@ -415,8 +440,6 @@ void RemoteUi::ProcessCmdDrawFrame(CmdDrawFrame* cmd_draw_frame) {
   // Release previous cached frame and store current for the next delta
   // decompression.
   last_uncompressed_frame_.reset(cmd_draw_frame);
-
-  cmd_draw_frame->ToPointers();
 
   RemoteDrawFrame* frame = netImguiNew<RemoteDrawFrame>();
   frame->frame_index = cmd_draw_frame->mFrameIndex;
@@ -518,6 +541,14 @@ void RemoteUi::ProcessCmdDrawFrame(CmdDrawFrame* cmd_draw_frame) {
         uint32_t vtx_off = draw_src[draw_idx].mVtxOffset + vertex_offset;
         uint32_t idx_off = draw_src[draw_idx].mIdxOffset + index_offset;
         uint32_t elem_count = draw_src[draw_idx].mIdxCount;
+
+        // The draw range comes off the wire: skip (leave empty) draws that
+        // would index past the buffer.
+        if (static_cast<uint64_t>(draw_src[draw_idx].mIdxOffset) +
+                index_offset + elem_count >
+            static_cast<uint64_t>(cmd_list->IdxBuffer.Size)) {
+          continue;
+        }
 
         // Bake vertex offset into index values.
         for (uint32_t ei = 0; ei < elem_count; ++ei) {
