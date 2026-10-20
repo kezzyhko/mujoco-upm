@@ -477,7 +477,8 @@ adjust it properly through the XML.
    gradient norm. For Newton, it is additionally applied to the Newton decrement :math:`\tfrac{1}{2} g^T H^{-1} g`, the
    predicted cost improvement of the next iteration. Before the first iteration, CG and Newton also apply it to a
    :ref:`convergence certificate<soAlgorithms>` of the warmstarted solution, possibly terminating with zero iterations.
-   Set the tolerance to 0 to disable early termination.
+   The cost improvement and the gradient are scaled by the inverse trace of the inertia matrix, of the whole model or
+   of a constraint :ref:`island<soIsland>`. Set the tolerance to 0 to disable early termination.
 
 .. _option-ls_iterations:
 
@@ -1253,9 +1254,11 @@ parameters.
 .. _statistic-meaninertia:
 
 :at:`meaninertia`: :at-val:`real, optional`
-   If this attribute is specified, it replaces the value of mjModel.stat.meaninertia computed by the compiler. The
-   computed value is the average diagonal element of the joint-space inertia matrix when the model is in qpos0. At
-   runtime this value scales the solver cost and gradient used for early termination.
+   This attribute is deprecated and will be removed in a future release; compiling a model which sets it gives a
+   warning. If it is specified, it replaces the value of mjModel.stat.meaninertia computed by the compiler. The
+   computed value is the average diagonal element of the joint-space inertia matrix when the model is in qpos0. It
+   does not affect simulation: the solvers scale their termination criteria by the trace of the current inertia
+   matrix, see :ref:`tolerance<option-tolerance>`.
 
 .. _statistic-meansize:
 
@@ -5500,10 +5503,11 @@ length X, as in the clip on the right of `this example model
 
 :at:`springlength`: :at-val:`real(2), "-1 -1"`
    Spring resting position, can take either one or two values. If one value is given, it corresponds to the length of
-   the tendon at rest. If it is ``-1``, the tendon resting length is determined from the model reference configuration
-   in ``mjModel.qpos0``.  |br| Note that the default value of ``-1``, which invokes the automatic length computation,
-   was designed with :ref:`spatial<tendon-spatial>` tendons in mind, which can only have nonegative length. In order to
-   set the :at:`springlength` of a :ref:`fixed<tendon-fixed>` tendon to ``-1``, use a nearby value like ``-0.99999``.
+   the tendon at rest. If it is ``-1``, the tendon resting length is determined by the compiler from the spring
+   reference configuration in ``mjModel.qpos_spring``.  |br| Note that the default value of ``-1``, which invokes the
+   automatic length computation, was designed with :ref:`spatial<tendon-spatial>` tendons in mind, which can only have
+   nonegative length. In order to set the :at:`springlength` of a :ref:`fixed<tendon-fixed>` tendon to ``-1``, use a
+   nearby value like ``-0.99999``.
    |br| If two non-decreasing values are given, they define a `dead-band <https://en.wikipedia.org/wiki/Deadband>`_
    range. If the tendon length is between the two values, the force is 0. If it is outside this range, the force behaves
    like a regular spring, with the rest-point corresponding to the nearest :at:`springlength` value. A deadband can be
