@@ -4097,6 +4097,9 @@ EMSCRIPTEN_BINDINGS(mujoco_bindings) {
     .value("mjEVENT_RESIZE", mjEVENT_RESIZE)
     .value("mjEVENT_REDRAW", mjEVENT_REDRAW)
     .value("mjEVENT_FILESDROP", mjEVENT_FILESDROP);
+  enum_<mjtFlexSection>("mjtFlexSection")
+    .value("mjFLEXSECTION_CIRCLE", mjFLEXSECTION_CIRCLE)
+    .value("mjFLEXSECTION_BOX", mjFLEXSECTION_BOX);
   enum_<mjtFlexSelf>("mjtFlexSelf")
     .value("mjFLEXSELF_NONE", mjFLEXSELF_NONE)
     .value("mjFLEXSELF_NARROW", mjFLEXSELF_NARROW)
@@ -4574,16 +4577,19 @@ EMSCRIPTEN_BINDINGS(mujoco_bindings) {
 
   // Bindings for the MjData accessor classes.
   #define X(type, prefix, var, dim0, dim1) .property(#var, &Accessor::get_##var, &Accessor::set_##var)
+  #define XC(name) .property(#name, &Accessor::get_##name)
   #define X_ACCESSOR(NAME, Name, OBJTYPE, field, nfield)       \
     {                                                          \
       using Accessor = MjData##Name##Accessor;                 \
       emscripten::class_<Accessor>("MjData" #Name "Accessor")  \
           .property("id", &Accessor::id)                       \
           .property("name", &Accessor::name)                   \
-          MJDATA_##NAME;                                       \
+          MJDATA_##NAME                                        \
+          MJDATA_COMPUTED_##NAME;                              \
     }
     MJDATA_ACCESSORS
   #undef X
+  #undef XC
   #undef X_ACCESSOR
 
   emscripten::class_<MjContact>("MjContact")
@@ -5853,6 +5859,8 @@ EMSCRIPTEN_BINDINGS(mujoco_bindings) {
     .property("priority", &MjsFlex::priority, &MjsFlex::set_priority)
     .property("radius", &MjsFlex::radius, &MjsFlex::set_radius)
     .property("rgba", &MjsFlex::rgba)
+    .property("section", &MjsFlex::section, &MjsFlex::set_section)
+    .property("sectionsize", &MjsFlex::sectionsize)
     .property("selfcollide", &MjsFlex::selfcollide, &MjsFlex::set_selfcollide)
     .property("size", &MjsFlex::size)
     .property("solimp", &MjsFlex::solimp)

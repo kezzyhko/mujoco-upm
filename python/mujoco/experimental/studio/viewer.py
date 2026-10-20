@@ -26,8 +26,6 @@ from absl import app as _app
 from absl import flags as _flags
 from mujoco.experimental.studio import launch_passive
 from mujoco.experimental.studio import plugin
-from mujoco.experimental.studio import sim_history
-from mujoco.experimental.studio import step_control
 from mujoco.experimental.studio import viewer_app
 from mujoco.experimental.studio import viewer_protocol
 
@@ -50,8 +48,8 @@ _HEIGHT = _flags.DEFINE_integer('height', 800, 'Height of the output image')
 _HOT_RELOAD = _flags.DEFINE_string(
     'hot_reload',
     '',
-    'Reload files saved while running: "all", "plugins", "model", or'
-    ' comma-separated plugin class names (e.g. "Scene,SceneGui").',
+    "What is reloaded when modified. Options are '', 'plugins', 'model',"
+    " 'all', 'Plugin1,Plugin2,...'. Default is '', meaning nothing.",
 )
 
 
@@ -84,8 +82,7 @@ def main(argv: list[str]) -> None:
       model_path=_resolve(model_path),
       plugins=[
           viewer_app.ViewerApp(),
-          step_control.StepControl(),
-          sim_history.SimHistory(),
+          *viewer_app.SIM_PLUGINS,
           *user_plugins,
       ],
   )

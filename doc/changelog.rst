@@ -7,6 +7,15 @@ Upcoming Version (not yet released)
 
 Engine
 ^^^^^^
+- Added bending :ref:`elasticity<flex-elasticity>` for 1D flexes, using a twist-free isotropic discrete elastic rod
+  model. The cross-section is selected with the new :ref:`section<flex-elasticity-section>` attribute: a circle of the
+  flex radius, or a box with half-sizes :ref:`sectionsize<flex-elasticity-sectionsize>` that uses the stiffness of its
+  weak axis. It is enabled by a positive :ref:`young<flex-elasticity-young>` modulus, requires a straight reference
+  configuration (curved initial poses can be set with ``qpos`` or keyframes), is compatible with edge equality
+  constraints, and is integrated implicitly by the :ref:`discrete<option-integrator>` integrator. Previously ``young``
+  was ignored for 1D flexes: existing models that set it now bend, and fail to compile if the cross-section is
+  degenerate (zero radius with the default circle section), if a vertex joins a zero-length edge, or if the rod is not
+  straight.
 - Trees marked :ref:`sleep="init"<body-sleep>` which cannot be put to sleep now cause a warning rather than an error,
   and start awake. See :ref:`Sleeping<siSleepSleeping>` for details.
 - Added single-shot :ref:`multicontact<coMultiCCD>` for geoms with positive contact :ref:`margins<body-geom-margin>`.
@@ -24,6 +33,8 @@ Engine
     Models solved with PGS, noslip or islands disabled can stop at slightly different iterations. The
     :ref:`meaninertia<statistic-meaninertia>` attribute is deprecated and will be removed in a future release (compiling
     a model that sets it now gives a warning; remove the attribute to migrate).
+- Interpolated flexes (**trilinear** or **quadratic** :ref:`dofs<body-flexcomp-dof>`) now support
+  :ref:`self-collision<flex-contact-selfcollide>`, excluding elements in the same or neighboring cells.
 
 Compiler
 ^^^^^^^^
@@ -37,10 +48,19 @@ Compiler
 
      **Migration:** Test for an error with ``< 0`` rather than ``!= 0``.
 
+- A compiled :ref:`mjSpec` no longer keeps the decoded pixels of its textures between compilations, which lowers the
+  memory of a loaded model by the size of its textures.
 - Added :ref:`mjs_dedupAssets` (``MjSpec.dedup_assets``), which merges the textures and meshes of an :ref:`mjSpec`
   that would compile to the same asset, as those of a sub-model attached several times do: the first of each group is
   kept and every reference to the others is rewritten to it. Like :ref:`mjs_fuseStatic`, it returns the number of
   assets merged.
+- The asset paths in :ref:`mjModel` (``paths`` at ``mesh_pathadr``, ``hfield_pathadr``, ``skin_pathadr`` and
+  ``tex_pathadr``) are now the path or URI from which the compiler read the asset: the model file's directory,
+  ``meshdir`` or ``texturedir``, and the :at:`file`, unless the file is an absolute path or a URI, which is kept as is.
+  :ref:`mju_openResource` opens them directly, from the same working directory and VFS as the compiler. Previously they
+  held the :at:`file` attribute as authored, which could not be resolved after :ref:`attaching<body-attach>` models
+  with different asset directories. Code which prefixed these paths with a directory of its own should pass them to
+  :ref:`mju_openResource` directly.
 - Mesh polygon normals (``mjModel.mesh_polynormal``) are now computed from the whole polygon outline using Newell's
   method rather than the first three vertices (:issue:`3691`).
 
@@ -51,6 +71,19 @@ Python bindings
 - Unallocated arena arrays of ``MjData``, for example ``efm_*`` arrays when the ``discrete`` integrator is not used or
   island arrays when no islands are formed, are now filled with zeros, or with -1 for index fields where -1 means
   "none". Previously they returned uninitialized memory.
+- Fixed several bugs in :ref:`named access<PyNamed>` (``data.actuator('a')``, ``model.joint('j')``, ``data.bind(...)``):
+
+  - Actuator views now follow ``actuator_ctrladr`` and ``actuator_outadr``. An actuator with several controls or force
+    outputs, such as :ref:`orientation<actuator-orientation>`, got the shape of a single row, and every actuator after
+    it got the rows of another. Its views now have a leading dimension of ``ctrlnum`` or ``outnum``, e.g.
+    ``model.actuator('a').gear`` is ``outnum x 6``; actuators with one control and one output keep their shapes.
+  - ``data.actuator('a').moment`` read the sparse ``actuator_moment`` as if it were dense, giving wrong values. It is
+    now a read-only dense copy of the actuator's moment arm, of size ``nv``, or ``outnum x nv``.
+  - The views of multi-column per-dof fields (``cdof``, ``cdof_dot``, ``dof_dampingpoly``) of any joint other than the
+    first pointed at the wrong rows.
+
+  The named accessors of the JavaScript bindings, which are generated from the same tables, had the same bugs and are
+  fixed in the same way, with flat arrays.
 
 Bug fixes
 ^^^^^^^^^
@@ -76,6 +109,14 @@ Bug fixes
   ``young`` and ``poisson`` and was unstable.
 - Fixed a bug in the Filament renderer where textures did not allocate mipmap levels, preventing mipmap generation and
   causing minification aliasing, and where sRGB textures were unconditionally excluded from mipmapping.
+- Fixed a bug in the Filament renderer where skins that share vertices across faces failed with an index count mismatch
+  (:issue:`3719`).
+
+Models
+^^^^^^
+- The `elastic mechanism <https://github.com/google-deepmind/mujoco/tree/main/model/flex/mechanisms/>`__ example models
+  now use 1D flex rods: the cantilever comparison of quadratic flexes adds a rod, and the elastic slider-crank and the
+  tendon-loaded dipper arm are built from rods.
 
 Version 3.16.0 (October 14, 2026)
 ---------------------------------

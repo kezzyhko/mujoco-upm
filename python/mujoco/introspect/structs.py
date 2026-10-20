@@ -5225,7 +5225,7 @@ STRUCTS: Mapping[str, StructDecl] = dict([
                  type=PointerType(
                      inner_type=ValueType(name='char'),
                  ),
-                 doc='paths to assets, 0-terminated',
+                 doc='resolved paths to assets, 0-terminated',
                  array_extent=('npaths',),
              ),
              StructFieldDecl(
@@ -5767,7 +5767,7 @@ STRUCTS: Mapping[str, StructDecl] = dict([
              StructFieldDecl(
                  name='nefmL',
                  type=ValueType(name='int'),
-                 doc='size of the effective-metric block storage (9*nefmdof)',
+                 doc='size of efm_L (9*nefmdof plus optional Cholesky or island tail)',  # pylint: disable=line-too-long
              ),
              StructFieldDecl(
                  name='nY',
@@ -7205,7 +7205,7 @@ STRUCTS: Mapping[str, StructDecl] = dict([
                  type=PointerType(
                      inner_type=ValueType(name='mjtNum'),
                  ),
-                 doc='factored 3x3 diagonal blocks of M+K',
+                 doc='factored 3x3 blocks of M+K and packed tail data',
                  array_extent=('nefmL',),
              ),
              StructFieldDecl(
@@ -8821,6 +8821,19 @@ STRUCTS: Mapping[str, StructDecl] = dict([
                  name='elastic3d',
                  type=ValueType(name='int'),
                  doc='experimental 3D material (mjSpec only); 0: Saint Venant-Kirchhoff, 1: Stable Neo-Hookean',  # pylint: disable=line-too-long
+             ),
+             StructFieldDecl(
+                 name='section',
+                 type=ValueType(name='mjtFlexSection'),
+                 doc='1D cross-section (mjtFlexSection)',
+             ),
+             StructFieldDecl(
+                 name='sectionsize',
+                 type=ArrayType(
+                     inner_type=ValueType(name='double'),
+                     extents=(2,),
+                 ),
+                 doc='1D box cross-section half-sizes',
              ),
              StructFieldDecl(
                  name='cellcount',

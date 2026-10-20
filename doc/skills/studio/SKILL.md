@@ -95,12 +95,12 @@ message-driven plugin architecture:
     `plugins=[...]` argument and partition instances by base class:
     -   **Simulation plugins (`plugin.SimPlugin`)**:
         Subclass `SimPlugin` to run on the simulation thread, automatically
-        caching `self._handle` on `SimInitEvent`, and handle simulation-side
+        caching `self.handle` on `SimInitEvent`, and handle simulation-side
         events (e.g. physics reset, step control, perturbations, model
         reloading, policy changes).
     -   **Viewer plugins (`plugin.ViewerPlugin`)**:
         Subclass `ViewerPlugin` to run on the viewer thread, automatically
-        caching `self._viewer` on `ViewerInitEvent`, and handle rendering and UI
+        caching `self.viewer` on `ViewerInitEvent`, and handle rendering and UI
         lifecycle events (e.g. viewer initialization, model reloading,
         per-frame visual updates, GUI construction).
 -   **Standard Samples (`python/mujoco/experimental/studio/`)**:
@@ -190,7 +190,7 @@ shutdown:
     `run_viewer_loop` to `ViewerPlugin` instances):
     1.  `ViewerInitEvent` (`viewer_protocol.ViewerInitEvent`, also exported as
         `plugin.ViewerInitEvent`) — dispatched once on viewer initialization
-        (`ViewerPlugin` caches `self._viewer` automatically above `CRITICAL`
+        (`ViewerPlugin` caches `self.viewer` automatically above `CRITICAL`
         priority before subclass handlers run).
     2.  `ModelEvent` — received when a model is published by the sim; `Viewer`
         deep-copies `viewer.model`, creates `viewer.data`, records
@@ -217,7 +217,7 @@ shutdown:
     `SimPlugin` instances):
     1.  `SimInitEvent` (`viewer_handle.SimInitEvent`, also exported as
         `plugin.SimInitEvent`) — dispatched once by `ViewerHandle.__init__`
-        (`SimPlugin` caches `self._handle` automatically above `CRITICAL`
+        (`SimPlugin` caches `self.handle` automatically above `CRITICAL`
         priority before subclass handlers run).
     2.  `LoadModelEvent` — sent from the viewer (on **Reload** or file
         drag-and-drop) or dispatched on the sim thread (e.g. by
@@ -275,7 +275,7 @@ from mujoco.experimental.studio import plugin
 class MyPlugin(plugin.ViewerPlugin):
   @messages.handler
   def on_build_gui(self, event: messages.BuildGuiEvent) -> bool | None:
-    # Build Dear ImGui elements here (self._viewer is populated automatically)
+    # Build Dear ImGui elements here (self.viewer is populated automatically)
     return False  # Return True to consume and halt lower-priority handlers
 ```
 
@@ -367,13 +367,16 @@ For a full reference implementation, see
 
 All three modules share the same `.run(...)` interface, accepting either
 `model_path=...` (loaded on the sim thread via `LoadModelEvent`, which sets
-`handle.model_path` so **Reload** works) or an in-memory `model=...` (with
-optional `data=...`, published via `handle.set_model`):
+All three modules share the same `.run(...)` interface, accepting either
+`model_path=...` (loaded on the sim thread by `ViewerHandle` via
+`LoadModelEvent`, which sets `handle.model_path` so **Reload** works) or an
+in-memory `model=...` (with optional `data=...`, published via
+`handle.set_model`). `viewer_app.SIM_PLUGINS` bundles the default sim-side
+plugins that back `ViewerApp` (`step_control.StepControl()` and
+`sim_history.SimHistory()`):
 
 ```python
 from mujoco.experimental.studio import launch_web  # Or launch_native / launch_passive
-from mujoco.experimental.studio import sim_history
-from mujoco.experimental.studio import step_control
 from mujoco.experimental.studio import viewer_app
 from mujoco.experimental.studio import viewer_protocol
 
@@ -384,20 +387,20 @@ launch_web.run(
     model_path=model_path,  # Or model=model, data=data for an in-memory model.
     plugins=[
         viewer_app.ViewerApp(),
-        step_control.StepControl(),
-        sim_history.SimHistory(),
+        *viewer_app.SIM_PLUGINS,
     ],
 )
 ```
 
 > [!WARNING]
 >
-> **Stepping and pacing are plugin responsibilities.** Including
-> `step_control.StepControl()` in `plugins` provides standard
-> real-time-paced CPU stepping. If you omit `StepControl()` (for example, when
-> running GPU rollouts or custom RL loops), `handle.sync()` will **not advance
-> physics or sleep**, so your stepping plugin must manage its own pacing to
-> avoid busy-spinning.
+> **Stepping and pacing are plugin responsibilities.** `viewer_app.SIM_PLUGINS`
+> includes `step_control.StepControl()` (real-time-paced CPU stepping) and
+> `sim_history.SimHistory()` (history scrubbing). Pass individual plugins
+> instead when replacing `StepControl()` (for example, when running GPU rollouts
+> or custom RL loops): without a `StepEvent` plugin, `handle.sync()` will **not
+> advance physics or sleep**, so your stepping plugin must manage its own pacing
+> to avoid busy-spinning.
 
 ### Advanced: Non-Blocking Launchers (`launch_web.launch`, `launch_native.launch`, `launch_passive.launch`)
 
@@ -411,8 +414,7 @@ with launch_web.launch(
     config,
     plugins=[
         viewer_app.ViewerApp(),
-        step_control.StepControl(),
-        sim_history.SimHistory(),
+        *viewer_app.SIM_PLUGINS,
     ],
 ) as handle:
   while handle.is_running():

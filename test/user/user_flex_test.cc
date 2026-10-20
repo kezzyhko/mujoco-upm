@@ -14,6 +14,7 @@
 
 // Tests for user/user_model.cc.
 
+#include <algorithm>
 #include <array>
 #include <cmath>
 #include <cstdio>
@@ -543,21 +544,59 @@ TEST_F(UserFlexTest, BoundingBoxCoordinates) {
   EXPECT_EQ(m->flex_vert0[3 * m->nflexvert - 1], 1);
 }
 
-TEST_F(UserFlexTest, TrilinearCannotDoSelfCollision) {
-  std::array<char, 1024> error;
-  static constexpr char xml_selfcoll[] = R"(
-  <mujoco>
-  <worldbody>
-    <flexcomp name="test" type="grid" count="2 2 2" spacing="1 1 1" dim="3" dof="trilinear">
-      <contact selfcollide="auto"/>
-    </flexcomp>
-  </worldbody>
-  </mujoco>
-  )";
-  MjModelPtr m1 = LoadModelFromString(xml_selfcoll, error.data(), error.size());
-  EXPECT_THAT(m1.get(), IsNull()) << error.data();
-  EXPECT_THAT(error.data(),
-              HasSubstr("trilinear interpolation cannot do self-collision"));
+TEST_F(UserFlexTest, InterpolatedFlexCanSelfCollide) {
+  for (const char* dof : {"trilinear", "quadratic"}) {
+    std::string xml = std::string(R"(
+    <mujoco>
+    <worldbody>
+      <flexcomp name="test" type="grid" count="3 3 3" spacing="1 1 1" dim="3"
+                dof=")") +
+                      dof + R"(">
+        <contact selfcollide="auto"/>
+      </flexcomp>
+    </worldbody>
+    </mujoco>
+    )";
+    std::array<char, 1024> error;
+    MjModelPtr m = LoadModelFromString(xml.c_str(), error.data(), error.size());
+    ASSERT_THAT(m.get(), NotNull()) << dof << ": " << error.data();
+    EXPECT_NE(m->flex_interp[0], 0) << dof;
+    EXPECT_EQ(m->flex_selfcollide[0], mjFLEXSELF_AUTO) << dof;
+    MjDataPtr d = MakeData(m);
+    mj_step(m.get(), d.get());
+  }
+}
+
+// cellcount sizes the nodal grid of every flexcomp type
+TEST_F(UserFlexTest, InterpolatedCellcountAllTypes) {
+  const char* types[][2] = {
+      {"grid", "3"}, {"box", "2"}, {"cylinder", "2"}, {"ellipsoid", "2"}};
+  for (const auto& [type, dim] : types) {
+    for (const char* dof : {"trilinear", "quadratic"}) {
+      std::string xml = std::string(R"(
+      <mujoco>
+      <worldbody>
+        <flexcomp name="test" type=")") +
+                        type + R"(" count="4 4 4" spacing=".1 .1 .1" dim=")" +
+                        dim + R"(" dof=")" + dof + R"(" cellcount="2 3 2">
+          <contact selfcollide="none"/>
+        </flexcomp>
+      </worldbody>
+      </mujoco>
+      )";
+      std::array<char, 1024> error;
+      MjModelPtr m =
+          LoadModelFromString(xml.c_str(), error.data(), error.size());
+      ASSERT_THAT(m.get(), NotNull())
+          << type << ", " << dof << ": " << error.data();
+      int order = std::abs(m->flex_interp[0]);
+      EXPECT_EQ(m->flex_nodenum[0],
+                (2 * order + 1) * (3 * order + 1) * (2 * order + 1))
+          << type << ", " << dof;
+      MjDataPtr d = MakeData(m);
+      mj_step(m.get(), d.get());
+    }
+  }
 }
 
 TEST_F(UserFlexTest, TrilinearInterpolation) {
@@ -1409,6 +1448,62 @@ TEST_F(UserFlexTest, EmptyCellNodePinning) {
   MjDataPtr d = MakeData(m);
   for (int i = 0; i < 10; i++) {
     mj_step(m.get(), d.get());
+  }
+}
+
+// the elastic mechanisms use 1D rods with bending elasticity: they load and
+// simulate stably, the drives move them, and the edge equalities keep the rods
+// nearly inextensible
+TEST_F(UserFlexTest, MechanismRods) {
+  struct Mechanism {
+    const char* file;
+    const char* flex;
+    const char* joint;  // driven joint that must move, or nullptr
+    int nstep;
+  };
+  const Mechanism mechanisms[] = {
+      {"flex/mechanisms/cantilever.xml", "rod", nullptr, 500},
+      {"flex/mechanisms/slidercrank.xml", "rod", "slide", 1500},
+      {"flex/mechanisms/dipper.xml", "arm_flex", "arm", 3000},
+  };
+  for (const Mechanism& mech : mechanisms) {
+    SCOPED_TRACE(mech.file);
+    const std::string xml_path = GetModelPath(mech.file);
+    std::array<char, 1024> error;
+    mjModel* m = mj_loadXML(xml_path.c_str(), 0, error.data(), error.size());
+    ASSERT_THAT(m, NotNull()) << error.data();
+    int f = mj_name2id(m, mjOBJ_FLEX, mech.flex);
+    ASSERT_GE(f, 0);
+    EXPECT_EQ(m->flex_dim[f], 1);
+    EXPECT_GE(m->flex_bendingadr[f], 0);
+
+    mjData* d = mj_makeData(m);
+    int jnt = mech.joint ? mj_name2id(m, mjOBJ_JOINT, mech.joint) : -1;
+    mjtNum q0 = jnt >= 0 ? d->qpos[m->jnt_qposadr[jnt]] : 0;
+    mjtNum qmin = q0, qmax = q0, strain = 0;
+    for (int i = 0; i < mech.nstep; i++) {
+      mj_step(m, d);
+      if (jnt >= 0) {
+        qmin = std::min(qmin, d->qpos[m->jnt_qposadr[jnt]]);
+        qmax = std::max(qmax, d->qpos[m->jnt_qposadr[jnt]]);
+      }
+      for (int e = m->flex_edgeadr[f];
+           e < m->flex_edgeadr[f] + m->flex_edgenum[f]; e++) {
+        strain = std::max(
+            strain,
+            std::abs(d->flexedge_length[e] / m->flexedge_length0[e] - 1));
+      }
+    }
+    EXPECT_EQ(d->warning[mjWARN_BADQACC].number, 0);
+    for (int i = 0; i < m->nq; i++) {
+      ASSERT_TRUE(std::isfinite(d->qpos[i])) << "qpos " << i;
+    }
+    EXPECT_LT(strain, 0.01);
+    if (jnt >= 0) {
+      EXPECT_GT(qmax - qmin, 0.05) << mech.joint;
+    }
+    mj_deleteData(d);
+    mj_deleteModel(m);
   }
 }
 

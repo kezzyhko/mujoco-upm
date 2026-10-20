@@ -20,6 +20,7 @@
 #include <chrono>
 #include <cmath>
 #include <csetjmp>
+#include <cstddef>
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
@@ -2162,11 +2163,12 @@ void mjCModel::CheckEmptyNames(void) {
 }
 
 
+// total length of the resolved paths of the assets in a list which have a file
 template <typename T>
 static size_t getpathslength(std::vector<T> list) {
   size_t result = 0;
   for (const auto& element : list) {
-    if (!element->File().empty()) { result += element->File().length() + 1; }
+    if (!element->File().empty()) { result += element->ResolvedFilePath().length() + 1; }
   }
 
   return result;
@@ -2801,18 +2803,20 @@ void mjCModel::CopyNames(mjModel* m) {
   }
 }
 
-// process paths from one list: concatenate, compute addresses
+// process paths from one list: concatenate resolved paths, compute addresses
 template <class T>
 static int pathlist(vector<T*>& list, int adr, int* path_adr, char* paths) {
   for (unsigned int i = 0; i < list.size(); ++i) {
     path_adr[i] = -1;
     if (!list[i] || list[i]->File().empty()) { continue; }
-    adr = addtolist(list[i]->File(), adr, &path_adr[i], paths);
+    adr = addtolist(list[i]->ResolvedFilePath(), adr, &path_adr[i], paths);
   }
 
   return adr;
 }
 
+// copy the resolved path of every asset with a file: the path LoadResource opened, against the
+// modelfiledir and meshdir/texturedir of the spec that owns the asset, not the file as authored
 void mjCModel::CopyPaths(mjModel* m) {
   std::vector<mjCMesh*>   meshes  = CompiledMeshes();
   std::vector<mjCHField*> hfields = CompiledHFields();
@@ -3898,6 +3902,9 @@ void mjCModel::CopyObjects(mjModel* m) {
     // copy rgb data
     mjtSize nbytes = static_cast<mjtSize>(ptex->nchannel) * ptex->width * ptex->height;
     memcpy(m->tex_data + data_adr, ptex->data_.data(), nbytes);
+
+    // the model has the pixels now; the next compile loads them again
+    std::vector<std::byte>().swap(ptex->data_);
 
     // advance counter
     data_adr += nbytes;
