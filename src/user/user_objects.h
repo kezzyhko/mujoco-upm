@@ -170,6 +170,16 @@ struct mjCBoundingVolumeHierarchy_ {
   double                         iquat_[4] = {1, 0, 0, 0};
 };
 
+// angle-weighted vertex and edge pseudonormals of a triangle mesh, which give the sign of the
+// distance to a closest point on a shared vertex or edge (Baerentzen and Aanaes, 2005)
+struct MeshPseudonormals {
+  MeshPseudonormals(const double* vert, int nvert, const int* face, int nface);
+
+  std::vector<double> vertex;  // vertex pseudonormals                 (nvert x 3)
+  std::vector<double> edge;    // edge pseudonormals                   (nedge x 3)
+  std::vector<int>    side;    // edge index of each side of each face (nface x 3)
+};
+
 class mjCBoundingVolumeHierarchy : public mjCBoundingVolumeHierarchy_ {
  public:
   // make bounding volume hierarchy
@@ -207,7 +217,10 @@ class mjCBoundingVolumeHierarchy : public mjCBoundingVolumeHierarchy_ {
   }
 
   // query signed distance from point to mesh surface
-  double QuerySignedDistance(const double* point, const double* vert, const int* face) const;
+  double QuerySignedDistance(const double*            point,
+                             const double*            vert,
+                             const int*               face,
+                             const MeshPseudonormals& normals) const;
 
  private:
   // internal class used during BVH construction, for partial sorting of bounding volumes
@@ -1610,6 +1623,10 @@ class mjCSkin_ : public mjCBase {
 
   // compilation scaled the vertices and the bind poses with the bones
   bool scaled_ = false;
+
+  // namespace of the attachments, applied to the bone names loaded from file
+  std::string bone_prefix_;
+  std::string bone_suffix_;
 };
 
 class mjCSkin : public mjCSkin_, private mjsSkin {
@@ -1636,7 +1653,8 @@ class mjCSkin : public mjCSkin_, private mjsSkin {
   const std::vector<float>&              get_bindquat() const { return bindquat_; }
   const std::vector<std::vector<int>>&   get_vertid() const { return vertid_; }
   const std::vector<std::vector<float>>& get_vertweight() const { return vertweight_; }
-  void                                   del_material() {
+  bool HasBoneNameSpace() const { return !bone_prefix_.empty() || !bone_suffix_.empty(); }
+  void del_material() {
     spec_material_.clear();
     material_.clear();
   }

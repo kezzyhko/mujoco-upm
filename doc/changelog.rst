@@ -5,17 +5,30 @@ Changelog
 Upcoming Version (not yet released)
 -----------------------------------
 
+Significant new features
+^^^^^^^^^^^^^^^^^^^^^^^^
+- Added a :ref:`batch API<siBatch>` in ``mujoco/mjbatch.h``: many simulations of one model stepped on a
+  thread pool of its own, each held as its integration state and loaded into an ``mjData`` for each call, so memory
+  scales with threads and results are bit-identical to a plain loop at any thread count. It supports per-simulation
+  model and option fields or models of the caller's, observations of the state after a step, recorded trajectories,
+  persistent simulations (required for sleep), and arbitrary per-simulation functions. Follows the design of
+  `mjbatch <https://github.com/kevinzakka/mjbatch>`__ by :github:user:`kevinzakka`.
+
 Engine
 ^^^^^^
-- Added bending :ref:`elasticity<flex-elasticity>` for 1D flexes, using a twist-free isotropic discrete elastic rod
-  model. The cross-section is selected with the new :ref:`section<flex-elasticity-section>` attribute: a circle of the
-  flex radius, or a box with half-sizes :ref:`sectionsize<flex-elasticity-sectionsize>` that uses the stiffness of its
-  weak axis. It is enabled by a positive :ref:`young<flex-elasticity-young>` modulus, requires a straight reference
-  configuration (curved initial poses can be set with ``qpos`` or keyframes), is compatible with edge equality
-  constraints, and is integrated implicitly by the :ref:`discrete<option-integrator>` integrator. Previously ``young``
-  was ignored for 1D flexes: existing models that set it now bend, and fail to compile if the cross-section is
-  degenerate (zero radius with the default circle section), if a vertex joins a zero-length edge, or if the rod is not
-  straight.
+- Flex improvements:
+
+  - Added bending :ref:`elasticity<flex-elasticity>` for 1D flexes, using a twist-free isotropic discrete elastic rod
+    model. The cross-section is selected with the new :ref:`section<flex-elasticity-section>` attribute: a circle of the
+    flex radius, or a box with half-sizes :ref:`sectionsize<flex-elasticity-sectionsize>` that uses the stiffness of its
+    weak axis. It is enabled by a positive :ref:`young<flex-elasticity-young>` modulus, requires a straight reference
+    configuration (curved initial poses can be set with ``qpos`` or keyframes), is compatible with edge equality
+    constraints, and is integrated implicitly by the :ref:`discrete<option-integrator>` integrator. Previously ``young``
+    was ignored for 1D flexes: existing models that set it now bend, and fail to compile if the cross-section is
+    degenerate (zero radius with the default circle section), if a vertex joins a zero-length edge, or if the rod is not
+    straight.
+  - Interpolated flexes (**trilinear** or **quadratic** :ref:`dofs<body-flexcomp-dof>`) now support
+    :ref:`self-collision<flex-contact-selfcollide>`, excluding elements in the same or neighboring cells.
 - Trees marked :ref:`sleep="init"<body-sleep>` which cannot be put to sleep now cause a warning rather than an error,
   and start awake. See :ref:`Sleeping<siSleepSleeping>` for details.
 - Added single-shot :ref:`multicontact<coMultiCCD>` for geoms with positive contact :ref:`margins<body-geom-margin>`.
@@ -24,22 +37,32 @@ Engine
   the model which recompiling the edited spec would give, apart from the values the compiler derives once:
 
   - The compiler alone computes the values which the spec leaves to it: the damping of position actuators given a
-    :ref:`dampratio<actuator-position-dampratio>`, the spring length of tendons given ``(-1, -1)``, the relative pose
-    of welds between bodies given a zero quaternion, and the model statistics. :ref:`mj_setConst` no longer resolves
-    these conventions when they are written into a compiled model; code which did so should set the values directly,
-    which :ref:`mj_copyBack` now copies to the spec for tendon spring lengths too.
+    :ref:`dampratio<actuator-position-dampratio>`, the spring length of tendons given ``(-1, -1)``, and the model
+    statistics. :ref:`mj_setConst` no longer resolves these conventions when they are written into a compiled
+    model; code which did so should set the values directly, which :ref:`mj_copyBack` now copies to the spec for
+    tendon spring lengths too.
   - Simulation no longer depends on the statistics: the constraint solvers scale their termination criteria by the
     trace of the current inertia matrix, of the model or of an island, instead of ``mjModel.stat.meaninertia``.
     Models solved with PGS, noslip or islands disabled can stop at slightly different iterations. The
     :ref:`meaninertia<statistic-meaninertia>` attribute is deprecated and will be removed in a future release (compiling
     a model that sets it now gives a warning; remove the attribute to migrate).
+  - For body-based :ref:`weld<equality-weld>` constraints without a specified :ref:`relpose<equality-weld-relpose>`,
+    the relative pose inferred in ``qpos0`` is now recomputed by :ref:`mj_setConst` when the model is modified after
+    compilation (matching the second body's :ref:`anchor<equality-connect-anchor>` in body-based ``connect``
+    constraints): the compiler marks such welds with a nonzero ``eq_data[11]``, and :ref:`mjNEQDATA<glNumericSizes>`
+    increased from 11 to 12.
+
+    .. admonition:: Breaking ABI changes
+       :class: attention
+
+       :ref:`mjNEQDATA<glNumericSizes>` increased from 11 to 12, and :ref:`mj_setConst` overwrites ``eq_data[3:10]`` of
+       body-based welds that had no ``relpose`` at compile time. Zero ``eq_data[11]`` before calling :ref:`mj_setConst`
+       to set the relative pose of such a weld directly.
   - ``MJSETCONST_ARRAYS`` in ``mjxmacro.h`` lists the arrays of :ref:`mjModel` which :ref:`mj_setConst` uses, and how
     each group of its computations uses them: those independent of the configuration, the kinematics and the inertia
     matrix in ``qpos0``, and the kinematics in ``qpos_spring``. Each entry is ``mjSC_IN`` if the group reads the array,
     ``mjSC_OUT`` if it writes it, ``mjSC_INOUT`` if both, or 0. ``MJSETCONST_SCALARS`` lists the scalars it
     writes.
-- Interpolated flexes (**trilinear** or **quadratic** :ref:`dofs<body-flexcomp-dof>`) now support
-  :ref:`self-collision<flex-contact-selfcollide>`, excluding elements in the same or neighboring cells.
 
 Compiler
 ^^^^^^^^
@@ -99,6 +122,10 @@ Compiler
 
 Python bindings
 ^^^^^^^^^^^^^^^
+- Added a :ref:`mujoco.batch<PyBatch>` module over the batch API: ``Batch(model, nsim)`` with live ``(nsim, ...)``
+  arrays from ``bind()`` and named views such as ``joint(name)``, per-simulation model fields from ``expand()``,
+  ``step``, ``forward``, ``reset``, ``set_const`` and ``rollout`` with the GIL released, and ``jac`` and ``ray``
+  queries.
 - Added support for building the Python bindings with `Bazel <https://bazel.build/>`__ (initially covers the core
   bindings, without rendering or the viewer).
 - Unallocated arena arrays of ``MjData``, for example ``efm_*`` arrays when the ``discrete`` integrator is not used or
@@ -133,13 +160,19 @@ Bug fixes
     :ref:`mju_error`, which from :ref:`mj_saveLastXML` also left a lock held. It is now a write error.
   - The Filament renderer called :ref:`mju_error` for a texture with an unsupported number of channels. It now skips the
     texture with a warning, like the classic renderer.
-- Fixed volume (solid) interpolated flexes whose first cell is empty, e.g. a trilinear :ref:`flexcomp<body-flexcomp>`
-  from a mesh that does not fill the corner of its bounding box. Their elasticity was gated on the stiffness of the
-  first cell, which is zero for an empty cell, so the whole flex had no elastic forces and no implicit stiffness.
-- A flex made with a strain :ref:`equality<flexcomp-edge-equality>` (e.g. by ``body.make_flex``) and then edited to
-  have none, or recompiled after such an edit, now compiles the stiffness of its current configuration. It used to keep
-  the strain constraint eigenmodes as its stiffness matrix, so a flex switched from shell to volumetric ignored
-  ``young`` and ``poisson`` and was unstable.
+- Fixed several bugs in interpolated :ref:`flexcomp<body-flexcomp>` elasticity:
+
+  - Volume (solid) interpolated flexes whose first cell is empty, e.g. a trilinear :ref:`flexcomp<body-flexcomp>` from
+    a mesh that does not fill the corner of its bounding box, now retain their elasticity. Their elasticity was gated on
+    the stiffness of the first cell, which is zero for an empty cell, so the whole flex had no elastic forces and no
+    implicit stiffness.
+  - A flex made with a strain :ref:`equality<flexcomp-edge-equality>` (e.g. by ``body.make_flex``) and then edited to
+    have none, or recompiled after such an edit, now compiles the stiffness of its current configuration. It used to keep
+    the strain constraint eigenmodes as its stiffness matrix, so a flex switched from shell to volumetric ignored
+    ``young`` and ``poisson`` and was unstable.
+  - Shell-mode interpolated flexes with :ref:`elastic2d<flex-elasticity-elastic2d>` set to ``"stretch"`` or ``"both"``
+    now apply membrane stretch forces and implicit stiffness, which were previously compiled into ``flex_stiffness``
+    but never applied; ``"bend"`` shells without strain constraints no longer allocate ``flex_stiffness``.
 - Fixed a bug in the Filament renderer where textures did not allocate mipmap levels, preventing mipmap generation and
   causing minification aliasing, and where sRGB textures were unconditionally excluded from mipmapping.
 - Fixed a bug in the Filament renderer where skins that share vertices across faces failed with an index count mismatch
