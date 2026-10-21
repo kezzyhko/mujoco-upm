@@ -3893,6 +3893,14 @@ STRUCTS: Mapping[str, StructDecl] = dict([
                  array_extent=('ntex',),
              ),
              StructFieldDecl(
+                 name='tex_contenttypeadr',
+                 type=PointerType(
+                     inner_type=ValueType(name='int'),
+                 ),
+                 doc='content type address in paths; -1: none',
+                 array_extent=('ntex',),
+             ),
+             StructFieldDecl(
                  name='mat_texid',
                  type=PointerType(
                      inner_type=ValueType(name='int'),
@@ -7390,6 +7398,11 @@ STRUCTS: Mapping[str, StructDecl] = dict([
                  doc='conflict resolution for attach',
              ),
              StructFieldDecl(
+                 name='passthrough',
+                 type=ValueType(name='mjtPassthrough'),
+                 doc='assets left by reference (bitmask)',
+             ),
+             StructFieldDecl(
                  name='LRopt',
                  type=ValueType(name='mjLROpt'),
                  doc='options for lengthrange computation',
@@ -9358,6 +9371,11 @@ STRUCTS: Mapping[str, StructDecl] = dict([
                  doc='vertical flip',
              ),
              StructFieldDecl(
+                 name='embed',
+                 type=ValueType(name='mjtEmbed'),
+                 doc='pixels in the model, or the file by reference',
+             ),
+             StructFieldDecl(
                  name='info',
                  type=PointerType(
                      inner_type=ValueType(name='mjString'),
@@ -10398,6 +10416,13 @@ STRUCTS: Mapping[str, StructDecl] = dict([
                      inner_type=ValueType(name='mjsMesh'),
                  ),
                  doc='mesh defaults',
+             ),
+             StructFieldDecl(
+                 name='texture',
+                 type=PointerType(
+                     inner_type=ValueType(name='mjsTexture'),
+                 ),
+                 doc='texture defaults',
              ),
              StructFieldDecl(
                  name='material',

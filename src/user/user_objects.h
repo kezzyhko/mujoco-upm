@@ -1722,15 +1722,17 @@ class mjCTexture_ : public mjCBase {
   std::string              spec_file_;
   std::string              spec_content_type_;
   std::vector<std::string> spec_cubefiles_;
+  bool                     byref_ = false;  // compiled by reference: no payload in the model
 };
 
 class mjCTexture : public mjCTexture_, private mjsTexture {
+  friend class mjCDef;
   friend class mjCModel;
   friend class mjXReader;
   friend class mjXWriter;
 
  public:
-  explicit mjCTexture(mjCModel*);
+  explicit mjCTexture(mjCModel* = nullptr, mjCDef* = nullptr);
   mjCTexture(const mjCTexture& other);
   mjCTexture& operator=(const mjCTexture& other);
   ~mjCTexture();
@@ -1750,10 +1752,23 @@ class mjCTexture : public mjCTexture_, private mjsTexture {
   std::string              ResolvedFilePath() const;  // modelfiledir + texturedir + file
   std::string              get_content_type() const { return content_type_; }
   std::vector<std::string> get_cubefiles() const { return cubefiles_; }
+  bool                     ByReference() const { return byref_; }
+
+  // decode a texture file as compilation stores it: a PNG to the given channels, a KTX as the raw
+  // blob of height 1, which requires channels 1; obj is only for error messages and may be null
+  static void Decode(const mjCBase*          obj,
+                     mjResource*             resource,
+                     const std::string&      mime_type,
+                     int                     channels,
+                     std::vector<std::byte>& image,
+                     unsigned int&           w,
+                     unsigned int&           h,
+                     bool&                   is_srgb);
 
  private:
   // store texture into asset cache
   std::string GetCacheId(const mjResource* resource, const std::string& asset_type);
+  const char* Ineligible(const mjVFS* vfs) const;              // why not by reference, or nullptr
   void        Builtin2D(void);                                 // make builtin 2D
   void        BuiltinCube(void);                               // make builtin cube
   void        Load2D(std::string filename, const mjVFS* vfs);  // load 2D from file
@@ -1770,16 +1785,20 @@ class mjCTexture : public mjCTexture_, private mjsTexture {
                 unsigned int&           h,
                 bool&                   is_srgb);
 
-  void LoadPNG(mjResource*             resource,
-               std::vector<std::byte>& image,
-               unsigned int&           w,
-               unsigned int&           h,
-               bool&                   is_srgb);
-  void LoadKTX(mjResource*             resource,
-               std::vector<std::byte>& image,
-               unsigned int&           w,
-               unsigned int&           h,
-               bool&                   is_srgb);
+  static void LoadPNG(const mjCBase*          obj,
+                      mjResource*             resource,
+                      int                     channels,
+                      std::vector<std::byte>& image,
+                      unsigned int&           w,
+                      unsigned int&           h,
+                      bool&                   is_srgb);
+  static void LoadKTX(const mjCBase*          obj,
+                      mjResource*             resource,
+                      int                     channels,
+                      std::vector<std::byte>& image,
+                      unsigned int&           w,
+                      unsigned int&           h,
+                      bool&                   is_srgb);
 };
 
 
@@ -2432,6 +2451,7 @@ class mjCDef : public mjsElement {
   mjCLight&    Light() { return light_; }
   mjCFlex&     Flex() { return flex_; }
   mjCMesh&     Mesh() { return mesh_; }
+  mjCTexture&  Texture() { return texture_; }
   mjCMaterial& Material() { return material_; }
   mjCPair&     Pair() { return pair_; }
   mjCEquality& Equality() { return equality_; }
@@ -2462,6 +2482,7 @@ class mjCDef : public mjsElement {
   mjCLight    light_;
   mjCFlex     flex_;
   mjCMesh     mesh_;
+  mjCTexture  texture_;
   mjCMaterial material_;
   mjCPair     pair_;
   mjCEquality equality_;

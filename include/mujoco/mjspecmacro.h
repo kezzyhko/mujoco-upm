@@ -44,6 +44,7 @@
   X(mjtBool,            savecanonical,     1) \
   X(mjtBool,            alignfree,         1) \
   X(mjtConflict,        conflict,          1) \
+  X(mjtPassthrough,     passthrough,       1) \
   X(mjLROpt,            LRopt,             1) \
   X(mjString*,          meshdir,           1) \
   X(mjString*,          texturedir,        1) \
@@ -402,6 +403,7 @@
     X   ( mjByteVec*,     data,         1  ) \
     X   ( mjtBool,        hflip,        1  ) \
     X   ( mjtBool,        vflip,        1  ) \
+    X   ( mjtEmbed,       embed,        1  ) \
     X   ( mjString*,      info,         1  )
 
 
@@ -614,6 +616,7 @@
     X( mjsLight*,    light,    1 ) \
     X( mjsFlex*,     flex,     1 ) \
     X( mjsMesh*,     mesh,     1 ) \
+    X( mjsTexture*,  texture,  1 ) \
     X( mjsMaterial*, material, 1 ) \
     X( mjsPair*,     pair,     1 ) \
     X( mjsEquality*, equality, 1 ) \

@@ -28,6 +28,18 @@ from etils import epath
 import mujoco
 import numpy as np
 
+# a 3x2 RGB PNG
+_TINY_PNG = bytes([
+    0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x00, 0x00, 0x0d,
+    0x49, 0x48, 0x44, 0x52, 0x00, 0x00, 0x00, 0x03, 0x00, 0x00, 0x00, 0x02,
+    0x08, 0x02, 0x00, 0x00, 0x00, 0x12, 0x16, 0xf1, 0x4d, 0x00, 0x00, 0x00,
+    0x1c, 0x49, 0x44, 0x41, 0x54, 0x08, 0xd7, 0x63, 0x78, 0xc1, 0xc0, 0xc0,
+    0xc0, 0xf0, 0xbf, 0xb8, 0xb8, 0x98, 0x81, 0xe1, 0x3f, 0xc3, 0xff, 0xff,
+    0xff, 0xc5, 0xc4, 0xc4, 0x00, 0x46, 0xd7, 0x07, 0x7f, 0xd2, 0x52, 0xa1,
+    0x41, 0x00, 0x00, 0x00, 0x00, 0x49, 0x45, 0x4e, 0x44, 0xae, 0x42, 0x60,
+    0x82,
+])
+
 
 def get_linenumber():
   cf = inspect.currentframe()
@@ -1311,12 +1323,103 @@ class SpecsTest(absltest.TestCase):
     texture.data = np.zeros((2, 2, 3), dtype=np.uint8).tobytes()
     spec.compile()
 
+  def test_texture_defaults(self):
+    spec = mujoco.MjSpec()
+    main = spec.default
+    self.assertEqual(main.texture.nchannel, 3)
+    flat = spec.add_default('flat', main)
+    flat.texture.type = mujoco.mjtTexture.mjTEXTURE_2D
+    flat.texture.builtin = mujoco.mjtBuiltin.mjBUILTIN_FLAT
+    flat.texture.width = 2
+    flat.texture.height = 3
+
+    # a texture takes the defaults of its class, and overrides them
+    with_class = spec.add_texture(flat, name='with')
+    self.assertEqual(with_class.classname.name, 'flat')
+    self.assertEqual(with_class.builtin, mujoco.mjtBuiltin.mjBUILTIN_FLAT)
+    self.assertEqual(with_class.height, 3)
+    overriding = spec.add_texture(default=flat, name='overriding', height=4)
+    self.assertEqual(overriding.builtin, mujoco.mjtBuiltin.mjBUILTIN_FLAT)
+    self.assertEqual(overriding.height, 4)
+    without = spec.add_texture(name='without')
+    self.assertEqual(without.classname.name, 'main')
+    self.assertEqual(without.builtin, mujoco.mjtBuiltin.mjBUILTIN_NONE)
+    without.type = mujoco.mjtTexture.mjTEXTURE_2D
+    without.builtin = mujoco.mjtBuiltin.mjBUILTIN_CHECKER
+    without.width = 4
+    without.height = 4
+
+    model = spec.compile()
+    np.testing.assert_array_equal(model.tex_height, [3, 4, 4])
+    self.assertIn('<default class="flat">', spec.to_xml())
+    self.assertIn('name="with" class="flat"/>', spec.to_xml())
+
+    # the defaults are read from XML
+    xml = textwrap.dedent("""\
+        <mujoco>
+          <default>
+            <default class="flat">
+              <texture type="2d" builtin="flat" width="2" height="3"/>
+            </default>
+          </default>
+          <asset>
+            <texture name="tex" class="flat"/>
+          </asset>
+        </mujoco>
+    """)
+    spec = mujoco.MjSpec.from_string(xml)
+    self.assertEqual(spec.find_default('flat').texture.width, 2)
+    self.assertEqual(spec.texture('tex').height, 3)
+
   def test_read_texture(self):
     spec = mujoco.MjSpec()
     texture = spec.add_texture(name='texture', height=1, width=2, nchannel=3)
     texture.data = bytes([1, 2, 3, 4, 5, 6])
     read_bytes = texture.data
     self.assertEqual(read_bytes, bytes([1, 2, 3, 4, 5, 6]))
+
+  def test_texture_by_reference(self):
+    # a file texture under the passthrough policy has no pixels in the model
+    png = os.path.join(self.create_tempdir().full_path, 'tiny.png')
+    with open(png, 'wb') as f:
+      f.write(_TINY_PNG)
+    xml = textwrap.dedent(f"""\
+        <mujoco>
+          <compiler passthrough="textures"/>
+          <asset>
+            <texture name="byref" type="2d" file="{png}"/>
+            <texture name="kept" type="2d" file="{png}" embed="true"/>
+          </asset>
+        </mujoco>
+    """)
+    spec = mujoco.MjSpec.from_string(xml)
+    self.assertEqual(
+        spec.compiler.passthrough, mujoco.mjtPassthrough.mjPASSTHROUGH_TEXTURES
+    )
+    self.assertEqual(spec.texture('byref').embed, mujoco.mjtEmbed.mjEMBED_AUTO)
+    self.assertEqual(spec.texture('kept').embed, mujoco.mjtEmbed.mjEMBED_TRUE)
+    model = spec.compile()
+    byref = model.texture('byref')
+    self.assertEqual(byref.adr[0], -1)
+    self.assertEqual(byref.width[0], 0)
+    self.assertEqual(byref.height[0], 0)
+    self.assertEqual(byref.data.size, 0)
+    self.assertEqual(byref.colorspace[0], mujoco.mjtColorSpace.mjCOLORSPACE_AUTO)
+    self.assertEqual(byref.contenttypeadr[0], -1)
+    path = model.paths[byref.pathadr[0] :].split(b'\0')[0]
+    # mujoco joins with '/', os.path with the platform separator
+    self.assertEqual(os.path.normpath(path.decode()), os.path.normpath(png))
+    kept = model.texture('kept')
+    self.assertGreaterEqual(kept.adr[0], 0)
+    self.assertEqual(kept.data.shape, (2, 3, 3))
+    self.assertEqual(model.ntexdata, kept.data.size)
+    self.assertIn('passthrough="textures"', spec.to_xml())
+
+    # the policy is a spec field; recompiling without it loads the pixels
+    spec.compiler.passthrough = mujoco.mjtPassthrough.mjPASSTHROUGH_NONE
+    model = spec.compile()
+    self.assertGreaterEqual(model.texture('byref').adr[0], 0)
+    self.assertNotIn('passthrough', spec.to_xml())
 
   def test_modify_texture(self):
     # Assign red, green and blue pixels, then make the first pixel yellow.

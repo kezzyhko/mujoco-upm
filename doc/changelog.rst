@@ -33,6 +33,11 @@ Engine
     Models solved with PGS, noslip or islands disabled can stop at slightly different iterations. The
     :ref:`meaninertia<statistic-meaninertia>` attribute is deprecated and will be removed in a future release (compiling
     a model that sets it now gives a warning; remove the attribute to migrate).
+  - ``MJSETCONST_ARRAYS`` in ``mjxmacro.h`` lists the arrays of :ref:`mjModel` which :ref:`mj_setConst` uses, and how
+    each group of its computations uses them: those independent of the configuration, the kinematics and the inertia
+    matrix in ``qpos0``, and the kinematics in ``qpos_spring``. Each entry is ``mjSC_IN`` if the group reads the array,
+    ``mjSC_OUT`` if it writes it, ``mjSC_INOUT`` if both, or 0. ``MJSETCONST_SCALARS`` lists the scalars it
+    writes.
 - Interpolated flexes (**trilinear** or **quadratic** :ref:`dofs<body-flexcomp-dof>`) now support
   :ref:`self-collision<flex-contact-selfcollide>`, excluding elements in the same or neighboring cells.
 
@@ -54,6 +59,34 @@ Compiler
   that would compile to the same asset, as those of a sub-model attached several times do: the first of each group is
   kept and every reference to the others is rewritten to it. Like :ref:`mjs_fuseStatic`, it returns the number of
   assets merged.
+.. admonition:: Breaking API changes
+   :class: attention
+
+   - :ref:`mjs_addTexture` now takes a default class, like :ref:`mjs_addMesh` and :ref:`mjs_addMaterial`.
+
+     **Migration:** ``mjs_addTexture(spec)`` → ``mjs_addTexture(spec, NULL)``. ``MjSpec.add_texture`` is unchanged.
+
+- Textures can be left :ref:`by reference<CAssetReference>` instead of being decoded into :ref:`mjModel`. With
+  :ref:`compiler/passthrough<compiler-passthrough>` set to "textures", or :ref:`texture/embed<asset-texture-embed>`
+  set to "false", a texture loaded from a single file is not read at compile time; the model holds its path and not its
+  pixels. A scene which attaches many textured sub-models then loads in a fraction of the memory and time. The default
+  is unchanged: everything embedded.
+
+  - What the model holds: ``tex_adr`` is -1, ``tex_width`` and ``tex_height`` are 0 and ``ntexdata`` excludes the
+    texture; the resolved path is at ``tex_pathadr`` and the authored :ref:`content_type<asset-texture-content_type>`,
+    when there is one, at the new ``tex_contenttypeadr``. Flipped, composite, six-file, procedural, buffer and
+    in-memory textures stay embedded, as does any texture with :at:`embed` "true" (:at:`embed` can be set in a
+    :ref:`default class<default-texture>`).
+  - Getting the pixels: :ref:`mj_loadTexture` decodes a texture of either kind, resolving a
+    :ref:`colorspace<asset-texture-colorspace>` of "auto" as compilation would; :ref:`mj_embedAssets` returns a copy
+    of the model with every by-reference texture loaded, equal to an eager compile, which followed by
+    :ref:`mj_saveModel` gives a hermetic MJB. Both are in Python as ``mujoco.mj_loadTexture`` and
+    ``mujoco.mj_embedAssets``.
+  - Rendering: the built-in renderer loads by-reference textures in :ref:`mjr_makeContext` and
+    :ref:`mjr_uploadTexture`; the Filament renderer loads them through :ref:`mj_loadTexture` too, and uploads each file
+    once for all textures that share it. A file which does not resolve is a warning and an untextured material.
+- Textures can have :ref:`default classes<default-texture>`: ``mjsDefault`` has a ``texture`` member and
+  :ref:`texture<asset-texture>` takes a :ref:`class<asset-texture-class>`.
 - The asset paths in :ref:`mjModel` (``paths`` at ``mesh_pathadr``, ``hfield_pathadr``, ``skin_pathadr`` and
   ``tex_pathadr``) are now the path or URI from which the compiler read the asset: the model file's directory,
   ``meshdir`` or ``texturedir``, and the :at:`file`, unless the file is an absolute path or a URI, which is kept as is.

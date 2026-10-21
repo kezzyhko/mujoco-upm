@@ -48,6 +48,7 @@
 #include "user/user_model.h"
 #include "user/user_resource.h"
 #include "user/user_util.h"
+#include "user/user_vfs.h"
 
 namespace {
 namespace mju = ::mujoco::util;
@@ -1405,6 +1406,7 @@ mjCDef::mjCDef() {
   mjs_defaultLight(&light_.spec);
   mjs_defaultFlex(&flex_.spec);
   mjs_defaultMesh(&mesh_.spec);
+  mjs_defaultTexture(&texture_.spec);
   mjs_defaultMaterial(&material_.spec);
   mjs_defaultPair(&pair_.spec);
   mjs_defaultEquality(&equality_.spec);
@@ -1481,6 +1483,7 @@ void mjCDef::CopyWithoutChildren(const mjCDef& other) {
   light_    = other.light_;
   flex_     = other.flex_;
   mesh_     = other.mesh_;
+  texture_  = other.texture_;
   material_ = other.material_;
   pair_     = other.pair_;
   equality_ = other.equality_;
@@ -1498,6 +1501,7 @@ void mjCDef::PointToLocal() {
   light_.PointToLocal();
   flex_.PointToLocal();
   mesh_.PointToLocal();
+  texture_.PointToLocal();
   material_.PointToLocal();
   pair_.PointToLocal();
   equality_.PointToLocal();
@@ -1511,6 +1515,7 @@ void mjCDef::PointToLocal() {
   spec.light    = &light_.spec;
   spec.flex     = &flex_.spec;
   spec.mesh     = &mesh_.spec;
+  spec.texture  = &texture_.spec;
   spec.material = &material_.spec;
   spec.pair     = &pair_.spec;
   spec.equality = &equality_.spec;
@@ -1527,6 +1532,7 @@ void mjCDef::CopyFromSpec() {
   light_.CopyFromSpec();
   flex_.CopyFromSpec();
   mesh_.CopyFromSpec();
+  texture_.CopyFromSpec();
   material_.CopyFromSpec();
   pair_.CopyFromSpec();
   equality_.CopyFromSpec();
@@ -5667,13 +5673,9 @@ void mjCHField::Compile(const mjVFS* vfs) {
 //------------------ class mjCTexture implementation -----------------------------------------------
 
 // initialize defaults
-mjCTexture::mjCTexture(mjCModel* _model) {
+mjCTexture::mjCTexture(mjCModel* _model, mjCDef* _def) {
   mjs_defaultTexture(&spec);
   elemtype = mjOBJ_TEXTURE;
-
-  // set model pointer
-  model = _model;
-  if (_model) compiler = &_model->spec.compiler;
 
   // clear user settings: single file
   spec_file_.clear();
@@ -5685,6 +5687,14 @@ mjCTexture::mjCTexture(mjCModel* _model) {
   // clear internal variables
   data_.clear();
   spec_data_.clear();
+
+  // reset to default if given
+  if (_def) { *this = _def->Texture(); }
+
+  // set model pointer
+  model = _model;
+  if (_model) compiler = &_model->spec.compiler;
+  classname = (_def ? _def->name : (_model ? "main" : ""));
 
   // point to local
   PointToLocal();
@@ -5729,7 +5739,7 @@ void mjCTexture::PointToLocal() {
 std::string mjCTexture::AssetKey() const {
 #define X(type, name, dim) +1
 #define XVEC(type, name, dim) +1
-  static_assert((0 MJSTEXTURE_FIELDS) == 21,
+  static_assert((0 MJSTEXTURE_FIELDS) == 22,
                 "a field was added to mjsTexture: decide whether AssetKey reads it");
 #undef X
 #undef XVEC
@@ -5756,6 +5766,7 @@ std::string mjCTexture::AssetKey() const {
   mjuu_addkey(key, s.gridlayout);
   mjuu_addkey(key, s.hflip);
   mjuu_addkey(key, s.vflip);
+  mjuu_addkey(key, s.embed);
   mjuu_addkey(key, spec_data_.size());
   return key;
 }
@@ -6019,22 +6030,24 @@ void mjCTexture::BuiltinCube(void) {
 }
 
 // load PNG file
-void mjCTexture::LoadPNG(mjResource*             resource,
+void mjCTexture::LoadPNG(const mjCBase*          obj,
+                         mjResource*             resource,
+                         int                     channels,
                          std::vector<std::byte>& image,
                          unsigned int&           w,
                          unsigned int&           h,
                          bool&                   is_srgb) {
   LodePNGColorType color_type;
-  if (nchannel == 4) {
+  if (channels == 4) {
     color_type = LCT_RGBA;
-  } else if (nchannel == 3) {
+  } else if (channels == 3) {
     color_type = LCT_RGB;
-  } else if (nchannel == 1) {
+  } else if (channels == 1) {
     color_type = LCT_GREY;
   } else {
-    throw mjCError(this, "Unsupported number of channels: %s", std::to_string(nchannel).c_str());
+    throw mjCError(obj, "Unsupported number of channels: %s", std::to_string(channels).c_str());
   }
-  PNGImage png_image = PNGImage::Load(this, resource, color_type);
+  PNGImage png_image = PNGImage::Load(obj, resource, color_type);
   w                  = png_image.Width();
   h                  = png_image.Height();
   is_srgb            = png_image.IsSRGB();
@@ -6044,28 +6057,52 @@ void mjCTexture::LoadPNG(mjResource*             resource,
 }
 
 // load KTX file
-void mjCTexture::LoadKTX(mjResource*             resource,
+void mjCTexture::LoadKTX(const mjCBase*          obj,
+                         mjResource*             resource,
+                         int                     channels,
                          std::vector<std::byte>& image,
                          unsigned int&           w,
                          unsigned int&           h,
                          bool&                   is_srgb) {
+  if (channels != 1) {
+    throw mjCError(obj, "KTX textures must have 1 channel, got %d", nullptr, channels);
+  }
   const void* buffer    = 0;
   int         buffer_sz = mju_readResource(resource, &buffer);
 
   // still not found
   if (buffer_sz < 0) {
-    throw mjCError(this, "could not read texture file '%s'", resource->name);
+    throw mjCError(obj, "could not read texture file '%s'", resource->name);
   } else if (!buffer_sz) {
-    throw mjCError(this, "texture file is empty: '%s'", resource->name);
+    throw mjCError(obj, "texture file is empty: '%s'", resource->name);
   }
 
-  w        = buffer_sz;
-  h        = 1;
-  nchannel = 1;
-  is_srgb  = false;
+  w       = buffer_sz;
+  h       = 1;
+  is_srgb = false;
 
   image.resize(buffer_sz);
   memcpy(image.data(), buffer, buffer_sz);
+}
+
+// decode a texture file as compilation stores it, without an element
+void mjCTexture::Decode(const mjCBase*          obj,
+                        mjResource*             resource,
+                        const std::string&      mime_type,
+                        int                     channels,
+                        std::vector<std::byte>& image,
+                        unsigned int&           w,
+                        unsigned int&           h,
+                        bool&                   is_srgb) {
+  if (mime_type == "image/png") {
+    LoadPNG(obj, resource, channels, image, w, h, is_srgb);
+  } else if (mime_type == "image/ktx") {
+    LoadKTX(obj, resource, channels, image, w, h, is_srgb);
+  } else {
+    std::string msg  = "unsupported content type: '" + mime_type + "' for file '";
+    msg             += std::string(resource->name) + "'";
+    throw mjCError(obj, "%s", msg.c_str());
+  }
 }
 
 // load custom file
@@ -6143,6 +6180,9 @@ void mjCTexture::LoadFlip(std::string             filename,
     throw mjCError(this, "unsupported content type: '%s'", asset_type.c_str());
   }
 
+  // a KTX is stored as a single-channel blob, whatever was authored
+  if (asset_type == "image/ktx") { nchannel = 1; }
+
   // try loading from cache
   mjSpec*     owning_spec = model->FindSpec(compiler);
   mjResource* resource    = LoadResource(owning_spec->modelfiledir->c_str(), filename, vfs);
@@ -6152,12 +6192,10 @@ void mjCTexture::LoadFlip(std::string             filename,
   }
 
   try {
-    if (asset_type == "image/png") {
-      LoadPNG(resource, image, w, h, is_srgb);
-    } else if (asset_type == "image/ktx") {
-      if (hflip || vflip) { throw mjCError(this, "cannot flip KTX textures"); }
-      LoadKTX(resource, image, w, h, is_srgb);
+    if (asset_type == "image/ktx" && (hflip || vflip)) {
+      throw mjCError(this, "cannot flip KTX textures");
     }
+    Decode(this, resource, asset_type, nchannel, image, w, h, is_srgb);
   } catch (mjCError err) {
     mju_closeResource(resource);
     throw err;
@@ -6403,12 +6441,52 @@ void mjCTexture::LoadCubeSeparate(const mjVFS* vfs) {
 }
 
 
+// why this texture cannot be by reference, nullptr if it can: a single file used as it is, which
+// a consumer reads for itself (a VFS buffer has no lifetime beyond compilation, so it is embedded)
+const char* mjCTexture::Ineligible(const mjVFS* vfs) const {
+  if (!data_.empty()) { return "it is given as a buffer"; }
+  if (builtin != mjBUILTIN_NONE) { return "it is builtin"; }
+  if (file_.empty()) { return "it is given as cube files"; }
+  if (hflip || vflip) { return "it is flipped"; }
+  if (gridsize[0] != 1 || gridsize[1] != 1) { return "it is a grid"; }
+  if (vfs) {
+    mjSpec* owning_spec = model->FindSpec(compiler);
+    if (!owning_spec) { owning_spec = &model->spec; }
+    std::string        file     = model->strippath ? mjuu_strippath(file_) : file_;
+    FilePath           filename = FilePath(mjs_getString(compiler->texturedir)) + FilePath(file);
+    mujoco::user::VFS* impl     = mujoco::user::VFS::Upcast(const_cast<mjVFS*>(vfs));
+    if (impl->InMemory(owning_spec->modelfiledir->c_str(), filename.c_str())) {
+      return "its file is served from memory by the VFS";
+    }
+  }
+  return nullptr;
+}
+
+
 // compiler
 void mjCTexture::Compile(const mjVFS* vfs) {
   CopyFromSpec();
 
   mujoco::user::FilePath texturedir_;
   texturedir_ = FilePath(mjs_getString(compiler->texturedir));
+
+  // by reference: the policy of the model being compiled, unless this texture says otherwise
+  byref_      = false;
+  bool policy = model->spec.compiler.passthrough & mjPASSTHROUGH_TEXTURES;
+  if ((policy && embed == mjEMBED_AUTO) || embed == mjEMBED_FALSE) {
+    if (const char* reason = Ineligible(vfs)) {
+      if (embed == mjEMBED_FALSE) {
+        throw mjCError(this, "texture cannot be by reference: %s", reason);
+      }
+    } else {
+      // nothing is read: the model gets the resolved path and no payload
+      if (model->strippath) { file_ = mjuu_strippath(file_); }
+      if (GetAssetContentType(file_, content_type_) == "image/ktx") { nchannel = 1; }
+      width = height = 0;
+      byref_         = true;
+      return;
+    }
+  }
 
   // buffer from user
   if (!data_.empty()) {
