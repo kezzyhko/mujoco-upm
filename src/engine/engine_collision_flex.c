@@ -386,6 +386,62 @@ int mjc_GeomElem(const mjModel* m, mjData* d, mjPreContact* con, int g, int f, i
 }
 
 
+// range [lo, hi] of the interpolation grid cells containing vertex v of flex f, per axis: a vertex
+//   on an internal cell plane belongs to the cells on both sides, so that the result does not
+//   depend on the side the vertex is rounded to; vertices within eps of a plane are treated as on
+//   the plane, where eps is relative to the cell size and covers the rounding of flex_vert0 in
+//   [0, 1] in single precision
+void mjc_vertCellRange(const mjModel* m, int f, int v, int lo[3], int hi[3]) {
+  const mjtNum* coord = m->flex_vert0 + 3*(m->flex_vertadr[f] + v);
+  const int* cellnum = m->flex_cellnum + 3*f;
+  for (int i = 0; i < 3; i++) {
+    mjtNum u = coord[i] * cellnum[i];
+    mjtNum eps = 1e-6 * cellnum[i];
+    lo[i] = mjMAX(0, mjMIN(cellnum[i] - 1, (int)mju_floor(u - eps)));
+    hi[i] = mjMAX(0, mjMIN(cellnum[i] - 1, (int)mju_floor(u + eps)));
+  }
+}
+
+
+// return 1 if cell ranges [lo1, hi1] and [lo2, hi2] are within distance 1 along every axis
+int mjc_cellRangeShared(const int lo1[3], const int hi1[3], const int lo2[3], const int hi2[3]) {
+  return lo2[0] - hi1[0] <= 1 && lo1[0] - hi2[0] <= 1 &&
+         lo2[1] - hi1[1] <= 1 && lo1[1] - hi2[1] <= 1 &&
+         lo2[2] - hi1[2] <= 1 && lo1[2] - hi2[2] <= 1;
+}
+
+
+// return 1 if elements e1 and e2 of flex f have vertices in the same or in neighboring cells of
+//   its interpolation grid, 0 for non-interpolated flexes. Such elements are driven by a common
+//   grid node (neighboring cells share a face, edge or corner of nodes, for both trilinear and
+//   quadratic interpolation) and can only intersect if the grid inverts locally, which is resisted
+//   by elasticity; their vertices have no body for the shared-body filter
+int mjc_ElemSharedNode(const mjModel* m, int f, int e1, int e2) {
+  if (!m->flex_interp[f]) {
+    return 0;
+  }
+
+  int dim = m->flex_dim[f];
+  const int* edata1 = m->flex_elem + m->flex_elemdataadr[f] + e1*(dim + 1);
+  const int* edata2 = m->flex_elem + m->flex_elemdataadr[f] + e2*(dim + 1);
+  int lo1[4][3], hi1[4][3], lo2[4][3], hi2[4][3];
+  for (int i = 0; i <= dim; i++) {
+    mjc_vertCellRange(m, f, edata1[i], lo1[i], hi1[i]);
+    mjc_vertCellRange(m, f, edata2[i], lo2[i], hi2[i]);
+  }
+
+  // cell ranges within distance 1 along every axis
+  for (int i1 = 0; i1 <= dim; i1++) {
+    for (int i2 = 0; i2 <= dim; i2++) {
+      if (mjc_cellRangeShared(lo1[i1], hi1[i1], lo2[i2], hi2[i2])) {
+        return 1;
+      }
+    }
+  }
+  return 0;
+}
+
+
 // test two elems for collision, return number of contacts
 int mjc_ElemElem(const mjModel* m, mjData* d, mjPreContact* con, int f1, int e1,
                  int f2, int e2, mjtNum margin) {

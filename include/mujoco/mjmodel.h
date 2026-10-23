@@ -32,7 +32,7 @@
 
 //---------------------------------- sizes ---------------------------------------------------------
 
-#define mjNEQDATA       11        // number of eq_data fields
+#define mjNEQDATA       12        // number of eq_data fields
 #define mjNDYN          10        // number of actuator dynamics parameters
 #define mjNGAIN         10        // number of actuator gain parameters
 #define mjNBIAS         10        // number of actuator bias parameters
@@ -698,6 +698,7 @@ typedef struct mjModel_ {
   mjtSize*  tex_adr;              // start address in tex_data                (ntex x 1)
   mjtByte*  tex_data;             // pixel values                             (ntexdata x 1)
   int*      tex_pathadr;          // address of texture asset path; -1: none  (ntex x 1)
+  int*      tex_contenttypeadr;   // content type address in paths; -1: none  (ntex x 1)
 
   // materials
   int*      mat_texid;            // indices of textures; -1: none            (nmat x mjNTEXROLE)
@@ -894,7 +895,7 @@ typedef struct mjModel_ {
   int*      names_map;            // internal hash map of names               (nnames_map x 1)
 
   // paths
-  char*     paths;                // paths to assets, 0-terminated            (npaths x 1)
+  char*     paths;                // resolved paths to assets, 0-terminated   (npaths x 1)
 
   // sparse structures
   int*      B_rownnz;             // body-dof: non-zeros in each row          (nbody x 1)

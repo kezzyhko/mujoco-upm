@@ -774,6 +774,7 @@ mjrfMaterial ModelRenderables::GetMaterial(mjtObj obj_type, int obj_index,
   mjrf_defaultMaterial(&material);
 
   int matid = -1;
+  int dataid = -1;
   mjtGeom geom_type = mjGEOM_NONE;
   const float* rgba = nullptr;
   const mjtNum* size = nullptr;
@@ -788,12 +789,14 @@ mjrfMaterial ModelRenderables::GetMaterial(mjtObj obj_type, int obj_index,
       pos = model->geom_pos + (3 * obj_index);
       quat = model->geom_quat + (4 * obj_index);
       matid = model->geom_matid[obj_index];
+      dataid = model->geom_dataid[obj_index];
       break;
     case mjOBJ_SITE:
       geom_type = (mjtGeom)model->site_type[obj_index];
       rgba = model->site_rgba + (4 * obj_index);
       size = model->site_size + (3 * obj_index);
       matid = model->site_matid[obj_index];
+      dataid = model->site_dataid[obj_index];
       break;
     case mjOBJ_FLEX:
       geom_type = mjGEOM_FLEX;
@@ -836,6 +839,7 @@ mjrfMaterial ModelRenderables::GetMaterial(mjtObj obj_type, int obj_index,
     material.metallic_texture = get_texture(mjTEXROLE_METALLIC);
     material.roughness_texture = get_texture(mjTEXROLE_ROUGHNESS);
     material.occlusion_texture = get_texture(mjTEXROLE_OCCLUSION);
+    material.opacity_texture = get_texture(mjTEXROLE_OPACITY);
 
     material.emissive = model->mat_emission[matid];
     material.specular = model->mat_specular[matid];
@@ -844,10 +848,10 @@ mjrfMaterial ModelRenderables::GetMaterial(mjtObj obj_type, int obj_index,
     material.metallic = model->mat_metallic[matid];
     material.roughness = model->mat_roughness[matid];
 
-    const float* rgba = model->mat_rgba + 4 * matid;
-    if (rgba[0] != 0.5f || rgba[1] != 0.5f || rgba[2] != 0.5f ||
-        rgba[3] != 1.0f) {
-      xtof(material.color, rgba, 4);
+    if (rgba[0] == 0.5f && rgba[1] == 0.5f && rgba[2] == 0.5f &&
+        rgba[3] == 1.0f) {
+      const float* mat_rgba = model->mat_rgba + 4 * matid;
+      xtof(material.color, mat_rgba, 4);
     }
   } else {
     material.emissive = 0;
@@ -942,9 +946,29 @@ mjrfMaterial ModelRenderables::GetMaterial(mjtObj obj_type, int obj_index,
             (0.5f * dot_pos_axis_x - 0.5f * plane_scale) * tex_repeat[0] - 0.5f;
         material.uv_offset[1] =
             (-0.5f * dot_pos_axis_y - 0.5f * plane_scale) * tex_repeat[1] - 0.5f;
-      } else if (tex_uniform) {
-        material.uv_scale[0] *= (fsize[0] ? fsize[0] : 1.0f);
-        material.uv_scale[1] *= (fsize[1] ? fsize[1] : 1.0f);
+      } else {
+        if (geom_type == mjGEOM_HFIELD ||
+            ((geom_type == mjGEOM_MESH || geom_type == mjGEOM_SDF) &&
+             dataid >= 0 && model->mesh_texcoordadr[dataid] < 0)) {
+          if (fsize[0] > 0) {
+            material.uv_scale[0] /= mju_max(mjMINVAL, fsize[0]);
+          }
+          if (fsize[1] > 0) {
+            material.uv_scale[1] /= mju_max(mjMINVAL, fsize[1]);
+          }
+          // Adjust the offset to the origin to match OpenGL's glTexGen.
+          material.uv_offset[0] = -0.5f;
+          material.uv_offset[1] = -0.5f;
+        }
+        if (tex_uniform && geom_type != mjGEOM_FLEX &&
+            geom_type != mjGEOM_SKIN) {
+          if (fsize[0] > 0) {
+            material.uv_scale[0] *= fsize[0];
+          }
+          if (fsize[1] > 0) {
+            material.uv_scale[1] *= fsize[1];
+          }
+        }
       }
     } else {
       // For cube maps, if `tex_uniform` is true, then scale the texture so that

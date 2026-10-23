@@ -14,6 +14,7 @@
 
 // Tests for user/user_model.cc.
 
+#include <algorithm>
 #include <array>
 #include <cmath>
 #include <cstdio>
@@ -543,21 +544,59 @@ TEST_F(UserFlexTest, BoundingBoxCoordinates) {
   EXPECT_EQ(m->flex_vert0[3 * m->nflexvert - 1], 1);
 }
 
-TEST_F(UserFlexTest, TrilinearCannotDoSelfCollision) {
-  std::array<char, 1024> error;
-  static constexpr char xml_selfcoll[] = R"(
-  <mujoco>
-  <worldbody>
-    <flexcomp name="test" type="grid" count="2 2 2" spacing="1 1 1" dim="3" dof="trilinear">
-      <contact selfcollide="auto"/>
-    </flexcomp>
-  </worldbody>
-  </mujoco>
-  )";
-  MjModelPtr m1 = LoadModelFromString(xml_selfcoll, error.data(), error.size());
-  EXPECT_THAT(m1.get(), IsNull()) << error.data();
-  EXPECT_THAT(error.data(),
-              HasSubstr("trilinear interpolation cannot do self-collision"));
+TEST_F(UserFlexTest, InterpolatedFlexCanSelfCollide) {
+  for (const char* dof : {"trilinear", "quadratic"}) {
+    std::string xml = std::string(R"(
+    <mujoco>
+    <worldbody>
+      <flexcomp name="test" type="grid" count="3 3 3" spacing="1 1 1" dim="3"
+                dof=")") +
+                      dof + R"(">
+        <contact selfcollide="auto"/>
+      </flexcomp>
+    </worldbody>
+    </mujoco>
+    )";
+    std::array<char, 1024> error;
+    MjModelPtr m = LoadModelFromString(xml.c_str(), error.data(), error.size());
+    ASSERT_THAT(m.get(), NotNull()) << dof << ": " << error.data();
+    EXPECT_NE(m->flex_interp[0], 0) << dof;
+    EXPECT_EQ(m->flex_selfcollide[0], mjFLEXSELF_AUTO) << dof;
+    MjDataPtr d = MakeData(m);
+    mj_step(m.get(), d.get());
+  }
+}
+
+// cellcount sizes the nodal grid of every flexcomp type
+TEST_F(UserFlexTest, InterpolatedCellcountAllTypes) {
+  const char* types[][2] = {
+      {"grid", "3"}, {"box", "2"}, {"cylinder", "2"}, {"ellipsoid", "2"}};
+  for (const auto& [type, dim] : types) {
+    for (const char* dof : {"trilinear", "quadratic"}) {
+      std::string xml = std::string(R"(
+      <mujoco>
+      <worldbody>
+        <flexcomp name="test" type=")") +
+                        type + R"(" count="4 4 4" spacing=".1 .1 .1" dim=")" +
+                        dim + R"(" dof=")" + dof + R"(" cellcount="2 3 2">
+          <contact selfcollide="none"/>
+        </flexcomp>
+      </worldbody>
+      </mujoco>
+      )";
+      std::array<char, 1024> error;
+      MjModelPtr m =
+          LoadModelFromString(xml.c_str(), error.data(), error.size());
+      ASSERT_THAT(m.get(), NotNull())
+          << type << ", " << dof << ": " << error.data();
+      int order = std::abs(m->flex_interp[0]);
+      EXPECT_EQ(m->flex_nodenum[0],
+                (2 * order + 1) * (3 * order + 1) * (2 * order + 1))
+          << type << ", " << dof;
+      MjDataPtr d = MakeData(m);
+      mj_step(m.get(), d.get());
+    }
+  }
 }
 
 TEST_F(UserFlexTest, TrilinearInterpolation) {
@@ -1409,6 +1448,62 @@ TEST_F(UserFlexTest, EmptyCellNodePinning) {
   MjDataPtr d = MakeData(m);
   for (int i = 0; i < 10; i++) {
     mj_step(m.get(), d.get());
+  }
+}
+
+// the elastic mechanisms use 1D rods with bending elasticity: they load and
+// simulate stably, the drives move them, and the edge equalities keep the rods
+// nearly inextensible
+TEST_F(UserFlexTest, MechanismRods) {
+  struct Mechanism {
+    const char* file;
+    const char* flex;
+    const char* joint;  // driven joint that must move, or nullptr
+    int nstep;
+  };
+  const Mechanism mechanisms[] = {
+      {"flex/mechanisms/cantilever.xml", "rod", nullptr, 500},
+      {"flex/mechanisms/slidercrank.xml", "rod", "slide", 1500},
+      {"flex/mechanisms/dipper.xml", "arm_flex", "arm", 3000},
+  };
+  for (const Mechanism& mech : mechanisms) {
+    SCOPED_TRACE(mech.file);
+    const std::string xml_path = GetModelPath(mech.file);
+    std::array<char, 1024> error;
+    mjModel* m = mj_loadXML(xml_path.c_str(), 0, error.data(), error.size());
+    ASSERT_THAT(m, NotNull()) << error.data();
+    int f = mj_name2id(m, mjOBJ_FLEX, mech.flex);
+    ASSERT_GE(f, 0);
+    EXPECT_EQ(m->flex_dim[f], 1);
+    EXPECT_GE(m->flex_bendingadr[f], 0);
+
+    mjData* d = mj_makeData(m);
+    int jnt = mech.joint ? mj_name2id(m, mjOBJ_JOINT, mech.joint) : -1;
+    mjtNum q0 = jnt >= 0 ? d->qpos[m->jnt_qposadr[jnt]] : 0;
+    mjtNum qmin = q0, qmax = q0, strain = 0;
+    for (int i = 0; i < mech.nstep; i++) {
+      mj_step(m, d);
+      if (jnt >= 0) {
+        qmin = std::min(qmin, d->qpos[m->jnt_qposadr[jnt]]);
+        qmax = std::max(qmax, d->qpos[m->jnt_qposadr[jnt]]);
+      }
+      for (int e = m->flex_edgeadr[f];
+           e < m->flex_edgeadr[f] + m->flex_edgenum[f]; e++) {
+        strain = std::max(
+            strain,
+            std::abs(d->flexedge_length[e] / m->flexedge_length0[e] - 1));
+      }
+    }
+    EXPECT_EQ(d->warning[mjWARN_BADQACC].number, 0);
+    for (int i = 0; i < m->nq; i++) {
+      ASSERT_TRUE(std::isfinite(d->qpos[i])) << "qpos " << i;
+    }
+    EXPECT_LT(strain, 0.01);
+    if (jnt >= 0) {
+      EXPECT_GT(qmax - qmin, 0.05) << mech.joint;
+    }
+    mj_deleteData(d);
+    mj_deleteModel(m);
   }
 }
 
@@ -2689,6 +2784,217 @@ TEST_F(UserFlexTest, MakeFlexFileOrMeshName) {
   mj_deleteSpec(spec);
 }
 
+// make a trilinear box surface flex, as a strain-constrained shell or as a
+// solid
+static mjsFlex* MakeTrilinearBox(mjSpec* spec, bool shell) {
+  mjsBody* body = mjs_addBody(mjs_findBody(spec, "world"), nullptr);
+  mjs_setName(body->element, "obj");
+  int count[3] = {4, 4, 4};
+  int cellcount[3] = {2, 2, 2};
+  double spacing[3] = {.02, .02, .02};
+  mjsFlex* flex =
+      mjs_makeFlex(body, "cube", "box", 2, "trilinear", count, cellcount,
+                   spacing, nullptr, 0.001, 0.05, 0, shell ? 3 : 0, 0, 0,
+                   shell ? 1 : 0, nullptr, nullptr, nullptr, nullptr, nullptr);
+  if (flex) {
+    flex->selfcollide = mjFLEXSELF_NONE;
+  }
+  return flex;
+}
+
+// a flex made as a strain-constrained shell and then switched to a volumetric
+// solid (elastic2d none, strain equalities deleted) must compile the same
+// stiffness as a flex made volumetric from the start, and stay stable
+TEST_F(UserFlexTest, ShellSwitchedToSolidStiffness) {
+  using SpecPtr = std::unique_ptr<mjSpec, decltype(&mj_deleteSpec)>;
+  auto set_solid = [](mjsFlex* flex) {
+    flex->young = 3e4;
+    flex->poisson = 0.4;
+    flex->damping = 0.002;
+  };
+
+  // reference: made volumetric
+  SpecPtr ref_spec(mj_makeSpec(), mj_deleteSpec);
+  mjsFlex* ref_flex = MakeTrilinearBox(ref_spec.get(), /*shell=*/false);
+  ASSERT_THAT(ref_flex, NotNull()) << mjs_getError(ref_spec.get());
+  set_solid(ref_flex);
+  MjModelPtr ref(mj_compile(ref_spec.get(), nullptr));
+  ASSERT_THAT(ref, NotNull()) << mjs_getError(ref_spec.get());
+  ASSERT_EQ(ref->flex_interp[0], 1);
+  int nstiffness = ref->nflexstiffness;
+  ASSERT_GT(nstiffness, 0);
+  ASSERT_LT(ref->flex_stiffness[0], 0) << "expected a raw stiffness matrix";
+
+  // switched without and with an intermediate compile of the shell
+  for (bool precompile : {false, true}) {
+    SpecPtr spec(mj_makeSpec(), mj_deleteSpec);
+    spec->option.integrator = mjINT_DISCRETE;
+    spec->option.solver = mjSOL_CG;
+    spec->option.gravity[0] = spec->option.gravity[1] = 0;
+    spec->option.gravity[2] = 0;
+    mjsFlex* flex = MakeTrilinearBox(spec.get(), /*shell=*/true);
+    ASSERT_THAT(flex, NotNull()) << mjs_getError(spec.get());
+    ASSERT_THAT(mjs_firstElement(spec.get(), mjOBJ_EQUALITY), NotNull());
+    if (precompile) {
+      flex->young = 3e4;
+      flex->thickness = 0.01;
+      MjModelPtr shell(mj_compile(spec.get(), nullptr));
+      ASSERT_THAT(shell, NotNull()) << mjs_getError(spec.get());
+      EXPECT_EQ(shell->flex_edgeequality[0], 3);
+    }
+
+    // switch to a volumetric solid
+    flex->elastic2d = 0;
+    mjsElement* eq = mjs_firstElement(spec.get(), mjOBJ_EQUALITY);
+    while (eq) {
+      mjsElement* next = mjs_nextElement(spec.get(), eq);
+      ASSERT_EQ(mjs_delete(spec.get(), eq), 0);
+      eq = next;
+    }
+    set_solid(flex);
+    MjModelPtr m(mj_compile(spec.get(), nullptr));
+    ASSERT_THAT(m, NotNull()) << mjs_getError(spec.get());
+    EXPECT_EQ(m->neq, 0);
+    EXPECT_EQ(m->flex_edgeequality[0], 0);
+    EXPECT_EQ(m->flex_interp[0], 1);
+
+    // same stiffness as the reference, not the strain eigenmode table
+    ASSERT_EQ(m->nflexstiffness, nstiffness) << "precompile " << precompile;
+    for (int i = 0; i < nstiffness && !HasFailure(); i++) {
+      EXPECT_MJTNUM_EQ(m->flex_stiffness[i], ref->flex_stiffness[i])
+          << "precompile " << precompile << ", index " << i;
+    }
+
+    // simulate: must stay finite and bounded
+    MjDataPtr d = MakeData(m);
+    for (int i = 0; i < 200; i++) {
+      mj_step(m.get(), d.get());
+    }
+    for (int i = 0; i < m->nq; i++) {
+      ASSERT_TRUE(std::isfinite(d->qpos[i])) << "qpos " << i;
+      EXPECT_LT(mju_abs(d->qpos[i]), 0.01) << "qpos " << i;
+    }
+  }
+}
+
+// state derived by a compile (flap stencils, rigid, centered, empty cells) is
+// recomputed from the current spec when it is compiled again
+TEST_F(UserFlexTest, RecompileResetsDerivedState) {
+  using SpecPtr = std::unique_ptr<mjSpec, decltype(&mj_deleteSpec)>;
+  auto compile = [](mjSpec* spec) {
+    MjModelPtr m(mj_compile(spec, nullptr));
+    EXPECT_THAT(m, NotNull()) << mjs_getError(spec);
+    return m;
+  };
+  auto first_flex = [](mjSpec* spec) {
+    return mjs_asFlex(mjs_firstElement(spec, mjOBJ_FLEX));
+  };
+
+  // flap stencils: reverse the triangle order between compiles
+  static constexpr char cloth_xml[] = R"(
+  <mujoco>
+    <worldbody>
+      <flexcomp name="cloth" type="grid" count="3 3 1" spacing=".1 .1 .1"
+                dim="2" radius=".001">
+        <elasticity young="1e3" thickness="1e-3" elastic2d="bend"/>
+        <contact selfcollide="none"/>
+      </flexcomp>
+    </worldbody>
+  </mujoco>
+  )";
+  auto reverse_triangles = [](mjsFlex* flex) {
+    std::vector<int>& elem = *flex->elem;
+    std::vector<int> reversed;
+    for (int t = static_cast<int>(elem.size()) / 3 - 1; t >= 0; t--) {
+      reversed.insert(reversed.end(), elem.begin() + 3 * t,
+                      elem.begin() + 3 * t + 3);
+    }
+    elem = reversed;
+  };
+  SpecPtr cloth(mj_parseXMLString(cloth_xml, nullptr, nullptr, 0),
+                mj_deleteSpec);
+  ASSERT_THAT(cloth, NotNull());
+  ASSERT_THAT(compile(cloth.get()), NotNull());
+  reverse_triangles(first_flex(cloth.get()));
+  MjModelPtr recompiled = compile(cloth.get());
+  SpecPtr cloth_ref(mj_parseXMLString(cloth_xml, nullptr, nullptr, 0),
+                    mj_deleteSpec);
+  ASSERT_THAT(cloth_ref, NotNull());
+  reverse_triangles(first_flex(cloth_ref.get()));
+  MjModelPtr cloth_expected = compile(cloth_ref.get());
+  ASSERT_THAT(recompiled, NotNull());
+  ASSERT_THAT(cloth_expected, NotNull());
+  ASSERT_EQ(recompiled->nflexedge, cloth_expected->nflexedge);
+  EXPECT_EQ(AsVector(recompiled->flex_edge, 2 * recompiled->nflexedge),
+            AsVector(cloth_expected->flex_edge, 2 * cloth_expected->nflexedge));
+  EXPECT_EQ(
+      AsVector(recompiled->flex_edgeflap, 2 * recompiled->nflexedge),
+      AsVector(cloth_expected->flex_edgeflap, 2 * cloth_expected->nflexedge));
+
+  // rigid and centered: attach the vertices to different bodies, move them
+  static constexpr char rod_xml[] = R"(
+  <mujoco>
+    <worldbody>
+      <body name="a"><freejoint/><geom size=".1"/></body>
+      <body name="b" pos="1 0 0"><freejoint/><geom size=".1"/></body>
+    </worldbody>
+    <deformable>
+      <flex name="rod" dim="1" body="a a" vertex="0 0 0  0 0 0" element="0 1"/>
+    </deformable>
+  </mujoco>
+  )";
+  char error[1024] = {0};
+  SpecPtr rod(mj_parseXMLString(rod_xml, nullptr, error, sizeof(error)),
+              mj_deleteSpec);
+  ASSERT_THAT(rod, NotNull()) << error;
+  MjModelPtr rigid = compile(rod.get());
+  ASSERT_THAT(rigid, NotNull());
+  EXPECT_EQ(rigid->flex_rigid[0], 1);
+  EXPECT_EQ(rigid->flex_centered[0], 1);
+  mjsFlex* rod_flex = first_flex(rod.get());
+  mjs_setStringVec(rod_flex->vertbody, "a b");
+  const double vert[6] = {0, 0, 0, .1, 0, 0};
+  mjs_setDouble(rod_flex->vert, vert, 6);
+  MjModelPtr moved = compile(rod.get());
+  ASSERT_THAT(moved, NotNull());
+  EXPECT_EQ(moved->flex_rigid[0], 0);
+  EXPECT_EQ(moved->flex_centered[0], 0);
+
+  // empty cells: recomputed on every compile, same stiffness when compiled
+  // again (of the 3x1x1 cells only the last one is occupied)
+  static constexpr char solid_xml[] = R"(
+  <mujoco>
+    <worldbody>
+      <flexcomp name="solid" type="direct" dim="3" dof="trilinear" mass="1"
+                cellcount="3 1 1" radius=".001"
+                point=".7 0 0  1 0 0  .7 1 0  1 1 0
+                       .7 0 1  1 0 1  .7 1 1  1 1 1
+                       0 .5 .5"
+                element="0 1 2 4  3 2 1 7  5 1 4 7  6 2 4 7  1 2 4 7">
+        <contact selfcollide="none"/>
+        <elasticity young="100" poisson="0.3"/>
+      </flexcomp>
+    </worldbody>
+  </mujoco>
+  )";
+  SpecPtr solid(mj_parseXMLString(solid_xml, nullptr, nullptr, 0),
+                mj_deleteSpec);
+  ASSERT_THAT(solid, NotNull());
+  MjModelPtr once = compile(solid.get());
+  MjModelPtr twice = compile(solid.get());
+  ASSERT_THAT(once, NotNull());
+  ASSERT_THAT(twice, NotNull());
+  ASSERT_EQ(once->nflexstiffness, twice->nflexstiffness);
+  int block = 24 * 24;
+  ASSERT_EQ(once->nflexstiffness, 3 * block);
+  EXPECT_EQ(once->flex_stiffness[0], 0) << "expected an empty first cell";
+  EXPECT_NE(once->flex_stiffness[2 * block], 0);
+  for (int i = 0; i < once->nflexstiffness && !HasFailure(); i++) {
+    EXPECT_MJTNUM_EQ(once->flex_stiffness[i], twice->flex_stiffness[i])
+        << "index " << i;
+  }
+}
+
 TEST_F(UserFlexTest, FlexcompMeshAssetWrongType) {
   static constexpr char xml[] = R"(
   <mujoco>
@@ -2712,6 +3018,317 @@ TEST_F(UserFlexTest, FlexcompMeshAssetWrongType) {
   EXPECT_THAT(error, HasSubstr("only be used with flexcomp type mesh or gmsh"));
 
   mj_deleteVFS(&vfs);
+}
+
+TEST_F(UserFlexTest, InterpolatedShellElastic2dStiffness) {
+  static constexpr char xml[] = R"(
+  <mujoco>
+    <worldbody>
+      <flexcomp name="shell" type="grid" count="4 4 4" spacing=".05 .05 .05"
+                dim="3" cellcount="2 2 2" radius=".001" mass="1"
+                dof="trilinear">
+        <elasticity young="1e4" poisson="0.3" thickness="0.01"
+                    elastic2d="bend"/>
+        <contact selfcollide="none"/>
+      </flexcomp>
+    </worldbody>
+  </mujoco>
+  )";
+
+  char error[1024] = {0};
+  using SpecPtr = std::unique_ptr<mjSpec, decltype(&mj_deleteSpec)>;
+  SpecPtr spec(mj_parseXMLString(xml, nullptr, error, sizeof(error)),
+               mj_deleteSpec);
+  ASSERT_THAT(spec, NotNull()) << error;
+  mjsFlex* flex = mjs_asFlex(mjs_firstElement(spec.get(), mjOBJ_FLEX));
+  ASSERT_THAT(flex, NotNull());
+
+  // elastic2d="bend" (1) without strain equality: no membrane stiffness
+  MjModelPtr bend(mj_compile(spec.get(), nullptr));
+  ASSERT_THAT(bend, NotNull()) << mjs_getError(spec.get());
+  EXPECT_EQ(bend->flex_interp[0], -1);
+  EXPECT_EQ(bend->flex_stiffnessadr[0], -1);
+  EXPECT_EQ(bend->nflexstiffness, 0);
+  EXPECT_GE(bend->flex_bendingadr[0], 0);
+
+  // elastic2d="stretch" (2): membrane stiffness allocated, no bending
+  flex->elastic2d = 2;
+  MjModelPtr stretch(mj_compile(spec.get(), nullptr));
+  ASSERT_THAT(stretch, NotNull()) << mjs_getError(spec.get());
+  EXPECT_EQ(stretch->flex_interp[0], -1);
+  EXPECT_EQ(stretch->flex_stiffnessadr[0], 0);
+  EXPECT_GT(stretch->nflexstiffness, 0);
+  EXPECT_NE(stretch->flex_stiffness[3 * 4 + 1], 0);
+  EXPECT_EQ(stretch->flex_bendingadr[0], -1);
+
+  // elastic2d="both" (3): both membrane stiffness and bending allocated
+  flex->elastic2d = 3;
+  MjModelPtr both(mj_compile(spec.get(), nullptr));
+  ASSERT_THAT(both, NotNull()) << mjs_getError(spec.get());
+  EXPECT_EQ(both->flex_interp[0], -1);
+  EXPECT_EQ(both->flex_stiffnessadr[0], 0);
+  EXPECT_EQ(both->nflexstiffness, stretch->nflexstiffness);
+  EXPECT_NE(both->flex_stiffness[3 * 4 + 1], 0);
+  EXPECT_GE(both->flex_bendingadr[0], 0);
+}
+
+TEST_F(UserFlexTest, FlexStrainEqualityValidation) {
+  using SpecPtr = std::unique_ptr<mjSpec, decltype(&mj_deleteSpec)>;
+  char error[1024] = {0};
+
+  // Non-interpolated flex with flexstrain equality fails to compile.
+  static constexpr char non_interp_xml[] = R"(
+  <mujoco>
+    <worldbody>
+      <flexcomp name="f" type="grid" count="2 2 2" spacing=".1 .1 .1"
+                dim="3" radius=".001">
+        <contact selfcollide="none"/>
+      </flexcomp>
+    </worldbody>
+    <equality>
+      <flexstrain flex="f" cell="0 0 0"/>
+    </equality>
+  </mujoco>
+  )";
+  MjModelPtr non_interp =
+      LoadModelFromString(non_interp_xml, error, sizeof(error));
+  EXPECT_THAT(non_interp, IsNull());
+  EXPECT_THAT(error,
+              HasSubstr("flex strain equality requires an interpolated flex"));
+
+  // Switching a shell flex with strain equalities to volume mode (elastic2d=0)
+  // without removing the shell strain equalities fails to compile.
+  {
+    SpecPtr spec(mj_makeSpec(), mj_deleteSpec);
+    mjsFlex* flex = MakeTrilinearBox(spec.get(), /*shell=*/true);
+    ASSERT_THAT(flex, NotNull()) << mjs_getError(spec.get());
+    flex->elastic2d = 0;
+    MjModelPtr m(mj_compile(spec.get(), nullptr));
+    EXPECT_THAT(m, IsNull());
+    EXPECT_THAT(mjs_getError(spec.get()),
+                HasSubstr("shell flex strain equality on volumetric flex"));
+  }
+
+  // Switching a single-cell volumetric flex with strain equalities to shell
+  // mode (elastic2d=1) without updating the equalities fails to compile, and
+  // out-of-range face/cell indices are rejected.
+  static constexpr char vol_strain_xml[] = R"(
+  <mujoco>
+    <worldbody>
+      <flexcomp name="f" type="box" count="4 4 4" cellcount="1 1 1"
+                spacing=".02 .02 .02" dim="2" dof="trilinear" radius=".001">
+        <edge equality="strain"/>
+        <elasticity thickness="0.01"/>
+        <contact selfcollide="none"/>
+      </flexcomp>
+    </worldbody>
+  </mujoco>
+  )";
+  {
+    SpecPtr spec(
+        mj_parseXMLString(vol_strain_xml, nullptr, error, sizeof(error)),
+        mj_deleteSpec);
+    ASSERT_THAT(spec, NotNull()) << error;
+    mjsFlex* flex = mjs_asFlex(mjs_firstElement(spec.get(), mjOBJ_FLEX));
+    mjsEquality* eq =
+        mjs_asEquality(mjs_firstElement(spec.get(), mjOBJ_EQUALITY));
+    ASSERT_THAT(flex, NotNull());
+    ASSERT_THAT(eq, NotNull());
+
+    // Out-of-range cell index in volume mode.
+    eq->data[0] = 1;
+    MjModelPtr m_bad_cell(mj_compile(spec.get(), nullptr));
+    EXPECT_THAT(m_bad_cell, IsNull());
+    EXPECT_THAT(mjs_getError(spec.get()),
+                HasSubstr("flex strain cell index out of range"));
+    eq->data[0] = 0;
+
+    // Volumetric strain equality (data[1] >= 0) on shell flex (elastic2d != 0).
+    flex->elastic2d = 1;
+    MjModelPtr m_mismatch(mj_compile(spec.get(), nullptr));
+    EXPECT_THAT(m_mismatch, IsNull());
+    EXPECT_THAT(mjs_getError(spec.get()),
+                HasSubstr("volumetric flex strain equality on shell flex"));
+
+    // Out-of-range face index in shell mode (1x1x1 has 6 faces: 0..5).
+    eq->data[0] = 6;
+    eq->data[1] = -1;
+    eq->data[2] = -1;
+    MjModelPtr m_bad_face(mj_compile(spec.get(), nullptr));
+    EXPECT_THAT(m_bad_face, IsNull());
+    EXPECT_THAT(mjs_getError(spec.get()),
+                HasSubstr("flex strain face index out of range"));
+  }
+}
+
+TEST_F(UserFlexTest, InterpolatedElastic2dSwitchValidation) {
+  using SpecPtr = std::unique_ptr<mjSpec, decltype(&mj_deleteSpec)>;
+  char error[1024] = {0};
+
+  // Volume -> shell switch on a 2x2x2 grid leaves interior node (1, 1, 1)
+  // attached to an unreferenced 3-DOF slide body and must fail to compile.
+  {
+    SpecPtr spec(mj_makeSpec(), mj_deleteSpec);
+    mjsFlex* flex = MakeTrilinearBox(spec.get(), /*shell=*/false);
+    ASSERT_THAT(flex, NotNull()) << mjs_getError(spec.get());
+    flex->elastic2d = 1;
+    flex->thickness = 0.01;
+    MjModelPtr m(mj_compile(spec.get(), nullptr));
+    EXPECT_THAT(m, IsNull());
+    EXPECT_THAT(mjs_getError(spec.get()),
+                HasSubstr("has unpinned interior node 13 with free DOFs"));
+  }
+
+  // Shell -> volume switch on a mesh with an empty corner cell leaves the
+  // empty-cell-only corner nodes attached to zero-stiffness 3-DOF slide bodies
+  // and must fail to compile.
+  static constexpr char empty_cell_shell_xml[] = R"(
+  <mujoco>
+    <worldbody>
+      <flexcomp name="flex" type="direct" dim="3" dof="trilinear" mass="1"
+                cellcount="2 2 1" radius=".001"
+                point="0 0 0  1 0 0  0 0.4 0  0 0 1  0.4 0 0  0 1 0"
+                element="0 1 2 3  0 4 5 3">
+        <contact selfcollide="none"/>
+        <elasticity young="1e4" poisson="0.3" thickness="0.01"
+                    elastic2d="bend"/>
+      </flexcomp>
+    </worldbody>
+  </mujoco>
+  )";
+  {
+    SpecPtr spec(
+        mj_parseXMLString(empty_cell_shell_xml, nullptr, error, sizeof(error)),
+        mj_deleteSpec);
+    ASSERT_THAT(spec, NotNull()) << error;
+    mjsFlex* flex = mjs_asFlex(mjs_firstElement(spec.get(), mjOBJ_FLEX));
+    ASSERT_THAT(flex, NotNull());
+    flex->elastic2d = 0;
+    MjModelPtr m(mj_compile(spec.get(), nullptr));
+    EXPECT_THAT(m, IsNull());
+    EXPECT_THAT(mjs_getError(spec.get()),
+                HasSubstr("has unpinned node 16 in empty cell with free DOFs"));
+  }
+}
+
+TEST_F(UserFlexTest, DefaultArenaSize) {
+  constexpr size_t kMB = 1 << 20;
+
+  // 40x40 2D grid with default contact settings (selfcollide="auto", nv =
+  // 4800): symbolically sized instead of quadratic in nv (< 256 MB instead
+  // of 1.15 GB)
+  static constexpr char kGrid40Xml[] = R"(
+  <mujoco>
+    <option integrator="discrete"/>
+    <worldbody>
+      <geom type="plane" size="2 2 .01"/>
+      <flexcomp name="cloth" type="grid" dim="2" count="40 40 1"
+                spacing=".01 .01 .01" pos="0 0 .05" radius=".002" mass="1">
+        <elasticity young="1e3" damping="1"/>
+      </flexcomp>
+    </worldbody>
+  </mujoco>
+  )";
+  char error[1024] = {0};
+  MjModelPtr grid40 = LoadModelFromString(kGrid40Xml, error, sizeof(error));
+  ASSERT_THAT(grid40, NotNull()) << error;
+  EXPECT_LE(grid40->narena, 256 * kMB);
+  {
+    MjDataPtr d(mj_makeData(grid40.get()));
+    for (int step = 0; step < 5; step++) {
+      mj_step(grid40.get(), d.get());
+    }
+    for (int w = 0; w < mjNWARNING; w++) {
+      EXPECT_EQ(d->warning[w].number, 0) << "warning " << w;
+    }
+  }
+
+  // 60x60 2D grid with default contact settings (nv = 10800): fits in < 256 MB
+  // and steps cleanly
+  static constexpr char kGrid60Xml[] = R"(
+  <mujoco>
+    <option integrator="discrete"/>
+    <worldbody>
+      <geom type="plane" size="2 2 .01"/>
+      <flexcomp name="cloth" type="grid" dim="2" count="60 60 1"
+                spacing=".01 .01 .01" pos="0 0 .05" radius=".002" mass="1">
+        <elasticity young="1e3" damping="1"/>
+      </flexcomp>
+    </worldbody>
+  </mujoco>
+  )";
+  MjModelPtr grid60 = LoadModelFromString(kGrid60Xml, error, sizeof(error));
+  ASSERT_THAT(grid60, NotNull()) << error;
+  EXPECT_LE(grid60->narena, 256 * kMB);
+  {
+    MjDataPtr d(mj_makeData(grid60.get()));
+    for (int step = 0; step < 5; step++) {
+      mj_step(grid60.get(), d.get());
+    }
+    for (int w = 0; w < mjNWARNING; w++) {
+      EXPECT_EQ(d->warning[w].number, 0) << "warning " << w;
+    }
+  }
+
+  // 16^3 3D grid (nv = 12288): symbolic Cholesky sizing with 1.5x safety
+  // factor covers 3D fill (< 300 MB instead of 6.7 GB)
+  static constexpr char kGrid3dXml[] = R"(
+  <mujoco>
+    <option integrator="discrete"/>
+    <worldbody>
+      <geom type="plane" size="2 2 .01"/>
+      <flexcomp name="cube" type="grid" dim="3" count="16 16 16"
+                spacing=".01 .01 .01" pos="0 0 .1" radius=".002" mass="10">
+        <contact selfcollide="none"/>
+        <elasticity young="1e2" damping="0.01"/>
+      </flexcomp>
+    </worldbody>
+  </mujoco>
+  )";
+  MjModelPtr grid3d = LoadModelFromString(kGrid3dXml, error, sizeof(error));
+  ASSERT_THAT(grid3d, NotNull()) << error;
+  EXPECT_LE(grid3d->narena, 300 * kMB);
+  {
+    MjDataPtr d(mj_makeData(grid3d.get()));
+    for (int step = 0; step < 5; step++) {
+      mj_step(grid3d.get(), d.get());
+    }
+    for (int w = 0; w < mjNWARNING; w++) {
+      EXPECT_EQ(d->warning[w].number, 0) << "warning " << w;
+    }
+  }
+
+  // two colliding 40x40 grids (nv = 9600): < 256 MB instead of 4.2 GB, steps
+  // cleanly
+  static constexpr char kTwoGrids40Xml[] = R"(
+  <mujoco>
+    <option integrator="discrete"/>
+    <worldbody>
+      <geom type="plane" size="2 2 .01"/>
+      <flexcomp name="c1" type="grid" dim="2" count="40 40 1"
+                spacing=".01 .01 .01" pos="0 0 .05" radius=".002" mass="1">
+        <elasticity young="1e3" damping="1"/>
+      </flexcomp>
+      <flexcomp name="c2" type="grid" dim="2" count="40 40 1"
+                spacing=".01 .01 .01" pos="0 0 .08" radius=".002" mass="1">
+        <elasticity young="1e3" damping="1"/>
+      </flexcomp>
+    </worldbody>
+  </mujoco>
+  )";
+  MjModelPtr two_grids40 =
+      LoadModelFromString(kTwoGrids40Xml, error, sizeof(error));
+  ASSERT_THAT(two_grids40, NotNull()) << error;
+  EXPECT_LE(two_grids40->narena, 256 * kMB);
+  {
+    MjDataPtr d(mj_makeData(two_grids40.get()));
+    for (int step = 0; step < 5; step++) {
+      mj_step(two_grids40.get(), d.get());
+    }
+    for (int w = 0; w < mjNWARNING; w++) {
+      EXPECT_EQ(d->warning[w].number, 0) << "warning " << w;
+    }
+  }
 }
 
 }  // namespace

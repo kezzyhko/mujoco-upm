@@ -67,6 +67,9 @@ void mj_makeModel(mjModel** dest,
     mjtSize nuser_site, mjtSize nuser_cam, mjtSize nuser_tendon, mjtSize nuser_actuator,
     mjtSize nuser_sensor, mjtSize nnames, mjtSize npaths);
 
+// set pointers in mjModel buffer from its sizes
+void mj_setPtrModel(mjModel* m);
+
 // copy mjModel; allocate new if dest is NULL
 MJAPI mjModel* mj_copyModel(mjModel* dest, const mjModel* src);
 
@@ -136,8 +139,9 @@ MJAPI void mj_resetDataDebug(const mjModel* m, mjData* d, unsigned char debug_va
 // Reset data. If 0 <= key < nkey, set fields from specified keyframe.
 MJAPI void mj_resetDataKeyframe(const mjModel* m, mjData* d, int key);
 
-// init plugins
-MJAPI void mj_initPlugin(const mjModel* m, mjData* d);
+// init plugins; on failure, destroy the instances already initialized and return the id of the
+// failed instance, otherwise return -1
+MJAPI int mj_initPlugin(const mjModel* m, mjData* d);
 
 // deallocate data
 MJAPI void mj_deleteData(mjData* d);

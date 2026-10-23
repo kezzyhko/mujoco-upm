@@ -3439,6 +3439,153 @@ TEST_F(DerivativeTest, FlexStiffAssemble) {
   }
 }
 
+// 1D rod bending stiffness: at the (straight) rest configuration the energy
+// gradient vanishes, so the PSD Gauss-Newton Hessian used by the metric is
+// exact. Checked against central differences of the spring force
+TEST_F(DerivativeTest, FlexRodHessianAtRest) {
+  static const char* const kStraight = R"(
+  <mujoco>
+    <option integrator="discrete" gravity="0 0 0"/>
+    <worldbody>
+      <body name="turned" euler="20 30 40">
+        <flexcomp name="rod" type="grid" count="6 1 1" spacing="0.1 0.1 0.1"
+                  radius="0.01" dim="1" mass="1">
+          <pin id="0"/>
+          <contact selfcollide="none" contype="0" conaffinity="0"/>
+          <elasticity young="1e7"/>
+        </flexcomp>
+      </body>
+    </worldbody>
+  </mujoco>
+  )";
+  char error[1024];
+  MjModelPtr model = LoadModelFromString(kStraight, error, sizeof(error));
+  ASSERT_THAT(model.get(), NotNull()) << error;
+  int nv = model->nv;
+  MjDataPtr data = MakeData(model);
+  mj_forward(model.get(), data.get());
+
+  vector<mjtNum> vec(nv), res(nv, 0);
+  for (int i = 0; i < nv; i++) {
+    vec[i] = mju_Halton(i, 3) - 0.5;
+  }
+  mjd_flexStretch_mul(model.get(), data.get(), res.data(), vec.data(), 1, 0);
+
+  // central differences of the spring force
+  mjtNum eps = MjEps(1e-6, 1e-3);
+  mjData* plus = mj_copyData(NULL, model.get(), data.get());
+  mjData* minus = mj_copyData(NULL, model.get(), data.get());
+  mju_addToScl(plus->qpos, vec.data(), eps, nv);
+  mju_addToScl(minus->qpos, vec.data(), -eps, nv);
+  mj_forward(model.get(), plus);
+  mj_forward(model.get(), minus);
+
+  mjtNum max_err = 0, scale = 0;
+  for (int i = 0; i < nv; i++) {
+    mjtNum fd = -(plus->qfrc_spring[i] - minus->qfrc_spring[i]) / (2 * eps);
+    max_err = mju_max(max_err, mju_abs(res[i] - fd));
+    scale = mju_max(scale, mju_abs(fd));
+  }
+  EXPECT_GT(scale, 1e-3) << "test should exercise nontrivial bending stiffness";
+  EXPECT_LT(max_err, MjTol(1e-5, 1e-2) * scale)
+      << "rod bending Hessian is not the Jacobian of the force at rest";
+  mj_deleteData(plus);
+  mj_deleteData(minus);
+}
+
+// 1D rod bending stiffness away from rest: symmetric, positive semi-definite,
+// assembled CSR matches the matrix-free operator
+TEST_F(DerivativeTest, FlexRodStiffAssemble) {
+  static const char* const kXml = R"(
+  <mujoco>
+    <option integrator="discrete" gravity="0 0 0"/>
+    <worldbody>
+      <body name="turned" euler="20 30 40">
+        <flexcomp name="rod" type="grid" count="6 1 1" spacing="0.1 0.1 0.1"
+                  radius="0.01" dim="1" mass="1">
+          <pin id="0"/>
+          <contact selfcollide="none" contype="0" conaffinity="0"/>
+          <elasticity young="1e7" damping="0.1"/>
+        </flexcomp>
+      </body>
+      <flexcomp name="free" type="grid" count="5 1 1" spacing="0.1 0.1 0.1"
+                radius="0.01" dim="1" mass="1" pos="1 0 0">
+        <contact selfcollide="none" contype="0" conaffinity="0"/>
+        <elasticity young="1e7" damping="0.1"/>
+      </flexcomp>
+    </worldbody>
+  </mujoco>
+  )";
+
+  char error[1024];
+  MjModelPtr model = LoadModelFromString(kXml, error, sizeof(error));
+  ASSERT_THAT(model.get(), NotNull()) << error;
+  int nv = model->nv;
+  MjDataPtr data = MakeData(model);
+  for (int i = 0; i < nv; i++) {
+    data->qpos[i] += 2e-2 * (mju_Halton(i, 2) - 0.5);
+  }
+  mj_forward(model.get(), data.get());
+
+  mjtNum s1 = 4e-6, s2 = 2e-3;
+  vector<int> rownnz(nv), rowadr(nv);
+  int nnz = mjd_flexStiff_assemble(model.get(), data.get(), rownnz.data(),
+                                   rowadr.data(), NULL, NULL, s1, s2,
+                                   /*flg_bend=*/1, /*flg_stretch=*/1, NULL);
+  ASSERT_GT(nnz, 0);
+  vector<int> colind(nnz);
+  vector<mjtNum> val(nnz);
+  mjd_flexStiff_assemble(model.get(), data.get(), rownnz.data(), rowadr.data(),
+                         colind.data(), val.data(), s1, s2, /*flg_bend=*/1,
+                         /*flg_stretch=*/1, NULL);
+
+  // the constant-stencil (setconst) assembly excludes state-dependent rod
+  // bending
+  vector<int> rownnz0(nv), rowadr0(nv);
+  EXPECT_EQ(mjd_flexStiff_assemble(model.get(), data.get(), rownnz0.data(),
+                                   rowadr0.data(), NULL, NULL, s1, s2,
+                                   /*flg_bend=*/1, /*flg_stretch=*/0, NULL),
+            0);
+
+  // dense copy of the operator, column by column
+  vector<mjtNum> K(nv * nv, 0), csr(nv * nv, 0);
+  for (int j = 0; j < nv; j++) {
+    vector<mjtNum> e(nv, 0), col(nv, 0);
+    e[j] = 1;
+    mjd_flexBend_mul(model.get(), data.get(), col.data(), e.data(), s1, s2);
+    mjd_flexStretch_mul(model.get(), data.get(), col.data(), e.data(), s1, s2);
+    for (int i = 0; i < nv; i++) {
+      K[i * nv + j] = col[i];
+    }
+  }
+  for (int i = 0; i < nv; i++) {
+    for (int k = 0; k < rownnz[i]; k++) {
+      csr[i * nv + colind[rowadr[i] + k]] += val[rowadr[i] + k];
+    }
+  }
+
+  mjtNum kmax = 0;
+  for (mjtNum k : K) kmax = mju_max(kmax, mju_abs(k));
+  ASSERT_GT(kmax, 0);
+  for (int i = 0; i < nv; i++) {
+    for (int j = 0; j < nv; j++) {
+      mjtNum tol = MjTol(1e-12, 1e-5) * kmax;
+      EXPECT_NEAR(K[i * nv + j], K[j * nv + i], tol) << i << ", " << j;
+      EXPECT_NEAR(csr[i * nv + j], K[i * nv + j], tol) << i << ", " << j;
+    }
+  }
+
+  // positive semi-definite: x'Kx >= 0 for a set of test vectors
+  for (int trial = 0; trial < 10; trial++) {
+    vector<mjtNum> x(nv), Kx(nv, 0);
+    for (int i = 0; i < nv; i++) {
+      x[i] = mju_Halton(i + trial * nv, 5) - 0.5;
+    }
+    mju_mulMatVec(Kx.data(), K.data(), x.data(), nv, nv);
+    EXPECT_GE(mju_dot(x.data(), Kx.data(), nv), -1e-12 * kmax * nv);
+  }
+}
+
 // verify the interp assembly mode: with the K_rot cache supplied, the assembled
 // CSR applied to test vectors must reproduce mjd_flexInterp_mul, whose sign
 // convention is negated
@@ -3504,6 +3651,106 @@ TEST_F(DerivativeTest, FlexStiffAssembleInterp) {
       EXPECT_THAT(res_csr[i], MjNear(res_op[i], 1e-12, 2e-5))
           << "interp assembly/operator mismatch at DOF " << i << " trial "
           << trial;
+    }
+  }
+}
+
+// verify shell-mode interpolated flex (flex_interp < 0, elastic2d="stretch")
+// derivatives and CSR assembly: mjd_flexInterp_mul matches finite differences
+// of qfrc_passive across rotations, is symmetric and PSD, includes the x-normal
+// faces (where k_elem[0] == 0), and matches mjd_flexStiff_assemble
+TEST_F(DerivativeTest, FlexInterpShellDerivatives) {
+  static const char* const kXml = R"(
+  <mujoco>
+    <option integrator="discrete"/>
+    <worldbody>
+      <flexcomp name="flex" type="grid" count="4 4 4" spacing="0.1 0.2 0.3"
+                cellcount="1 2 2" radius=".01" dim="3" mass="1" dof="trilinear">
+        <contact selfcollide="none" contype="0" conaffinity="0"/>
+        <elasticity young="1e4" poisson="0.3" damping="5"
+                    elastic2d="stretch" thickness="0.02"/>
+      </flexcomp>
+    </worldbody>
+  </mujoco>
+  )";
+
+  char error[1024];
+  MjModelPtr model = LoadModelFromString(kXml, error, sizeof(error));
+  ASSERT_THAT(model.get(), NotNull()) << error;
+  EXPECT_EQ(model->flex_interp[0], -1);
+  ASSERT_EQ(mjd_flexInterpAssemblable(model.get()), 1);
+  int nv = model->nv;
+  MjDataPtr data = MakeData(model);
+
+  for (mjtNum angle : {0.0, 0.5, mjPI / 2}) {
+    RotateFlexGrid(model.get(), data.get(), "flex", angle);
+    mj_forward(model.get(), data.get());
+
+    // assemble dense K via mjd_flexInterp_mul (with damping=0, h=1)
+    mjtNum save_damping = model->flex_damping[0];
+    model->flex_damping[0] = 0;
+    std::vector<mjtNum> H(nv * nv, 0);
+    mulKD_dense(model.get(), data.get(), H.data(), nv, 1.0);
+    model->flex_damping[0] = save_damping;
+
+    std::vector<mjtNum> vec(nv), res(nv, 0);
+    for (int i = 0; i < nv; i++) {
+      vec[i] = mju_Halton(i, 2) - 0.5;
+    }
+    mju_mulMatVec(res.data(), H.data(), vec.data(), nv, nv);
+
+    // finite difference of mj_passive at zero velocity
+    mjtNum eps = MjEps(1e-6, 1e-3);
+    mjData* data_perturbed = mj_copyData(NULL, model.get(), data.get());
+    mju_addToScl(data_perturbed->qpos, vec.data(), eps, nv);
+    mj_forward(model.get(), data_perturbed);
+    for (int i = 0; i < nv; ++i) {
+      mjtNum fd =
+          -(data_perturbed->qfrc_passive[i] - data->qfrc_passive[i]) / eps;
+      EXPECT_THAT(res[i], MjNear(fd, 5e-3, 5.0))
+          << "shell stiffness mismatch at DOF " << i << " angle " << angle;
+    }
+    mj_deleteData(data_perturbed);
+
+    // interior nodes on x=0 (node 4) and x=max (node 13) only belong to faces 0
+    // and 1 (where k_elem[0] == 0); verify their diagonal blocks are nonzero
+    for (int node_idx : {4, 13}) {
+      int bid = model->flex_nodebodyid[model->flex_nodeadr[0] + node_idx];
+      int dadr = model->body_dofadr[bid];
+      mjtNum trace = H[(dadr + 0) * nv + (dadr + 0)] +
+                     H[(dadr + 1) * nv + (dadr + 1)] +
+                     H[(dadr + 2) * nv + (dadr + 2)];
+      EXPECT_GT(trace, 1.0) << "expected positive stiffness trace on x-face "
+                               "interior node "
+                            << node_idx;
+    }
+
+    // verify CSR assembly matches mjd_flexInterp_mul
+    std::vector<mjtNum> krot(model->nflexstiffness, 0);
+    mjd_flexInterp_cacheKrot(model.get(), data.get(), krot.data());
+    mjtNum s1 = 4e-6, s2 = 2e-3;
+    std::vector<int> rownnz(nv), rowadr(nv);
+    int nnz = mjd_flexStiff_assemble(
+        model.get(), data.get(), rownnz.data(), rowadr.data(), NULL, NULL, s1,
+        s2, /*flg_bend=*/0, /*flg_stretch=*/0, krot.data());
+    ASSERT_GT(nnz, 0);
+    std::vector<int> colind(nnz);
+    std::vector<mjtNum> val(nnz);
+    mjd_flexStiff_assemble(model.get(), data.get(), rownnz.data(),
+                           rowadr.data(), colind.data(), val.data(), s1, s2,
+                           /*flg_bend=*/0, /*flg_stretch=*/0, krot.data());
+
+    std::vector<mjtNum> res_op(nv, 0), res_csr(nv, 0);
+    mjd_flexInterp_mul(model.get(), data.get(), res_op.data(), vec.data(), -s1,
+                       -s2, krot.data());
+    for (int i = 0; i < nv; i++) {
+      mjtNum sum = 0;
+      for (int k = 0; k < rownnz[i]; k++) {
+        sum += val[rowadr[i] + k] * vec[colind[rowadr[i] + k]];
+      }
+      res_csr[i] = sum;
+      EXPECT_THAT(res_csr[i], MjNear(res_op[i], 1e-12, 2e-5))
+          << "shell CSR/operator mismatch at DOF " << i;
     }
   }
 }

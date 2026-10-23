@@ -33,8 +33,8 @@
 
 #include <mujoco/mujoco.h>
 #include "experimental/studio/hal/graphics_mode.h"
-#include "experimental/studio/hal/filament_renderer.h"
 #include "experimental/studio/hal/window.h"
+#include "experimental/studio/render/model_scene.h"
 #include "experimental/studio/sim/model_holder.h"
 #include "experimental/studio/sim/sim_history.h"
 #include "experimental/studio/sim/sim_profiler.h"
@@ -44,6 +44,8 @@
 #include "experimental/studio/ux/interaction.h"
 #include "experimental/studio/ux/picture_gui.h"
 #include "experimental/studio/ux/spec_editor.h"
+#include "render/filament/support/imgui_bridge.h"
+#include "render/filament/support/renderer.h"
 
 namespace mujoco::studio {
 
@@ -221,12 +223,21 @@ class App {
   // Requests that the currently loaded model be reloaded at the next update.
   void RequestModelReload();
 
-  // (Re)builds the model based on the given configmration.
+  // (Re)builds the model based on the given configuration.
   void BuildModel(const BuildModelInfo& info);
 
   // Updates the currently loaded model to the given model. If model is null,
   // then compile the spec to a model.
   void OnModelLoaded(std::string_view filename, ModelKind model_kind);
+
+  // Populates the scene with the recently loaded model.
+  void InitModelScene();
+
+  // Returns the Renderer::View for the main simulation.
+  Renderer::View GetSceneView();
+
+  // Returns the Renderer::View for the UX.
+  Renderer::View GetUxView();
 
   struct KeyframeSelection {
     bool is_reload = false;
@@ -282,9 +293,14 @@ class App {
   bool has_model() const { return model_holder_ && model_holder_->model(); }
   bool has_data() const { return model_holder_ && model_holder_->data(); }
 
+  std::span<const std::byte> RenderToTexture(mjvCamera* camera, int width,
+                                             int height);
+
   std::unique_ptr<Window> window_;
-  std::unique_ptr<FilamentRenderer> renderer_;
+  std::unique_ptr<Renderer> renderer_;
   std::unique_ptr<ModelHolder> model_holder_;
+  std::unique_ptr<ModelScene> model_scene_;
+  std::unique_ptr<ImguiBridge> imgui_bridge_;
 
   mutable std::mutex physics_mutex_;
 #ifndef __EMSCRIPTEN__
@@ -331,9 +347,9 @@ class App {
   mjvPerturb perturb_;
   mjvOption vis_options_;
   mjvScene plugin_scene_;
+  mjtByte render_flags_[mjNRNDFLAG];
 
   std::vector<std::string> search_paths_;
-  std::vector<std::byte> pixels_;
 
   std::array<mjTimerStat, mjNTIMER> timer_prev_ = {};
   UiState ui_;

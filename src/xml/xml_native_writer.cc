@@ -727,23 +727,32 @@ void mjXWriter::OneSkin(XMLElement* elem, const mjCSkin* skin) {
   const bool     scaled = !authored_ && skin->scaled_;
   const string   file   = scaled ? "" : Pick(authored_, skin->spec.file, skin->File());
 
+  // bones loaded from file and namespaced by an attachment can only be saved as data
+  const bool namespaced = !file.empty() && skin->HasBoneNameSpace();
+  const bool authored   = authored_ && !namespaced;
+  if (namespaced && skin->get_bodyname().empty()) {
+    throw mjXError(0,
+                   "attached skin '%s' with bones from file must be compiled to be saved",
+                   skin->name.c_str());
+  }
+
   // write attributes
   WriteAttrTxt(elem, "name", skin->name);
-  WriteAttrTxt(elem, "file", file);
+  if (!namespaced) { WriteAttrTxt(elem, "file", file); }
   WriteAttrTxt(elem, "material", Pick(authored_, skin->spec.material, skin->get_material()));
   WriteAttrInt(elem, "group", values->group, 0);
   WriteAttrTable(elem, values, static_cast<const mjsSkin*>(&defskin), kSkinAttrs, kSkinAttrsN);
 
   // write data if no file
-  if (file.empty()) {
-    const auto& vert       = Pick(authored_, skin->spec.vert, skin->get_vert());
-    const auto& texcoord   = Pick(authored_, skin->spec.texcoord, skin->get_texcoord());
-    const auto& face       = Pick(authored_, skin->spec.face, skin->get_face());
-    const auto& bodyname   = Pick(authored_, skin->spec.bodyname, skin->get_bodyname());
-    const auto& bindpos    = Pick(authored_, skin->spec.bindpos, skin->get_bindpos());
-    const auto& bindquat   = Pick(authored_, skin->spec.bindquat, skin->get_bindquat());
-    const auto& vertid     = Pick(authored_, skin->spec.vertid, skin->get_vertid());
-    const auto& vertweight = Pick(authored_, skin->spec.vertweight, skin->get_vertweight());
+  if (file.empty() || namespaced) {
+    const auto& vert       = Pick(authored, skin->spec.vert, skin->get_vert());
+    const auto& texcoord   = Pick(authored, skin->spec.texcoord, skin->get_texcoord());
+    const auto& face       = Pick(authored, skin->spec.face, skin->get_face());
+    const auto& bodyname   = Pick(authored, skin->spec.bodyname, skin->get_bodyname());
+    const auto& bindpos    = Pick(authored, skin->spec.bindpos, skin->get_bindpos());
+    const auto& bindquat   = Pick(authored, skin->spec.bindquat, skin->get_bindquat());
+    const auto& vertid     = Pick(authored, skin->spec.vertid, skin->get_vertid());
+    const auto& vertweight = Pick(authored, skin->spec.vertweight, skin->get_vertweight());
 
     // mesh vert
     text = Numbers(vert);
@@ -776,6 +785,92 @@ void mjXWriter::OneSkin(XMLElement* elem, const mjCSkin* skin) {
       // write vertweight
       text = Numbers(vertweight[i]);
       WriteAttrTxt(bone, "vertweight", text);
+    }
+  }
+}
+
+
+// write texture
+void mjXWriter::OneTexture(XMLElement* elem, const mjCTexture* texture, mjCDef* def) {
+  const mjsTexture* values = Values<mjsTexture>(texture);
+  const mjsTexture* deftex = &def->Texture().spec;
+  const string      gridlayout(values->gridlayout, strnlen(values->gridlayout, 12));
+  const string      defgridlayout(deftex->gridlayout, strnlen(deftex->gridlayout, 12));
+
+  // defaults: what differs from the parent class
+  if (writingdefaults) {
+    WriteAttrTable(elem, values, deftex, kTextureAttrs, kTextureAttrsN);
+    if (gridlayout != defgridlayout) { WriteAttrTxt(elem, "gridlayout", gridlayout); }
+    return;
+  }
+
+  const string file      = Pick(authored_, texture->spec.file, texture->File());
+  const auto   cubefiles = Pick(authored_, texture->spec.cubefiles, texture->get_cubefiles());
+
+  // write common attributes
+  WriteAttrKey(elem, "type", texture_map, texture_sz, values->type);
+  if (!authored_ || values->colorspace != deftex->colorspace) {
+    WriteAttrKey(elem, "colorspace", colorspace_map, colorspace_sz, values->colorspace);
+  }
+  WriteAttrKey(elem, "embed", FalseTrueAuto_map, 3, values->embed, deftex->embed);
+  WriteAttrTxt(elem, "name", texture->name);
+  if (texture->classname != "main") { WriteAttrTxt(elem, "class", texture->classname); }
+
+  // write builtin
+  WriteAttrKey(elem, "builtin", builtin_map, builtin_sz, values->builtin, deftex->builtin);
+  if (values->builtin != mjBUILTIN_NONE) {
+    WriteAttrKey(elem, "mark", mark_map, mark_sz, values->mark, deftex->mark);
+    WriteAttr(elem, "rgb1", 3, values->rgb1, deftex->rgb1);
+    WriteAttr(elem, "rgb2", 3, values->rgb2, deftex->rgb2);
+    WriteAttr(elem, "markrgb", 3, values->markrgb, deftex->markrgb);
+    WriteAttr(elem, "random", 1, &values->random, &deftex->random);
+    WriteAttrInt(elem, "width", values->width, deftex->width);
+    WriteAttrInt(elem, "height", values->height, deftex->height);
+  }
+
+  // write buffer
+  else if (cubefiles[0].empty() &&
+           cubefiles[1].empty() &&
+           cubefiles[2].empty() &&
+           cubefiles[3].empty() &&
+           cubefiles[4].empty() &&
+           cubefiles[5].empty() &&
+           file.empty() &&
+           values->gridsize[0] == 1 &&
+           values->gridsize[1] == 1) {
+    throw mjXError(0, "no support for buffer textures.");
+  }
+
+  // write textures loaded from files
+  else {
+    // write single file
+    WriteAttrTxt(elem,
+                 "content_type",
+                 Pick(authored_, texture->spec.content_type, texture->get_content_type()));
+    WriteAttrTxt(elem, "file", file);
+
+    // write separate files
+    WriteAttrTxt(elem, "fileright", cubefiles[0]);
+    WriteAttrTxt(elem, "fileleft", cubefiles[1]);
+    WriteAttrTxt(elem, "fileup", cubefiles[2]);
+    WriteAttrTxt(elem, "filedown", cubefiles[3]);
+    WriteAttrTxt(elem, "filefront", cubefiles[4]);
+    WriteAttrTxt(elem, "fileback", cubefiles[5]);
+    WriteAttrKey(elem, "hflip", bool_map, 2, values->hflip, deftex->hflip);
+    WriteAttrKey(elem, "vflip", bool_map, 2, values->vflip, deftex->vflip);
+    WriteAttrInt(elem, "nchannel", texture->spec.nchannel, deftex->nchannel);
+    WriteAttr(elem, "rgb1", 3, values->rgb1, deftex->rgb1);
+    WriteAttr(elem, "rgb2", 3, values->rgb2, deftex->rgb2);
+
+    // write grid
+    bool gridsize_differs =
+        values->gridsize[0] != deftex->gridsize[0] || values->gridsize[1] != deftex->gridsize[1];
+    if (gridsize_differs) {
+      double gsize[2] = {(double)values->gridsize[0], (double)values->gridsize[1]};
+      WriteAttr(elem, "gridsize", 2, gsize);
+    }
+    if (gridsize_differs || gridlayout != defgridlayout) {
+      WriteAttrTxt(elem, "gridlayout", gridlayout);
     }
   }
 }
@@ -1324,7 +1419,17 @@ void mjXWriter::OneEquality(XMLElement* elem, const mjCEquality* pequality, mjCD
           // not the constructor's union payload
           double zero3[3] = {0, 0, 0};
           WriteAttr(elem, "anchor", 3, equality->data, zero3);
-          WriteAttr(elem, "relpose", 7, equality->data + 3, def->Equality().spec.data + 3);
+
+          // a relative pose which mj_setConst computes, marked in data[11], is written as none:
+          // a zero quaternion
+          const double* defpose = def->Equality().spec.data + 3;
+          double        relpose[7];
+          std::copy_n(equality->data + 3, 7, relpose);
+          if (!authored_ && equality->data[11]) {
+            std::copy_n(defpose, 3, relpose);
+            std::fill_n(relpose + 3, 4, 0);
+          }
+          WriteAttr(elem, "relpose", 7, relpose, defpose);
         } else {
           WriteAttrTxt(elem, "site1", mjs_getString(equality->name1));
           WriteAttrTxt(elem, "site2", mjs_getString(equality->name2));
@@ -1355,7 +1460,7 @@ void mjXWriter::OneEquality(XMLElement* elem, const mjCEquality* pequality, mjCD
         break;
 
       default:
-        mju_error("mjXWriter: unknown equality type.");
+        throw mjXError(0, "unknown equality type");
     }
   }
 
@@ -1862,6 +1967,12 @@ void mjXWriter::Compiler(XMLElement* root) {
                conflict_sz,
                model->compiler.conflict,
                mjCONFLICT_WARNING);
+  WriteAttrKey(section,
+               "passthrough",
+               passthrough_map,
+               passthrough_sz,
+               model->compiler.passthrough,
+               mjPASSTHROUGH_NONE);
 }
 
 
@@ -2036,6 +2147,11 @@ void mjXWriter::Default(XMLElement* root, mjCDef* def) {
   // mesh
   elem = InsertEnd(section, "mesh");
   OneMesh(elem, &def->Mesh(), parent);
+  if (!elem->FirstAttribute()) section->DeleteChild(elem);
+
+  // texture
+  elem = InsertEnd(section, "texture");
+  OneTexture(elem, &def->Texture(), parent);
   if (!elem->FirstAttribute()) section->DeleteChild(elem);
 
   // material
@@ -2255,76 +2371,12 @@ void mjXWriter::Asset(XMLElement* root) {
   XMLElement* section = InsertEnd(root, "asset");
 
   // write textures
-  mjCTexture deftex(0);
   for (int i = 0; i < ntex; i++) {
-    // create element
-    mjCTexture*       ptexture = (mjCTexture*)model->GetObject(mjOBJ_TEXTURE, i);
-    const mjsTexture* texture  = Values<mjsTexture>(ptexture);
-    const string      file     = Pick(authored_, ptexture->spec.file, ptexture->File());
-    const auto cubefiles = Pick(authored_, ptexture->spec.cubefiles, ptexture->get_cubefiles());
+    // create element and write
+    mjCTexture* texture = (mjCTexture*)model->GetObject(mjOBJ_TEXTURE, i);
 
     elem = InsertEnd(section, "texture");
-
-    // write common attributes
-    WriteAttrKey(elem, "type", texture_map, texture_sz, texture->type);
-    if (!authored_ || texture->colorspace != mjCOLORSPACE_AUTO) {
-      WriteAttrKey(elem, "colorspace", colorspace_map, colorspace_sz, texture->colorspace);
-    }
-    WriteAttrTxt(elem, "name", ptexture->name);
-
-    // write builtin
-    if (texture->builtin != mjBUILTIN_NONE) {
-      WriteAttrKey(elem, "builtin", builtin_map, builtin_sz, texture->builtin);
-      WriteAttrKey(elem, "mark", mark_map, mark_sz, texture->mark, deftex.mark);
-      WriteAttr(elem, "rgb1", 3, texture->rgb1, deftex.rgb1);
-      WriteAttr(elem, "rgb2", 3, texture->rgb2, deftex.rgb2);
-      WriteAttr(elem, "markrgb", 3, texture->markrgb, deftex.markrgb);
-      WriteAttr(elem, "random", 1, &texture->random, &deftex.random);
-      WriteAttrInt(elem, "width", texture->width);
-      WriteAttrInt(elem, "height", texture->height);
-    }
-
-    // write buffer
-    else if (cubefiles[0].empty() &&
-             cubefiles[1].empty() &&
-             cubefiles[2].empty() &&
-             cubefiles[3].empty() &&
-             cubefiles[4].empty() &&
-             cubefiles[5].empty() &&
-             file.empty() &&
-             texture->gridsize[0] == 1 &&
-             texture->gridsize[1] == 1) {
-      throw mjXError(0, "no support for buffer textures.");
-    }
-
-    // write textures loaded from files
-    else {
-      // write single file
-      WriteAttrTxt(elem,
-                   "content_type",
-                   Pick(authored_, ptexture->spec.content_type, ptexture->get_content_type()));
-      WriteAttrTxt(elem, "file", file);
-
-      // write separate files
-      WriteAttrTxt(elem, "fileright", cubefiles[0]);
-      WriteAttrTxt(elem, "fileleft", cubefiles[1]);
-      WriteAttrTxt(elem, "fileup", cubefiles[2]);
-      WriteAttrTxt(elem, "filedown", cubefiles[3]);
-      WriteAttrTxt(elem, "filefront", cubefiles[4]);
-      WriteAttrTxt(elem, "fileback", cubefiles[5]);
-      if (texture->hflip) { WriteAttrKey(elem, "hflip", bool_map, 2, 1); }
-      if (texture->vflip) { WriteAttrKey(elem, "vflip", bool_map, 2, 1); }
-      WriteAttrInt(elem, "nchannel", ptexture->spec.nchannel, deftex.spec.nchannel);
-      WriteAttr(elem, "rgb1", 3, texture->rgb1, deftex.rgb1);
-      WriteAttr(elem, "rgb2", 3, texture->rgb2, deftex.rgb2);
-
-      // write grid
-      if (texture->gridsize[0] != 1 || texture->gridsize[1] != 1) {
-        double gsize[2] = {(double)texture->gridsize[0], (double)texture->gridsize[1]};
-        WriteAttr(elem, "gridsize", 2, gsize);
-        WriteAttrTxt(elem, "gridlayout", texture->gridlayout);
-      }
-    }
+    OneTexture(elem, texture, model->def_map[texture->classname]);
   }
 
   // write materials
@@ -3171,7 +3223,7 @@ void mjXWriter::Sensor(XMLElement* root) {
         break;
 
       default:
-        mju_error("Unknown sensor type in XML write");
+        throw mjXError(0, "unknown sensor type");
     }
 
     // write name, noise, userdata

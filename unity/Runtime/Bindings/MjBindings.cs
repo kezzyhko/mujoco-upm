@@ -27,6 +27,7 @@ public static class MujocoLib {
 // ----------------------------------Constants----------------------------------
 
 public const bool THIRD_PARTY_MUJOCO_MJASSERT_H_ = true;
+public const bool THIRD_PARTY_MUJOCO_MJBATCH_H_ = true;
 public const bool THIRD_PARTY_MUJOCO_MJDATA_H_ = true;
 public const bool THIRD_PARTY_MUJOCO_MJEXPORT_H_ = true;
 public const bool MUJOCO_HELPER_DLL_LOCAL = true;
@@ -43,7 +44,7 @@ public const int mjMAXCONPAIR = 50;
 public const int mjMAXTREEDEPTH = 50;
 public const int mjMAXFLEXNODES = 27;
 public const int mjMINAWAKE = 10;
-public const int mjNEQDATA = 11;
+public const int mjNEQDATA = 12;
 public const int mjNDYN = 10;
 public const int mjNGAIN = 10;
 public const int mjNBIAS = 10;
@@ -117,8 +118,11 @@ public const int mjMAXLINE = 100;
 public const int mjMAXLINEPNT = 1001;
 public const int mjMAXPLANEGRID = 200;
 public const bool THIRD_PARTY_MUJOCO_MJXMACRO_H_ = true;
+public const int mjSC_IN = 1;
+public const int mjSC_OUT = 2;
+public const int mjSC_INOUT = 3;
 public const bool THIRD_PARTY_MUJOCO_MUJOCO_H_ = true;
-public const int mjVERSION_HEADER = 3016000;
+public const int mjVERSION_HEADER = 3017000;
 
 
 // ------------------------------------Enums------------------------------------
@@ -579,6 +583,10 @@ public enum mjtMeshBuiltin : int{
   mjMESH_BUILTIN_SQUARE = 12,
   mjMESH_BUILTIN_DISC = 13,
 }
+public enum mjtFlexSection : int{
+  mjFLEXSECTION_CIRCLE = 0,
+  mjFLEXSECTION_BOX = 1,
+}
 public enum mjtBuiltin : int{
   mjBUILTIN_NONE = 0,
   mjBUILTIN_GRADIENT = 1,
@@ -600,6 +608,15 @@ public enum mjtAlignFree : int{
   mjALIGNFREE_FALSE = 0,
   mjALIGNFREE_TRUE = 1,
   mjALIGNFREE_AUTO = 2,
+}
+public enum mjtPassthrough : int{
+  mjPASSTHROUGH_NONE = 0,
+  mjPASSTHROUGH_TEXTURES = 1,
+}
+public enum mjtEmbed : int{
+  mjEMBED_FALSE = 0,
+  mjEMBED_TRUE = 1,
+  mjEMBED_AUTO = 2,
 }
 public enum mjtInertiaFromGeom : int{
   mjINERTIAFROMGEOM_FALSE = 0,
@@ -1474,6 +1491,7 @@ public unsafe struct mjModel_ {
   public UInt64* tex_adr;
   public byte* tex_data;
   public int* tex_pathadr;
+  public int* tex_contenttypeadr;
   public int* mat_texid;
   public byte* mat_texuniform;
   public float* mat_texrepeat;
@@ -5979,6 +5997,7 @@ public unsafe struct mjsCompiler_ {
   public byte savecanonical;
   public byte alignfree;
   public mjtConflict conflict;
+  public mjtPassthrough passthrough;
   public mjLROpt_ LRopt;
   public void* meshdir;
   public void* texturedir;
@@ -6807,6 +6826,12 @@ public static unsafe extern mjModel_* mj_loadXML([MarshalAs(UnmanagedType.LPStr)
 
 [DllImport("mujoco", CallingConvention = CallingConvention.Cdecl)]
 public static unsafe extern UInt64 mj_encode(void* s, mjModel_* m, [MarshalAs(UnmanagedType.LPStr)]string filename, [MarshalAs(UnmanagedType.LPStr)]string content_type, void* vfs, StringBuilder error, int error_sz);
+
+[DllImport("mujoco", CallingConvention = CallingConvention.Cdecl)]
+public static unsafe extern int mj_loadTexture(mjModel_* m, int id, byte** data, int* width, int* height, int* colorspace, StringBuilder error, int error_sz);
+
+[DllImport("mujoco", CallingConvention = CallingConvention.Cdecl)]
+public static unsafe extern mjModel_* mj_embedAssets(mjModel_* m, StringBuilder error, int error_sz);
 
 [DllImport("mujoco", CallingConvention = CallingConvention.Cdecl)]
 public static unsafe extern int mj_saveLastXML([MarshalAs(UnmanagedType.LPStr)]string filename, mjModel_* m, StringBuilder error, int error_sz);

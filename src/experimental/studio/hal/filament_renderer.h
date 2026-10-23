@@ -66,10 +66,10 @@ class FilamentRenderer {
 
   // Uploads an image to the backend for GUI rendering, returning the texture
   // ID for the texture. The ID can be used in subsequent calls to update the
-  // texture data. A nullptr pixels argument will free the texture if it exists.
+  // texture data. An empty pixels argument will free the texture if it exists.
   // A texture ID of 0 will create a new texture.
-  int UploadImage(int texture_id, const std::byte* pixels, int width,
-                  int height, int bpp);
+  int UploadImage(int tex_id, std::span<const std::byte> pixels, int width,
+                  int height);
 
   // Rendering flags.
   mjtByte* GetRenderFlags() { return render_flags_; }
@@ -89,8 +89,6 @@ class FilamentRenderer {
   void BuildUxRenderRequest(mjrfRenderRequest* request,
                             const mjrRect& viewport);
 
-  void* native_window_ = nullptr;
-  GraphicsMode gfx_ = GraphicsMode::FilamentVulkan;
   UniquePtr<mjrfContext> filament_context_{nullptr, nullptr};
   UniquePtr<mjrfScene> main_scene_{nullptr, nullptr};
   UniquePtr<mjrfScene> ux_scene_{nullptr, nullptr};
@@ -102,7 +100,6 @@ class FilamentRenderer {
   std::unique_ptr<ModelDecorations> model_decorations_;
   mjrfRenderRequest render_requests_[2];
   mjtByte render_flags_[mjNRNDFLAG];
-  int framebuffer_mode_ = 0;
   int offsamples_ = -1;
   double gpu_frame_ms_ = 0;
 };

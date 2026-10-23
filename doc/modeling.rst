@@ -1200,6 +1200,10 @@ History buffers are initialized by :ref:`mj_resetData` as follows:
   multiple of ``dt``, since that is when samples could have been computed. If ``phase = 0`` (the default), it is
   interpreted as ``-period``, meaning the first sample will be computed at ``t = 0``.
 
+History buffers require a positive :ref:`timestep<option-timestep>`; models which violate this are rejected by the
+compiler. If the timestep is subsequently set to a non-positive value, :ref:`mj_resetData` issues a warning and the
+behavior of history buffers is undefined.
+
 **Causality and interpolation**
 
 The most common positive delay value is ``delay = timestep * nsample``, which implements a simple
@@ -1610,7 +1614,7 @@ There are two types of dynamic arrays allocated in the ``arena`` memory space.
 By allocating dynamic quantities from both sides of the ``arena`` space, variable-sized memory allocation is controlled
 by a single number: the :at:`memory` attribute of the :ref:`size <size>` MJCF element. Unlike the fixed-size arrays in
 the ``buffer``, variable-sized arrays in the arena can be ``NULL``, for example after a call to :ref:`mj_resetData`.
-When ``arena`` memory runs out, one of three things will happen, depending on the type of memory requested:
+When ``arena`` memory runs out, one of four things will happen, depending on the type of memory requested:
 
 - If memory runs out during contact allocation, a warning will be raised and subsequent contacts will not be added in
   this step, but simulation continues as usual.
@@ -1618,12 +1622,19 @@ When ``arena`` memory runs out, one of three things will happen, depending on th
   disabled in this step, but simulation continues as usual. Note that physics without the constraint solver will
   generally be very different, but allowing the simulation to continue can still be useful, e.g. during
   scene initialization when many bodies are temporarily overlapping.
+- If memory runs out while the Newton solver is constructing or refactoring its Hessian/Cholesky factor (for example,
+  under heavy contact fill-in on a deformable ``flex``), ``mjWARN_CNSTRFULL`` will be raised and the solver will fall
+  back to CG (or to incremental rank-1 cone updates) for that step. If this warning fires repeatedly, each step still
+  incurs symbolic Hessian counting before falling back, so :at:`memory` should be increased.
 - If memory runs out during stack array allocation, a hard error will occur.
 
 Unlike the size of the ``buffer``, the size of the ``arena`` cannot be pre-computed, since the number of contacts and
-stack usage is not known in advance. So how should one choose it? The following simple heuristic is currently used,
-though it may be improved in the future: enough memory is allocated for 100 contacts and 500 scalar constraints, under
-worst-case conditions. If this heuristic is insufficient, we recommend the following procedure. Increase the ``arena``
+stack usage is not known in advance. So how should one choose it? The following heuristic is currently used: for rigid
+degrees of freedom, enough memory is allocated for 100 contacts and 500 scalar constraints under worst-case dense
+conditions; for deformable ``flex`` degrees of freedom, the sparse Newton Hessian and Cholesky factor are estimated
+from a symbolic reverse-Cholesky count on the static flex mesh topology (with a 1.5x safety margin) plus a bounded
+allowance for colliding flex contacts. If this heuristic is insufficient, we recommend the following procedure. Increase
+the ``arena``
 memory significantly using the :at:`memory` attribute, and inspect the actual memory used at runtime.
 ``mjData.maxuse_arena`` keeps track of the maximum ``arena`` memory utilization since the last reset. The :ref:`simulate
 <saSimulate>` viewer shows this number as a fraction of the total arena space (in the info window in the lower-left
@@ -1633,6 +1644,54 @@ simulation, depending on how many constraints are active and which constraint so
 memory efficient, followed by the Newton solver, while the PGS solver is the most memory intensive. When we design
 models, we usually aim for 50% utilization in the worst-case scenario encountered while exploring the model. If you only
 intend to use the CG solver, you can get away with significantly smaller arena allocation.
+
+.. _CAssetReference:
+
+Assets by reference
+~~~~~~~~~~~~~~~~~~~
+
+An asset in :ref:`mjModel` is *embedded* when its payload is in the model buffer, which is the default, or *by
+reference* when the model holds a resolved path and the parameters a consumer needs to load it, and no payload. Textures
+are the first asset type which can be by reference; the compiler never reads a texture, so leaving it out of the model
+saves the decoding time and the memory of the pixels, which in texture-heavy scenes is most of the model. The mode is
+the :ref:`passthrough<compiler-passthrough>` attribute of :ref:`compiler<compiler>`, overridden per texture by
+:ref:`embed<asset-texture-embed>` (``mjsCompiler.passthrough`` and ``mjsTexture.embed`` in the :ref:`mjSpec`).
+
+A texture ``i`` of :ref:`mjModel` is by reference when ``tex_adr[i] == -1``. Then:
+
+- ``tex_width[i]`` and ``tex_height[i]`` are 0, since the size is not known without reading the file. ``tex_type``,
+  ``tex_colorspace`` and ``tex_nchannel`` are as authored, except that a KTX has 1 channel, as when embedded; in
+  particular a :ref:`colorspace<asset-texture-colorspace>` of "auto" stays ``mjCOLORSPACE_AUTO``, to be resolved by
+  whoever decodes the file. ``ntexdata`` excludes the texture.
+- ``paths + tex_pathadr[i]`` is the resolved path of the file: the directory of the model file, the
+  :ref:`texturedir<compiler-texturedir>` and the :ref:`file<asset-texture-file>` attribute, after
+  :ref:`strippath<compiler-strippath>`, unless the file is absolute or has a scheme (e.g. ``https://``) handled by a
+  :ref:`resource provider<exProvider>`. As for every asset, this holds whether or not the texture is by reference.
+  ``paths + tex_contenttypeadr[i]`` is the authored :ref:`content_type<asset-texture-content_type>`, or
+  ``tex_contenttypeadr[i] == -1`` to infer it from the extension.
+- The bytes of the file are read with :ref:`mju_openResource` and :ref:`mju_readResource` on that path, with no
+  virtual file system. The compiler does not check that the file exists or that it can decode it; a path which does not
+  resolve is an error for whoever reads it. :ref:`mj_loadTexture` decodes a texture into pixels, for both kinds of
+  texture: for a by-reference texture it reads and decodes the file, resolving a colorspace of "auto", and returns
+  exactly the bytes compilation would have stored; for an embedded texture it returns a copy. The built-in renderer
+  loads by-reference textures through it, in :ref:`mjr_makeContext` and :ref:`mjr_uploadTexture`, so a file which does
+  not resolve or decode is a warning and an untextured material rather than an error. The Filament renderer loads them
+  through :ref:`mj_loadTexture` too, uploading the data as it would that of an embedded texture (a KTX file is its
+  bytes, which Filament decodes), and uploads a file once for all textures that share it and its decode parameters.
+
+A by-reference texture is always the file as a consumer would read it. Textures which the compiler would transform stay
+embedded, so that the model needs no fields describing the transformation: flipped textures, composite
+:ref:`grids<asset-texture-gridsize>`, cubes from six :ref:`separate files<asset-texture-fileright>`,
+:ref:`procedural<asset-texture-builtin>` textures and textures given as a buffer. A file served from memory by a
+:ref:`virtual file system<Virtualfilesystem>` also stays embedded, since the memory has no lifetime beyond compilation.
+
+Compilation does not modify the :ref:`mjSpec`: the resolved path is computed when the model is written, the texture
+element keeps its :at:`file` and :at:`embed` attributes, and every spec texture has exactly one model texture, with the
+same id and name, whether or not it is by reference. Recompiling after changing the policy switches the representation.
+:ref:`mj_saveModel` writes the model as it is, so an MJB file keeps its by-reference textures as references, and loads
+wherever the paths resolve. :ref:`mj_embedAssets` makes a new model with every by-reference texture loaded into it,
+equal to the eager compile of the same spec; a hermetic MJB file is :ref:`mj_embedAssets`, :ref:`mj_saveModel`,
+:ref:`mj_deleteModel`.
 
 .. _Tips:
 
