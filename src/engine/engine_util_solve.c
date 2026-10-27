@@ -18,6 +18,7 @@
 
 #include <mujoco/mjdata.h>
 #include <mujoco/mjsan.h>  // IWYU pragma: keep
+#include "engine/engine_crossplatform.h"
 #include "engine/engine_inline.h"
 #include "engine/engine_util_blas.h"
 #include "engine/engine_util_errmem.h"
@@ -29,7 +30,7 @@
 //---------------------------- dense Cholesky ------------------------------------------------------
 
 // Cholesky decomposition: mat = L*L'; return 'rank'
-int mju_cholFactor(mjtNum* mat, int n, mjtNum mindiag) {
+int mju_cholFactor(mjtNum* restrict mat, int n, mjtNum mindiag) {
   int rank = n;
   mjtNum tmp;
 
@@ -70,7 +71,7 @@ int mju_cholFactor(mjtNum* mat, int n, mjtNum mindiag) {
 
 
 // Cholesky solve
-void mju_cholSolve(mjtNum* res, const mjtNum* mat, const mjtNum* vec, int n) {
+void mju_cholSolve(mjtNum* res, const mjtNum* restrict mat, const mjtNum* vec, int n) {
   // copy if source and destination are different
   if (res != vec) {
     mju_copy(res, vec, n);
@@ -78,6 +79,7 @@ void mju_cholSolve(mjtNum* res, const mjtNum* mat, const mjtNum* vec, int n) {
 
   // forward substitution: solve L*res = vec
   for (int i=0; i < n; i++) {
+    // off-diagonal
     if (i) {
       res[i] -= mju_dot(mat+i*n, res, i);
     }
@@ -88,13 +90,13 @@ void mju_cholSolve(mjtNum* res, const mjtNum* mat, const mjtNum* vec, int n) {
 
   // backward substitution: solve L'*res = res
   for (int i=n-1; i >= 0; i--) {
-    if (i < n-1) {
-      for (int j=i+1; j < n; j++) {
-        res[i] -= mat[j*n+i] * res[j];
-      }
-    }
     // diagonal
     res[i] /= mat[i*(n+1)];
+
+    // update res[0..i-1] with row i of L
+    if (i && res[i]) {
+      mju_addToScl(res, mat+i*n, -res[i], i);
+    }
   }
 }
 
@@ -463,13 +465,7 @@ int mju_cholFactorSymbolicBlocked(int* restrict L_colind, int* restrict L_rownnz
 
 
 // suffix update of ns target rows from batch descendant rows (ns, batch are compile-time constants)
-#if defined(_MSC_VER)
-static __forceinline
-#elif defined(__GNUC__)
-static inline __attribute__((always_inline))
-#else
-static inline
-#endif
+static mjALWAYS_INLINE
 void cholSuffixUpdate(int ns, int batch, int nlead,
                       mjtNum* restrict dptr0, mjtNum* restrict dptr1, mjtNum* restrict dptr2,
                       const mjtNum* restrict p0, const mjtNum* restrict p1,
@@ -502,13 +498,7 @@ void cholSuffixUpdate(int ns, int batch, int nlead,
 
 
 // non-suffix scatter of batch descendant rows into dense (batch is a compile-time constant)
-#if defined(_MSC_VER)
-static __forceinline
-#elif defined(__GNUC__)
-static inline __attribute__((always_inline))
-#else
-static inline
-#endif
+static mjALWAYS_INLINE
 void cholScatterUpdate(int batch, int num_cols, mjtNum* restrict dense,
                        const int* restrict colptr,
                        const mjtNum* restrict p0, const mjtNum* restrict p1,
@@ -526,13 +516,7 @@ void cholScatterUpdate(int batch, int num_cols, mjtNum* restrict dense,
 
 
 // factor supernode of size ns (1, 2, or 3) starting at row r; return rank decrement (force inline)
-#if defined(_MSC_VER)
-static __forceinline
-#elif defined(__GNUC__)
-static inline __attribute__((always_inline))
-#else
-static inline
-#endif
+static mjALWAYS_INLINE
 int cholFactorSupernode(
     int r, int ns, mjtNum mindiag, mjtNum* restrict L,
     const int* restrict L_rownnz, const int* restrict L_rowadr, const int* restrict L_colind,
