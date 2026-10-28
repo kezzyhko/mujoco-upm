@@ -67,7 +67,7 @@ Read the matching reference file when your task touches these areas:
 
 ### Studio vs Legacy `simulate`
 
-| Feature | Legacy `simulate` / `mujoco.viewer` | Studio (`mujoco.experimental.studio`) |
+| Feature | Legacy `simulate` / `mujoco.viewer` | Studio (`mujoco.studio`) |
 | :--- | :--- | :--- |
 | **GUI & Plotting** | Fixed `mjui` panels & `mjr_figure` | **Dear ImGui** & **ImPlot** |
 | **Render Backend** | Classic OpenGL (`mjrContext`) | **Filament** PBR (Vulkan, OpenGL, Metal, WebGL) |
@@ -111,17 +111,17 @@ rendering and UI through non-blocking message endpoints:
     -   **`plugin.ViewerPlugin`**: Runs on the viewer thread, automatically
         caches `self.viewer` on `ViewerInitEvent`, and handles visual updates,
         rendering overlays, and Dear ImGui construction.
--   **Canonical Samples (`python/mujoco/experimental/studio/`)**:
-    -   `python/mujoco/experimental/studio/viewer.py` — Standard Studio viewer
+-   **Canonical Samples (`python/mujoco/sample/studio/`)**:
+    -   `python/mujoco/studio/viewer.py` — Standard Studio viewer
         (`viewer_app.ViewerApp`); run with
         `viewer.py --model=<file> --plugins=a.py,b.py` (instantiates every
         `ViewerPlugin`/`SimPlugin` defined in those files).
-    -   `sample/ghost.py` — `GhostRenderer` injecting transient `extra_geoms` on
+    -   `python/mujoco/sample/studio/ghost.py` — `GhostRenderer` injecting transient `extra_geoms` on
         `UpdateEvent` and ImGui controls on `BuildGuiEvent`
-        (`viewer.py --model=... --plugins=sample/ghost.py`).
-    -   `sample/implot.py` — `BodyInspector` demonstrating real-time ImGui +
-        ImPlot charting (`viewer.py --model=... --plugins=sample/implot.py`).
-    -   `sample/custom_sim_loop.py` — External script owning its stepping and
+        (`viewer.py --model=... --plugins=python/mujoco/sample/studio/ghost.py`).
+    -   `python/mujoco/sample/studio/implot.py` — `BodyInspector` demonstrating real-time ImGui +
+        ImPlot charting (`viewer.py --model=... --plugins=python/mujoco/sample/studio/implot.py`).
+    -   `python/mujoco/sample/studio/custom_sim_loop.py` — External script owning its stepping and
         pacing loop via `handle.sync(model, data)`.
 
 ## 2. Launching Python Viewers
@@ -129,7 +129,7 @@ rendering and UI through non-blocking message endpoints:
 Studio provides three runner modules sharing the same `.run(...)` and
 `.launch(...)` interfaces:
 
-1.  **`launch_web.run`** (`python/mujoco/experimental/studio/launch_web.py`) —
+1.  **`launch_web.run`** (`python/mujoco/studio/launch_web.py`) —
     **Recommended default.** Spawns `WebViewer` in a background daemon thread
     with **zero host graphics dependencies** (no X11/Wayland display server or
     host Filament libraries required): physics and headless Dear ImGui layout
@@ -137,10 +137,10 @@ Studio provides three runner modules sharing the same `.run(...)` and
     WebSockets to a browser WASM client. Ideal for remote workstations,
     containers, and headless servers.
 2.  **`launch_native.run`**
-    (`python/mujoco/experimental/studio/launch_native.py`) — Opens a local
+    (`python/mujoco/studio/launch_native.py`) — Opens a local
     desktop window with native Filament graphics (Vulkan or OpenGL).
 3.  **`launch_passive.run`**
-    (`python/mujoco/experimental/studio/launch_passive.py`) — Inspects
+    (`python/mujoco/studio/launch_passive.py`) — Inspects
     `config.gfx` and delegates to `launch_web`
     (`config.gfx in ('web', 'webgl')`) or `launch_native`. Use `launch_web` or
     `launch_native` directly unless you need runtime switching via `config.gfx`.
@@ -154,9 +154,9 @@ in-memory `model=...` (with optional `data=...`, published via
 `step_control.StepControl()` and `sim_history.SimHistory()`:
 
 ```python
-from mujoco.experimental.studio import launch_web  # Or launch_native / launch_passive
-from mujoco.experimental.studio import viewer_app
-from mujoco.experimental.studio import viewer_protocol
+from mujoco.studio import launch_web  # Or launch_native / launch_passive
+from mujoco.studio import viewer_app
+from mujoco.studio import viewer_protocol
 
 config = viewer_protocol.ViewerConfig(title='Studio')
 
@@ -203,7 +203,7 @@ with launch_web.launch(
 
 To step and pace physics directly in the caller loop instead, omit
 `StepControl()` and step after `model, data = handle.sync(model, data)` (see
-`python/mujoco/experimental/studio/sample/custom_sim_loop.py`).
+`python/mujoco/sample/studio/custom_sim_loop.py`).
 
 ## 3. Plugin & Messaging Essentials
 
@@ -222,8 +222,8 @@ All cross-thread communication in `messages.py` uses two channel base classes
 Plugins subscribe to messages via `@messages.handler`:
 
 ```python
-from mujoco.experimental.studio import messages
-from mujoco.experimental.studio import plugin
+from mujoco.studio import messages
+from mujoco.studio import plugin
 
 class MyPlugin(plugin.ViewerPlugin):
   @messages.handler

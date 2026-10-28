@@ -28,6 +28,13 @@ General
      **Migration:** Use continuum :ref:`elasticity<flex-elasticity>` with ``integrator="discrete"`` or
      :ref:`edge equality<flexcomp-edge-equality>` for 2D cloth models.
 
+   - Unpinned :ref:`flexcomp<body-flexcomp>` models (with **full**, **trilinear**, or **quadratic**
+     :ref:`dofs<body-flexcomp-dof>`) now fail to compile if their parent or ancestor body has joints when no active
+     vertices or nodes are :ref:`pinned<flexcomp-pin>` to it.
+
+     **Migration:** Remove joints from the parent/ancestor body of an unpinned flex, or pin at least one vertex/node to
+     the parent body with :ref:`pin<flexcomp-pin>`.
+
 Engine
 ^^^^^^
 - Flex improvements:
@@ -57,6 +64,11 @@ Engine
 - Improved numerical stability of sphere and cylinder :ref:`spatial tendon<tendon-spatial>` :ref:`geom<spatial-geom>`
   wrapping at wrap onset. Thanks to :github:user:`M-Colley` for reporting and analyzing the issue in
   :doc:`MJWarp <mjwarp/index>` issue `1772 <https://github.com/google-deepmind/mujoco_warp/issues/1772>`__.
+
+Filament Rendering
+^^^^^^^^^^^^^^^^^^
+- Added :ref:`mjrf_flush` (``mjrf.Context.flush`` in Python) to flush pending operations to the rendering backend and
+  invoke any completed callbacks.
 
 Python bindings
 ^^^^^^^^^^^^^^^
