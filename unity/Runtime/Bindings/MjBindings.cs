@@ -258,6 +258,10 @@ public enum mjtEq : int{
   mjEQ_FLEXSTRAIN = 6,
   mjEQ_DISTANCE = 7,
 }
+public enum mjtTendon : int{
+  mjTENDON_FIXED = 0,
+  mjTENDON_SPATIAL = 1,
+}
 public enum mjtWrap : int{
   mjWRAP_NONE = 0,
   mjWRAP_JOINT = 1,
@@ -771,7 +775,8 @@ public enum mjtRndFlag : int{
   mjRND_SEGMENT = 8,
   mjRND_IDCOLOR = 9,
   mjRND_CULL_FACE = 10,
-  mjNRNDFLAG = 11,
+  mjRND_POST_PROCESSING = 11,
+  mjNRNDFLAG = 12,
 }
 public enum mjtStereo : int{
   mjSTEREO_NONE = 0,
@@ -1279,6 +1284,7 @@ public unsafe struct mjModel_ {
   public int* geom_priority;
   public int* geom_plugin;
   public byte* geom_sameframe;
+  public byte* geom_castshadow;
   public double* geom_solmix;
   public double* geom_solref;
   public double* geom_solimp;
@@ -1374,6 +1380,7 @@ public unsafe struct mjModel_ {
   public int* flex_stiffnessadr;
   public int* flex_elemedgeadr;
   public int* flex_bendingadr;
+  public int* flex_plasticadr;
   public int* flex_shellnum;
   public int* flex_shelldataadr;
   public int* flex_texcoordadr;
@@ -1404,6 +1411,7 @@ public unsafe struct mjModel_ {
   public double* efm0_L;
   public int* efmC_perm;
   public double* flex_damping;
+  public double* flex_yield;
   public double* flex_edgestiffness;
   public double* flex_edgedamping;
   public int* flex_edgeequality;
@@ -1519,6 +1527,7 @@ public unsafe struct mjModel_ {
   public double* eq_solref;
   public double* eq_solimp;
   public double* eq_data;
+  public int* tendon_type;
   public int* tendon_adr;
   public int* tendon_num;
   public int* tendon_matid;
@@ -6080,6 +6089,7 @@ public unsafe struct mjvGeom_ {
   public float shininess;
   public float reflectance;
   public fixed float texrepeat[2];
+  public byte castshadow;
   public fixed char label[100];
   public float camdist;
   public float modelrbound;
@@ -6260,7 +6270,7 @@ public unsafe struct mjvScene_ {
   public fixed float rotate[4];
   public float scale;
   public int stereo;
-  public fixed byte flags[11];
+  public fixed byte flags[12];
   public int framewidth;
   public fixed float framergb[3];
   public int status;

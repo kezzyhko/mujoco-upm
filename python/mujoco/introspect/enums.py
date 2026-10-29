@@ -229,6 +229,15 @@ ENUMS: Mapping[str, EnumDecl] = dict([
              ('mjEQ_DISTANCE', 7),
          ]),
      )),
+    ('mjtTendon',
+     EnumDecl(
+         name='mjtTendon',
+         declname='enum mjtTendon',
+         values=dict([
+             ('mjTENDON_FIXED', 0),
+             ('mjTENDON_SPATIAL', 1),
+         ]),
+     )),
     ('mjtWrap',
      EnumDecl(
          name='mjtWrap',
@@ -996,7 +1005,8 @@ ENUMS: Mapping[str, EnumDecl] = dict([
              ('mjRND_SEGMENT', 8),
              ('mjRND_IDCOLOR', 9),
              ('mjRND_CULL_FACE', 10),
-             ('mjNRNDFLAG', 11),
+             ('mjRND_POST_PROCESSING', 11),
+             ('mjNRNDFLAG', 12),
          ]),
      )),
     ('mjtStereo',

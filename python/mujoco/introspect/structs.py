@@ -2189,6 +2189,14 @@ STRUCTS: Mapping[str, StructDecl] = dict([
                  array_extent=('ngeom',),
              ),
              StructFieldDecl(
+                 name='geom_castshadow',
+                 type=PointerType(
+                     inner_type=ValueType(name='mjtBool'),
+                 ),
+                 doc='does geom cast shadows',
+                 array_extent=('ngeom',),
+             ),
+             StructFieldDecl(
                  name='geom_solmix',
                  type=PointerType(
                      inner_type=ValueType(name='mjtNum'),
@@ -2949,6 +2957,14 @@ STRUCTS: Mapping[str, StructDecl] = dict([
                  array_extent=('nflex',),
              ),
              StructFieldDecl(
+                 name='flex_plasticadr',
+                 type=PointerType(
+                     inner_type=ValueType(name='int'),
+                 ),
+                 doc='plastic state address; -1: elastic',
+                 array_extent=('nflex',),
+             ),
+             StructFieldDecl(
                  name='flex_shellnum',
                  type=PointerType(
                      inner_type=ValueType(name='int'),
@@ -3186,6 +3202,14 @@ STRUCTS: Mapping[str, StructDecl] = dict([
                      inner_type=ValueType(name='mjtNum'),
                  ),
                  doc="Rayleigh's damping coefficient",
+                 array_extent=('nflex',),
+             ),
+             StructFieldDecl(
+                 name='flex_yield',
+                 type=PointerType(
+                     inner_type=ValueType(name='mjtNum'),
+                 ),
+                 doc='yield strain threshold; 0: elastic',
                  array_extent=('nflex',),
              ),
              StructFieldDecl(
@@ -4107,6 +4131,14 @@ STRUCTS: Mapping[str, StructDecl] = dict([
                  ),
                  doc='numeric data for constraint',
                  array_extent=('neq', 'mjNEQDATA'),
+             ),
+             StructFieldDecl(
+                 name='tendon_type',
+                 type=PointerType(
+                     inner_type=ValueType(name='int'),
+                 ),
+                 doc='type of tendon (mjtTendon)',
+                 array_extent=('ntendon',),
              ),
              StructFieldDecl(
                  name='tendon_adr',
@@ -8257,6 +8289,11 @@ STRUCTS: Mapping[str, StructDecl] = dict([
                  doc='group',
              ),
              StructFieldDecl(
+                 name='castshadow',
+                 type=ValueType(name='mjtBool'),
+                 doc='does geom cast shadows',
+             ),
+             StructFieldDecl(
                  name='hfieldname',
                  type=PointerType(
                      inner_type=ValueType(name='mjString'),
@@ -8821,6 +8858,11 @@ STRUCTS: Mapping[str, StructDecl] = dict([
                  name='thickness',
                  type=ValueType(name='double'),
                  doc='thickness (2D only)',
+             ),
+             StructFieldDecl(
+                 name='stressyield',
+                 type=ValueType(name='double'),
+                 doc='yield strain threshold; 0: elastic',
              ),
              StructFieldDecl(
                  name='elastic2d',
@@ -10776,6 +10818,11 @@ STRUCTS: Mapping[str, StructDecl] = dict([
                  doc='texture repetition for 2d mapping',
              ),
              StructFieldDecl(
+                 name='castshadow',
+                 type=ValueType(name='mjtByte'),
+                 doc='does geom cast shadows',
+             ),
+             StructFieldDecl(
                  name='label',
                  type=ArrayType(
                      inner_type=ValueType(name='char'),
@@ -11235,7 +11282,7 @@ STRUCTS: Mapping[str, StructDecl] = dict([
                  name='flags',
                  type=ArrayType(
                      inner_type=ValueType(name='mjtByte'),
-                     extents=(11,),
+                     extents=(12,),
                  ),
                  doc='rendering flags (indexed by mjtRndFlag)',
              ),

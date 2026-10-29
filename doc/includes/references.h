@@ -834,6 +834,7 @@ typedef struct mjModel_ {
   int*      geom_priority;        // geom contact priority                    (ngeom x 1)
   int*      geom_plugin;          // plugin instance id; -1: not in use       (ngeom x 1)
   mjtByte*  geom_sameframe;       // same frame as body (mjtSameframe)        (ngeom x 1)
+  mjtBool*  geom_castshadow;      // does geom cast shadows                   (ngeom x 1)
   mjtNum*   geom_solmix;          // mixing coef for solref/imp in geom pair  (ngeom x 1)
   mjtNum*   geom_solref;          // constraint solver reference: contact     (ngeom x mjNREF)
   mjtNum*   geom_solimp;          // constraint solver impedance: contact     (ngeom x mjNIMP)
@@ -939,6 +940,7 @@ typedef struct mjModel_ {
   int*      flex_stiffnessadr;    // stiffness matrix address                 (nflex x 1)
   int*      flex_elemedgeadr;     // first element edge id address            (nflex x 1)
   int*      flex_bendingadr;      // first bending data address               (nflex x 1)
+  int*      flex_plasticadr;      // plastic state address; -1: elastic       (nflex x 1)
   int*      flex_shellnum;        // number of shells                         (nflex x 1)
   int*      flex_shelldataadr;    // first shell data address                 (nflex x 1)
   int*      flex_texcoordadr;     // address in flex_texcoord; -1: none       (nflex x 1)
@@ -969,6 +971,7 @@ typedef struct mjModel_ {
   mjtNum*   efm0_L;               // factor of M + (dt^2+dt*d)*K_bend         (nefm0L x 1)
   int*      efmC_perm;            // sparse factor order: vertex dof or -1    (nefmCvert x 1)
   mjtNum*   flex_damping;         // Rayleigh's damping coefficient           (nflex x 1)
+  mjtNum*   flex_yield;           // yield strain threshold; 0: elastic       (nflex x 1)
   mjtNum*   flex_edgestiffness;   // edge stiffness                           (nflex x 1)
   mjtNum*   flex_edgedamping;     // edge damping                             (nflex x 1)
   int*      flex_edgeequality;    // 0:none, 1:edges, 3:strain                (nflex x 1)
@@ -1102,6 +1105,7 @@ typedef struct mjModel_ {
   mjtNum*   eq_data;              // numeric data for constraint              (neq x mjNEQDATA)
 
   // tendons
+  int*      tendon_type;          // type of tendon (mjtTendon)               (ntendon x 1)
   int*      tendon_adr;           // address of first object in tendon's path (ntendon x 1)
   int*      tendon_num;           // number of objects in tendon's path       (ntendon x 1)
   int*      tendon_matid;         // material id for rendering                (ntendon x 1)
@@ -1591,6 +1595,8 @@ typedef struct mjrfRenderRequest_ {
   mjtBool post_processing;           // enable post processing, enabled by default
   mjtBool reflections;               // enable reflections, enabled by default
   mjtBool shadows;                   // enable shadows, enabled by default
+  mjtBool skybox;                    // enable skybox rendering, enabled by default
+  mjtBool haze;                      // enable horizon haze, enabled by default
 
   // The headlight is a directional light aligned with this request's camera. It
   // is a property of the request rather than of the scene, so that a scene
@@ -1681,9 +1687,10 @@ typedef struct mjrfMaterial_ {
   const mjrfTexture* occlusion_texture;   // ambient occlusion texture (R8)
   const mjrfTexture* orm_texture;         // occlusion/roughness/metallic texture (RGB8)
   const mjrfTexture* emissive_texture;    // emissive texture (RGB8)
-  const mjrfTexture* reflection_texture;  // reflection texture, for internal use only
+  const mjrfTexture* reflection_texture;  // reflection texture (internal)
   float reflection_normal[3];      // mirror normal, gates reflection to front face (internal)
   float reflection_view_proj[16];  // main camera view-proj for reflection UV mapping (internal)
+  float haze_ratio;                // horizon haze ratio [0, 1]; disabled if < 0 (internal)
 } mjrfMaterial;
 typedef struct mjrfRenderableParams_ {
   mjtBool cast_shadow;                  // if true, casts shadows
@@ -2018,6 +2025,7 @@ typedef struct mjsGeom_ {          // geom specification
   mjString* material;              // name of material
   float rgba[4];                   // rgba when material is omitted
   int group;                       // group
+  mjtBool castshadow;              // does geom cast shadows
 
   // other
   mjString* hfieldname;            // heightfield attached to geom
@@ -2135,6 +2143,7 @@ typedef struct mjsFlex_ {          // flex specification
   double poisson;                  // Poisson's ratio
   double damping;                  // Rayleigh's damping
   double thickness;                // thickness (2D only)
+  double stressyield;              // yield strain threshold; 0: elastic
   int elastic2d;                   // 2D passive forces; 0: none, 1: bending, 2: stretching, 3: both
   int elastic3d;  // experimental 3D material (mjSpec only); 0: Saint
                   // Venant-Kirchhoff, 1: Stable Neo-Hookean
@@ -2599,6 +2608,10 @@ typedef enum mjtEq {              // type of equality constraint
   mjEQ_FLEXSTRAIN,                // constrain strain of a trilinear/quadratic flex (B-bar)
   mjEQ_DISTANCE                   // unsupported, will cause an error if used
 } mjtEq;
+typedef enum mjtTendon {          // type of tendon
+  mjTENDON_FIXED      = 0,        // linear combination of joint coordinates
+  mjTENDON_SPATIAL                // path through sites, around geoms
+} mjtTendon;
 typedef enum mjtWrap {            // type of tendon wrap object
   mjWRAP_NONE         = 0,        // null object
   mjWRAP_JOINT,                   // constant moment arm
@@ -3305,6 +3318,7 @@ typedef enum mjtRndFlag_ {        // flags enabling rendering effects
   mjRND_SEGMENT,                  // segmentation with random color
   mjRND_IDCOLOR,                  // segmentation with segid+1 color
   mjRND_CULL_FACE,                // cull backward faces
+  mjRND_POST_PROCESSING,          // post-processing (e.g. color grading, bloom, etc.)
 
   mjNRNDFLAG                      // number of rendering flags
 } mjtRndFlag;
@@ -3384,6 +3398,7 @@ typedef struct mjvGeom_ {         // abstract geom
   float    shininess;             // shininess coef
   float    reflectance;           // reflectance coef
   float    texrepeat[2];          // texture repetition for 2d mapping
+  mjtByte  castshadow;            // does geom cast shadows
 
   char     label[100];            // text label
 
@@ -3647,17 +3662,18 @@ const char* mjVISSTRING[mjNVISFLAG][3] = {
   {"SDF iters",       "0", ""}
 };
 const char* mjRNDSTRING[mjNRNDFLAG][3] = {
-  {"Shadow",      "1", "S"},
-  {"Wireframe",   "0", "W"},
-  {"Reflection",  "1", "R"},
-  {"Additive",    "0", "L"},
-  {"Skybox",      "1", "K"},
-  {"Fog",         "0", "G"},
-  {"Haze",        "1", "/"},
-  {"Depth",       "0", ""},
-  {"Segment",     "0", ","},
-  {"Id Color",    "0", ""},
-  {"Cull Face",   "1", ""}
+  {"Shadow",          "1", "S"},
+  {"Wireframe",       "0", "W"},
+  {"Reflection",      "1", "R"},
+  {"Additive",        "0", "L"},
+  {"Skybox",          "1", "K"},
+  {"Fog",             "0", "G"},
+  {"Haze",            "1", "/"},
+  {"Depth",           "0", ""},
+  {"Segment",         "0", ","},
+  {"Id Color",        "0", ""},
+  {"Cull Face",       "1", ""},
+  {"Post Processing", "1", ""}
 };
 
 //----------------------------- MJAPI FUNCTIONS --------------------------------
@@ -3752,6 +3768,7 @@ void mjrf_getRenderableMaterial(mjrfRenderable* renderable, mjrfMaterial* materi
 void mjrf_setRenderablePose(mjrfRenderable* renderable, const float position[3],
                       const float rotation[9]);
 void mjrf_setRenderableSize(mjrfRenderable* renderable, const float size[3]);
+void mjrf_setRenderableCastShadow(mjrfRenderable* renderable, mjtBool enabled);
 void mjrf_defaultRenderTargetConfig(mjrfRenderTargetConfig* config);
 mjrfRenderTarget* mjrf_createRenderTarget(mjrfContext* ctx, const mjrfRenderTargetConfig* config);
 void mjrf_destroyRenderTarget(mjrfRenderTarget* render_target);

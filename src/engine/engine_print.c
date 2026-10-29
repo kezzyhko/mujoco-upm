@@ -1173,6 +1173,21 @@ void mj_printFormattedModel(const mjModel* m, const char* filename, const char* 
           }
         }
       }
+      for (int j=0; j < m->nflex && k != 7; j++) {
+        if (m->flex_plasticadr[j] >= 0) {
+          int adr = m->flex_plasticadr[j];
+          int pnum = 0;
+          if (m->flex_stiffnessadr[j] >= 0 && m->flex_stiffness[m->flex_stiffnessadr[j]] != 0) {
+            pnum += ((m->flex_dim[j] == 2) ? 3 : 6) * m->flex_elemnum[j];
+          }
+          for (int d=0; d < pnum; d++) {
+            if (m->key_plastic[i*m->nplastic + adr + d] != 0) {
+              k = 7;
+              break;
+            }
+          }
+        }
+      }
     }
 
     // print if different
@@ -1821,6 +1836,7 @@ void mj_printFormattedScene(const mjvScene* s, const char* filename, const char*
     printNum(fp, "    specular", geom->specular, float_format);
     printNum(fp, "    shininess", geom->shininess, float_format);
     printNum(fp, "    reflectance", geom->reflectance, float_format);
+    printInt(fp, "    castshadow", geom->castshadow);
     fprintf(fp,  "\n");
   }
   fprintf(fp,  "\n");

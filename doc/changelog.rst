@@ -16,6 +16,21 @@ Significant new features
   (:ref:`spatial<tendon-spatial-springyield>`, :ref:`fixed<tendon-fixed-springyield>`) springs, with stateful plastic
   spring references in ``mjData.plastic`` (``mjSTATE_PLASTIC``).
 
+.. image:: https://www.gstatic.com/mujoco/doc/images/changelog/clay.gif
+   :align: right
+   :width: 40%
+   :target: https://github.com/google-deepmind/mujoco/blob/main/model/flex/clay.xml
+
+- Added continuum elasto-plasticity (:ref:`yield<flex-elasticity-yield>`) for non-interpolated 2D and 3D
+  :ref:`flexes<deformable-flex>`, with volumetric-deviatoric (von Mises :math:`J_2`) stretching return mapping in
+  ``mjData.plastic``.
+
+.. container:: custom-clear
+
+   .. raw:: html
+
+      <div style="clear: both;"></div>
+
 General
 ^^^^^^^
 .. admonition:: Breaking API changes
@@ -45,6 +60,12 @@ General
 
      **Migration:** Remove joints from the parent/ancestor body of an unpinned flex, or pin at least one vertex/node to
      the parent body with :ref:`pin<flexcomp-pin>`.
+
+- Added a :ref:`castshadow<body-geom-castshadow>` attribute to :ref:`geom<body-geom>` (``mjsGeom.castshadow``,
+  ``mjModel.geom_castshadow``, ``mjvGeom.castshadow``; default ``true``) to disable shadow casting per geom in both the
+  classic OpenGL and Filament renderers.
+- Added ``mjModel.tendon_type`` with values from the new :ref:`mjtTendon` enum, distinguishing fixed and spatial
+  tendons. Previously, the type was implied by whether the first path element was a joint.
 
 Engine
 ^^^^^^
@@ -87,8 +108,18 @@ Engine
 
 Filament Rendering
 ^^^^^^^^^^^^^^^^^^
+- Added horizon haze and skybox visibility support: infinite planes are centered beneath the camera and blend smoothly
+  into the skybox horizon according to :ref:`visual/map/haze<visual-map-haze>` and
+  :ref:`visual/rgba/haze<visual-rgba-haze>`, toggled per view via ``haze`` and ``skybox`` on :ref:`mjrfRenderRequest`
+  (:ref:`mjRND_HAZE<mjtRndFlag>` and :ref:`mjRND_SKYBOX<mjtRndFlag>`).
 - Added :ref:`mjrf_flush` (``mjrf.Context.flush`` in Python) to flush pending operations to the rendering backend and
   invoke any completed callbacks.
+- Added :ref:`mjrf_setRenderableCastShadow` (``mjrf.Renderable.set_cast_shadow`` in Python) to dynamically toggle
+  whether a renderable casts shadows.
+
+Rendering
+^^^^^^^^^
+- Added :ref:`mjRND_POST_PROCESSING<mjtRndFlag>` rendering flag.
 
 Python bindings
 ^^^^^^^^^^^^^^^
@@ -100,6 +131,12 @@ Bug fixes
   ``qpos_spring``. Previously their cached poses could be left at ``qpos_spring``. It also no longer overwrites
   ``cam_xpos``, ``cam_xmat``, ``light_xpos`` and ``light_xdir`` in :ref:`mjData`, which left static cameras and lights
   with tracking or targeting at their fixed-mode poses.
+
+Documentation
+^^^^^^^^^^^^^
+- Added documentation for :ref:`MuJoCo Studio <Studio>`, covering :ref:`web <StudioWebViewers>` and
+  :ref:`native <StudioNativeViewers>` viewers, :ref:`architecture <StudioArchitecture>`, and
+  :ref:`Python <StudioPythonPlugins>` and :ref:`C++ <StudioCpp>` development.
 
 Version 3.17.0 (October 22, 2026)
 ---------------------------------

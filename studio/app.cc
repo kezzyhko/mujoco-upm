@@ -193,6 +193,9 @@ App::~App() {
   // changes and plugin visibility would be lost. window_ owns the ImGui context
   // and outlives this body.
   SaveSettings();
+  if (ImPlot::GetCurrentContext() != nullptr) {
+    ImPlot::DestroyContext(nullptr);
+  }
   mjv_freeScene(&plugin_scene_);
   model_holder_.reset();
   mj_deleteVFS(&vfs_);
@@ -593,8 +596,11 @@ Renderer::View App::GetSceneView() {
   } else {
     view.draw_mode = mjDRAW_MODE_DEFAULT;
   }
+  view.haze = render_flags_[mjRND_HAZE];
+  view.skybox = render_flags_[mjRND_SKYBOX];
   view.shadows = render_flags_[mjRND_SHADOW];
   view.reflections = render_flags_[mjRND_REFLECTION];
+  view.post_processing = render_flags_[mjRND_POST_PROCESSING];
   if (model()->vis.headlight.active) {
     view.headlight = Renderer::View::Headlight();
     view.headlight->color[0] = model()->vis.headlight.diffuse[0];

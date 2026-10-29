@@ -295,6 +295,7 @@ static const mjXDefaultEntry kDefaults_mjsFlex[] = {
   {"poisson", (int)offsetof(mjsFlex, poisson), 0, 1, 0, 0, {0}},
   {"damping", (int)offsetof(mjsFlex, damping), 0, 1, 0, 0, {0}},
   {"thickness", (int)offsetof(mjsFlex, thickness), 0, 1, 1, 0, {-1.0}},
+  {"yield", (int)offsetof(mjsFlex, stressyield), 0, 1, 0, 0, {0}},
   {"elastic2d", (int)offsetof(mjsFlex, elastic2d), 2, 1, 0, 0, {0}},
   {"section", (int)offsetof(mjsFlex, section), 2, 1, 0, 0, {0}},
   {"sectionsize", (int)offsetof(mjsFlex, sectionsize), 0, 2, 0, 0, {0}},
@@ -353,6 +354,7 @@ static const mjXDefaultEntry kDefaults_mjsGeom[] = {
   {"quat", (int)offsetof(mjsGeom, quat), 0, 4, 4, 0, {1.0, 0.0, 0.0, 0.0}},
   {"fitscale", (int)offsetof(mjsGeom, fitscale), 0, 1, 1, 0, {1.0}},
   {"rgba", (int)offsetof(mjsGeom, rgba), 1, 4, 4, 0, {0.5, 0.5, 0.5, 1.0}},
+  {"castshadow", (int)offsetof(mjsGeom, castshadow), 3, 1, 1, 0, {1}},
   {"fluidshape", (int)offsetof(mjsGeom, fluid_ellipsoid), 4, 1, 0, 0, {0}},
   {"fluidcoef", (int)offsetof(mjsGeom, fluid_coefs), 4, 5, 5, 0, {0.5, 0.25, 1.5, 1.0, 1.0}},
 };

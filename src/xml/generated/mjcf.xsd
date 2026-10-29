@@ -1517,6 +1517,7 @@
       </xs:annotation>
     </xs:attribute>
     <xs:attribute name="rgba" type="float4" default="0.5 0.5 0.5 1"/>
+    <xs:attribute name="castshadow" type="kw_bool" default="true"/>
     <xs:attribute name="fluidshape" type="kw_fluidshape"/>
     <xs:attribute name="fluidcoef" type="double1to5" default="0.5 0.25 1.5 1 1"/>
     <xs:attribute name="user" type="doublelist"/>
@@ -2300,6 +2301,7 @@
       </xs:annotation>
     </xs:attribute>
     <xs:attribute name="rgba" type="float4" default="0.5 0.5 0.5 1"/>
+    <xs:attribute name="castshadow" type="kw_bool" default="true"/>
     <xs:attribute name="fluidshape" type="kw_fluidshape"/>
     <xs:attribute name="fluidcoef" type="double1to5" default="0.5 0.25 1.5 1 1"/>
     <xs:attribute name="user" type="doublelist"/>
@@ -4152,6 +4154,7 @@
     <xs:attribute name="poisson" type="xs:double"/>
     <xs:attribute name="damping" type="xs:double"/>
     <xs:attribute name="thickness" type="xs:double" default="-1"/>
+    <xs:attribute name="yield" type="xs:double"/>
     <xs:attribute name="elastic2d" type="kw_elastic2d"/>
     <xs:attribute name="section" type="kw_flexsection"/>
     <xs:attribute name="sectionsize" type="double2"/>

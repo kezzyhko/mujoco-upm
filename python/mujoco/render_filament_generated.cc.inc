@@ -196,6 +196,8 @@ mjrf_render_request.def(py::init([](
   std::optional<bool> post_processing,
   std::optional<bool> reflections,
   std::optional<bool> shadows,
+  std::optional<bool> skybox,
+  std::optional<bool> haze,
   std::optional<bool> headlight,
   std::optional<Float3::Ref> headlight_color,
   std::optional<float> headlight_intensity
@@ -210,6 +212,8 @@ mjrf_render_request.def(py::init([](
   if (post_processing) Setter(obj.post_processing, *post_processing);
   if (reflections) Setter(obj.reflections, *reflections);
   if (shadows) Setter(obj.shadows, *shadows);
+  if (skybox) Setter(obj.skybox, *skybox);
+  if (haze) Setter(obj.haze, *haze);
   if (headlight) Setter(obj.headlight, *headlight);
   if (headlight_color) Setter(obj.headlight_color, *headlight_color);
   if (headlight_intensity) Setter(obj.headlight_intensity, *headlight_intensity);
@@ -223,6 +227,8 @@ mjrf_render_request.def(py::init([](
 , py::arg("post_processing").none(true) = py::none()
 , py::arg("reflections").none(true) = py::none()
 , py::arg("shadows").none(true) = py::none()
+, py::arg("skybox").none(true) = py::none()
+, py::arg("haze").none(true) = py::none()
 , py::arg("headlight").none(true) = py::none()
 , py::arg("headlight_color").none(true) = py::none()
 , py::arg("headlight_intensity").none(true) = py::none()
@@ -235,6 +241,8 @@ DefProperty<mjrDrawMode>(mjrf_render_request, "draw_mode", &mjrfRenderRequest::d
 DefProperty<bool>(mjrf_render_request, "post_processing", &mjrfRenderRequest::post_processing);
 DefProperty<bool>(mjrf_render_request, "reflections", &mjrfRenderRequest::reflections);
 DefProperty<bool>(mjrf_render_request, "shadows", &mjrfRenderRequest::shadows);
+DefProperty<bool>(mjrf_render_request, "skybox", &mjrfRenderRequest::skybox);
+DefProperty<bool>(mjrf_render_request, "haze", &mjrfRenderRequest::haze);
 DefProperty<bool>(mjrf_render_request, "headlight", &mjrfRenderRequest::headlight);
 DefProperty<Float3>(mjrf_render_request, "headlight_color", &mjrfRenderRequest::headlight_color);
 DefProperty<float>(mjrf_render_request, "headlight_intensity", &mjrfRenderRequest::headlight_intensity);
@@ -311,8 +319,8 @@ mjrf_texture_data.def("free", [](mjrfTextureData& obj) { Free(obj); });
 
 py::class_<mjrfMeshConfig> mjrf_mesh_config(m, "MeshConfig", py::module_local());
 mjrf_mesh_config.def(py::init([](
-  std::optional<int> max_vertices,
-  std::optional<int> max_indices,
+  std::optional<mjtSize> max_vertices,
+  std::optional<mjtSize> max_indices,
   std::optional<std::vector<mjrVertexAttribute>> attributes,
   std::optional<bool> interleaved,
   std::optional<mjrIndexType> index_type,
@@ -335,8 +343,8 @@ mjrf_mesh_config.def(py::init([](
 , py::arg("index_type").none(true) = py::none()
 , py::arg("primitive_type").none(true) = py::none()
 );
-DefProperty<int>(mjrf_mesh_config, "max_vertices", &mjrfMeshConfig::max_vertices);
-DefProperty<int>(mjrf_mesh_config, "max_indices", &mjrfMeshConfig::max_indices);
+DefProperty<mjtSize>(mjrf_mesh_config, "max_vertices", &mjrfMeshConfig::max_vertices);
+DefProperty<mjtSize>(mjrf_mesh_config, "max_indices", &mjrfMeshConfig::max_indices);
 DefProperty<bool>(mjrf_mesh_config, "interleaved", &mjrfMeshConfig::interleaved);
 DefProperty<mjrIndexType>(mjrf_mesh_config, "index_type", &mjrfMeshConfig::index_type);
 DefProperty<mjrMeshPrimitiveType>(mjrf_mesh_config, "primitive_type", &mjrfMeshConfig::primitive_type);
@@ -448,8 +456,7 @@ mjrf_material.def(py::init([](
   PyTexture* roughness_texture,
   PyTexture* occlusion_texture,
   PyTexture* orm_texture,
-  PyTexture* emissive_texture,
-  PyTexture* reflection_texture
+  PyTexture* emissive_texture
 ) {
   mjrfMaterial obj;
   Init(obj);
@@ -476,7 +483,6 @@ mjrf_material.def(py::init([](
   if (occlusion_texture) Setter(obj.occlusion_texture, *occlusion_texture);
   if (orm_texture) Setter(obj.orm_texture, *orm_texture);
   if (emissive_texture) Setter(obj.emissive_texture, *emissive_texture);
-  if (reflection_texture) Setter(obj.reflection_texture, *reflection_texture);
   return obj;
 })
 , py::arg("color").none(true) = py::none()
@@ -502,7 +508,6 @@ mjrf_material.def(py::init([](
 , py::arg("occlusion_texture").none(true) = py::none()
 , py::arg("orm_texture").none(true) = py::none()
 , py::arg("emissive_texture").none(true) = py::none()
-, py::arg("reflection_texture").none(true) = py::none()
 );
 DefProperty<Float4>(mjrf_material, "color", &mjrfMaterial::color);
 DefProperty<int32_t>(mjrf_material, "segmentation_id", &mjrfMaterial::segmentation_id);
@@ -527,7 +532,6 @@ DefProperty<PyTexture>(mjrf_material, "roughness_texture", &mjrfMaterial::roughn
 DefProperty<PyTexture>(mjrf_material, "occlusion_texture", &mjrfMaterial::occlusion_texture);
 DefProperty<PyTexture>(mjrf_material, "orm_texture", &mjrfMaterial::orm_texture);
 DefProperty<PyTexture>(mjrf_material, "emissive_texture", &mjrfMaterial::emissive_texture);
-DefProperty<PyTexture>(mjrf_material, "reflection_texture", &mjrfMaterial::reflection_texture);
 
 py::class_<mjrfRenderableParams> mjrf_renderable_params(m, "RenderableParams", py::module_local());
 mjrf_renderable_params.def(py::init([](
@@ -589,11 +593,20 @@ py::class_<PyRenderable> mjrf_renderable(m, "Renderable");
 
 py::class_<PyRenderTarget> mjrf_render_target(m, "RenderTarget");
 
+mjrf_context.def("get_renderer_info", [](
+  PyContext& ctx,
+  mjrRendererInfo * info
+) {
+  return mjrf_getRendererInfo(ctx.get(), info);
+}
+, py::arg("info")
+);
+
 mjrf_context.def("wait_for_frame", [](
   PyContext& ctx,
   mjrfFrameHandle frame
 ) {
-    return mjrf_waitForFrame(ctx.get(), frame);
+  return mjrf_waitForFrame(ctx.get(), frame);
 }
 , py::arg("frame")
 , py::call_guard<py::gil_scoped_release>()
@@ -602,7 +615,7 @@ mjrf_context.def("wait_for_frame", [](
 mjrf_context.def("flush", [](
   PyContext& ctx
 ) {
-    return mjrf_flush(ctx.get());
+  return mjrf_flush(ctx.get());
 }
 , py::call_guard<py::gil_scoped_release>()
 );
@@ -611,7 +624,7 @@ mjrf_context.def("set_clear_color", [](
   PyContext& ctx,
   Float3::Ref& color
 ) {
-    return mjrf_setClearColor(ctx.get(), color.data());
+  return mjrf_setClearColor(ctx.get(), color.data());
 }
 , py::arg("color")
 );
@@ -621,7 +634,7 @@ mjrf_context.def("get_frame_stats", [](
   mjrfFrameHandle frame,
   mjrfFrameStats * stats_out
 ) {
-    return mjrf_getFrameStats(ctx.get(), frame, stats_out);
+  return mjrf_getFrameStats(ctx.get(), frame, stats_out);
 }
 , py::arg("frame")
 , py::arg("stats_out")
@@ -631,7 +644,7 @@ mjrf_texture.def("upload", [](
   PyTexture& texture,
   const mjrfTextureData * data
 ) {
-    return mjrf_uploadTexture(texture.get(), data);
+  return mjrf_uploadTexture(texture.get(), data);
 }
 , py::arg("data")
 );
@@ -639,29 +652,29 @@ mjrf_texture.def("upload", [](
 mjrf_texture.def("get_width", [](
   PyTexture& texture
 ) {
-    return mjrf_getTextureWidth(texture.get());
+  return mjrf_getTextureWidth(texture.get());
 }
 );
 
 mjrf_texture.def("get_height", [](
   PyTexture& texture
 ) {
-    return mjrf_getTextureHeight(texture.get());
+  return mjrf_getTextureHeight(texture.get());
 }
 );
 
 mjrf_texture.def("get_sampler_type", [](
   PyTexture& texture
 ) {
-    return (mjrSamplerType)mjrf_getTextureSamplerType(texture.get());
+  return (mjrSamplerType)mjrf_getTextureSamplerType(texture.get());
 }
 );
 
 mjrf_mesh.def("upload", [](
   PyMesh& mesh,
-  const mjrfMeshData* data
+  const mjrfMeshData * data
 ) {
-    return mjrf_uploadMesh(mesh.get(), data);
+  return mjrf_uploadMesh(mesh.get(), data);
 }
 , py::arg("data")
 );
@@ -670,7 +683,7 @@ mjrf_scene.def("add_light", [](
   PyScene& scene,
   PyLight& light
 ) {
-    return mjrf_addSceneLight(scene.get(), light.get());
+  return mjrf_addSceneLight(scene.get(), light.get());
 }
 , py::arg("light")
 );
@@ -679,7 +692,7 @@ mjrf_scene.def("remove_light", [](
   PyScene& scene,
   PyLight& light
 ) {
-    return mjrf_removeSceneLight(scene.get(), light.get());
+  return mjrf_removeSceneLight(scene.get(), light.get());
 }
 , py::arg("light")
 );
@@ -688,7 +701,7 @@ mjrf_scene.def("add_renderable", [](
   PyScene& scene,
   PyRenderable& renderable
 ) {
-    return mjrf_addSceneRenderable(scene.get(), renderable.get());
+  return mjrf_addSceneRenderable(scene.get(), renderable.get());
 }
 , py::arg("renderable")
 );
@@ -697,7 +710,7 @@ mjrf_scene.def("remove_renderable", [](
   PyScene& scene,
   PyRenderable& renderable
 ) {
-    return mjrf_removeSceneRenderable(scene.get(), renderable.get());
+  return mjrf_removeSceneRenderable(scene.get(), renderable.get());
 }
 , py::arg("renderable")
 );
@@ -706,7 +719,7 @@ mjrf_scene.def("set_skybox", [](
   PyScene& scene,
   PyTexture& texture
 ) {
-    return mjrf_setSceneSkybox(scene.get(), texture.get());
+  return mjrf_setSceneSkybox(scene.get(), texture.get());
 }
 , py::arg("texture")
 );
@@ -715,62 +728,52 @@ mjrf_scene.def("set_msaa", [](
   PyScene& scene,
   int samples
 ) {
-    return mjrf_setSceneMsaa(scene.get(), samples);
+  return mjrf_setSceneMsaa(scene.get(), samples);
 }
 , py::arg("samples")
 );
 
 mjrf_light.def("set_active", [](
   PyLight& light,
-  bool enabled
+  bool active
 ) {
-    return mjrf_setLightActive(light.get(), enabled);
+  return mjrf_setLightActive(light.get(), active);
 }
-, py::arg("enabled")
+, py::arg("active")
 );
 
 mjrf_light.def("set_cast_shadow", [](
   PyLight& light,
   bool enabled
 ) {
-    return mjrf_setLightCastShadow(light.get(), enabled);
+  return mjrf_setLightCastShadow(light.get(), enabled);
 }
 , py::arg("enabled")
-);
-
-mjrf_light.def("set_intensity", [](
-  PyLight& light,
-  float intensity
-) {
-    return mjrf_setLightIntensity(light.get(), intensity);
-}
-, py::arg("intensity")
-);
-
-mjrf_light.def("set_shadow_map_size", [](
-  PyLight& light,
-  int map_size
-) {
-    return mjrf_setLightShadowMapSize(light.get(), map_size);
-}
-, py::arg("map_size")
 );
 
 mjrf_light.def("set_color", [](
   PyLight& light,
   Float3::Ref& color
 ) {
-    return mjrf_setLightColor(light.get(), color.data());
+  return mjrf_setLightColor(light.get(), color.data());
 }
 , py::arg("color")
 );
 
-//---
+mjrf_light.def("set_intensity", [](
+  PyLight& light,
+  float intensity
+) {
+  return mjrf_setLightIntensity(light.get(), intensity);
+}
+, py::arg("intensity")
+);
+
 mjrf_light.def("set_range", [](
   PyLight& light,
   float range
 ) {
-    return mjrf_setLightRange(light.get(), range);
+  return mjrf_setLightRange(light.get(), range);
 }
 , py::arg("range")
 );
@@ -779,7 +782,7 @@ mjrf_light.def("set_cutoff", [](
   PyLight& light,
   float cutoff
 ) {
-    return mjrf_setLightCutoff(light.get(), cutoff);
+  return mjrf_setLightCutoff(light.get(), cutoff);
 }
 , py::arg("cutoff")
 );
@@ -788,7 +791,7 @@ mjrf_light.def("set_softness", [](
   PyLight& light,
   float softness
 ) {
-    return mjrf_setLightSoftness(light.get(), softness);
+  return mjrf_setLightSoftness(light.get(), softness);
 }
 , py::arg("softness")
 );
@@ -797,9 +800,18 @@ mjrf_light.def("set_bulb_radius", [](
   PyLight& light,
   float radius
 ) {
-    return mjrf_setLightBulbRadius(light.get(), radius);
+  return mjrf_setLightBulbRadius(light.get(), radius);
 }
 , py::arg("radius")
+);
+
+mjrf_light.def("set_shadow_map_size", [](
+  PyLight& light,
+  int map_size
+) {
+  return mjrf_setLightShadowMapSize(light.get(), map_size);
+}
+, py::arg("map_size")
 );
 
 mjrf_light.def("set_pose", [](
@@ -807,7 +819,7 @@ mjrf_light.def("set_pose", [](
   Float3::Ref& position,
   Float3::Ref& direction
 ) {
-    return mjrf_setLightPose(light.get(), position.data(), direction.data());
+  return mjrf_setLightPose(light.get(), position.data(), direction.data());
 }
 , py::arg("position")
 , py::arg("direction")
@@ -816,7 +828,7 @@ mjrf_light.def("set_pose", [](
 mjrf_light.def("get_type", [](
   PyLight& light
 ) {
-    return mjrf_getLightType(light.get());
+  return mjrf_getLightType(light.get());
 }
 );
 
@@ -826,7 +838,7 @@ mjrf_renderable.def("set_mesh", [](
   int elem_offset,
   int elem_count
 ) {
-    return mjrf_setRenderableMesh(renderable.get(), mesh.get(), elem_offset, elem_count);
+  return mjrf_setRenderableMesh(renderable.get(), mesh.get(), elem_offset, elem_count);
 }
 , py::arg("mesh")
 , py::arg("elem_offset")
@@ -840,7 +852,7 @@ mjrf_renderable.def("set_geom_mesh", [](
   int nslice,
   int nquad
 ) {
-    return mjrf_setRenderableGeomMesh(renderable.get(), type, nstack, nslice, nquad);
+  return mjrf_setRenderableGeomMesh(renderable.get(), type, nstack, nslice, nquad);
 }
 , py::arg("type")
 , py::arg("nstack")
@@ -852,7 +864,7 @@ mjrf_renderable.def("set_material", [](
   PyRenderable& renderable,
   const mjrfMaterial * material
 ) {
-    return mjrf_setRenderableMaterial(renderable.get(), material);
+  return mjrf_setRenderableMaterial(renderable.get(), material);
 }
 , py::arg("material")
 );
@@ -862,7 +874,7 @@ mjrf_renderable.def("set_pose", [](
   Float3::Ref& position,
   Float9::Ref& rotation
 ) {
-    return mjrf_setRenderablePose(renderable.get(), position.data(), rotation.data());
+  return mjrf_setRenderablePose(renderable.get(), position.data(), rotation.data());
 }
 , py::arg("position")
 , py::arg("rotation")
@@ -872,9 +884,18 @@ mjrf_renderable.def("set_size", [](
   PyRenderable& renderable,
   Float3::Ref& size
 ) {
-    return mjrf_setRenderableSize(renderable.get(), size.data());
+  return mjrf_setRenderableSize(renderable.get(), size.data());
 }
 , py::arg("size")
+);
+
+mjrf_renderable.def("set_cast_shadow", [](
+  PyRenderable& renderable,
+  bool enabled
+) {
+  return mjrf_setRenderableCastShadow(renderable.get(), enabled);
+}
+, py::arg("enabled")
 );
 
 mjrf_render_target.def("resize", [](
@@ -882,8 +903,9 @@ mjrf_render_target.def("resize", [](
   int width,
   int height
 ) {
-    return mjrf_resizeRenderTarget(render_target.get(), width, height);
+  return mjrf_resizeRenderTarget(render_target.get(), width, height);
 }
 , py::arg("width")
 , py::arg("height")
 );
+

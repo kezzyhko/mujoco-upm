@@ -493,6 +493,15 @@ def put_model(mjm: mujoco.MjModel, batch_sizes: dict[str, int] | None = None) ->
   # TODO(team): remove version check once mujoco >= 3.16.1 is required.
   if not util_pkg.check_version("mujoco>=3.16.1"):
     m.eq_data = np.pad(mjm.eq_data, ((0, 0), (0, 1)))
+  if not util_pkg.check_version("mujoco>=3.17.1"):
+    if not hasattr(mjm, "nplastic"):
+      m.nplastic = 0
+    if not hasattr(mjm, "jnt_plasticadr"):
+      m.jnt_plasticadr = np.full(mjm.njnt, -1, dtype=np.int32)
+    if not hasattr(mjm, "tendon_plasticadr"):
+      m.tendon_plasticadr = np.full(mjm.ntendon, -1, dtype=np.int32)
+    if not hasattr(mjm, "flex_plasticadr"):
+      m.flex_plasticadr = np.full(mjm.nflex, -1, dtype=np.int32)
 
   m.opt = opt
   m.callback = types.Callback()
@@ -981,11 +990,16 @@ def put_model(mjm: mujoco.MjModel, batch_sizes: dict[str, int] | None = None) ->
 
   m.nJfs = m.flexstrain_J_colind.size
 
+  # tendon type: older mujoco versions imply it from the first wrap object
+  if not util_pkg.check_version("mujoco>=3.17.1"):
+    is_fixed = mjm.wrap_type[mjm.tendon_adr] == mujoco.mjtWrap.mjWRAP_JOINT
+    m.tendon_type = np.where(is_fixed, types.TendonType.FIXED, types.TendonType.SPATIAL)
+
   # fixed tendon
   m.tendon_jnt_adr, m.wrap_jnt_adr = [], []
   for i in range(mjm.ntendon):
     adr = mjm.tendon_adr[i]
-    if mjm.wrap_type[adr] == mujoco.mjtWrap.mjWRAP_JOINT:
+    if m.tendon_type[i] == types.TendonType.FIXED:
       tendon_num = mjm.tendon_num[i]
       for j in range(tendon_num):
         m.tendon_jnt_adr.append(i)
@@ -2044,7 +2058,7 @@ def make_data(
     # plastic
     "plastic": (
       wp.array(np.tile(mjd.plastic, (nworld, 1)), shape=(nworld, mjm.nplastic), dtype=float)
-      if mjm.nplastic > 0
+      if getattr(mjm, "nplastic", 0) > 0
       else wp.zeros((nworld, 0), dtype=float)
     ),
     # island arrays
@@ -2592,7 +2606,7 @@ def get_data_into(
   if mjm.nhistory > 0:
     result.history[:] = d.history.numpy()[world_id]
 
-  if mjm.nplastic > 0:
+  if getattr(mjm, "nplastic", 0) > 0:
     result.plastic[:] = d.plastic.numpy()[world_id]
 
   if mjm.nuserdata > 0:
@@ -2971,6 +2985,7 @@ def reset_data(m: types.Model, d: types.Data, reset: Optional[wp.array] = None):
     # Model:
     njnt: int,
     ntendon: int,
+    nplastic: int,
     qpos_spring: wp.array2d[float],
     jnt_type: wp.array[int],
     jnt_qposadr: wp.array[int],
@@ -2987,6 +3002,9 @@ def reset_data(m: types.Model, d: types.Data, reset: Optional[wp.array] = None):
     if wp.static(reset is not None):
       if not reset_in[worldid]:
         return
+
+    for i in range(nplastic):
+      plastic_out[worldid, i] = 0.0
 
     qpos_spring_id = worldid % qpos_spring.shape[0]
     for j in range(njnt):
@@ -3135,6 +3153,7 @@ def reset_data(m: types.Model, d: types.Data, reset: Optional[wp.array] = None):
       inputs=[
         m.njnt,
         m.ntendon,
+        m.nplastic,
         m.qpos_spring,
         m.jnt_type,
         m.jnt_qposadr,

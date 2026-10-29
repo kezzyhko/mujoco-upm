@@ -377,6 +377,7 @@
     X   ( int,     geom_priority,         ngeom,         1                    ) \
     X   ( int,     geom_plugin,           ngeom,         1                    ) \
     X   ( mjtByte, geom_sameframe,        ngeom,         1                    ) \
+    X   ( mjtBool, geom_castshadow,       ngeom,         1                    ) \
     X   ( mjtNum,  geom_solmix,           ngeom,         1                    ) \
     X   ( mjtNum,  geom_solref,           ngeom,         mjNREF               ) \
     X   ( mjtNum,  geom_solimp,           ngeom,         mjNIMP               ) \
@@ -480,6 +481,7 @@
     X   ( int,     flex_stiffnessadr,     nflex,         1                    ) \
     X   ( int,     flex_elemedgeadr,      nflex,         1                    ) \
     X   ( int,     flex_bendingadr,       nflex,         1                    ) \
+    X   ( int,     flex_plasticadr,       nflex,         1                    ) \
     X   ( int,     flex_shellnum,         nflex,         1                    ) \
     X   ( int,     flex_shelldataadr,     nflex,         1                    ) \
     X   ( int,     flex_texcoordadr,      nflex,         1                    ) \
@@ -510,6 +512,7 @@
     X   ( mjtNum,  efm0_L,                nefm0L,        1                    ) \
     X   ( int,     efmC_perm,             nefmCvert,     1                    ) \
     X   ( mjtNum,  flex_damping,          nflex,         1                    ) \
+    X   ( mjtNum,  flex_yield,            nflex,         1                    ) \
     X   ( mjtNum,  flex_edgestiffness,    nflex,         1                    ) \
     X   ( mjtNum,  flex_edgedamping,      nflex,         1                    ) \
     X   ( int,     flex_edgeequality,     nflex,         1                    ) \
@@ -643,6 +646,7 @@
     X   ( mjtNum,  eq_data,               neq,           mjNEQDATA            )
 
 #define MJMODEL_POINTERS_TENDON                                                 \
+    X   ( int,     tendon_type,           ntendon,       1                    ) \
     X   ( int,     tendon_adr,            ntendon,       1                    ) \
     X   ( int,     tendon_num,            ntendon,       1                    ) \
     X   ( int,     tendon_matid,          ntendon,       1                    ) \
@@ -993,6 +997,7 @@
     X( eq_obj2id,            0,          mjSC_IN,    0,          0          ) \
     X( eq_objtype,           0,          mjSC_IN,    0,          0          ) \
     X( eq_data,              0,          mjSC_INOUT, 0,          0          ) \
+    X( tendon_type,          mjSC_IN,    mjSC_IN,    mjSC_IN,    mjSC_IN    ) \
     X( tendon_adr,           mjSC_IN,    mjSC_IN,    mjSC_IN,    mjSC_IN    ) \
     X( tendon_num,           mjSC_IN,    mjSC_IN,    mjSC_IN,    mjSC_IN    ) \
     X( tendon_actuatorid,    mjSC_OUT,   0,          mjSC_IN,    0          ) \

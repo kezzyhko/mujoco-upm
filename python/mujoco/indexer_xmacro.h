@@ -101,6 +101,7 @@
   X( int,     geom_, group,       ngeom, 1                ) \
   X( int,     geom_, priority,    ngeom, 1                ) \
   X( mjtByte, geom_, sameframe,   ngeom, 1                ) \
+  X( mjtByte, geom_, castshadow,  ngeom, 1                ) \
   X( mjtNum,  geom_, solmix,      ngeom, 1                ) \
   X( mjtNum,  geom_, solref,      ngeom, mjNREF           ) \
   X( mjtNum,  geom_, solimp,      ngeom, mjNIMP           ) \
@@ -247,6 +248,7 @@
   X( int,   skin_, pathadr,     nskin, 1 )
 
 #define MJMODEL_TENDON                                             \
+  X( int,     tendon, _type,         ntendon, 1                  ) \
   X( int,     tendon, _adr,          ntendon, 1                  ) \
   X( int,     tendon, _num,          ntendon, 1                  ) \
   X( int,     tendon, _matid,        ntendon, 1                  ) \

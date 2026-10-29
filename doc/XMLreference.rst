@@ -2935,6 +2935,13 @@ helps clarify the role of bodies and geoms in MuJoCo.
    only. This is not as flexible as the material mechanism, but is more convenient and is often sufficient. If the value
    of this attribute is different from the internal default, it takes precedence over the material.
 
+.. _body-geom-castshadow:
+
+:at:`castshadow`: :at-val:`[false, true], "true"`
+   If this attribute is "true", the geom casts shadows when illuminated by shadow-casting lights (those with
+   :ref:`castshadow<body-light-castshadow>` set to "true"). Setting this to "false" disables shadow casting for this
+   geom while still allowing it to receive shadows and be lit normally.
+
 .. _body-geom-friction:
 
 :at:`friction`: :at-val:`real(3), "1 0.005 0.0001"`
@@ -3469,8 +3476,8 @@ Attributes may be applied or ignored depending on the lighting model being used.
 .. _body-light-castshadow:
 
 :at:`castshadow`: :at-val:`[false, true], "true"`
-   If this attribute is "true" the light will cast shadows. More precisely, the geoms illuminated by the light will cast
-   shadows, however this is a property of lights rather than geoms. Since each shadow-casting light causes one extra
+   If this attribute is "true" the light will cast shadows. More precisely, geoms with
+   :ref:`castshadow<body-geom-castshadow>` enabled that are illuminated by the light will cast shadows. Since each shadow-casting light causes one extra
    rendering pass through all geoms, this attribute should be used with caution. Higher quality of the shadows is
    achieved by increasing the value of the shadowsize attribute of :ref:`quality <visual-quality>`, as well as
    positioning spotlights closer to the surface on which shadows appear, and limiting the volume in which shadows are
@@ -4257,12 +4264,13 @@ element is used to adjust the properties of all edges in the flex.
 .. _flexcomp-elasticity-poisson:
 .. _flexcomp-elasticity-damping:
 .. _flexcomp-elasticity-thickness:
+.. _flexcomp-elasticity-yield:
 .. _flexcomp-elasticity-elastic2d:
 .. _flexcomp-elasticity-section:
 .. _flexcomp-elasticity-sectionsize:
 
 .. |body/flexcomp/elasticity attrib list| replace::
-   :at:`young`, :at:`poisson`, :at:`damping`, :at:`thickness`, :at:`elastic2d`, :at:`section`, :at:`sectionsize`
+   :at:`young`, :at:`poisson`, :at:`damping`, :at:`thickness`, :at:`yield`, :at:`elastic2d`, :at:`section`, :at:`sectionsize`
 
 |body/flexcomp/elasticity attrib list|
    Same as in :ref:`flex/elasticity<flex-elasticity>`.
@@ -4846,6 +4854,19 @@ explicitly by ``Euler`` and ``RK4`` (not supported under ``implicit`` and ``impl
    Shell thickness, units of length; only for used 2D flexes. Used to scale the stretching stiffness.
    This thickness can be set equal to 2 times the :ref:`radius <deformable-flex-radius>` in order to match the geometry,
    but is exposed separately since the radius might be constrained by considerations related to collision detection.
+
+.. image:: https://www.gstatic.com/mujoco/doc/images/changelog/clay.gif
+   :width: 40%
+   :align: right
+   :target: https://github.com/google-deepmind/mujoco/blob/main/model/flex/clay.xml
+
+.. _flex-elasticity-yield:
+
+:at:`yield`: :at-val:`real(1), "0"`
+   Dimensionless plastic yield strain threshold :math:`\varepsilon_y` for non-interpolated 2D and 3D flexes. If zero,
+   the flex is purely elastic. If positive, each element's elastic stretching strain tensor is bounded by the von Mises
+   (:math:`J_2`) yield criterion (3D isochoric in 3D, plane-stress with out-of-plane thinning in tension in 2D) via
+   radial return mapping.
 
 .. _flex-elasticity-elastic2d:
 
@@ -10533,6 +10554,8 @@ if omitted.
 .. _default-geom-fitscale:
 
 .. _default-geom-rgba:
+
+.. _default-geom-castshadow:
 
 .. _default-geom-fluidshape:
 

@@ -288,8 +288,9 @@ History buffer: ``history``
 
 Plastic state: ``plastic``
   When joints or tendons have a positive :at:`springyield` attribute (:ref:`joints<body-joint-springyield>`,
-  :ref:`tendons<tendon-spatial-springyield>`), this buffer stores the mutable plastic spring reference configurations
-  and resting lengths, updated via return mapping at each step.
+  :ref:`tendons<tendon-spatial-springyield>`) or flexes have a positive :at:`yield` attribute
+  (:ref:`flexes<flex-elasticity-yield>`), this buffer stores the mutable plastic spring reference configurations,
+  resting lengths, and element plastic strains, updated via return mapping at each step.
 
 .. _siFullPhysics:
 
@@ -789,7 +790,7 @@ Exceptions to the general rule that **integer** types are **not safe to change**
      - Unsafe
      - This is a possible to do safely if ``body_contype`` and ``body_conaffinity`` of the parent body are updated to be
        the bitwise OR over all child geoms.
-   * - ``geom_condim`` |br| ``geom_priority``
+   * - ``geom_condim`` |br| ``geom_priority`` |br| ``geom_castshadow``
      - Safe
      -
    * - ``cam_resolution``

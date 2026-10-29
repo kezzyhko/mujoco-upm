@@ -276,6 +276,7 @@ class ModelWarp(PyTreeNode):
   flex_margin: np.ndarray
   flex_node: np.ndarray
   flex_passive: np.ndarray
+  flex_plasticadr: np.ndarray
   flex_priority: np.ndarray
   flex_radius: np.ndarray
   flex_rigid: np.ndarray
@@ -297,6 +298,7 @@ class ModelWarp(PyTreeNode):
   flex_vertbodyid: np.ndarray
   flex_vertcell: np.ndarray
   flex_vertflexid: np.ndarray
+  flex_yield: np.ndarray
   flexedge_J_colind: np.ndarray
   flexedge_J_rowadr: np.ndarray
   flexedge_J_rownnz: np.ndarray
@@ -1068,6 +1070,7 @@ _NDIM = {
         'flex_nodebodyid': 1,
         'flex_nodenum': 1,
         'flex_passive': 1,
+        'flex_plasticadr': 1,
         'flex_priority': 1,
         'flex_radius': 1,
         'flex_rigid': 1,
@@ -1092,6 +1095,7 @@ _NDIM = {
         'flex_vertcell': 1,
         'flex_vertflexid': 1,
         'flex_vertnum': 1,
+        'flex_yield': 1,
         'flexedge_J_colind': 1,
         'flexedge_J_rowadr': 1,
         'flexedge_J_rownnz': 1,
@@ -1438,6 +1442,7 @@ _NDIM = {
         'tendon_springyield': 2,
         'tendon_stiffness': 2,
         'tendon_stiffnesspoly': 3,
+        'tendon_type': 1,
         'tree_bodynum': 1,
         'tree_dofadr': 1,
         'tree_dofnum': 1,
@@ -1882,6 +1887,7 @@ _BATCH_DIM = {
         'flex_nodebodyid': False,
         'flex_nodenum': False,
         'flex_passive': False,
+        'flex_plasticadr': False,
         'flex_priority': False,
         'flex_radius': False,
         'flex_rigid': False,
@@ -1906,6 +1912,7 @@ _BATCH_DIM = {
         'flex_vertcell': False,
         'flex_vertflexid': False,
         'flex_vertnum': False,
+        'flex_yield': False,
         'flexedge_J_colind': False,
         'flexedge_J_rowadr': False,
         'flexedge_J_rownnz': False,
@@ -2252,6 +2259,7 @@ _BATCH_DIM = {
         'tendon_springyield': True,
         'tendon_stiffness': True,
         'tendon_stiffnesspoly': True,
+        'tendon_type': False,
         'tree_bodynum': False,
         'tree_dofadr': False,
         'tree_dofnum': False,
