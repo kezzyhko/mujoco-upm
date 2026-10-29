@@ -34,6 +34,7 @@ from mujoco.mjx.third_party.mujoco_warp._src.support import xfrc_accumulate
 from mujoco.mjx.third_party.mujoco_warp._src.types import MJ_MINVAL
 from mujoco.mjx.third_party.mujoco_warp._src.types import BiasType
 from mujoco.mjx.third_party.mujoco_warp._src.types import Data
+from mujoco.mjx.third_party.mujoco_warp._src.types import DeterminismType
 from mujoco.mjx.third_party.mujoco_warp._src.types import DisableBit
 from mujoco.mjx.third_party.mujoco_warp._src.types import DynType
 from mujoco.mjx.third_party.mujoco_warp._src.types import EnableBit
@@ -43,8 +44,10 @@ from mujoco.mjx.third_party.mujoco_warp._src.types import JointType
 from mujoco.mjx.third_party.mujoco_warp._src.types import Model
 from mujoco.mjx.third_party.mujoco_warp._src.types import ObjType
 from mujoco.mjx.third_party.mujoco_warp._src.types import OverflowType
+from mujoco.mjx.third_party.mujoco_warp._src.types import SleepState
 from mujoco.mjx.third_party.mujoco_warp._src.types import SolverType
 from mujoco.mjx.third_party.mujoco_warp._src.types import TrnType
+from mujoco.mjx.third_party.mujoco_warp._src.types import WrapType
 from mujoco.mjx.third_party.mujoco_warp._src.types import mat66
 from mujoco.mjx.third_party.mujoco_warp._src.types import vec6
 from mujoco.mjx.third_party.mujoco_warp._src.types import vec10
@@ -394,6 +397,144 @@ def _next_time_builder(warn_overflow: int):
   return _next_time
 
 
+@wp.kernel
+def _next_plastic_joint(
+  # Model:
+  opt_enableflags: int,
+  jnt_type: wp.array[int],
+  jnt_qposadr: wp.array[int],
+  jnt_bodyid: wp.array[int],
+  jnt_plasticadr: wp.array[int],
+  jnt_springyield: wp.array2d[float],
+  # Data in:
+  qpos_in: wp.array2d[float],
+  plastic_in: wp.array2d[float],
+  body_awake_in: wp.array2d[int],
+  # Data out:
+  plastic_out: wp.array2d[float],
+):
+  worldid, jntid = wp.tid()
+  padr = jnt_plasticadr[jntid]
+  if padr < 0:
+    return
+  if (opt_enableflags & EnableBit.SLEEP) and body_awake_in[worldid, jnt_bodyid[jntid]] != SleepState.AWAKE:
+    return
+  yield_ = wp.max(0.0, jnt_springyield[worldid % jnt_springyield.shape[0], jntid])
+
+  qadr = jnt_qposadr[jntid]
+  jnttype = jnt_type[jntid]
+
+  if jnttype == JointType.SLIDE or jnttype == JointType.HINGE:
+    x = qpos_in[worldid, qadr] - plastic_in[worldid, padr]
+    if x > yield_:
+      plastic_out[worldid, padr] = qpos_in[worldid, qadr] - yield_
+    elif x < -yield_:
+      plastic_out[worldid, padr] = qpos_in[worldid, qadr] + yield_
+  elif jnttype == JointType.BALL:
+    quat = wp.normalize(
+      wp.quat(
+        qpos_in[worldid, qadr + 0],
+        qpos_in[worldid, qadr + 1],
+        qpos_in[worldid, qadr + 2],
+        qpos_in[worldid, qadr + 3],
+      )
+    )
+    qspring = wp.quat(
+      plastic_in[worldid, padr + 0],
+      plastic_in[worldid, padr + 1],
+      plastic_in[worldid, padr + 2],
+      plastic_in[worldid, padr + 3],
+    )
+    dif_rot = math.quat_sub(quat, qspring)
+    r_rot = wp.length(dif_rot)
+    if r_rot > yield_:
+      qspring_new = math.quat_integrate(qspring, dif_rot, (r_rot - yield_) / r_rot)
+      plastic_out[worldid, padr + 0] = qspring_new[0]
+      plastic_out[worldid, padr + 1] = qspring_new[1]
+      plastic_out[worldid, padr + 2] = qspring_new[2]
+      plastic_out[worldid, padr + 3] = qspring_new[3]
+
+
+@wp.kernel
+def _next_plastic_tendon(
+  # Model:
+  opt_timestep: wp.array[float],
+  opt_enableflags: int,
+  jnt_qposadr: wp.array[int],
+  jnt_bodyid: wp.array[int],
+  dof_treeid: wp.array[int],
+  tendon_adr: wp.array[int],
+  tendon_num: wp.array[int],
+  tendon_plasticadr: wp.array[int],
+  ten_J_rownnz: wp.array[int],
+  ten_J_rowadr: wp.array[int],
+  ten_J_colind: wp.array[int],
+  tendon_springyield: wp.array2d[float],
+  wrap_type: wp.array[int],
+  wrap_objid: wp.array[int],
+  wrap_prm: wp.array[float],
+  # Data in:
+  qpos_in: wp.array2d[float],
+  qvel_in: wp.array2d[float],
+  plastic_in: wp.array2d[float],
+  ten_J_in: wp.array2d[float],
+  ten_length_in: wp.array2d[float],
+  body_awake_in: wp.array2d[int],
+  tree_awake_in: wp.array2d[int],
+  # Data out:
+  plastic_out: wp.array2d[float],
+):
+  worldid, tenid = wp.tid()
+  padr = tendon_plasticadr[tenid]
+  if padr < 0:
+    return
+  yield_ = wp.max(0.0, tendon_springyield[worldid % tendon_springyield.shape[0], tenid])
+
+  adr = tendon_adr[tenid]
+  L_next = float(0.0)
+  if wrap_type[adr] == WrapType.JOINT:
+    num = tendon_num[tenid]
+    if opt_enableflags & EnableBit.SLEEP:
+      awake = bool(False)
+      for j in range(num):
+        if body_awake_in[worldid, jnt_bodyid[wrap_objid[adr + j]]] == SleepState.AWAKE:
+          awake = True
+      if not awake:
+        return
+    for j in range(num):
+      L_next += wrap_prm[adr + j] * qpos_in[worldid, jnt_qposadr[wrap_objid[adr + j]]]
+  else:
+    rownnz = ten_J_rownnz[tenid]
+    rowadr = ten_J_rowadr[tenid]
+    if opt_enableflags & EnableBit.SLEEP:
+      awake = bool(False)
+      for k in range(rownnz):
+        t = dof_treeid[ten_J_colind[rowadr + k]]
+        if t >= 0 and tree_awake_in[worldid, t] != 0:
+          awake = True
+      if not awake:
+        return
+    timestep = opt_timestep[worldid % opt_timestep.shape[0]]
+    dL_dt = float(0.0)
+    for k in range(rownnz):
+      sparseid = rowadr + k
+      dL_dt += ten_J_in[worldid, sparseid] * qvel_in[worldid, ten_J_colind[sparseid]]
+    L_next = ten_length_in[worldid, tenid] + timestep * dL_dt
+
+  lower = plastic_in[worldid, padr + 0]
+  upper = plastic_in[worldid, padr + 1]
+  x = wp.where(L_next > upper, L_next - upper, wp.where(L_next < lower, L_next - lower, 0.0))
+  if x > yield_:
+    delta = x - yield_
+    if lower != 0.0 or upper <= 0.0:
+      plastic_out[worldid, padr + 0] = lower + delta
+    plastic_out[worldid, padr + 1] = upper + delta
+  elif x < -yield_:
+    delta = x + yield_
+    plastic_out[worldid, padr + 0] = lower + delta
+    plastic_out[worldid, padr + 1] = upper + delta
+
+
 def _advance(m: Model, d: Data, qacc: wp.array, qvel: Optional[wp.array] = None):
   """Advance state and time given activation derivatives and acceleration."""
   # TODO(team): can we assume static timesteps?
@@ -444,6 +585,54 @@ def _advance(m: Model, d: Data, qacc: wp.array, qvel: Optional[wp.array] = None)
     inputs=[m.opt.timestep, m.jnt_type, m.jnt_qposadr, m.jnt_dofadr, d.qpos, qvel_in, 1.0],
     outputs=[d.qpos],
   )
+
+  # update plastic spring references via return mapping
+  if m.nplastic > 0 and not (m.opt.disableflags & DisableBit.SPRING):
+    wp.launch(
+      _next_plastic_joint,
+      dim=(d.nworld, m.njnt),
+      inputs=[
+        m.opt.enableflags,
+        m.jnt_type,
+        m.jnt_qposadr,
+        m.jnt_bodyid,
+        m.jnt_plasticadr,
+        m.jnt_springyield,
+        d.qpos,
+        d.plastic,
+        d.body_awake,
+      ],
+      outputs=[d.plastic],
+    )
+    wp.launch(
+      _next_plastic_tendon,
+      dim=(d.nworld, m.ntendon),
+      inputs=[
+        m.opt.timestep,
+        m.opt.enableflags,
+        m.jnt_qposadr,
+        m.jnt_bodyid,
+        m.dof_treeid,
+        m.tendon_adr,
+        m.tendon_num,
+        m.tendon_plasticadr,
+        m.ten_J_rownnz,
+        m.ten_J_rowadr,
+        m.ten_J_colind,
+        m.tendon_springyield,
+        m.wrap_type,
+        m.wrap_objid,
+        m.wrap_prm,
+        d.qpos,
+        qvel_in,
+        d.plastic,
+        d.ten_J,
+        d.ten_length,
+        d.body_awake,
+        d.tree_awake,
+      ],
+      outputs=[d.plastic],
+    )
 
   # advance history buffers before time advance
   history.insert_ctrl_history(m, d)
@@ -580,13 +769,14 @@ def _rk_perturb_state(
   scale: float,
   qpos_t0: wp.array2d[float],
   qvel_t0: wp.array2d[float],
+  qvel_pos: wp.array2d[float],
   act_t0: Optional[wp.array] = None,
 ):
-  # position
+  # position, integrated with the (corrected) previous stage velocity
   wp.launch(
     _next_position,
     dim=(d.nworld, m.njnt),
-    inputs=[m.opt.timestep, m.jnt_type, m.jnt_qposadr, m.jnt_dofadr, qpos_t0, d.qvel, scale],
+    inputs=[m.opt.timestep, m.jnt_type, m.jnt_qposadr, m.jnt_dofadr, qpos_t0, qvel_pos, scale],
     outputs=[d.qpos],
   )
 
@@ -631,6 +821,47 @@ def _rk_perturb_state(
 
 
 @wp.kernel
+def _rk_correct_velocity(
+  # Model:
+  opt_timestep: wp.array[float],
+  jnt_type: wp.array[int],
+  jnt_dofadr: wp.array[int],
+  # Data in:
+  qvel_in: wp.array2d[float],
+  # In:
+  qvel_stage_in: wp.array2d[float],
+  scale: float,
+  # Out:
+  qvel_stage_out: wp.array2d[float],
+):
+  # Runge-Kutta-Munthe-Kaas (RKMK) correction: maps the stage angular velocities of ball and free joints to the
+  # rates of their rotation vectors rot = timestep * scale * (previous corrected stage velocity), in place
+  worldid, jntid = wp.tid()
+  timestep = opt_timestep[worldid % opt_timestep.shape[0]]
+  jnttype = jnt_type[jntid]
+  dofadr = jnt_dofadr[jntid]
+
+  if jnttype == JointType.HINGE or jnttype == JointType.SLIDE:
+    qvel_stage_out[worldid, dofadr] = qvel_in[worldid, dofadr]
+    return
+
+  rotadr = dofadr
+  if jnttype == JointType.FREE:
+    rotadr = dofadr + 3
+
+  qvel_prev = wp.vec3(qvel_stage_in[worldid, rotadr], qvel_stage_in[worldid, rotadr + 1], qvel_stage_in[worldid, rotadr + 2])
+  rot = timestep * scale * qvel_prev
+  vel = wp.vec3(qvel_in[worldid, rotadr], qvel_in[worldid, rotadr + 1], qvel_in[worldid, rotadr + 2])
+  res = math.deriv_expmap(rot, vel)
+
+  if jnttype == JointType.FREE:
+    for i in range(3):
+      qvel_stage_out[worldid, dofadr + i] = qvel_in[worldid, dofadr + i]
+  for i in range(3):
+    qvel_stage_out[worldid, rotadr + i] = res[i]
+
+
+@wp.kernel
 def _rk_accumulate_velocity_acceleration(
   # Data in:
   qvel_in: wp.array2d[float],
@@ -663,6 +894,7 @@ def _rk_accumulate(
   m: Model,
   d: Data,
   scale: float,
+  qvel_stage: wp.array2d[float],
   qvel_rk: wp.array2d[float],
   qacc_rk: wp.array2d[float],
   act_dot_rk: Optional[wp.array] = None,
@@ -671,7 +903,7 @@ def _rk_accumulate(
   wp.launch(
     _rk_accumulate_velocity_acceleration,
     dim=(d.nworld, m.nv),
-    inputs=[d.qvel, d.qacc, scale],
+    inputs=[qvel_stage, d.qacc, scale],
     outputs=[qvel_rk, qacc_rk],
   )
 
@@ -703,13 +935,30 @@ def rungekutta4(m: Model, d: Data):
     act_t0 = None
     act_dot_rk = None
 
-  _rk_accumulate(m, d, B[0], qvel_rk, qacc_rk, act_dot_rk)
+  if m.nplastic > 0 and m.ntendon > 0:
+    ten_length_t0 = wp.clone(d.ten_length)
+    ten_J_t0 = wp.clone(d.ten_J)
+  else:
+    ten_length_t0 = None
+    ten_J_t0 = None
+
+  # stage velocities with the RKMK correction (rates of the rotation vectors of ball and free joints); the first
+  # stage has a zero rotation vector, so it needs no correction
+  qvel_stage = wp.clone(d.qvel)
+
+  _rk_accumulate(m, d, B[0], qvel_stage, qvel_rk, qacc_rk, act_dot_rk)
 
   for i in range(3):
     a, b = float(A[i]), B[i + 1]
-    _rk_perturb_state(m, d, a, qpos_t0, qvel_t0, act_t0)
+    _rk_perturb_state(m, d, a, qpos_t0, qvel_t0, qvel_stage, act_t0)
     forward(m, d)
-    _rk_accumulate(m, d, b, qvel_rk, qacc_rk, act_dot_rk)
+    wp.launch(
+      _rk_correct_velocity,
+      dim=(d.nworld, m.njnt),
+      inputs=[m.opt.timestep, m.jnt_type, m.jnt_dofadr, d.qvel, qvel_stage, a],
+      outputs=[qvel_stage],
+    )
+    _rk_accumulate(m, d, b, qvel_stage, qvel_rk, qacc_rk, act_dot_rk)
 
   wp.copy(d.qpos, qpos_t0)
   wp.copy(d.qvel, qvel_t0)
@@ -717,6 +966,10 @@ def rungekutta4(m: Model, d: Data):
   if m.na:
     wp.copy(d.act, act_t0)
     wp.copy(d.act_dot, act_dot_rk)
+
+  if ten_length_t0 is not None:
+    wp.copy(d.ten_length, ten_length_t0)
+    wp.copy(d.ten_J, ten_J_t0)
 
   _advance(m, d, qacc_rk, qvel_rk)
 
@@ -1964,22 +2217,30 @@ def _actuator_force(
   actuator_force_out[worldid, uid] = force
 
 
-@wp.kernel
-def _tendon_actuator_force(
-  # Model:
-  actuator_trntype: wp.array[int],
-  actuator_trnid: wp.array[wp.vec2i],
-  # Data in:
-  actuator_force_in: wp.array2d[float],
-  # Out:
-  ten_actfrc_out: wp.array2d[float],
-):
-  worldid, actid = wp.tid()
+@cache_kernel
+def _tendon_actuator_force(deterministic: bool = False):
+  module_options = {"enable_backward": False}
+  if deterministic:
+    module_options["deterministic"] = wp.DeterministicMode.RUN_TO_RUN
 
-  if actuator_trntype[actid] == TrnType.TENDON:
-    tenid = actuator_trnid[actid][0]
-    # TODO(team): only compute for tendons with force limits?
-    wp.atomic_add(ten_actfrc_out[worldid], tenid, actuator_force_in[worldid, actid])
+  @wp.kernel(module="unique", module_options=module_options)
+  def kernel(
+    # Model:
+    actuator_trntype: wp.array[int],
+    actuator_trnid: wp.array[wp.vec2i],
+    # Data in:
+    actuator_force_in: wp.array2d[float],
+    # Out:
+    ten_actfrc_out: wp.array2d[float],
+  ):
+    worldid, actid = wp.tid()
+
+    if actuator_trntype[actid] == TrnType.TENDON:
+      tenid = actuator_trnid[actid][0]
+      # TODO(team): only compute for tendons with force limits?
+      wp.atomic_add(ten_actfrc_out[worldid], tenid, actuator_force_in[worldid, actid])
+
+  return kernel
 
 
 @wp.kernel
@@ -2008,27 +2269,37 @@ def _tendon_actuator_force_clamp(
         actuator_force_out[worldid, actid] *= actfrcrange[1] / ten_actfrc
 
 
-@wp.kernel
-def _qfrc_actuator(
-  # Data in:
-  moment_rownnz_in: wp.array2d[int],
-  moment_rowadr_in: wp.array2d[int],
-  moment_colind_in: wp.array2d[int],
-  actuator_moment_in: wp.array2d[float],
-  actuator_force_in: wp.array2d[float],
-  # Data out:
-  qfrc_actuator_out: wp.array2d[float],
-):
-  worldid, actid = wp.tid()
+@cache_kernel
+def _qfrc_actuator(nv: int, deterministic: bool = False):
+  module_options = {"enable_backward": False}
+  if deterministic:
+    module_options["deterministic"] = wp.DeterministicMode.RUN_TO_RUN
+    module_options["deterministic_max_records"] = nv
 
-  rownnz = moment_rownnz_in[worldid, actid]
-  rowadr = moment_rowadr_in[worldid, actid]
+  @wp.kernel(module="unique", module_options=module_options)
+  def kernel(
+    # Data in:
+    moment_rownnz_in: wp.array2d[int],
+    moment_rowadr_in: wp.array2d[int],
+    moment_colind_in: wp.array2d[int],
+    actuator_moment_in: wp.array2d[float],
+    actuator_force_in: wp.array2d[float],
+    # Data out:
+    qfrc_actuator_out: wp.array2d[float],
+  ):
+    worldid, actid = wp.tid()
 
-  for i in range(rownnz):
-    sparseid = rowadr + i
-    colind = moment_colind_in[worldid, sparseid]
-    qfrc = actuator_moment_in[worldid, sparseid] * actuator_force_in[worldid, actid]
-    wp.atomic_add(qfrc_actuator_out[worldid], colind, qfrc)
+    rownnz = moment_rownnz_in[worldid, actid]
+    rowadr = moment_rowadr_in[worldid, actid]
+    act_force = actuator_force_in[worldid, actid]
+
+    for i in range(rownnz):
+      sparseid = rowadr + i
+      colind = moment_colind_in[worldid, sparseid]
+      qfrc = actuator_moment_in[worldid, sparseid] * act_force
+      wp.atomic_add(qfrc_actuator_out[worldid], colind, qfrc)
+
+  return kernel
 
 
 @wp.kernel
@@ -2124,11 +2395,12 @@ def fwd_actuation(m: Model, d: Data):
     if m.callback.act_bias:
       m.callback.act_bias(m, d)
 
+    det_atomics = bool(m.opt.deterministic & DeterminismType.ATOMICS)
     if m.ntendon:
       # total actuator force at tendon
       ten_actfrc = wp.zeros((d.nworld, m.ntendon), dtype=float)
       wp.launch(
-        _tendon_actuator_force,
+        _tendon_actuator_force(det_atomics),
         dim=(d.nworld, m.nactuator),
         inputs=[m.actuator_trntype, m.actuator_trnid, d.actuator_force],
         outputs=[ten_actfrc],
@@ -2144,7 +2416,7 @@ def fwd_actuation(m: Model, d: Data):
     # TODO(team): optimize performance
     d.qfrc_actuator.zero_()
     wp.launch(
-      _qfrc_actuator,
+      _qfrc_actuator(m.nv if det_atomics else 0, det_atomics),
       dim=(d.nworld, m.nactuator),
       inputs=[
         d.moment_rownnz,

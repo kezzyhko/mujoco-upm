@@ -47,6 +47,7 @@
 #include "engine/engine_util_misc.h"
 #include "engine/engine_util_solve.h"
 #include "engine/engine_util_sparse.h"
+#include "engine/engine_util_spatial.h"
 #include "engine/engine_thread.h"
 
 
@@ -1420,8 +1421,8 @@ static void advanceStart(const mjModel* m, mjData* d, const mjtNum* act_dot) {
 }
 
 
-// the work every integrator does after it wrote the new state: time, plugin states
-static void advanceFinish(const mjModel* m, mjData* d) {
+// the work every integrator does after it wrote the new state: time, plugin states, plastic springs
+static void advanceFinish(const mjModel* m, mjData* d, const mjtNum* qvel) {
   // advance time
   d->time += m->opt.timestep;
 
@@ -1436,6 +1437,86 @@ static void advanceFinish(const mjModel* m, mjData* d) {
       }
       if (plugin->advance) {
         plugin->advance(m, d, i);
+      }
+    }
+  }
+
+  // advance plastic spring references (return mapping)
+  if (m->nplastic && !mjDISABLED(mjDSBL_SPRING)) {
+    int sleep_filter = mjENABLED(mjENBL_SLEEP) && d->ntree_awake < m->ntree;
+
+    // joints
+    for (int j = 0; j < m->njnt; j++) {
+      if (m->jnt_plasticadr[j] < 0) {
+        continue;
+      }
+      if (sleep_filter && d->body_awake[m->jnt_bodyid[j]] != mjS_AWAKE) {
+        continue;
+      }
+      mjtNum* qspring = d->plastic + m->jnt_plasticadr[j];
+      int padr = m->jnt_qposadr[j];
+      mjtNum yield = mju_max(0, m->jnt_springyield[j]);
+
+      mjtJoint type = (mjtJoint) m->jnt_type[j];
+      if (type == mjJNT_SLIDE || type == mjJNT_HINGE) {
+        mjtNum x = d->qpos[padr] - qspring[0];
+        if (x > yield) {
+          qspring[0] = d->qpos[padr] - yield;
+        } else if (x < -yield) {
+          qspring[0] = d->qpos[padr] + yield;
+        }
+      } else if (type == mjJNT_BALL) {
+        mjtNum dif[3], quat[4];
+        mju_copy4(quat, d->qpos + padr);
+        mju_normalize4(quat);
+        mju_subQuat(dif, quat, qspring);
+        mjtNum r = mju_norm3(dif);
+        if (r > yield) {
+          mju_quatIntegrate(qspring, dif, (r - yield) / r);
+          mju_normalize4(qspring);
+        }
+      }
+    }
+
+    // tendons
+    for (int i = 0; i < m->ntendon; i++) {
+      if (m->tendon_plasticadr[i] < 0) {
+        continue;
+      }
+      if (sleep_filter && mj_sleepState(m, d, mjOBJ_TENDON, i) != mjS_AWAKE) {
+        continue;
+      }
+      mjtNum* lengthspring = d->plastic + m->tendon_plasticadr[i];
+      mjtNum yield = mju_max(0, m->tendon_springyield[i]);
+      mjtNum L_next = 0;
+
+      int adr = m->tendon_adr[i];
+      if (m->wrap_type[adr] == mjWRAP_JOINT) {
+        int num = m->tendon_num[i];
+        for (int j = 0; j < num; j++) {
+          int jntid = m->wrap_objid[adr + j];
+          L_next += m->wrap_prm[adr + j] * d->qpos[m->jnt_qposadr[jntid]];
+        }
+      } else {
+        int rownnz = m->ten_J_rownnz[i];
+        int rowadr = m->ten_J_rowadr[i];
+        L_next = d->ten_length[i] + m->opt.timestep *
+                 mju_dotSparse(d->ten_J + rowadr, qvel, rownnz, m->ten_J_colind + rowadr);
+      }
+
+      mjtNum lower = lengthspring[0];
+      mjtNum upper = lengthspring[1];
+      mjtNum x = (L_next > upper) ? L_next - upper : (L_next < lower) ? L_next - lower : 0;
+      if (x > yield) {
+        mjtNum delta = x - yield;
+        if (lower != 0 || upper <= 0) {
+          lengthspring[0] += delta;
+        }
+        lengthspring[1] += delta;
+      } else if (x < -yield) {
+        mjtNum delta = x + yield;
+        lengthspring[0] += delta;
+        lengthspring[1] += delta;
       }
     }
   }
@@ -1461,9 +1542,10 @@ void mj_advance(const mjModel* m, mjData* d,
   // advance positions with qvel if given, d->qvel otherwise (semi-implicit)
   const int* index = sleep_filter ? d->body_awake_ind : NULL;
   int nbody = sleep_filter ? d->nbody_awake : m->nbody;
-  mj_integratePosInd(m, d->qpos, qvel ? qvel : d->qvel, m->opt.timestep, index, nbody);
+  const mjtNum* v = qvel ? qvel : d->qvel;
+  mj_integratePosInd(m, d->qpos, v, m->opt.timestep, index, nbody);
 
-  advanceFinish(m, d);
+  advanceFinish(m, d, v);
 
   // save qacc for next step warmstart
   mju_copy(d->qacc_warmstart, d->qacc, m->nv);
@@ -1485,7 +1567,7 @@ void mj_commit(const mjModel* m, mjData* d, const mjtNum* act_dot,
   advanceStart(m, d, act_dot);
   mju_copy(d->qpos, qpos, m->nq);
   mju_copy(d->qvel, qvel, m->nv);
-  advanceFinish(m, d);
+  advanceFinish(m, d, d->qvel);
 }
 
 // Euler integrator, semi-implicit in velocity, possibly skipping factorisation
@@ -1600,6 +1682,27 @@ const mjtNum RK4_B[4] = {
 };
 
 
+// Runge-Kutta-Munthe-Kaas (RKMK) correction: orientations are written as q = q0 * exp(rot) and
+//  RK integrates the rotation vector rot, an ODE on a vector space, so the order of the tableau is
+//  kept; the rate of rot is not the angular velocity but dexp^{-1}_{-rot} of it, and summing the
+//  uncorrected stage angular velocities makes orientations only second-order accurate;
+//  map the rotational dofs of ball and free joints in vel to rotation vector rates, given the stage
+//  position increment velocity dqvel (rotation vector = h*dqvel); other dofs are unchanged
+static void rkCorrectVel(const mjModel* m, mjtNum* vel, const mjtNum* dqvel, mjtNum h) {
+  for (int j=0; j < m->njnt; j++) {
+    int vadr = m->jnt_dofadr[j];
+    int type = m->jnt_type[j];
+    if (type == mjJNT_FREE) {
+      vadr += 3;
+    } else if (type != mjJNT_BALL) {
+      continue;
+    }
+    mjtNum rot[3] = {h*dqvel[vadr], h*dqvel[vadr+1], h*dqvel[vadr+2]};
+    mju_derivExpmap(vel+vadr, rot, vel+vadr);
+  }
+}
+
+
 // Runge Kutta explicit order-N integrator
 //  (A,B) is the tableau, C is set to row_sum(A)
 void mj_RungeKutta(const mjModel* m, mjData* d, int N) {
@@ -1636,11 +1739,20 @@ void mj_RungeKutta(const mjModel* m, mjData* d, int N) {
 
   // init X[0], F[0]; mj_forward() was already called
   mju_copy(X[0], d->qpos, nq);
-  mju_copy(X[0]+nq, d->qvel, nv);
+  mju_copy(X[0]+nq, d->qvel, nv);  // rotation vector is 0: no RKMK correction
   mju_copy(F[0], d->qacc, nv);
   if (na) {
     mju_copy(X[0]+nq+nv, d->act, na);
     mju_copy(F[0]+nv, d->act_dot, na);
+  }
+  mjtNum *ten_length0 = NULL, *ten_J0 = NULL;
+  if (m->nplastic && m->ntendon) {
+    ten_length0 = mjSTACKALLOC(d, m->ntendon, mjtNum);
+    mju_copy(ten_length0, d->ten_length, m->ntendon);
+    if (m->nJten) {
+      ten_J0 = mjSTACKALLOC(d, m->nJten, mjtNum);
+      mju_copy(ten_J0, d->ten_J, m->nJten);
+    }
   }
 
   // compute the remaining X[i], F[i]
@@ -1665,6 +1777,10 @@ void mj_RungeKutta(const mjModel* m, mjData* d, int N) {
     }
     d->time = T[i-1];
 
+    // RKMK: d->qvel keeps the stage velocity; X[i]+nq is only read below as a position rate,
+    //  map its angular velocities through dexp^{-1}_{-h*dX} in place
+    rkCorrectVel(m, X[i]+nq, dX, h);
+
     // evaluate F[i]
     mj_forwardSkip(m, d, mjSTAGE_NONE, 1);  // 1: do not recompute sensors and energy
     mju_copy(F[i], d->qacc, nv);
@@ -1685,6 +1801,12 @@ void mj_RungeKutta(const mjModel* m, mjData* d, int N) {
   mju_copy(d->qpos, X[0], nq);
   mju_copy(d->qvel, X[0]+nq, nv);
   mju_copy(d->act, X[0]+nq+nv, na);
+  if (ten_length0) {
+    mju_copy(d->ten_length, ten_length0, m->ntendon);
+    if (ten_J0) {
+      mju_copy(d->ten_J, ten_J0, m->nJten);
+    }
+  }
 
   // advance state and time
   mj_advance(m, d, dX+2*nv, dX+nv, dX);
