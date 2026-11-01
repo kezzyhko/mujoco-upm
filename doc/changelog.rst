@@ -187,6 +187,8 @@ Engine
   from ``geom_surfacevel`` when ``mjModel.flg_surfacevel`` is set, and external contact generators can write it
   directly (setting ``flg_surfacevel = 1`` if no geom specifies ``surfacevel``). Contact-point visualization now draws
   a single relative tangential velocity arrow per active frictional contact.
+- Added ``xiquat``, ``geom_xquat``, and ``site_xquat`` to :ref:`mjData`, storing the Cartesian quaternion orientations
+  of body inertias, geoms, and sites alongside ``ximat``, ``geom_xmat``, and ``site_xmat``.
 
 Filament Rendering
 ^^^^^^^^^^^^^^^^^^
@@ -225,6 +227,10 @@ Documentation
 - Added documentation for :ref:`MuJoCo Studio <Studio>`, covering :ref:`web <StudioWebViewers>` and
   :ref:`native <StudioNativeViewers>` viewers, :ref:`architecture <StudioArchitecture>`, and
   :ref:`Python <StudioPythonPlugins>` and :ref:`C++ <StudioCpp>` development.
+- Added a :ref:`Model tuning <CTuning>` guide to the Modeling chapter---covering the fidelity--speed trade-off,
+  :ref:`tuning defaults <CTuningDefaults>`, priority-ordered :ref:`global <CTuningGlobal>` and
+  :ref:`model-level <CTuningModel>` parameters, :ref:`deformables <CTuningDeformable>`, and
+  :ref:`system identification <CTuningSysid>`---along with module documentation for :ref:`mujoco.sysid <PySysid>`.
 
 Version 3.17.0 (October 22, 2026)
 ---------------------------------
