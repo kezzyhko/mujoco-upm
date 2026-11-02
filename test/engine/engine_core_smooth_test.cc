@@ -796,6 +796,48 @@ TEST_F(CoreSmoothTest, RnePostJointForcesAreInternal) {
   }
 }
 
+// mj_rnePostConstraint advances past the actual rows instantiated by
+// mjEQ_FLEXSTRAIN so subsequent equality constraint forces remain aligned.
+TEST_F(CoreSmoothTest, RnePostConstraintFlexstrainRowAdvance) {
+  static constexpr char xml[] = R"(
+  <mujoco>
+    <worldbody>
+      <flexcomp name="f" type="box" count="4 4 4" cellcount="2 1 1"
+                spacing=".02 .02 .02" dim="3" dof="trilinear" radius=".001">
+        <contact selfcollide="none"/>
+      </flexcomp>
+      <body name="b1" pos="0 0 1">
+        <joint name="j1" type="slide" axis="0 0 1"/>
+        <geom size="0.05" mass="1.5"/>
+      </body>
+    </worldbody>
+    <equality>
+      <flexstrain flex="f" cell="0 0 0"/>
+      <connect body1="b1" anchor="0 0 1"/>
+    </equality>
+  </mujoco>
+  )";
+  char error[1024];
+  MjModelPtr model = LoadModelFromString(xml, error, sizeof(error));
+  ASSERT_THAT(model.get(), NotNull()) << error;
+  MjDataPtr data = MakeData(model);
+
+  mj_forward(model.get(), data.get());
+  mj_rnePostConstraint(model.get(), data.get());
+
+  int b1 = mj_name2id(model.get(), mjOBJ_BODY, "b1");
+  int j1 = mj_name2id(model.get(), mjOBJ_JOINT, "j1");
+  ASSERT_GT(b1, 0);
+  ASSERT_GE(j1, 0);
+  int dof = model->jnt_dofadr[j1];
+
+  // b1 is suspended by the connect equality constraint after flexstrain rows;
+  // cfrc_ext vertical force on b1 must match the joint constraint force.
+  EXPECT_GT(data->qfrc_constraint[dof], 10.0);
+  EXPECT_NEAR(data->cfrc_ext[6 * b1 + 5], data->qfrc_constraint[dof],
+              MjTol(1e-10, 1e-4));
+}
+
 // --------------------------- site actuators ----------------------------------
 
 // Test Cartesian position control using site transmission with refsite
@@ -2261,5 +2303,43 @@ TEST_F(CoreSmoothTest, KinematicsQuatsMatchMats) {
   }
 }
 
+TEST_F(CoreSmoothTest, SliderCrankAfterOrientationActuatorUsesOwnCranklength) {
+  static constexpr char xml[] = R"(
+  <mujoco>
+    <worldbody>
+      <site name="ref"/>
+      <site name="slider"/>
+      <body>
+        <freejoint/>
+        <geom size="0.1"/>
+        <site name="ee"/>
+      </body>
+      <body>
+        <joint name="j" type="slide" axis="0 0 1"/>
+        <geom size="0.1"/>
+        <site name="crank"/>
+      </body>
+    </worldbody>
+    <actuator>
+      <orientation name="orient" site="ee" refsite="ref" kp="1" dampratio="1"/>
+      <general name="sc" cranksite="crank" slidersite="slider" cranklength="0.5"/>
+    </actuator>
+  </mujoco>
+  )";
+  char error[1024];
+  MjModelPtr model = LoadModelFromString(xml, error, sizeof(error));
+  ASSERT_THAT(model.get(), NotNull()) << error;
+  int sc = mj_name2id(model.get(), mjOBJ_ACTUATOR, "sc");
+  ASSERT_EQ(sc, 1);
+  ASSERT_EQ(model->actuator_outadr[sc], 3);
+  EXPECT_MJTNUM_EQ(model->actuator_cranklength[sc], 0.5);
+
+  MjDataPtr data = MakeData(model);
+  mj_forward(model.get(), data.get());
+
+  // With crank and slider coincident (vec = 0, av = 0), slider-crank length is
+  // -rod = -0.5.
+  EXPECT_MJTNUM_EQ(data->actuator_length[model->actuator_outadr[sc]], -0.5);
+}
 }  // namespace
 }  // namespace mujoco
