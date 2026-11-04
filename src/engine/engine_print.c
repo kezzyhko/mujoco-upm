@@ -1188,12 +1188,12 @@ void mj_printFormattedModel(const mjModel* m, const char* filename, const char* 
             int cz = m->flex_cellnum[3*j+2];
             pnum = 3 * 2 * (cy*cz + cx*cz + cx*cy);
           } else if (m->flex_dim[j] == 1) {
-            pnum = mjROD_STATE_SIZE;
+            pnum = mj_rodStateSize(m, j);
           } else {
-            if (m->flex_stiffnessadr[j] >= 0 && m->flex_stiffness[m->flex_stiffnessadr[j]] != 0) {
+            if (m->flex_plasticmode[j] & 2) {
               pnum += ((m->flex_dim[j] == 2) ? 3 : 6) * m->flex_elemnum[j];
             }
-            if (m->flex_dim[j] == 2 && m->flex_bendingadr[j] >= 0) {
+            if (m->flex_plasticmode[j] & 1) {
               pnum += m->flex_edgenum[j];
             }
           }
