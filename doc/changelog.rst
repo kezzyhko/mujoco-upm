@@ -5,20 +5,20 @@ Changelog
 Upcoming Version (not yet released)
 -----------------------------------
 
+.. image:: images/changelog/speculative_advancement_light.svg
+   :align: right
+   :width: 50%
+   :class: only-light
+   :target: https://mujoco.readthedocs.io/en/latest/computation/speculative.html#spadvancement
+
+.. image:: images/changelog/speculative_advancement_dark.svg
+   :align: right
+   :width: 50%
+   :class: only-dark
+   :target: https://mujoco.readthedocs.io/en/latest/computation/speculative.html#spadvancement
+
 Significant new features
 ^^^^^^^^^^^^^^^^^^^^^^^^
-
-  .. image:: images/changelog/speculative_advancement_light.svg
-     :align: right
-     :width: 50%
-     :class: only-light
-     :target: https://mujoco.readthedocs.io/en/latest/computation/speculative.html#spadvancement
-
-  .. image:: images/changelog/speculative_advancement_dark.svg
-     :align: right
-     :width: 50%
-     :class: only-dark
-     :target: https://mujoco.readthedocs.io/en/latest/computation/speculative.html#spadvancement
 
 - Added the :ref:`speculative<option-flag-speculative>` enable flag for :doc:`speculative contacts
   <computation/speculative>` to prevent fast-moving convex geoms from tunneling through thin obstacles within a single
@@ -257,6 +257,11 @@ Deformables
 - Flex :ref:`edge damping<flex-edge-damping>` is now integrated explicitly under ``implicit`` and ``implicitfast``
   (previously it also damped rigid translation).
 - Fixed contact Jacobians of quadratic flexes, which dropped nodes with negative basis weights.
+- Sphere and capsule contacts with 3D flex elements are now computed analytically instead of the general convex
+  pipeline.
+- Improved numerical stability of :ref:`nativeccd<option-flag-nativeccd>` convex collision detection and
+  :ref:`multiccd<option-flag-multiccd>` contact generation. This can slightly change contacts for models with convex
+  or mesh collisions.
 
 Compiler
 ^^^^^^^^
@@ -358,6 +363,9 @@ Bug fixes
   pool instead of dropping and leaking it.
 - ``mju_mat2Rot`` now normalizes the input quaternion and escapes 180-degree stationary points (saddles and minima)
   that do not maximize :math:`\operatorname{tr}(R^\top M)`.
+- Fixed the cotangent weight and length scale of the curved reference term of 2D :ref:`flex<deformable-flex>` bending
+  (:ref:`elastic2d<flex-elasticity-elastic2d>` **bend** or **both**), so out-of-plane bending forces vanish at curved
+  rest configurations and scale consistently with model size.
 - Fixed several bugs when editing or copying an :ref:`mjSpec`:
 
   - :ref:`mjs_delete` (``MjSpec.delete`` in Python) now removes deleted default classes from the class lookup map
