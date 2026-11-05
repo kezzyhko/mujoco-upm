@@ -87,6 +87,13 @@ class SnapshotChannel(Protocol):
     """Returns the latest pending snapshots of each type."""
     ...
 
+  def reclaim_unconsumed(
+      self, snapshot_type: type[Snapshot]
+  ) -> Snapshot | None:
+    """Pops and returns an unconsumed pending snapshot of ``snapshot_type``."""
+    del snapshot_type
+    return None
+
   def close(self) -> None:
     """Releases resources held by the channel."""
     ...
@@ -264,6 +271,25 @@ class LoadModelEvent(Event):
   """
 
   path: str = ''
+
+
+@dataclasses.dataclass(frozen=True)
+class PreloadModelEvent(Event):
+  """A hint that ``model`` may become the current model soon.
+
+  Sent from the sim to the viewer, for example by a scene playlist that knows
+  which models come next. The web viewer serializes the model right away and
+  tells connected browsers about it, so they can download it in the background
+  and later switch to it without waiting on the network when its ``ModelEvent``
+  arrives. Other viewers ignore the hint. The model should not be modified
+  between the hint and its ``ModelEvent``; if it is, the viewer simply serves it
+  the usual way when it loads.
+
+  Attributes:
+    model: The model that may be loaded soon.
+  """
+
+  model: mujoco.MjModel
 
 
 @dataclasses.dataclass(frozen=True)

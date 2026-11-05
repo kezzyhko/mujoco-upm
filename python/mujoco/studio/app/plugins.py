@@ -372,12 +372,13 @@ class App(plugin.ViewerPlugin):
     if inputs.handle_miscellaneous_keyboard_events(self):
       return
 
-    if is_freecam_wasd:
-      handled, cam_speed = inputs.handle_freecam_wasd_keyboard_events(
-          self.model, self.data, self.viewer.camera, self.viewer.cam_speed
+    if is_freecam_wasd and self.viewer.client_camera is None:
+      handled, self.viewer.cam_speed = (
+          inputs.handle_freecam_wasd_keyboard_events(
+              self.model, self.data, self.viewer.camera, self.viewer.cam_speed
+          )
       )
       if handled:
-        self.viewer.cam_speed = cam_speed
         return
 
   def handle_camera_tracking_mouse_events(self) -> None:
@@ -401,6 +402,7 @@ class App(plugin.ViewerPlugin):
         self.viewer.vis_options,
         self.viewer.perturb,
         self.ux_state,
+        move_camera=self.viewer.client_camera is None,
     )
 
   def reset_physics(self) -> None:
@@ -719,6 +721,10 @@ class App(plugin.ViewerPlugin):
         imgui.End()
         imgui.PopStyleVar(3)
 
+    # Mirrored for viewers whose client moves the camera (client_camera), after
+    # everything above that can switch the camera mode.
+    self.viewer.camera_index = self.ux_state.camera_index
+
   @messages.handler(priority=messages.Priority.INTERNAL)
   def _on_step_control(self, event: messages.StepControlSnapshot) -> None:
     """Mirrors the sim's step control settings into ``step_control_state``."""
@@ -753,6 +759,12 @@ class App(plugin.ViewerPlugin):
 
   @messages.handler(priority=messages.Priority.INTERNAL)
   def _on_exit(self, _: messages.ExitEvent) -> None:
+    ux.save_settings(self.theme)
+
+  @messages.handler(priority=messages.Priority.INTERNAL)
+  def _on_theme(self, event: plugin.ThemeEvent) -> None:
+    self.theme = event.theme
+    ux.setup_theme(self.theme)
     ux.save_settings(self.theme)
 
   @messages.handler(priority=messages.Priority.INTERNAL)
