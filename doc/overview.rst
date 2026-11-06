@@ -132,11 +132,12 @@ Powerful yet intuitive modeling language
    Sheets (CSS) inlined in HTML. While MJCF has many elements and attributes, the user needs to set surprisingly few of
    them in any given model. This makes MJCF files shorter and more readable than many other formats.
 
-Automated generation of composite flexible objects
-   MuJoCo's soft constraints can be used to model ropes, cloth, and deformable 3D objects. This requires a large
-   collection of regular bodies, joint, tendons and constraints to work together. The modeling language has high-level
-   macros which are automatically expanded by the model compiler into the necessary collections of standard model
-   elements. Importantly, these resulting flexible objects are able to fully interact with the rest of the simulation.
+Deformable objects and automated generation
+   MuJoCo natively models deformable 1D rods and cables, 2D cloths and shells, and 3D soft bodies via the
+   :ref:`flex <deformable-flex>` element, which combines moving vertices with stretchable geometric elements,
+   continuum and discrete-rod elasticity, and deformable collision detection. The high-level
+   :ref:`flexcomp <body-flexcomp>` macro automatically expands meshes, grids, and parametric shapes into the
+   underlying bodies, joints, constraints, and flex elements, which fully interact with the rest of the simulation.
 
 Constraint islands and sleeping
    The constraint solver automatically discovers independent :ref:`constraint islands <soIsland>` -- groups of bodies
@@ -406,8 +407,7 @@ Skinned meshes (or skins) are meshes whose shape can deform at runtime. Their ve
 (called bones in this context) and each vertex can belong to multiple bones, resulting in smooth deformations of the
 skin. Skins are purely visualization objects and do not affect the physics, but nevertheless they can enhance visual
 realism significantly. Skins can be loaded from custom binary files, or embedded directly in the XML, similar to
-meshes. When generating composite flexible objects automatically, the model compiler also generates skins for these
-objects.
+meshes.
 
 Height field
 ^^^^^^^^^^^^
@@ -594,8 +594,10 @@ positional and directional lighting, fog. Lights, or rather the objects illumina
 However, similar to material reflections, each shadow-casting light adds one rendering pass so this feature should be
 used with caution. Documenting the lighting model in detail is beyond the scope of this chapter; see `OpenGL
 documentation <http://www.glprogramming.com/red/chapter05.html>`__ instead. Note that in addition to lights defined
-by the user in the kinematic tree, there is a default headlight that moves with the camera. Its properties are
-adjusted through the mjVisual options.
+by the user in the kinematic tree, there is a built-in headlight that moves with the camera which can be useful for
+inspecting the model in poorly lit conditions. Its properties are adjusted through the mjVisual options, and it is
+"auto" by default to allow the runtime to decide whether or not it should be enabled. (For backwards compatibility,
+legacy renderers assume an "auto" headlight is on.)
 The number of lights is given by ``mjModel.nlight``.
 
 .. _Standalone:

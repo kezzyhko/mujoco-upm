@@ -16,11 +16,12 @@
 // factorization and solve at n = 6, with dense Cholesky as a reference.
 // The 6x6 case is the free-body block in the implicitfast integrator.
 
+#include <cstdlib>
 #include <random>
 #include <utility>
 #include <vector>
 
-#include "benchmark/benchmark.h"  // IWYU pragma: keep
+#include <benchmark/benchmark.h>
 #include "absl/base/attributes.h"
 #include <mujoco/mujoco.h>
 #include "src/engine/engine_util_blas.h"
@@ -110,8 +111,7 @@ ABSL_ATTRIBUTE_NO_TAIL_CALL static void FactorBenchmark(benchmark::State& state,
     benchmark::DoNotOptimize(A);
   }
 
-  state.counters["factor/s"] =
-      benchmark::Counter(state.iterations(), benchmark::Counter::kIsRate);
+  state.SetItemsProcessed(state.iterations());
 }
 
 // factor and solve
@@ -145,8 +145,7 @@ ABSL_ATTRIBUTE_NO_TAIL_CALL static void FactorSolveBenchmark(
     benchmark::DoNotOptimize(x);
   }
 
-  state.counters["solve/s"] =
-      benchmark::Counter(state.iterations(), benchmark::Counter::kIsRate);
+  state.SetItemsProcessed(state.iterations());
 }
 
 void BM_factorLU_generic6(benchmark::State& state) {
@@ -458,8 +457,7 @@ static void BoxQPBenchmark(benchmark::State& state, int n, bool warmstart,
     p = (p + 1) % BoxQPDataset::kNumProb;
   }
 
-  state.counters["solve/s"] =
-      benchmark::Counter(state.iterations(), benchmark::Counter::kIsRate);
+  state.SetItemsProcessed(state.iterations());
 }
 
 void BM_BoxQP_Old_Cold_10(benchmark::State& s) {
@@ -527,11 +525,273 @@ BENCHMARK(BM_BoxQP_New_Warm_100);
 BENCHMARK(BM_BoxQP_Old_Warm_300);
 BENCHMARK(BM_BoxQP_New_Warm_300);
 
+// ----------------------------- Banded Cholesky -------------------------------
+
+struct CholBandDataset {
+  static constexpr int kNumMat = 32;
+  int ntotal;
+  int nband;
+  int ndense;
+  int nmat;
+  std::vector<mjtNum> B;
+  std::vector<mjtNum> L;
+  std::vector<mjtNum> vec;
+
+  CholBandDataset(int ntotal_, int nband_, int ndense_)
+      : ntotal(ntotal_),
+        nband(nband_),
+        ndense(ndense_),
+        nmat((ntotal_ - ndense_) * nband_ + ndense_ * ntotal_),
+        B(kNumMat * nmat),
+        L(kNumMat * nmat),
+        vec(kNumMat * ntotal_) {
+    int nsparse = ntotal - ndense;
+    std::vector<mjtNum> L0(ntotal * ntotal);
+    std::vector<mjtNum> L0T(ntotal * ntotal);
+    std::vector<mjtNum> H(ntotal * ntotal);
+
+    for (int m = 0; m < kNumMat; m++) {
+      std::mt19937_64 rng(100 + m);
+      std::normal_distribution<double> dist(0, 1);
+      mjtNum* Bp = B.data() + m * nmat;
+      mjtNum* Lp = L.data() + m * nmat;
+      mjtNum* vp = vec.data() + m * ntotal;
+
+      mju_zero(L0.data(), ntotal * ntotal);
+      for (int i = 0; i < ntotal; i++) {
+        vp[i] = dist(rng);
+        int jstart = (i < nsparse) ? mjMAX(0, i - nband + 1) : 0;
+        for (int j = jstart; j < i; j++) {
+          L0[i * ntotal + j] = dist(rng);
+        }
+        L0[i * ntotal + i] = std::abs(dist(rng)) + 1.0;
+      }
+      mju_transpose(L0T.data(), L0.data(), ntotal, ntotal);
+      mju_mulMatTMat(H.data(), L0T.data(), L0T.data(), ntotal, ntotal, ntotal);
+      mju_dense2Band(Bp, H.data(), ntotal, nband, ndense);
+      mju_copy(Lp, Bp, nmat);
+      mju_cholFactorBand(Lp, ntotal, nband, ndense, 0, 0);
+    }
+  }
+};
+
+static const CholBandDataset& GetCholBandDataset(int ntotal, int nband,
+                                                 int ndense) {
+  static const auto* d_100_6_0 = new CholBandDataset(100, 6, 0);
+  static const auto* d_100_12_6 = new CholBandDataset(100, 12, 6);
+  static const auto* d_300_6_0 = new CholBandDataset(300, 6, 0);
+  static const auto* d_300_24_6 = new CholBandDataset(300, 24, 6);
+  if (ntotal == 100 && nband == 6 && ndense == 0) return *d_100_6_0;
+  if (ntotal == 100 && nband == 12 && ndense == 6) return *d_100_12_6;
+  if (ntotal == 300 && nband == 6 && ndense == 0) return *d_300_6_0;
+  if (ntotal == 300 && nband == 24 && ndense == 6) return *d_300_24_6;
+  mju_error("GetCholBandDataset: unsupported (%d, %d, %d)", ntotal, nband,
+            ndense);
+  return *d_100_6_0;
+}
+
+static void CholFactorBandBenchmark(benchmark::State& state, int ntotal,
+                                    int nband, int ndense) {
+  const CholBandDataset& d = GetCholBandDataset(ntotal, nband, ndense);
+  std::vector<mjtNum> mat(d.nmat);
+  int m = 0;
+
+  for (auto s : state) {
+    mju_copy(mat.data(), d.B.data() + m * d.nmat, d.nmat);
+    mjtNum mindiag =
+        mju_cholFactorBand(mat.data(), ntotal, nband, ndense, 0, 0);
+    benchmark::DoNotOptimize(mindiag);
+    benchmark::DoNotOptimize(mat.data());
+    m = (m + 1) % CholBandDataset::kNumMat;
+  }
+
+  state.SetItemsProcessed(state.iterations());
+}
+
+static void CholSolveBandBenchmark(benchmark::State& state, int ntotal,
+                                   int nband, int ndense) {
+  const CholBandDataset& d = GetCholBandDataset(ntotal, nband, ndense);
+  std::vector<mjtNum> res(ntotal);
+  int m = 0;
+
+  for (auto s : state) {
+    const mjtNum* Lp = d.L.data() + m * d.nmat;
+    const mjtNum* vp = d.vec.data() + m * ntotal;
+    mju_cholSolveBand(res.data(), Lp, vp, ntotal, nband, ndense);
+    benchmark::DoNotOptimize(res.data());
+    m = (m + 1) % CholBandDataset::kNumMat;
+  }
+
+  state.SetItemsProcessed(state.iterations());
+}
+
+static void BandMulMatVecBenchmark(benchmark::State& state, int ntotal,
+                                   int nband, int ndense) {
+  const CholBandDataset& d = GetCholBandDataset(ntotal, nband, ndense);
+  std::vector<mjtNum> res(ntotal);
+  int m = 0;
+
+  for (auto s : state) {
+    const mjtNum* Bp = d.B.data() + m * d.nmat;
+    const mjtNum* vp = d.vec.data() + m * ntotal;
+    mju_bandMulMatVec(res.data(), Bp, vp, ntotal, nband, ndense, 1, true);
+    benchmark::DoNotOptimize(res.data());
+    m = (m + 1) % CholBandDataset::kNumMat;
+  }
+
+  state.SetItemsProcessed(state.iterations());
+}
+
+void BM_CholBand_Factor_100_6_0(benchmark::State& s) {
+  CholFactorBandBenchmark(s, 100, 6, 0);
+}
+void BM_CholBand_Factor_100_12_6(benchmark::State& s) {
+  CholFactorBandBenchmark(s, 100, 12, 6);
+}
+void BM_CholBand_Factor_300_6_0(benchmark::State& s) {
+  CholFactorBandBenchmark(s, 300, 6, 0);
+}
+void BM_CholBand_Factor_300_24_6(benchmark::State& s) {
+  CholFactorBandBenchmark(s, 300, 24, 6);
+}
+
+void BM_CholBand_Solve_100_6_0(benchmark::State& s) {
+  CholSolveBandBenchmark(s, 100, 6, 0);
+}
+void BM_CholBand_Solve_100_12_6(benchmark::State& s) {
+  CholSolveBandBenchmark(s, 100, 12, 6);
+}
+void BM_CholBand_Solve_300_6_0(benchmark::State& s) {
+  CholSolveBandBenchmark(s, 300, 6, 0);
+}
+void BM_CholBand_Solve_300_24_6(benchmark::State& s) {
+  CholSolveBandBenchmark(s, 300, 24, 6);
+}
+
+void BM_CholBand_MulMatVec_100_6_0(benchmark::State& s) {
+  BandMulMatVecBenchmark(s, 100, 6, 0);
+}
+void BM_CholBand_MulMatVec_100_12_6(benchmark::State& s) {
+  BandMulMatVecBenchmark(s, 100, 12, 6);
+}
+void BM_CholBand_MulMatVec_300_6_0(benchmark::State& s) {
+  BandMulMatVecBenchmark(s, 300, 6, 0);
+}
+void BM_CholBand_MulMatVec_300_24_6(benchmark::State& s) {
+  BandMulMatVecBenchmark(s, 300, 24, 6);
+}
+
+BENCHMARK(BM_CholBand_Factor_100_6_0);
+BENCHMARK(BM_CholBand_Factor_100_12_6);
+BENCHMARK(BM_CholBand_Factor_300_6_0);
+BENCHMARK(BM_CholBand_Factor_300_24_6);
+BENCHMARK(BM_CholBand_Solve_100_6_0);
+BENCHMARK(BM_CholBand_Solve_100_12_6);
+BENCHMARK(BM_CholBand_Solve_300_6_0);
+BENCHMARK(BM_CholBand_Solve_300_24_6);
+BENCHMARK(BM_CholBand_MulMatVec_100_6_0);
+BENCHMARK(BM_CholBand_MulMatVec_100_12_6);
+BENCHMARK(BM_CholBand_MulMatVec_300_6_0);
+BENCHMARK(BM_CholBand_MulMatVec_300_24_6);
+
+// ----------------------------- Dense Cholesky --------------------------------
+
+struct CholDataset {
+  static constexpr int kNumMat = 32;
+  int n;
+  std::vector<mjtNum> H;
+  std::vector<mjtNum> L;
+  std::vector<mjtNum> vec;
+
+  explicit CholDataset(int n_)
+      : n(n_), H(kNumMat * n_ * n_), L(kNumMat * n_ * n_), vec(kNumMat * n_) {
+    std::vector<mjtNum> sqrtH(n * n);
+    for (int m = 0; m < kNumMat; m++) {
+      std::mt19937_64 rng(200 + m);
+      std::normal_distribution<double> dist(0, 1);
+      mjtNum* Hp = H.data() + m * n * n;
+      mjtNum* Lp = L.data() + m * n * n;
+      mjtNum* vp = vec.data() + m * n;
+
+      for (int i = 0; i < n; i++) {
+        vp[i] = dist(rng);
+        for (int j = 0; j < n; j++) {
+          sqrtH[i * n + j] = dist(rng);
+        }
+      }
+      mju_mulMatTMat(Hp, sqrtH.data(), sqrtH.data(), n, n, n);
+      for (int i = 0; i < n; i++) {
+        Hp[i * (n + 1)] += 1.0;
+      }
+      mju_copy(Lp, Hp, n * n);
+      mju_cholFactor(Lp, n, mjMINVAL);
+    }
+  }
+};
+
+static const CholDataset& GetCholDataset(int n) {
+  static const auto* d_10 = new CholDataset(10);
+  static const auto* d_30 = new CholDataset(30);
+  static const auto* d_100 = new CholDataset(100);
+  static const auto* d_300 = new CholDataset(300);
+  if (n == 10) return *d_10;
+  if (n == 30) return *d_30;
+  if (n == 100) return *d_100;
+  if (n == 300) return *d_300;
+  mju_error("GetCholDataset: unsupported n = %d", n);
+  return *d_10;
+}
+
+static void CholFactorBenchmark(benchmark::State& state, int n) {
+  const CholDataset& d = GetCholDataset(n);
+  std::vector<mjtNum> mat(n * n);
+  int m = 0;
+
+  for (auto s : state) {
+    mju_copy(mat.data(), d.H.data() + m * n * n, n * n);
+    int rank = mju_cholFactor(mat.data(), n, mjMINVAL);
+    benchmark::DoNotOptimize(rank);
+    benchmark::DoNotOptimize(mat.data());
+    m = (m + 1) % CholDataset::kNumMat;
+  }
+
+  state.SetItemsProcessed(state.iterations());
+}
+
+static void CholSolveBenchmark(benchmark::State& state, int n) {
+  const CholDataset& d = GetCholDataset(n);
+  std::vector<mjtNum> res(n);
+  int m = 0;
+
+  for (auto s : state) {
+    const mjtNum* Lp = d.L.data() + m * n * n;
+    const mjtNum* vp = d.vec.data() + m * n;
+    mju_cholSolve(res.data(), Lp, vp, n);
+    benchmark::DoNotOptimize(res.data());
+    m = (m + 1) % CholDataset::kNumMat;
+  }
+
+  state.SetItemsProcessed(state.iterations());
+}
+
+void BM_Chol_Factor_10(benchmark::State& s) { CholFactorBenchmark(s, 10); }
+void BM_Chol_Factor_30(benchmark::State& s) { CholFactorBenchmark(s, 30); }
+void BM_Chol_Factor_100(benchmark::State& s) { CholFactorBenchmark(s, 100); }
+void BM_Chol_Factor_300(benchmark::State& s) { CholFactorBenchmark(s, 300); }
+
+void BM_Chol_Solve_10(benchmark::State& s) { CholSolveBenchmark(s, 10); }
+void BM_Chol_Solve_30(benchmark::State& s) { CholSolveBenchmark(s, 30); }
+void BM_Chol_Solve_100(benchmark::State& s) { CholSolveBenchmark(s, 100); }
+void BM_Chol_Solve_300(benchmark::State& s) { CholSolveBenchmark(s, 300); }
+
+BENCHMARK(BM_Chol_Factor_10);
+BENCHMARK(BM_Chol_Factor_30);
+BENCHMARK(BM_Chol_Factor_100);
+BENCHMARK(BM_Chol_Factor_300);
+BENCHMARK(BM_Chol_Solve_10);
+BENCHMARK(BM_Chol_Solve_30);
+BENCHMARK(BM_Chol_Solve_100);
+BENCHMARK(BM_Chol_Solve_300);
+
 }  // namespace
 }  // namespace mujoco
-
-int main(int argc, char** argv) {
-  benchmark::Initialize(&argc, argv);
-  benchmark::RunSpecifiedBenchmarks();
-  return 0;
-}

@@ -1000,8 +1000,8 @@ same way shares the engine with the bindings.
 To run the bindings' tests from the root of the cloned repository, use ``bazel test //python/...``.
 
 The Bazel build supports the Python versions listed in ``MODULE.bazel``, and installs the bindings' PyPI dependencies
-from ``pypi.org``. It covers the core bindings; rendering (``mujoco.Renderer`` and the GL contexts), the interactive
-viewer, MJX, and the USD exporter are not yet supported.
+from ``pypi.org``. It covers the core bindings and offscreen rendering (``mujoco.Renderer`` and the GL contexts, see
+:ref:`PyRender`); the interactive viewer, MJX, and the USD exporter are not yet supported.
 
 
 .. _PyModule:
@@ -1009,7 +1009,9 @@ viewer, MJX, and the USD exporter are not yet supported.
 Modules
 =======
 
-The ``mujoco`` package contains two sub-modules: ``mujoco.rollout`` and ``mujoco.minimize``
+The ``mujoco`` package includes several sub-modules: :ref:`mujoco.rollout <PyRollout>`, :ref:`mujoco.batch <PyBatch>`,
+:ref:`mujoco.minimize <PyMinimize>`, :ref:`mujoco.sysid <PySysid>`, :ref:`mujoco.studio <Studio>`, and
+:ref:`mujoco.usd <PyUSDexport>`.
 
 .. _PyRollout:
 
@@ -1132,10 +1134,11 @@ default, one per CPU), with the Global Interpreter Lock released. Results are bi
   or for any function; see :ref:`mjb_getModel` and :ref:`mjb_getData`.
 - ``set_models(models)`` runs each simulation on a model of the caller's, an ``MjModel`` per simulation or one for all,
   instead of the batch's model, in place of expanded fields; named views then read model attributes from each
-  simulation's model. See :ref:`mjb_setModels`.
+  simulation's model, and ``models`` returns the models set. See :ref:`mjb_setModels`.
 - ``expand(name)`` gives an ``MjModel`` field, or an ``MjOption`` field named ``opt.<name>``, per-simulation values,
-  applied before each call. ``set_const`` runs :ref:`mj_setConst` per simulation, and the fields it derives become
-  per-simulation as well. After writing a field that :ref:`mj_setConst` reads, one of
+  applied before each call; ``expanded(name)`` returns a field's read-only per-simulation values without expanding it,
+  or ``None`` if it is still shared. ``set_const`` runs :ref:`mj_setConst` per simulation, and the fields it derives
+  become per-simulation as well. After writing a field that :ref:`mj_setConst` reads, one of
   ``mujoco.MjModel._setconst_inputs`` or an ``MjOption`` field, call ``set_const`` so that the constants derived from it
   follow.
 - ``step(ids, nstep)``, ``forward(ids)``, ``reset(ids, keyframe)`` and ``set_const(ids)`` run on the simulations
@@ -1189,6 +1192,22 @@ Quadratic Programs with :ref:`mju_boxQP`. It is documented in the associated not
 
 .. |lscolab| image:: https://colab.research.google.com/assets/colab-badge.png
              :target: https://colab.research.google.com/github/google-deepmind/mujoco/blob/main/python/least_squares.ipynb
+
+.. _PySysid:
+
+sysid
+-----
+
+The `mujoco.sysid <https://github.com/google-deepmind/mujoco/tree/main/python/mujoco/sysid>`__ toolbox (installed via
+``pip install mujoco[sysid]``) fits model parameters to recorded hardware trajectories using box-constrained nonlinear
+least squares over batched parallel :ref:`rollout <PyRollout>` evaluations. It supports arbitrary :ref:`MjSpec <mjSpec>`
+parameters---with built-in helpers for body mass, center of mass, physically consistent 10-D pseudo-inertias, and
+actuator P/D gains---as well as sensor/actuator delays and biases, and generates interactive HTML diagnostic reports.
+See the `sysid README <https://github.com/google-deepmind/mujoco/blob/main/python/mujoco/sysid/README.md>`__ for API
+details and the associated notebook: |sysid_colab|
+
+.. |sysid_colab| image:: https://colab.research.google.com/assets/colab-badge.png
+                 :target: https://colab.research.google.com/github/google-deepmind/mujoco/blob/main/python/mujoco/sysid/sysid.ipynb
 
 .. _PyUSDexport:
 

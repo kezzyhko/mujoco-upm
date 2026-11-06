@@ -74,23 +74,37 @@ namespace mujoco::python {
 namespace {
 
 // Initializers for structs.
-void Init(mjrfContextConfig& obj)      { mjrf_defaultContextConfig(&obj); }
-void Init(mjrfFrameStats& obj)         { mjrf_defaultFrameStats(&obj); }
-void Init(mjrfLightParams& obj)        { mjrf_defaultLightParams(&obj); }
-void Init(mjrfMaterial& obj)           { mjrf_defaultMaterial(&obj); }
-void Init(mjrfMeshConfig& obj)         { mjrf_defaultMeshConfig(&obj); }
-void Init(mjrfMeshData& obj)           { mjrf_defaultMeshData(&obj); }
-void Init(mjrfReadRequest& obj)        { mjrf_defaultReadRequest(&obj); }
-void Init(mjrfRenderableParams& obj)   { mjrf_defaultRenderableParams(&obj); }
-void Init(mjrfRenderRequest& obj)      { mjrf_defaultRenderRequest(&obj); }
-void Init(mjrfRenderTargetConfig& obj) { mjrf_defaultRenderTargetConfig(&obj); }
-void Init(mjrfSceneParams& obj)        { mjrf_defaultSceneParams(&obj); }
-void Init(mjrfTextureConfig& obj)      { mjrf_defaultTextureConfig(&obj); }
-void Init(mjrfTextureData& obj)        { mjrf_defaultTextureData(&obj); }
-void Init(mjrRect& obj)                { std::memset(&obj, 0, sizeof(obj)); }
-void Init(mjrCamera& obj)              { std::memset(&obj, 0, sizeof(obj)); }
-void Init(mjrVertexAttribute& obj)     { std::memset(&obj, 0, sizeof(obj)); }
-
+void Init(mjrfContextConfig& obj)        { mjrf_defaultContextConfig(&obj); }
+void Init(mjrfFrameStats& obj)           { mjrf_defaultFrameStats(&obj); }
+void Init(mjrfLightParams& obj)          { mjrf_defaultLightParams(&obj); }
+void Init(mjrfMaterial& obj)             { mjrf_defaultMaterial(&obj); }
+void Init(mjrfMeshConfig& obj)           { mjrf_defaultMeshConfig(&obj); }
+void Init(mjrfMeshData& obj)             { mjrf_defaultMeshData(&obj); }
+void Init(mjrfReadRequest& obj)          { mjrf_defaultReadRequest(&obj); }
+void Init(mjrfRenderableParams& obj)     { mjrf_defaultRenderableParams(&obj); }
+void Init(mjrfRenderRequest& obj)        { mjrf_defaultRenderRequest(&obj); }
+void Init(mjrfRenderTargetConfig& obj)   { mjrf_defaultRenderTargetConfig(&obj); }
+void Init(mjrfSceneParams& obj)          { mjrf_defaultSceneParams(&obj); }
+void Init(mjrfTextureConfig& obj)        { mjrf_defaultTextureConfig(&obj); }
+void Init(mjrfTextureData& obj)          { mjrf_defaultTextureData(&obj); }
+void Init(mjrfRenderOpts& obj)           { mjrf_defaultRenderOpts(&obj); }
+void Init(mjrfAmbientOcclusionOpts& obj) { mjrf_defaultAmbientOcclusionOpts(&obj); }
+void Init(mjrfAntialiasingOpts& obj)     { mjrf_defaultAntialiasingOpts(&obj); }
+void Init(mjrfBloomOpts& obj)            { mjrf_defaultBloomOpts(&obj); }
+void Init(mjrfColorGradingOpts& obj)     { mjrf_defaultColorGradingOpts(&obj); }
+void Init(mjrfDepthOfFieldOpts& obj)     { mjrf_defaultDepthOfFieldOpts(&obj); }
+void Init(mjrfDitheringOpts& obj)        { mjrf_defaultDitheringOpts(&obj); }
+void Init(mjrfFogOpts& obj)              { mjrf_defaultFogOpts(&obj); }
+void Init(mjrfHazeOpts& obj)             { mjrf_defaultHazeOpts(&obj); }
+void Init(mjrfHeadlightOpts& obj)        { mjrf_defaultHeadlightOpts(&obj); }
+void Init(mjrfMaterialOpts& obj)         { mjrf_defaultMaterialOpts(&obj); }
+void Init(mjrfReflectionOpts& obj)       { mjrf_defaultReflectionOpts(&obj); }
+void Init(mjrfShadowOpts& obj)           { mjrf_defaultShadowOpts(&obj); }
+void Init(mjrfSkyboxOpts& obj)           { mjrf_defaultSkyboxOpts(&obj); }
+void Init(mjrfVignetteOpts& obj)         { mjrf_defaultVignetteOpts(&obj); }
+void Init(mjrRect& obj)                  { std::memset(&obj, 0, sizeof(obj)); }
+void Init(mjrCamera& obj)                { std::memset(&obj, 0, sizeof(obj)); }
+void Init(mjrVertexAttribute& obj)       { std::memset(&obj, 0, sizeof(obj)); }
 
 
 template <typename T, std::size_t N>
@@ -104,6 +118,7 @@ struct NumArray {
 using Float3 = NumArray<float, 3>;
 using Float4 = NumArray<float, 4>;
 using Float9 = NumArray<float, 9>;
+using Float16 = NumArray<float, 16>;
 
 template <typename T> struct is_object : std::false_type {};
 template <> struct is_object<PyContext> : std::true_type {};
@@ -118,6 +133,7 @@ template <typename T> struct is_num_array : std::false_type {};
 template <> struct is_num_array<Float3> : std::true_type {};
 template <> struct is_num_array<Float4> : std::true_type {};
 template <> struct is_num_array<Float9> : std::true_type {};
+template <> struct is_num_array<Float16> : std::true_type {};
 
 void Free(mjrfReadRequest& data) {
   data.output = nullptr;
@@ -171,8 +187,16 @@ void Setter(T& dst, const U& src) {
     for (int i = 0; i < 9; ++i) {
       dst[i] = src[i];
     }
+  } else if constexpr (std::is_same_v<T, float[16]>) {
+    for (int i = 0; i < 16; ++i) {
+      dst[i] = src[i];
+    }
   } else if constexpr (std::is_same_v<U, std::vector<mjrVertexAttribute>>) {
-    for (int i = 0; i < src.size(); ++i) {
+    if (src.size() > std::size(dst)) {
+      throw py::value_error("Too many vertex attributes, maximum allowed is " +
+                            std::to_string(std::size(dst)));
+    }
+    for (size_t i = 0; i < src.size(); ++i) {
       dst[i] = src[i];
     }
   } else if constexpr (is_object<std::decay_t<U>>::value) {
@@ -302,6 +326,12 @@ PYBIND11_MODULE(_render_filament, m, pybind11::mod_gil_not_used()) {
   mjrf_mesh_data.def(
       "set_vertices",
       [](mjrfMeshData& data, const mjrfMeshConfig& config, py::bytes vertices) {
+        if (config.num_attributes < 0 ||
+            config.num_attributes >
+                static_cast<int>(std::size(data.vertices))) {
+          throw py::value_error("Invalid num_attributes: " +
+                                std::to_string(config.num_attributes));
+        }
         FreeMeshDataVertices(data);
         std::string_view sv(vertices);
         if (sv.empty()) {
