@@ -64,9 +64,10 @@ jobs:
 
     - name: Install 7z tool
       run: |
-        LATEST_VER=$(wget -qO- https://7-zip.org | grep -oP '7-Zip \K[0-9.]+' | head -n 1 | tr -d '.')
-        wget https://www.7-zip.org/a/7z${LATEST_VER}-linux-x64.tar.xz
-        tar -xJf 7z${LATEST_VER}-linux-x64.tar.xz
+        DOWNLOAD_URL=$(wget -qO- https://www.7-zip.org/download.html | grep -oP 'href="\K[^"]*7z[0-9]+-linux-x64\.tar\.xz' | head -n 1)
+        [[ "$DOWNLOAD_URL" == http* ]] || DOWNLOAD_URL="https://www.7-zip.org/$DOWNLOAD_URL"
+        wget --tries=5 --timeout=15 "$DOWNLOAD_URL" -O 7z-linux-x64.tar.xz
+        tar -xJf 7z-linux-x64.tar.xz
         ls
         stat ./7zz
 
