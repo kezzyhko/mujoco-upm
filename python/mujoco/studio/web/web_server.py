@@ -220,7 +220,7 @@ class UiSession(Protocol):
 
 def _roster_line(
     viewers: int,
-    is_controller: bool,
+    role: str,
     queue_pos: int,
     queue_len: int,
     max_spectators: int,
@@ -234,7 +234,8 @@ def _roster_line(
 
   Args:
     viewers: The number of viewers connected to the server.
-    is_controller: Whether the browser is the controller.
+    role: The browser's role ("controller", "spectator", or "none" when no
+      browser holds the controller slot).
     queue_pos: The browser's position in the control queue (0 if not queued).
     queue_len: The number of browsers in the queue.
     max_spectators: The maximum number of spectators allowed.
@@ -242,7 +243,6 @@ def _roster_line(
   Returns:
     A string representing the roster line.
   """
-  role = "controller" if is_controller else "spectator"
   return (
       f"viewers={viewers};role={role};queue_pos={queue_pos};"
       f"queue_len={queue_len};max_spectators={max_spectators}"
@@ -617,6 +617,12 @@ def _run_server(
       """Sends every browser the counts, its role and its queue position."""
       count = len(state_clients)
       for sid, client in list(state_clients.items()):
+        if controller_sid is None:
+          role = "none"
+        elif sid == controller_sid:
+          role = "controller"
+        else:
+          role = "spectator"
         try:
           pos = control_queue.index(sid) + 1
         except ValueError:
@@ -625,7 +631,7 @@ def _run_server(
           await client.send(
               _roster_line(
                   viewers=count,
-                  is_controller=sid == controller_sid,
+                  role=role,
                   queue_pos=pos,
                   queue_len=len(control_queue),
                   max_spectators=max_spectators,
@@ -924,6 +930,7 @@ def _run_server(
         await ws.close(_WS_CLOSE_SESSION_FULL, "session full")
         return
       state_clients[sid] = ws
+      server._viewer_count = len(state_clients)  # pylint: disable=protected-access
       last_heartbeat[sid] = loop_time()
       logger.info("[StateWS] Browser connected (%d total)", len(state_clients))
       await broadcast_roster()
@@ -1035,6 +1042,7 @@ def _run_server(
         # owns the queue and heartbeat entries.
         if state_clients.get(sid) is ws:
           del state_clients[sid]
+          server._viewer_count = len(state_clients)  # pylint: disable=protected-access
           if sid in control_queue:
             control_queue.remove(sid)
           last_heartbeat.pop(sid, None)
@@ -1235,6 +1243,7 @@ def _run_server(
     try:
       await watch_stop()
     finally:
+      server._viewer_count = 0  # pylint: disable=protected-access
       server._wake_state_streams = None
       enforcer.cancel()
       server._wake_ui_stream = None  # pylint: disable=protected-access
@@ -1311,6 +1320,7 @@ class WebServer:
     self._state_lock = threading.Lock()
     self._state_payload: bytes | None = None
     self._state_generation: int = 0
+    self._viewer_count: int = 0
     self._wake_state_streams: Callable[[], Any] | None = None
     self._client_camera: bytes | None = None
     self._pending_theme: str | None = None
@@ -1467,6 +1477,11 @@ class WebServer:
       if data is not None:
         self._models.move_to_end(crc32)
       return data
+
+  @property
+  def viewer_count(self) -> int:
+    """Number of browsers currently connected to the /state stream."""
+    return self._viewer_count
 
   @property
   def models_generation(self) -> int:
