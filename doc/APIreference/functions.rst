@@ -894,7 +894,8 @@ Load a dynamic library. The dynamic library is assumed to register one or more p
 
 Scan a directory and load all dynamic libraries. Dynamic libraries in the specified directory
 are assumed to register one or more plugins. Optionally, if a callback is specified, it is called
-for each dynamic library encountered that registers plugins.
+for each dynamic library encountered that registers plugins. A library that fails to load is
+skipped with a warning.
 
 .. _mj_version:
 
@@ -3361,6 +3362,15 @@ Initializes the mjrfAmbientOcclusionOpts to default values.
 .. mujoco-include:: mjrf_defaultRenderOpts
 
 Initializes the mjrfRenderOpts to default values.
+
+.. _mjrf_modelRenderOpts:
+
+`mjrf_modelRenderOpts <#mjrf_modelRenderOpts>`__
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+.. mujoco-include:: mjrf_modelRenderOpts
+
+Configures the rendering options based on the parameters in an mjModel.
 
 .. _mjrf_defaultRenderRequest:
 
@@ -6576,6 +6586,15 @@ Get element's name.
 .. mujoco-include:: mjs_getString
 
 Get string contents.
+
+.. _mjs_getInStringVec:
+
+`mjs_getInStringVec <#mjs_getInStringVec>`__
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+.. mujoco-include:: mjs_getInStringVec
+
+Get entry in string vector, or NULL if out of bounds.
 
 .. _mjs_getDouble:
 
