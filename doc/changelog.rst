@@ -2,6 +2,26 @@
 Changelog
 =========
 
+Upcoming Version (not yet released)
+-----------------------------------
+
+Deformables
+^^^^^^^^^^^
+- Added ``mjModel.flex_cellempty`` (``nflexcell x 1``) and ``mjModel.flex_celladr``, flagging the empty (pruned) cells
+  of interpolated flexes. Points of an interpolated flex, such as contact points, are now evaluated in their active
+  cell: their natural cell, or the nearest non-empty cell if it is empty, consistently with the vertex positions
+  (``flex_vertcell``). Previously contact weights near pruned cells could weight the pinned nodes of the empty cell.
+
+Compiler
+^^^^^^^^
+- Sequentially appending elements to an :ref:`mjSpec` body tree now runs in :math:`O(1)` instead of rebuilding the
+  model's tree lists, making procedural model construction up to ~250x faster.
+
+Rendering
+^^^^^^^^^
+- Added :ref:`mjGEOM_DISC<mjtGeom>` rendering-only geom type for flat double-sided discs and annuli
+  (``size = [r_out, r_in, 0]``).
+
 Version 4.0.1 (November 11, 2026)
 ---------------------------------
 

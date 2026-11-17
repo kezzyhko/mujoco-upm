@@ -138,7 +138,7 @@ These MJWarp variants mirror their MuJoCo counterparts but have a few key differ
 #. :class:`mjw.Model <mujoco_warp.Model>` and :class:`mjw.Data <mujoco_warp.Data>` contain Warp arrays that are copied
    onto device.
 #. Some fields are missing from :class:`mjw.Model <mujoco_warp.Model>` and :class:`mjw.Data <mujoco_warp.Data>` for
-   features that are unsupported.
+   features that are unsupported or omitted for GPU performance (see `Differences from MuJoCo`_).
 
 Batch sizes
 -----------
@@ -1062,10 +1062,13 @@ details.
 
 For examples that train policies with MJWarp physics, please see:
 
+- `MuJoCo Playground <https://playground.mujoco.org>`__: Train directly with
+  MJWarp using PyTorch and `reaf-sim <https://reaf-sim.readthedocs.io>`__ (or
+  via :ref:`MJX <mjx>` in
+  `rss2025 <https://github.com/google-deepmind/mujoco_playground/tree/main/rss2025>`__).
 - `Isaac Lab <https://github.com/isaac-sim/IsaacLab>`__: Train via
   `Newton API <https://github.com/newton-physics/newton>`__.
 - `mjlab <https://github.com/mujocolab/mjlab>`__: Train directly with MJWarp using PyTorch.
-- `MuJoCo Playground <https://github.com/google-deepmind/mujoco_playground>`__: Train via :ref:`MJX API <mjx>`.
 
 Features
 --------
@@ -1117,7 +1120,9 @@ Developments for deterministic results on GPU are tracked in this
 **How are orientations represented?**
 
 Orientations are represented as unit quaternions and follow :ref:`MuJoCo's conventions<siLayout>`:
-``w, x, y, z`` or ``scalar, vector``.
+``w, x, y, z`` or ``scalar, vector``. :class:`mjw.Data <mujoco_warp.Data>` stores Cartesian orientations of bodies,
+body inertias, geoms, and sites as quaternions (``xquat``, ``xiquat``, ``geom_xquat``, ``site_xquat``) and omits the
+corresponding rotation matrix fields (``xmat``, ``ximat``, ``geom_xmat``, ``site_xmat``).
 
 .. admonition:: ``wp.quat``
   :class: note
@@ -1215,6 +1220,15 @@ Differences from MuJoCo
 =======================
 
 This section notes differences between MJWarp and MuJoCo.
+
+Orientations
+------------
+
+To reduce GPU memory bandwidth, :class:`mjw.Data <mujoco_warp.Data>` stores Cartesian orientations of bodies, body
+inertias, geoms, and sites as unit quaternions (``xquat``, ``xiquat``, ``geom_xquat``, and ``site_xquat``) and omits
+the :ref:`mjData` rotation matrix fields (``xmat``, ``ximat``, ``geom_xmat``, and ``site_xmat``).
+:func:`mjw.get_data_into <mujoco_warp.get_data_into>` populates these rotation matrices when copying data to
+:ref:`mjData`.
 
 Warmstart
 ---------
