@@ -5,6 +5,13 @@ Changelog
 Upcoming Version (not yet released)
 -----------------------------------
 
+General
+^^^^^^^
+- Added :ref:`mju_QP`, a dual active-set solver for dense convex quadratic programs with bounds and two-sided linear
+  constraints. Constraints can be soft: a soft constraint holds exactly up to a threshold on its multiplier and then
+  yields with a given compliance, so problems with soft constraints remain feasible. The solver can be warmstarted
+  from a previous active set. The Hessian can be singular or zero (a linear program).
+
 Deformables
 ^^^^^^^^^^^
 - Added ``mjModel.flex_cellempty`` (``nflexcell x 1``) and ``mjModel.flex_celladr``, flagging the empty (pruned) cells
@@ -16,11 +23,33 @@ Compiler
 ^^^^^^^^
 - Sequentially appending elements to an :ref:`mjSpec` body tree now runs in :math:`O(1)` instead of rebuilding the
   model's tree lists, making procedural model construction up to ~250x faster.
+- :ref:`strippath<compiler-strippath>` no longer strips file names that match a registered
+  :ref:`resource provider<exProvider>`, such as ``package://`` URIs. These names are not filesystem paths, and the
+  compiler already treats them as absolute when combining them with :ref:`meshdir<compiler-meshdir>`.
 
 Rendering
 ^^^^^^^^^
+
+.. admonition:: Breaking changes
+   :class: attention
+
+   - Planar reflections in the Filament renderer are now energy conserving: diffuse base color is attenuated by one
+     minus the Fresnel reflection weight (dielectrics only; metals are unchanged), so a surface with
+     ``reflectance="1"`` is a pure mirror regardless of its base color. Previously, reflections were added on top of the
+     fully lit diffuse surface, washing out reflections on bright materials.
+
 - Added :ref:`mjGEOM_DISC<mjtGeom>` rendering-only geom type for flat double-sided discs and annuli
   (``size = [r_out, r_in, 0]``).
+- Fixed Filament planar reflections leaking geometry behind or crossing the mirror plane by clipping the reflection
+  camera at the mirror plane with an oblique near-plane projection (:issue:`3902`).
+
+Plugins
+^^^^^^^
+- Added a first-party :ref:`resource provider<exProvider>` plugin, ``plugin/package_uri``, that serves ROS-style
+  ``package://`` URIs by locating packages through ``AMENT_PREFIX_PATH`` and ``ROS_PACKAGE_PATH`` without depending on
+  ROS. It is not included in release packages: build it from source and load the resulting shared library with
+  :ref:`mj_loadPluginLibrary` before parsing a model, so that URDF and MJCF files can reference ROS package assets
+  unchanged. Contribution by :github:user:`noah-wardlow`.
 
 Version 4.0.1 (November 11, 2026)
 ---------------------------------
