@@ -12,12 +12,29 @@ General
   yields with a given compliance, so problems with soft constraints remain feasible. The solver can be warmstarted
   from a previous active set. The Hessian can be singular or zero (a linear program).
 
+Engine
+^^^^^^
+- Optimized :ref:`elliptic friction cone<soCones>` Hessians in the :ref:`Newton solver<soAlgorithms>` using closed-form
+  rank-``(dim - 1)`` factors (~5–30% faster elliptic Newton solves). Thanks to :github:user:`adenzler-nvidia`
+  for proposing the optimization in :doc:`MJWarp <mjwarp/index>` pull request
+  `1879 <https://github.com/google-deepmind/mujoco_warp/pull/1879>`__.
+
 Deformables
 ^^^^^^^^^^^
+- Fixed effective-metric PCG stalls and spurious ``mjWARN_INERTIA`` warnings on 2D flexes with passive contacts by
+  including fully covered passive flex contacts in the sparse Cholesky preconditioner. Previously, passive flex
+  contacts were omitted from the preconditioner, causing the implicit solve to stall or under-converge on stacked cloth
+  scenes (2.1-2.7x faster on ``drape.xml``; existing models with passive flex contacts can change trajectory due to the
+  more accurate solve).
 - Added ``mjModel.flex_cellempty`` (``nflexcell x 1``) and ``mjModel.flex_celladr``, flagging the empty (pruned) cells
   of interpolated flexes. Points of an interpolated flex, such as contact points, are now evaluated in their active
   cell: their natural cell, or the nearest non-empty cell if it is empty, consistently with the vertex positions
   (``flex_vertcell``). Previously contact weights near pruned cells could weight the pinned nodes of the empty cell.
+- The ``discrete`` :ref:`integrator<option-integrator>` smooth solve for 3D and interpolated
+  :ref:`flexes<deformable-flex>` now uses symmetric Gauss-Seidel (Eisenstat) preconditioning instead of diagonal
+  preconditioning, reusing the assembled stiffness matrix in place with zero extra arena memory. This cuts smooth-solve
+  iterations 2-3x and speeds up stepping by ~15% on ``model/plastic/clay.xml`` and
+  ``model/flex/mechanisms/cantilever.xml`` (up to ~1.9x on unconstrained 3D tetrahedral meshes).
 
 Compiler
 ^^^^^^^^

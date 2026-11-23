@@ -16,10 +16,12 @@
 
 #include <math.h>
 
+#include "engine/engine_crossplatform.h"
+#include <mujoco/mjtype.h>
 #include "engine/engine_inline.h"
+#include "engine/engine_simd.h"
 #include "engine/engine_util_blas.h"
 #include "engine/engine_util_errmem.h"
-#include "engine/engine_util_spatial_avx.h"  // IWYU pragma: keep
 
 
 //------------------------------ quaternion operations ---------------------------------------------
@@ -31,76 +33,66 @@ void mju_rotVecQuat(mjtNum res[3], const mjtNum vec[3], const mjtNum quat[4]) {
     mju_zero3(res);
   }
 
-  // null quat: copy vec
-  else if (quat[0] == 1 && quat[1] == 0 && quat[2] == 0 && quat[3] == 0) {
-    mji_copy3(res, vec);
-  }
-
   // regular processing
   else {
+    mjtNum v0 = vec[0], v1 = vec[1], v2 = vec[2];
+    mjtNum q0 = quat[0], q1 = quat[1], q2 = quat[2], q3 = quat[3];
+
     // tmp = q_w * v + cross(q_xyz, v)
     mjtNum tmp[3] = {
-      quat[0]*vec[0] + quat[2]*vec[2] - quat[3]*vec[1],
-      quat[0]*vec[1] + quat[3]*vec[0] - quat[1]*vec[2],
-      quat[0]*vec[2] + quat[1]*vec[1] - quat[2]*vec[0]
+      q0*v0 + q2*v2 - q3*v1,
+      q0*v1 + q3*v0 - q1*v2,
+      q0*v2 + q1*v1 - q2*v0
     };
 
     // res = v + 2 * cross(q_xyz, t)
-    res[0] = vec[0] + 2 * (quat[2]*tmp[2] - quat[3]*tmp[1]);
-    res[1] = vec[1] + 2 * (quat[3]*tmp[0] - quat[1]*tmp[2]);
-    res[2] = vec[2] + 2 * (quat[1]*tmp[1] - quat[2]*tmp[0]);
+    res[0] = v0 + 2 * (q2*tmp[2] - q3*tmp[1]);
+    res[1] = v1 + 2 * (q3*tmp[0] - q1*tmp[2]);
+    res[2] = v2 + 2 * (q1*tmp[1] - q2*tmp[0]);
   }
 }
 
 
 // negate quaternion
 void mju_negQuat(mjtNum res[4], const mjtNum quat[4]) {
-#ifdef mjUSEAVX
-  mju_negQuat_avx(res, quat);
-#else
-  res[0] = quat[0];
-  res[1] = -quat[1];
-  res[2] = -quat[2];
-  res[3] = -quat[3];
-#endif
+  v4_store(res, v4_xorsign(v4_load(quat), 0, 1, 1, 1));
 }
 
 
 // multiply quaternions
 void mju_mulQuat(mjtNum res[4], const mjtNum qa[4], const mjtNum qb[4]) {
-#ifdef mjUSEAVX
-  mju_mulQuat_avx(res, qa, qb);
-#else
-  mjtNum tmp[4] = {
-    (qa[0]*qb[0] - qa[1]*qb[1]) + (-qa[2]*qb[2] - qa[3]*qb[3]),
-    (qa[0]*qb[1] + qa[1]*qb[0]) + ( qa[2]*qb[3] - qa[3]*qb[2]),
-    (qa[0]*qb[2] - qa[1]*qb[3]) + ( qa[2]*qb[0] + qa[3]*qb[1]),
-    (qa[0]*qb[3] + qa[1]*qb[2]) + (-qa[2]*qb[1] + qa[3]*qb[0])
-  };
-  res[0] = tmp[0];
-  res[1] = tmp[1];
-  res[2] = tmp[2];
-  res[3] = tmp[3];
-#endif
+  mjtNum4 vb = v4_load(qb);
+  mjtNum4 va0 = v4_splat(qa[0]);
+  mjtNum4 va1 = v4_splat(qa[1]);
+  mjtNum4 va2 = v4_splat(qa[2]);
+  mjtNum4 va3 = v4_splat(qa[3]);
+
+  mjtNum4 vb1 = v4_shuffle(vb, 1, 0, 3, 2);
+  mjtNum4 vb2 = v4_shuffle(vb, 2, 3, 0, 1);
+  mjtNum4 vb3 = v4_shuffle(vb, 3, 2, 1, 0);
+
+  mjtNum4 t0 = v4_mul(va0, vb);
+  mjtNum4 t1 = v4_mul(v4_xorsign(va1, 1, 0, 1, 0), vb1);
+  mjtNum4 t2 = v4_mul(v4_xorsign(va2, 1, 0, 0, 1), vb2);
+  mjtNum4 t3 = v4_mul(v4_xorsign(va3, 1, 1, 0, 0), vb3);
+
+  v4_store(res, v4_add(v4_add(t0, t1), v4_add(t2, t3)));
 }
 
 
 // multiply quaternion and axis
 void mju_mulQuatAxis(mjtNum res[4], const mjtNum quat[4], const mjtNum axis[3]) {
-#ifdef mjUSEAVX
-  mju_mulQuatAxis_avx(res, quat, axis);
-#else
-  mjtNum tmp[4] = {
-    -quat[1]*axis[0] - quat[2]*axis[1] - quat[3]*axis[2],
-     quat[0]*axis[0] - quat[3]*axis[1] + quat[2]*axis[2],
-     quat[3]*axis[0] + quat[0]*axis[1] - quat[1]*axis[2],
-    -quat[2]*axis[0] + quat[1]*axis[1] + quat[0]*axis[2]
-  };
-  res[0] = tmp[0];
-  res[1] = tmp[1];
-  res[2] = tmp[2];
-  res[3] = tmp[3];
-#endif
+  mjtNum4 vq = v4_load(quat);
+  mjtNum4 vx0 = v4_splat(axis[0]);
+  mjtNum4 vx1 = v4_splat(axis[1]);
+  mjtNum4 vx2 = v4_splat(axis[2]);
+
+  mjtNum4 c0 = v4_xorsign(v4_shuffle(vq, 1, 0, 3, 2), 1, 0, 0, 1);
+  mjtNum4 c1 = v4_xorsign(v4_shuffle(vq, 2, 3, 0, 1), 1, 1, 0, 0);
+  mjtNum4 c2 = v4_xorsign(v4_shuffle(vq, 3, 2, 1, 0), 1, 0, 1, 0);
+
+  mjtNum4 s01 = v4_add(v4_mul(c0, vx0), v4_mul(c1, vx1));
+  v4_store(res, v4_add(s01, v4_mul(c2, vx2)));
 }
 
 
@@ -722,18 +714,24 @@ void mju_transformSpatial(mjtNum res[6], const mjtNum vec[6], int flg_force,
 }
 
 
+// outline error buffer so mju_makeFrame stays small enough to inline under LTO
+static mjNOINLINE void makeFrameError(void) {
+  mjERROR("xaxis of contact frame undefined");
+}
+
+
 // make 3D frame given x-axis (normal) and possibly y-axis (tangent 1)
 void mju_makeFrame(mjtNum frame[9]) {
   mjtNum tmp[3];
 
   // normalize xaxis
   if (mju_normalize3(frame) < 0.5) {
-    mjERROR("xaxis of contact frame undefined");
+    makeFrameError();
   }
 
   // if yaxis undefined, set yaxis to (0,1,0) if possible, otherwise (0,0,1)
   if (mju_dot3(frame+3, frame+3) < 0.25) {
-    mju_zero3(frame+3);
+    mji_zero3(frame+3);
 
     if (frame[1] < 0.5 && frame[1] > -0.5) {
       frame[4] = 1;

@@ -23,9 +23,9 @@
 #include <mujoco/mjtype.h>
 #include "engine/engine_crossplatform.h"
 #include "engine/engine_memory.h"
+#include "engine/engine_simd.h"
 #include "engine/engine_util_blas.h"
 #include "engine/engine_util_misc.h"
-#include "engine/engine_util_sparse_avx.h"  // IWYU pragma: keep
 
 //------------------------------ sparse operations -------------------------------------------------
 
@@ -34,42 +34,40 @@
 void mju_dotSparseX3(mjtNum* res0, mjtNum* res1, mjtNum* res2,
                      const mjtNum* vec10, const mjtNum* vec11, const mjtNum* vec12,
                      const mjtNum* vec2, int nnz1, const int* ind1) {
-#ifdef mjUSEAVX
-  mju_dotSparseX3_avx(res0, res1, res2, vec10, vec11, vec12, vec2, nnz1, ind1);
-#else
   int i = 0;
-  int n_4 = nnz1 - 4;
 
   // clear result
-  mjtNum r00 = 0, r01 = 0, r02 = 0, r03 = 0;
-  mjtNum r10 = 0, r11 = 0, r12 = 0, r13 = 0;
-  mjtNum r20 = 0, r21 = 0, r22 = 0, r23 = 0;
+  mjtNum RES0 = 0;
+  mjtNum RES1 = 0;
+  mjtNum RES2 = 0;
+  int nnz1_4 = nnz1 - 4;
 
-  for (; i <= n_4; i+=4) {
-    mjtNum v0 = vec2[ind1[i+0]];
-    mjtNum v1 = vec2[ind1[i+1]];
-    mjtNum v2 = vec2[ind1[i+2]];
-    mjtNum v3 = vec2[ind1[i+3]];
+  // vector part
+  if (nnz1_4 >= 0) {
+    mjtNum4 val2 = v4_set(vec2[ind1[0]], vec2[ind1[1]], vec2[ind1[2]], vec2[ind1[3]]);
+    mjtNum4 sum0 = v4_mul(v4_load(vec10), val2);
+    mjtNum4 sum1 = v4_mul(v4_load(vec11), val2);
+    mjtNum4 sum2 = v4_mul(v4_load(vec12), val2);
+    i = 4;
 
-    r00 += vec10[i+0] * v0;
-    r01 += vec10[i+1] * v1;
-    r02 += vec10[i+2] * v2;
-    r03 += vec10[i+3] * v3;
+    // parallel computation
+    while (i <= nnz1_4) {
+      // get val2 only once
+      val2 = v4_set(vec2[ind1[i+0]], vec2[ind1[i+1]], vec2[ind1[i+2]], vec2[ind1[i+3]]);
 
-    r10 += vec11[i+0] * v0;
-    r11 += vec11[i+1] * v1;
-    r12 += vec11[i+2] * v2;
-    r13 += vec11[i+3] * v3;
+      // process each val1
+      sum0 = v4_add(sum0, v4_mul(v4_load(vec10 + i), val2));
+      sum1 = v4_add(sum1, v4_mul(v4_load(vec11 + i), val2));
+      sum2 = v4_add(sum2, v4_mul(v4_load(vec12 + i), val2));
 
-    r20 += vec12[i+0] * v0;
-    r21 += vec12[i+1] * v1;
-    r22 += vec12[i+2] * v2;
-    r23 += vec12[i+3] * v3;
+      i += 4;
+    }
+
+    // reduce
+    RES0 = v4_sum(sum0);
+    RES1 = v4_sum(sum1);
+    RES2 = v4_sum(sum2);
   }
-
-  mjtNum RES0 = (r00 + r02) + (r01 + r03);
-  mjtNum RES1 = (r10 + r12) + (r11 + r13);
-  mjtNum RES2 = (r20 + r22) + (r21 + r23);
 
   // scalar part
   for (; i < nnz1; i++) {
@@ -84,7 +82,6 @@ void mju_dotSparseX3(mjtNum* res0, mjtNum* res1, mjtNum* res2,
   *res0 = RES0;
   *res1 = RES1;
   *res2 = RES2;
-#endif  // mjUSEAVX
 }
 
 
@@ -213,13 +210,54 @@ void mju_mulMatVecSparse(mjtNum* res, const mjtNum* mat, const mjtNum* vec,
                          int nr, const int* rownnz, const int* rowadr,
                          const int* colind, const int* rowsuper) {
 #ifdef mjUSEAVX
-  mju_mulMatVecSparse_avx(res, mat, vec, nr, rownnz, rowadr, colind, rowsuper);
+  if (!rowsuper) {
+    // regular sparse dot-product
+    for (int r=0; r < nr; r++) {
+      res[r] = mju_dotSparse(mat+rowadr[r], vec, rownnz[r], colind+rowadr[r]);
+    }
+
+    return;
+  }
+
+  // regular or supernode
+  for (int r=0; r < nr; r++) {
+    if (rowsuper[r]) {
+      int rs = rowsuper[r] + 1;
+
+      // handle rows in blocks of 3
+      while (rs >= 3) {
+        mju_dotSparseX3(res+r, res+r+1, res+r+2,
+                        mat+rowadr[r], mat+rowadr[r+1], mat+rowadr[r+2],
+                        vec, rownnz[r], colind+rowadr[r]);
+
+        r += 3;
+        rs -= 3;
+      }
+
+      // handle remaining rows
+      while (rs > 0) {
+        res[r] = mju_dotSparse(mat+rowadr[r], vec, rownnz[r], colind+rowadr[r]);
+
+        r++;
+        rs--;
+      }
+
+      // go back one, because of outer for loop
+      r--;
+    }
+
+    else {
+      res[r] = mju_dotSparse(mat+rowadr[r], vec, rownnz[r], colind+rowadr[r]);
+    }
+  }
 #else
+  (void)rowsuper;
+
   // regular sparse dot-product
   for (int r=0; r < nr; r++) {
     res[r] = mju_dotSparse(mat+rowadr[r], vec, rownnz[r], colind+rowadr[r]);
   }
-#endif  // mjUSEAVX
+#endif
 }
 
 
@@ -802,20 +840,31 @@ int mju_sqrMatTDSparseSymbolic(
   const int* rowind = colindT;
   const int* colsuper = rowsuperT;
 
+  // drop colsuper if all zeros so inner k loop avoids dependent colsuper[j] loads
+  if (colsuper) {
+    int any_super = 0;
+    for (int c=0; c < nc; c++) {
+      if (colsuper[c]) {
+        any_super = 1;
+        break;
+      }
+    }
+    if (!any_super) {
+      colsuper = NULL;
+    }
+  }
+
   // reinterpret M as CSC
   const int* colnnzT = rownnz;
   const int* coladrT = rowadr;
   const int* rowindT = colind;
 
-  // marker[j] = 1 if row j has been visited in current column batch
-  int* marker = mjSTACKALLOC(d, nc, int);
+  // marker[j] == tag if row j has been visited in current column batch
+  int* restrict marker = mjSTACKALLOC(d, nc, int);
   mju_zeroInt(marker, nc);
 
-  // buffer_idx: list of row indices with nonzeros in current column batch
-  int* buffer_idx = mjSTACKALLOC(d, nc, int);
-
   // rowstart[r]: first index in row r of M where column > current result column
-  int* rowstart = mjSTACKALLOC(d, nr, int);
+  int* restrict rowstart = mjSTACKALLOC(d, nr, int);
   mju_zeroInt(rowstart, nr);
 
   // clear res_rownnz (used for both counting and filling)
@@ -823,99 +872,164 @@ int mju_sqrMatTDSparseSymbolic(
 
   // process result columns c = 0, 1, ..., nc-1
   int ns;  // set in the loop
-  for (int c = 0; c < nc; c += ns) {
-    int buffer_nnz = 0;
-
+  for (int c=0; c < nc; c += ns) {
     // column c of M^T
     int nnz_c = colnnz[c];
     int adr_c = coladr[c];
     const int* ind_c = rowind + adr_c;
 
-    // supernode size: how many consecutive columns share the same sparsity pattern
-    ns = 1;
-    int cs;
-    if (colsuper && (cs = colsuper[c])) {
-      ns += mjMIN(cs, mjMAXSUPER - 1);
-    }
+    // supernode size: all consecutive columns sharing the same sparsity pattern
+    ns = colsuper ? 1 + colsuper[c] : 1;
 
     // if column batch is empty, nothing to do (must follow ns computation since loop steps by ns)
     if (!nnz_c) {
       continue;
     }
 
-    // for each row r where M^T[r, c] != 0, look at row r of M past the supernode block
-    for (int i = 0; i < nnz_c; i++) {
-      int r = ind_c[i];
-      int adrT = coladrT[r];
-      int nnzT = colnnzT[r];
-      const int* indT = rowindT + adrT;
+    int tag = c + 1;
 
-      // columns c .. c+ns-1 are at rowstart[r] .. rowstart[r]+ns-1; scan j >= c+ns
-      for (int k = (rowstart[r] += ns); k < nnzT; k++) {
-        int j = indT[k];
-
-        // new nonzero in row j of result
-        if (!marker[j]) {
-          marker[j] = 1;
-          buffer_idx[buffer_nnz++] = j;
-        }
-      }
-      if (rowsuper) {
-        i += rowsuper[r];
-      }
-    }
-
-    // scatter: update result rows j >= c + ns that have nonzeros in this column batch
-
-    // fill mode: write column indices, clear markers (specialize ns == 1 to avoid inner s loop)
+    // fill mode: write column indices directly into result rows
     if (res_colind) {
       if (ns == 1) {
         res_colind[res_rowadr[c] + res_rownnz[c]++] = c;
-        for (int i = 0; i < buffer_nnz; i++) {
-          int j = buffer_idx[i];
-          marker[j] = 0;
-          res_colind[res_rowadr[j] + res_rownnz[j]++] = c;
+        if (!colsuper) {
+          for (int i=0; i < nnz_c; i++) {
+            int r = ind_c[i];
+            int nnzT = colnnzT[r];
+            const int* indT = rowindT + coladrT[r];
+
+            // column c is at rowstart[r]; scan j >= c+1 branchlessly (diagonal slot is free)
+            for (int k=++rowstart[r]; k < nnzT; k++) {
+              int j = indT[k];
+              int is_new = (marker[j] != tag);
+              marker[j] = tag;
+              int pos = res_rownnz[j];
+              res_colind[res_rowadr[j] + pos] = c;
+              res_rownnz[j] = pos + is_new;
+            }
+            if (rowsuper) {
+              i += rowsuper[r];
+            }
+          }
+        } else {
+          for (int i=0; i < nnz_c; i++) {
+            int r = ind_c[i];
+            int nnzT = colnnzT[r];
+            const int* indT = rowindT + coladrT[r];
+
+            // column c is at rowstart[r]; scan j >= c+1
+            for (int k=++rowstart[r]; k < nnzT; k++) {
+              int j = indT[k];
+              int ns_j = 1 + colsuper[j];
+              if (marker[j] != tag) {
+                marker[j] = tag;
+                for (int t=0; t < ns_j; t++) {
+                  int row = j + t;
+                  res_colind[res_rowadr[row] + res_rownnz[row]++] = c;
+                }
+              }
+              k += ns_j - 1;
+            }
+            if (rowsuper) {
+              i += rowsuper[r];
+            }
+          }
         }
       } else {
         // write supernode lower-triangle and diagonal entries (rows c .. c+ns-1)
-        for (int s = 0; s < ns; s++) {
+        for (int s=0; s < ns; s++) {
           int col = c + s;
           int adr_col = res_rowadr[col] + res_rownnz[col];
-          for (int k = 0; k <= s; k++) {
-            res_colind[adr_col + k] = c + k;
+          for (int k=0; k <= s; k++) {
+            res_colind[adr_col+k] = c + k;
           }
           res_rownnz[col] += s + 1;
         }
 
         // write off-diagonal entries for rows j >= c + ns
-        for (int i = 0; i < buffer_nnz; i++) {
-          int j = buffer_idx[i];
-          marker[j] = 0;
-          int adr_j = res_rowadr[j] + res_rownnz[j];
-          for (int s = 0; s < ns; s++) {
-            res_colind[adr_j + s] = c + s;
+        for (int i=0; i < nnz_c; i++) {
+          int r = ind_c[i];
+          int nnzT = colnnzT[r];
+          const int* indT = rowindT + coladrT[r];
+
+          // columns c .. c+ns-1 are at rowstart[r] .. rowstart[r]+ns-1; scan j >= c+ns
+          for (int k=(rowstart[r] += ns); k < nnzT; k++) {
+            int j = indT[k];
+            int ns_j = 1 + colsuper[j];
+            if (marker[j] != tag) {
+              marker[j] = tag;
+              for (int t=0; t < ns_j; t++) {
+                int row = j + t;
+                int adr_j = res_rowadr[row] + res_rownnz[row];
+                for (int s=0; s < ns; s++) {
+                  res_colind[adr_j+s] = c + s;
+                }
+                res_rownnz[row] += ns;
+              }
+            }
+            k += ns_j - 1;
           }
-          res_rownnz[j] += ns;
+          if (rowsuper) {
+            i += rowsuper[r];
+          }
         }
       }
     }
 
-    // count mode: just count and clear markers
+    // count mode: accumulate row counts directly using timestamp markers
     else {
-      for (int i = 0; i < buffer_nnz; i++) {
-        int j = buffer_idx[i];
-        marker[j] = 0;
-        res_rownnz[j] += ns;
+      int off_cnt = 0;
+      if (!colsuper) {
+        for (int i=0; i < nnz_c; i++) {
+          int r = ind_c[i];
+          int nnzT = colnnzT[r];
+          const int* indT = rowindT + coladrT[r];
+
+          // column c is at rowstart[r]; scan j >= c+1 branchlessly
+          for (int k=++rowstart[r]; k < nnzT; k++) {
+            int j = indT[k];
+            int is_new = (marker[j] != tag);
+            marker[j] = tag;
+            off_cnt += is_new;
+            res_rownnz[j] += is_new;
+          }
+          if (rowsuper) {
+            i += rowsuper[r];
+          }
+        }
+      } else {
+        for (int i=0; i < nnz_c; i++) {
+          int r = ind_c[i];
+          int nnzT = colnnzT[r];
+          const int* indT = rowindT + coladrT[r];
+
+          // columns c .. c+ns-1 are at rowstart[r] .. rowstart[r]+ns-1; scan j >= c+ns
+          for (int k=(rowstart[r] += ns); k < nnzT; k++) {
+            int j = indT[k];
+            int ns_j = 1 + colsuper[j];
+            if (marker[j] != tag) {
+              marker[j] = tag;
+              off_cnt += ns_j;
+              for (int t=0; t < ns_j; t++) {
+                res_rownnz[j+t] += ns;
+              }
+            }
+            k += ns_j - 1;
+          }
+          if (rowsuper) {
+            i += rowsuper[r];
+          }
+        }
       }
 
       // count supernode lower-triangle, diagonal, and optional upper-triangle entries
       if (res_diagind) {
-        for (int s = 0; s < ns; s++) {
-          res_rownnz[c + s] += ns + buffer_nnz;
+        for (int s=0; s < ns; s++) {
+          res_rownnz[c+s] += ns + off_cnt;
         }
       } else {
-        for (int s = 0; s < ns; s++) {
-          res_rownnz[c + s] += s + 1;
+        for (int s=0; s < ns; s++) {
+          res_rownnz[c+s] += s + 1;
         }
       }
     }
@@ -924,8 +1038,8 @@ int mju_sqrMatTDSparseSymbolic(
   // count mode: compute res_rowadr from res_rownnz
   if (!res_colind) {
     res_rowadr[0] = 0;
-    for (int r = 1; r < nc; r++) {
-      res_rowadr[r] = res_rowadr[r - 1] + res_rownnz[r - 1];
+    for (int r=1; r < nc; r++) {
+      res_rowadr[r] = res_rowadr[r-1] + res_rownnz[r-1];
     }
   }
 
@@ -936,19 +1050,17 @@ int mju_sqrMatTDSparseSymbolic(
     mju_copyInt(lower_nnz, res_rownnz, nc);
 
     // save diagonal indices
-    for (int r = 0; r < nc; r++) {
+    for (int r=0; r < nc; r++) {
       res_diagind[r] = lower_nnz[r] ? (res_rowadr[r] + lower_nnz[r] - 1) : -1;
     }
 
-    // fill upper triangle: for each (r, c) with c < r, write to (c, r)
-    for (int r = 0; r < nc; r++) {
+    // fill upper triangle: for each strictly lower entry (r, c) with c < r, write r to row c
+    for (int r=0; r < nc; r++) {
       int adr = res_rowadr[r];
-      int nnz = lower_nnz[r];
-      for (int j = 0; j < nnz; j++) {
-        int col = res_colind[adr + j];
-        if (col < r) {
-          res_colind[res_rowadr[col] + res_rownnz[col]++] = r;
-        }
+      int off = lower_nnz[r] - 1;
+      for (int j=0; j < off; j++) {
+        int col = res_colind[adr+j];
+        res_colind[res_rowadr[col] + res_rownnz[col]++] = r;
       }
     }
   }

@@ -19,6 +19,7 @@
 #include <array>
 #include <cstddef>
 #include <cstdint>
+#include <cstring>
 #include <vector>
 
 #include <gmock/gmock.h>
@@ -103,6 +104,106 @@ TEST_F(EngineUtilSparseTest, MjuDotX3) {
     EXPECT_EQ(res2, mju_dotSparse(v12.data(), v2.data(), nnz, ind.data()))
         << "nnz=" << nnz;
   }
+}
+
+TEST_F(EngineUtilSparseTest, MjuDotX3AndSparseSimdParity) {
+  constexpr int kMaxNnz = 19;
+  std::vector<mjtNum> v10(kMaxNnz), v11(kMaxNnz), v12(kMaxNnz);
+  std::vector<mjtNum> v2(3 * kMaxNnz);
+  std::vector<int> ind(kMaxNnz);
+
+  for (int k = 0; k < 3 * kMaxNnz; ++k) {
+    v2[k] = mjtNum(1) / (k + 2) - mjtNum(1) / (2 * k + 3);
+  }
+  for (int i = 0; i < kMaxNnz; ++i) {
+    ind[i] = 3 * i + (i % 2);
+    mjtNum sign = (i & 2) ? -1 : 1;
+    v10[i] = sign * (mjtNum(1) / ((i / 4) + 1)) + mjtNum(1e-7) / (i + 3);
+    v11[i] = mjtNum(i + 1) / (2 * i + 5) - mjtNum(1) / (i + 7);
+    v12[i] = -sign * mjtNum(3) / (i + 2) + mjtNum(1e-6) * (i + 1);
+  }
+
+  auto scalar_dot_sparse = [](const mjtNum* vec1, const mjtNum* vec2, int nnz1,
+                              const int* ind1) {
+    int i = 0;
+    mjtNum res = 0;
+    int n_4 = nnz1 - 4;
+    if (n_4 >= 0) {
+      mjtNum r0 = vec1[0] * vec2[ind1[0]];
+      mjtNum r1 = vec1[1] * vec2[ind1[1]];
+      mjtNum r2 = vec1[2] * vec2[ind1[2]];
+      mjtNum r3 = vec1[3] * vec2[ind1[3]];
+      for (i = 4; i <= n_4; i += 4) {
+        r0 += vec1[i + 0] * vec2[ind1[i + 0]];
+        r1 += vec1[i + 1] * vec2[ind1[i + 1]];
+        r2 += vec1[i + 2] * vec2[ind1[i + 2]];
+        r3 += vec1[i + 3] * vec2[ind1[i + 3]];
+      }
+      res = (r0 + r2) + (r1 + r3);
+    }
+    for (; i < nnz1; ++i) {
+      res += vec1[i] * vec2[ind1[i]];
+    }
+    return res;
+  };
+
+  for (int nnz = 0; nnz <= kMaxNnz; ++nnz) {
+    mjtNum ref0 = scalar_dot_sparse(v10.data(), v2.data(), nnz, ind.data());
+    mjtNum ref1 = scalar_dot_sparse(v11.data(), v2.data(), nnz, ind.data());
+    mjtNum ref2 = scalar_dot_sparse(v12.data(), v2.data(), nnz, ind.data());
+
+    mjtNum ds0 = mju_dotSparse(v10.data(), v2.data(), nnz, ind.data());
+    mjtNum ds1 = mju_dotSparse(v11.data(), v2.data(), nnz, ind.data());
+    mjtNum ds2 = mju_dotSparse(v12.data(), v2.data(), nnz, ind.data());
+    EXPECT_EQ(std::memcmp(&ds0, &ref0, sizeof(mjtNum)), 0) << "nnz=" << nnz;
+    EXPECT_EQ(std::memcmp(&ds1, &ref1, sizeof(mjtNum)), 0) << "nnz=" << nnz;
+    EXPECT_EQ(std::memcmp(&ds2, &ref2, sizeof(mjtNum)), 0) << "nnz=" << nnz;
+
+    mjtNum res0 = -1, res1 = -1, res2 = -1;
+    mju_dotSparseX3(&res0, &res1, &res2, v10.data(), v11.data(), v12.data(),
+                    v2.data(), nnz, ind.data());
+    EXPECT_EQ(std::memcmp(&res0, &ref0, sizeof(mjtNum)), 0) << "nnz=" << nnz;
+    EXPECT_EQ(std::memcmp(&res1, &ref1, sizeof(mjtNum)), 0) << "nnz=" << nnz;
+    EXPECT_EQ(std::memcmp(&res2, &ref2, sizeof(mjtNum)), 0) << "nnz=" << nnz;
+
+    // Also test mju_addToSclScl parity for length nnz
+    std::vector<mjtNum> dst_simd(v10.begin(), v10.end());
+    std::vector<mjtNum> dst_ref(v10.begin(), v10.end());
+    mjtNum scl1 = mjtNum(1.25), scl2 = mjtNum(-0.75);
+    mju_addToSclScl(dst_simd.data(), v11.data(), scl1, scl2, nnz);
+    for (int j = 0; j < nnz; ++j) {
+      dst_ref[j] = dst_ref[j] * scl1 + v11[j] * scl2;
+    }
+    EXPECT_EQ(
+        std::memcmp(dst_simd.data(), dst_ref.data(), kMaxNnz * sizeof(mjtNum)),
+        0)
+        << "nnz=" << nnz;
+  }
+
+  // Test mju_mulMatVecSparse with and without rowsuper (supernodes of size 4 ->
+  // 3+1 and size 2)
+  constexpr int kNr = 6;
+  std::vector<mjtNum> mat(kNr * kMaxNnz);
+  int rownnz[kNr];
+  int rowadr[kNr];
+  std::vector<int> colind(kNr * kMaxNnz);
+  int rowsuper[kNr] = {3, 2, 1, 0, 1, 0};
+  for (int r = 0; r < kNr; ++r) {
+    rownnz[r] = (r < 4) ? 11 : 7;
+    rowadr[r] = r * kMaxNnz;
+    for (int j = 0; j < rownnz[r]; ++j) {
+      colind[rowadr[r] + j] = ind[j];
+      mat[rowadr[r] + j] = (r % 2 == 0 ? v10[j] : v11[j]) * (r + 1);
+    }
+  }
+  mjtNum mv_nosuper[kNr] = {0}, mv_super[kNr] = {0};
+  mju_mulMatVecSparse(mv_nosuper, mat.data(), v2.data(), kNr, rownnz, rowadr,
+                      colind.data(), nullptr);
+  mju_mulMatVecSparse(mv_super, mat.data(), v2.data(), kNr, rownnz, rowadr,
+                      colind.data(), rowsuper);
+  EXPECT_EQ(std::memcmp(mv_nosuper, mv_super, sizeof(mv_nosuper)), 0);
+  EXPECT_EQ(mju_compare(nullptr, nullptr, 0), 1);
+  EXPECT_EQ(mju_compare(nullptr, nullptr, -1), 1);
 }
 
 TEST_F(EngineUtilSparseTest, MjuDot2) {
@@ -1797,6 +1898,91 @@ TEST_F(EngineUtilSparseTest, MjuMinDegreeMultiWordAndAbort) {
   EXPECT_GE(5 * flops_cap, 4 * (flops / 2));
   EXPECT_LT(flops_cap, flops);
   EXPECT_LT(nL_cap, nL);
+}
+
+// Verify mju_sqrMatTDSparseSymbolic with supernodes larger than mjMAXSUPER (8),
+// both non-zero and all-zero colsuper, and both lower-only and full (diagind).
+TEST_F(EngineUtilSparseTest, MjuSqrMatTDSparseSymbolicLargeSupernodes) {
+  MjModelPtr model = LoadModelFromString("<mujoco/>");
+  MjDataPtr data = MakeData(model);
+
+  // build M (nr = 25, nc = 30) with column supernodes of sizes {12, 1, 10, 7}
+  // and row supernodes of sizes {10, 6, 9}, plus an empty column supernode
+  const int nr = 25, nc = 30;
+  std::vector<int> row_blocks = {10, 6, 9};
+  std::vector<int> col_blocks = {12, 1, 10, 7};
+  // block pattern (3 x 4): col block 1 is empty
+  const int pat[3][4] = {{1, 0, 1, 0}, {1, 0, 0, 1}, {0, 0, 1, 1}};
+
+  std::vector<int> rownnz(nr, 0), rowadr(nr, 0), colind;
+  int r0 = 0;
+  for (int rb = 0; rb < 3; rb++) {
+    for (int ra = 0; ra < row_blocks[rb]; ra++) {
+      int r = r0 + ra;
+      rowadr[r] = colind.size();
+      int c0 = 0;
+      for (int cb = 0; cb < 4; cb++) {
+        if (pat[rb][cb]) {
+          for (int ca = 0; ca < col_blocks[cb]; ca++) {
+            colind.push_back(c0 + ca);
+          }
+        }
+        c0 += col_blocks[cb];
+      }
+      rownnz[r] = static_cast<int>(colind.size()) - rowadr[r];
+    }
+    r0 += row_blocks[rb];
+  }
+
+  std::vector<int> rownnzT(nc), rowadrT(nc), colindT(colind.size());
+  std::vector<int> rowsuper(nr), rowsuperT(nc), zero_super(nc, 0);
+  mju_superSparse(nr, rowsuper.data(), rownnz.data(), rowadr.data(),
+                  colind.data());
+  mju_transposeSparse(nullptr, nullptr, nr, nc, rownnzT.data(), rowadrT.data(),
+                      colindT.data(), rowsuperT.data(), rownnz.data(),
+                      rowadr.data(), colind.data());
+  EXPECT_EQ(rowsuperT[0], 11);  // 12-wide supernode (> mjMAXSUPER)
+  EXPECT_EQ(rowsuper[0], 9);    // 10-wide row supernode
+
+  for (int use_upper = 0; use_upper <= 1; use_upper++) {
+    // reference: no supernodes
+    std::vector<int> ref_nnz(nc), ref_adr(nc), ref_diag(nc);
+    int nnz_ref = mju_sqrMatTDSparseSymbolic(
+        ref_nnz.data(), ref_adr.data(), nullptr,
+        use_upper ? ref_diag.data() : nullptr, nr, nc, rownnz.data(),
+        rowadr.data(), colind.data(), nullptr, rownnzT.data(), rowadrT.data(),
+        colindT.data(), nullptr, data.get());
+    std::vector<int> ref_col(nnz_ref, -1);
+    mju_sqrMatTDSparseSymbolic(ref_nnz.data(), ref_adr.data(), ref_col.data(),
+                               use_upper ? ref_diag.data() : nullptr, nr, nc,
+                               rownnz.data(), rowadr.data(), colind.data(),
+                               nullptr, rownnzT.data(), rowadrT.data(),
+                               colindT.data(), nullptr, data.get());
+
+    // test both full supernodes and all-zero colsuper (fast-path drop)
+    for (const int* cs : {rowsuperT.data(), zero_super.data()}) {
+      std::vector<int> got_nnz(nc), got_adr(nc), got_diag(nc);
+      int nnz_got = mju_sqrMatTDSparseSymbolic(
+          got_nnz.data(), got_adr.data(), nullptr,
+          use_upper ? got_diag.data() : nullptr, nr, nc, rownnz.data(),
+          rowadr.data(), colind.data(), rowsuper.data(), rownnzT.data(),
+          rowadrT.data(), colindT.data(), cs, data.get());
+      ASSERT_EQ(nnz_got, nnz_ref);
+      EXPECT_EQ(got_nnz, ref_nnz);
+      EXPECT_EQ(got_adr, ref_adr);
+
+      std::vector<int> got_col(nnz_got, -1);
+      mju_sqrMatTDSparseSymbolic(
+          got_nnz.data(), got_adr.data(), got_col.data(),
+          use_upper ? got_diag.data() : nullptr, nr, nc, rownnz.data(),
+          rowadr.data(), colind.data(), rowsuper.data(), rownnzT.data(),
+          rowadrT.data(), colindT.data(), cs, data.get());
+      EXPECT_EQ(got_col, ref_col);
+      if (use_upper) {
+        EXPECT_EQ(got_diag, ref_diag);
+      }
+    }
+  }
 }
 
 }  // namespace

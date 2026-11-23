@@ -261,36 +261,9 @@ static inline int efmGeneralCSR(const mjData* d) {
 }
 
 
-// res += B*vec, the stiffness part of the metric. The per-dof diagonal classes are applied
-// from efm_diag (scales pre-folded); the stretch (and, when assemblable, bending and interp)
-// part from the per-step CSR; terms not in the CSR fall back to the matrix-free operators.
-void mj_effMulAdd(const mjModel* m, mjData* d, mjtNum* res, const mjtNum* vec, int flg_contact) {
-  mjtNum h = m->opt.timestep;
-  if (d->efm_diag) {
-    int nv = m->nv;
-    for (int i=0; i < nv; i++) {
-      res[i] += d->efm_diag[i] * vec[i];
-    }
-  }
-
-  // fluid drag blocks: res += F*vec, F symmetric in M's lower-triangle pattern
-  if (d->efm_fluid) {
-    int nv = m->nv;
-    for (int i=0; i < nv; i++) {
-      int start = m->M_rowadr[i];
-      int diag = start + m->M_rownnz[i] - 1;
-      mjtNum acc = d->efm_fluid[diag] * vec[i];
-      for (int a=start; a < diag; a++) {
-        int c = m->M_colind[a];
-        mjtNum F = d->efm_fluid[a];
-        acc += F * vec[c];
-        res[c] += F * vec[i];
-      }
-      res[i] += acc;
-    }
-  }
-
-  // rank-1 terms (tendon, actuator): res += scale * row' * (row * vec)
+// rank-1 terms (tendon, actuator, 1D rod twist) and passive contacts: res += sum scale*r'*r*vec
+static inline void effMulAddRank1(const mjModel* m, const mjData* d, mjtNum* res,
+                                  const mjtNum* vec, int flg_contact) {
   mjEffRank1Iter it = {0};
   mjEffRank1 e;
   while (mj_effRank1Next(m, d, &it, &e, /*flg_contact=*/0)) {
@@ -324,6 +297,58 @@ void mj_effMulAdd(const mjModel* m, mjData* d, mjtNum* res, const mjtNum* vec, i
       adr += 2 + nnz;
     }
   }
+}
+
+
+// matrix-free flex stiffness fallback for flexes not assembled into d->efm_K
+static void effMulAddMatrixFree(const mjModel* m, mjData* d, mjtNum* res, const mjtNum* vec) {
+  mjtNum h = m->opt.timestep;
+  mjtNum s1 = mjDISABLED(mjDSBL_SPRING) ? 0 : h*h;
+  mjtNum s2 = mjDISABLED(mjDSBL_DAMPER) ? 0 : h;
+  for (int f=0; f < m->nflex; f++) {
+    if (m->flex_interp[f] || m->flex_rigid[f]) continue;
+    if (m->flex_dim[f] == 1 && m->flex_bendingadr[f] < 0) continue;
+    if (!d->nefmK || !mj_flexSimple(m, f)) {
+      mjd_flexBend_mulRange(m, d, res, vec, s1, s2, f, f+1);
+      mjd_flexStretch_mulRange(m, d, res, vec, s1, s2, f, f+1);
+    }
+  }
+  if (!d->nefmK || !mjd_flexInterpAssemblable(m)) {
+    mjd_flexInterp_mul(m, d, res, vec, -s1, -s2, d->flexelem_krot);
+  }
+}
+
+
+// res += B*vec, the stiffness part of the metric. The per-dof diagonal classes are applied
+// from efm_diag (scales pre-folded); the stretch (and, when assemblable, bending and interp)
+// part from the per-step CSR; terms not in the CSR fall back to the matrix-free operators.
+void mj_effMulAdd(const mjModel* m, mjData* d, mjtNum* res, const mjtNum* vec, int flg_contact) {
+  if (d->efm_diag) {
+    int nv = m->nv;
+    for (int i=0; i < nv; i++) {
+      res[i] += d->efm_diag[i] * vec[i];
+    }
+  }
+
+  // fluid drag blocks: res += F*vec, F symmetric in M's lower-triangle pattern
+  if (d->efm_fluid) {
+    int nv = m->nv;
+    for (int i=0; i < nv; i++) {
+      int start = m->M_rowadr[i];
+      int diag = start + m->M_rownnz[i] - 1;
+      mjtNum acc = d->efm_fluid[diag] * vec[i];
+      for (int a=start; a < diag; a++) {
+        int c = m->M_colind[a];
+        mjtNum F = d->efm_fluid[a];
+        acc += F * vec[c];
+        res[c] += F * vec[i];
+      }
+      res[i] += acc;
+    }
+  }
+
+  // rank-1 terms (tendon, actuator, 1D rod twist) and passive flex contacts
+  effMulAddRank1(m, d, res, vec, flg_contact);
 
   int gen_csr = efmGeneralCSR(d);
   if (d->nefmK && d->nefmdof && !gen_csr) {
@@ -369,19 +394,7 @@ void mj_effMulAdd(const mjModel* m, mjData* d, mjtNum* res, const mjtNum* vec, i
   // mappings; under Newton, general articulated flexes are assembled into efm_K too. Dispatch
   // un-assembled flexes individually: another flex's CSR must not suppress their operators.
   if (!gen_csr) {
-    mjtNum s1 = mjDISABLED(mjDSBL_SPRING) ? 0 : h*h;
-    mjtNum s2 = mjDISABLED(mjDSBL_DAMPER) ? 0 : h;
-    for (int f=0; f < m->nflex; f++) {
-      if (m->flex_interp[f] || m->flex_rigid[f]) continue;
-      if (m->flex_dim[f] == 1 && m->flex_bendingadr[f] < 0) continue;
-      if (!d->nefmK || !mj_flexSimple(m, f)) {
-        mjd_flexBend_mulRange(m, d, res, vec, s1, s2, f, f+1);
-        mjd_flexStretch_mulRange(m, d, res, vec, s1, s2, f, f+1);
-      }
-    }
-    if (!d->nefmK || !mjd_flexInterpAssemblable(m)) {
-      mjd_flexInterp_mul(m, d, res, vec, -s1, -s2, d->flexelem_krot);
-    }
+    effMulAddMatrixFree(m, d, res, vec);
   }
 }
 
@@ -543,28 +556,82 @@ static void effCovered(int nv, int nb, const int* dofid, int* cov) {
   }
 }
 
-// greedy minimum-degree elimination on the full vertex graph (K stencil kadr/knbr plus allowed
-// edge CSR eadr/enbr), with dense bitset adjacency; the first eliminated vertex goes last
+// greedy minimum-degree elimination on either the full vertex graph (kadr/knbr + eadr/enbr) or
+// the merged step graph (madr/mcnt/mnbr), with dense bitset adjacency; first eliminated goes last
 static void effCholMinDegree(mjData* d, int nb, const int* kadr, const int* knbr,
-                             const int* eadr, const int* enbr, int* perm) {
+                             const int* eadr, const int* enbr,
+                             const int* madr, const int* mcnt, const int* mnbr, int* perm) {
   int words = (nb + 63) / 64;
   uint64_t* adj = effBits(d, (size_t)nb*words);
   uint64_t* nz_bits = effBits(d, words);
   int* scratch = effInts(d, 5*(size_t)nb + words);
   memset(adj, 0, sizeof(uint64_t)*(size_t)nb*words);
   for (int k=0; k < nb; k++) {
-    for (int j=kadr[k]; j < kadr[k+1]; j++) {
-      int q = knbr[j];
-      adj[(size_t)k*words+(q>>6)] |= 1ULL << (q&63);
-      adj[(size_t)q*words+(k>>6)] |= 1ULL << (k&63);
-    }
-    for (int j=eadr[k]; j < eadr[k+1]; j++) {
-      int q = enbr[j];
-      adj[(size_t)k*words+(q>>6)] |= 1ULL << (q&63);
-      adj[(size_t)q*words+(k>>6)] |= 1ULL << (k&63);
+    if (kadr) {
+      for (int j=kadr[k]; j < kadr[k+1]; j++) {
+        int q = knbr[j];
+        adj[(size_t)k*words+(q>>6)] |= 1ULL << (q&63);
+        adj[(size_t)q*words+(k>>6)] |= 1ULL << (k&63);
+      }
+      for (int j=eadr[k]; j < eadr[k+1]; j++) {
+        int q = enbr[j];
+        adj[(size_t)k*words+(q>>6)] |= 1ULL << (q&63);
+        adj[(size_t)q*words+(k>>6)] |= 1ULL << (k&63);
+      }
+    } else {
+      for (int j=madr[k]; j < madr[k] + mcnt[k]; j++) {
+        int q = mnbr[j];
+        adj[(size_t)k*words+(q>>6)] |= 1ULL << (q&63);
+        adj[(size_t)q*words+(k>>6)] |= 1ULL << (k&63);
+      }
     }
   }
   mju_minDegree(perm, adj, nb, NULL, NULL, NULL, 0, scratch, nz_bits);
+}
+
+// count or collect unordered covered-vertex block pairs coupled by passive flex contacts whose
+// participating dofs are all covered (skipping mixed covered/uncovered contacts avoids a
+// one-sided preconditioner term that squares the contact condition number)
+static int effCholContactPairs(const mjData* d, const int* blk, int nb,
+                               int* vmark, int* vlist, int* cpair) {
+  int np = 0;
+  for (int k=0; k < nb; k++) vmark[k] = -1;
+  for (int adr=0, cid=0; adr < d->nefmcon; cid++) {
+    int nnz = d->efm_con_ind[adr];
+    mjtNum scale = d->efm_con_val[adr];
+    const int* ci = d->efm_con_ind + adr + 2;
+    adr += 2 + nnz;
+    if (scale <= 0) {
+      continue;
+    }
+    int mvert = 0, all_cov = 1;
+    for (int a=0; a < nnz; a++) {
+      int k = blk[ci[a]];
+      if (k < 0) {
+        all_cov = 0;
+        break;
+      }
+      if (vmark[k] != cid) {
+        vmark[k] = cid;
+        vlist[mvert++] = k;
+      }
+    }
+    if (!all_cov) {
+      continue;
+    }
+    if (cpair) {
+      for (int u=0; u < mvert; u++) {
+        for (int v=u+1; v < mvert; v++) {
+          cpair[2*np] = vlist[u];
+          cpair[2*np+1] = vlist[v];
+          np++;
+        }
+      }
+    } else {
+      np += mvert * (mvert - 1) / 2;
+    }
+  }
+  return np;
 }
 
 static void effAllow(int* amark, const int* eadr, const int* enbr, int k) {
@@ -577,7 +644,45 @@ static int effAllowed(const int* amark, int ne, int k, int q) {
   return !ne || amark[q] == k;
 }
 
-// upper bound on the number of allowed flex vertex pairs (flex edges plus 1D rod hinge spans)
+// return 1 if 2D flex f needs its 2-hop bending flap pairs in the sparse factor: true when
+// the flap term is non-negligible relative to vertex mass.
+// Dropping a flap block q and lumping |q| onto both diagonals shifts P^-1 A eigenvalues by at most
+// 2*deg*q/mmin, so 0.05*mmin keeps cond(P^-1 A) <= ~1.6 on a 6-neighbor mesh without adding 2-hop
+// fill-in to thin stretch+bend cloth.
+static int effCholBendFlaps(const mjModel* m, int f) {
+  if (m->flex_dim[f] != 2 || m->flex_rigid[f] || m->flex_interp[f] ||
+      m->flex_bendingadr[f] < 0) {
+    return 0;
+  }
+  mjtNum h = m->opt.timestep;
+  mjtNum s1 = mjDISABLED(mjDSBL_SPRING) ? 0 : h*h;
+  mjtNum s2 = mjDISABLED(mjDSBL_DAMPER) ? 0 : h;
+  mjtNum scale = s1 + s2*m->flex_damping[f];
+  if (scale <= 0) {
+    return 0;
+  }
+  const mjtNum* bend = m->flex_bending + m->flex_bendingadr[f];
+  int eadr = m->flex_edgeadr[f], vadr = m->flex_vertadr[f];
+  for (int e=0; e < m->flex_edgenum[f]; e++) {
+    const int* flap = m->flex_edgeflap + 2*(eadr + e);
+    if (flap[1] == -1) {
+      continue;
+    }
+    mjtNum q = scale * mju_abs(bend[17*e + 11]);
+    int b0 = m->flex_vertbodyid[vadr + flap[0]];
+    int b1 = m->flex_vertbodyid[vadr + flap[1]];
+    mjtNum m0 = (b0 >= 0 && m->body_dofnum[b0] == 3) ? m->dof_M0[m->body_dofadr[b0]] : 0;
+    mjtNum m1 = (b1 >= 0 && m->body_dofnum[b1] == 3) ? m->dof_M0[m->body_dofadr[b1]] : 0;
+    mjtNum mmin = (m0 > 0 && m1 > 0) ? mju_min(m0, m1) : mju_max(m0, m1);
+    if (mmin > 0 && q > 0.05 * mmin) {
+      return 1;
+    }
+  }
+  return 0;
+}
+
+// upper bound on the number of allowed flex vertex pairs (flex edges, 1D rod hinge spans, and
+// 2D bending flap pairs where significant)
 static size_t effCholFlexPairs(const mjModel* m) {
   size_t np = (size_t)m->nflexedge;
   for (int f=0; f < m->nflex; f++) {
@@ -586,6 +691,8 @@ static size_t effCholFlexPairs(const mjModel* m) {
       for (int h=0; h < (int)bend[0]; h++) {
         np += mj_rodHingeVert(bend + 1 + mjROD_HINGE_SIZE*h) == 3 ? 1 : 3;
       }
+    } else if (effCholBendFlaps(m, f)) {
+      np += (size_t)m->flex_edgenum[f];
     }
   }
   return np;
@@ -623,8 +730,9 @@ static void effPairCSR(mjData* d, int nb, const int* apair, int np, int** eadr, 
   ea[nb] = ne;
 }
 
-// build the K vertex graph (kadr/knbr) and the allowed edge CSR (eadr/enbr: flex edges and 1D rod
-// hinge spans between covered vertices, both ways, sorted and deduplicated)
+// build the K vertex graph (kadr/knbr) and the allowed edge CSR (eadr/enbr: flex edges, 1D rod
+// hinge spans, and significant 2D bending flap pairs between covered vertices, both ways, sorted
+// and deduplicated)
 static int effCholGraph(mjData* d, const mjModel* m, int nb, const int* dofid, const int* blk,
                         const int* K_rownnz, const int* K_rowadr, const int* K_colind,
                         int** kadr, int** knbr, int** eadr, int** enbr) {
@@ -682,6 +790,24 @@ static int effCholGraph(mjData* d, const mjModel* m, int nb, const int* dofid, c
           }
         }
       }
+    } else if (effCholBendFlaps(m, f)) {
+      for (int e=0; e < m->flex_edgenum[f]; e++) {
+        const int* flap = m->flex_edgeflap + 2*(m->flex_edgeadr[f]+e);
+        if (flap[1] == -1) {
+          continue;
+        }
+        int kf[2];
+        for (int s=0; s < 2; s++) {
+          int b = m->flex_vertbodyid[m->flex_vertadr[f]+flap[s]];
+          int da = (b >= 0 && m->body_dofnum[b] == 3) ? m->body_dofadr[b] : -1;
+          kf[s] = (da >= 0 && blk[da] >= 0 && dofid[blk[da]] == da) ? blk[da] : -1;
+        }
+        if (kf[0] >= 0 && kf[1] >= 0 && kf[0] != kf[1]) {
+          apair[2*np] = kf[0];
+          apair[2*np+1] = kf[1];
+          np++;
+        }
+      }
     }
   }
   effPairCSR(d, nb, apair, np, eadr, enbr);
@@ -699,7 +825,7 @@ typedef struct {
 
 static int effCholBegin(const mjModel* m, mjData* d, int nb, const int* dofid, const int* blk,
                         const int* K_rownnz, const int* K_rowadr, const int* K_colind,
-                        int order, int* perm, mjEffCholPass* p) {
+                        int np_con, int order, int* perm, mjEffCholPass* p) {
   if (nb <= 0 || nb > EFF_CHOL_MAXVERT) {
     return 0;
   }
@@ -712,9 +838,16 @@ static int effCholBegin(const mjModel* m, mjData* d, int nb, const int* dofid, c
   int* mark = effInts(d, nb);
   int* adr = effInts(d, nb);
   int* cnt = effInts(d, nb);
-  int* nbr = effInts(d, (size_t)kadr[nb] + p->ne);
+  int *cadr = NULL, *cnbr = NULL, nc = 0;
+  if (np_con > 0) {
+    int* cpair = effInts(d, 2*(size_t)np_con);
+    effCholContactPairs(d, blk, nb, mark, adr, cpair);
+    effPairCSR(d, nb, cpair, np_con, &cadr, &cnbr);
+    nc = cadr[nb];
+  }
+  int* nbr = effInts(d, (size_t)kadr[nb] + p->ne + nc);
   for (int k=0; k < nb; k++) amark[k] = mark[k] = -1;
-  int tot = 0;
+  int tot = 0, has_new_con = 0;
   for (int k=0; k < nb; k++) {
     adr[k] = tot;
     mark[k] = k;
@@ -733,14 +866,27 @@ static int effCholBegin(const mjModel* m, mjData* d, int nb, const int* dofid, c
         nbr[tot++] = q;
       }
     }
+    if (cadr) {
+      for (int j=cadr[k]; j < cadr[k+1]; j++) {
+        int q = cnbr[j];
+        if (mark[q] != k) {
+          has_new_con = 1;
+          mark[q] = k;
+          nbr[tot++] = q;
+        }
+      }
+    }
     cnt[k] = tot - adr[k];
   }
   if (order) {
-    effCholMinDegree(d, nb, kadr, knbr, p->eadr, p->enbr, perm);
+    // model-level ordering (mj_effCholSetConst) includes the full K stencil (used by Newton too)
+    effCholMinDegree(d, nb, kadr, knbr, p->eadr, p->enbr, NULL, NULL, NULL, perm);
+  } else if (has_new_con) {
+    effCholMinDegree(d, nb, NULL, NULL, NULL, NULL, adr, cnt, nbr, perm);
   }
   p->rownnz = effInts(d, nb);
   p->rowadr = effInts(d, nb);
-  p->colind = effInts(d, (size_t)kadr[nb] + p->ne);
+  p->colind = effInts(d, (size_t)kadr[nb] + p->ne + nc);
   p->scratch = effInts(d, 3*(size_t)nb);
   for (int k=0; k < nb; k++) p->rownnz[perm[k]] = cnt[k];
   for (int pos=0, a=0; pos < nb; pos++) {
@@ -817,14 +963,16 @@ static size_t effCholKcap(const mjData* d, int nb, const int* dofid) {
   return cap;
 }
 
-static size_t effCholAnalysisBytes(const mjModel* m, size_t nb, size_t kcap) {
+static size_t effCholAnalysisBytes(const mjModel* m, size_t nb, size_t kcap, size_t np_con) {
   size_t ne = effCholFlexPairs(m);
-  size_t nnbr = kcap + 2*ne;
+  size_t nnbr = kcap + 2*ne + 2*np_con;
   size_t words = (nb + 63) / 64;
+  size_t con_bytes = np_con ? (effIntBytes(nb + 1) + 2*effIntBytes(2*np_con) + effIntBytes(nb)) : 0;
   return mj_stackFrameBytes() + 2*effIntBytes(nb + 1) + effIntBytes(kcap) + 2*effIntBytes(2*ne) +
-         effIntBytes(nb) + 4*effIntBytes(nb) + effIntBytes(nnbr) + effBitBytes(nb*words) +
-         effBitBytes(words) + effIntBytes(5*nb + words) + 2*effIntBytes(nb) + effIntBytes(nnbr) +
-         effIntBytes(3*nb) + 2*effIntBytes(3*nb) + effIntBytes(nb + 1);
+         effIntBytes(nb) + 4*effIntBytes(nb) + con_bytes + effIntBytes(nnbr) +
+         effBitBytes(nb*words) + effBitBytes(words) + effIntBytes(5*nb + words) +
+         2*effIntBytes(nb) + effIntBytes(nnbr) + effIntBytes(3*nb) + 2*effIntBytes(3*nb) +
+         effIntBytes(nb + 1);
 }
 
 static size_t effFillBytes(size_t nb, size_t nv) {
@@ -906,7 +1054,7 @@ void mj_effCholSetConst(mjModel* m, mjData* d) {
       return;
     }
     for (int k=0; k < nb; k++) kcap += K_rownnz[dofid[k]];
-    need += effIntBytes(nK) + effIntBytes(nb) + effCholAnalysisBytes(m, nb, kcap);
+    need += effIntBytes(nK) + effIntBytes(nb) + effCholAnalysisBytes(m, nb, kcap, /*np_con=*/0);
   }
   if (avail < need) {
     mj_freeStack(d);
@@ -918,7 +1066,8 @@ void mj_effCholSetConst(mjModel* m, mjData* d) {
   mjd_flexStiff_assembleGen(m, d, K_rownnz, K_rowadr, K_colind, NULL, 0, 0, 1, 1, NULL, gen);
   effCovered(nv, nb, dofid, blk);
   mjEffCholPass pass;
-  if (effCholBegin(m, d, nb, dofid, blk, K_rownnz, K_rowadr, K_colind, 1, perm, &pass)) {
+  if (effCholBegin(m, d, nb, dofid, blk, K_rownnz, K_rowadr, K_colind, /*np_con=*/0, 1, perm,
+                   &pass)) {
     for (int k=0; k < nb; k++) m->efmC_perm[perm[k]] = dofid[k];
   }
   mj_freeStack(d);
@@ -1106,7 +1255,12 @@ static void effCholFill(const mjModel* m, mjData* d, const mjEffChol* c, mjtNum*
       int i = i0 + a;
       for (int j=m->M_rowadr[i]; j < m->M_rowadr[i] + m->M_rownnz[i]; j++) {
         int col = m->M_colind[j];
-        if (col >= i0) H[da[a]+col-i0] += d->M[j];
+        if (col >= i0) {
+          H[da[a]+col-i0] += d->M[j] + (d->efm_fluid ? d->efm_fluid[j] : 0);
+        }
+      }
+      if (d->efm_diag) {
+        H[da[a]+a] += d->efm_diag[i];
       }
     }
     for (int i=0; i < nvc; i++) slot[vc[3*i]/3] = -1;
@@ -1119,6 +1273,83 @@ static void effCholFill(const mjModel* m, mjData* d, const mjEffChol* c, mjtNum*
       }
     }
     mju_zero(scratch, 6*nq);
+  }
+
+  // scatter passive flex contact rank-1 terms (scale * row' * row) on covered triples
+  if (d->nefmcon) {
+    for (int k=0; k < nb; k++) qmark[k] = -1;
+    for (int adr=0, cid=0; adr < d->nefmcon; cid++) {
+      int nnz = d->efm_con_ind[adr];
+      mjtNum scale = d->efm_con_val[adr];
+      const int* ci = d->efm_con_ind + adr + 2;
+      const mjtNum* rv = d->efm_con_val + adr + 2;
+      adr += 2 + nnz;
+      if (scale <= 0) {
+        continue;
+      }
+      int mvert = 0, all_cov = 1;
+      for (int a=0; a < nnz; a++) {
+        int dof = ci[a], k = blk[dof];
+        if (k < 0) {
+          all_cov = 0;
+          break;
+        }
+        int u;
+        if (qmark[k] != cid) {
+          qmark[k] = cid;
+          qpos[k] = u = mvert++;
+          qlist[u] = k;
+          scratch[3*u] = scratch[3*u+1] = scratch[3*u+2] = 0;
+        } else {
+          u = qpos[k];
+        }
+        scratch[3*u+(dof-c->dofid[k])] += rv[a];
+      }
+      if (!all_cov) {
+        mju_zero(scratch, 3*mvert);
+        continue;
+      }
+      for (int u=0; u < mvert; u++) {
+        int ku = qlist[u], pu = c->perm[ku];
+        const mjtNum* wu = scratch + 3*u;
+        mjtNum su0 = scale*wu[0], su1 = scale*wu[1], su2 = scale*wu[2];
+        int nob = c->L_rownnz[3*pu] - 1;
+        H[c->L_rowadr[3*pu]+nob]     += su0 * wu[0];
+        H[c->L_rowadr[3*pu+1]+nob]   += su1 * wu[0];
+        H[c->L_rowadr[3*pu+1]+nob+1] += su1 * wu[1];
+        H[c->L_rowadr[3*pu+2]+nob]   += su2 * wu[0];
+        H[c->L_rowadr[3*pu+2]+nob+1] += su2 * wu[1];
+        H[c->L_rowadr[3*pu+2]+nob+2] += su2 * wu[2];
+        for (int v=0; v < u; v++) {
+          int kv = qlist[v], pv = c->perm[kv];
+          int ph, pl;
+          const mjtNum *wh, *wl;
+          if (pu > pv) {
+            ph = pu; pl = pv; wh = wu; wl = scratch + 3*v;
+          } else {
+            ph = pv; pl = pu; wh = scratch + 3*v; wl = wu;
+          }
+          const int* vc = c->L_colind + c->L_rowadr[3*ph];
+          int nvc = (c->L_rownnz[3*ph] - 1) / 3;
+          int lo = 0, hi = nvc;
+          while (lo < hi) {
+            int mid = (lo + hi) >> 1;
+            if (vc[3*mid] < 3*pl) lo = mid + 1;
+            else hi = mid;
+          }
+          if (lo < nvc && vc[3*lo] == 3*pl) {
+            mjtNum* h0 = H + c->L_rowadr[3*ph] + 3*lo;
+            mjtNum* h1 = H + c->L_rowadr[3*ph+1] + 3*lo;
+            mjtNum* h2 = H + c->L_rowadr[3*ph+2] + 3*lo;
+            mjtNum sh0 = scale*wh[0], sh1 = scale*wh[1], sh2 = scale*wh[2];
+            h0[0] += sh0*wl[0]; h0[1] += sh0*wl[1]; h0[2] += sh0*wl[2];
+            h1[0] += sh1*wl[0]; h1[1] += sh1*wl[1]; h1[2] += sh1*wl[2];
+            h2[0] += sh2*wl[0]; h2[1] += sh2*wl[1]; h2[2] += sh2*wl[2];
+          }
+        }
+      }
+      mju_zero(scratch, 3*mvert);
+    }
   }
   mjtNum maxdiag = 0;
   for (int r=0; r < n; r++) {
@@ -1142,14 +1373,18 @@ static void effCholEnsure(const mjModel* m, mjData* d) {
   }
 }
 
-static void effCholSolveBlocked(mjtNum* res, const mjtNum* L, const mjtNum* vec,
-                                const mjEffChol* c) {
+static void effCholSolveBlocked(mjtNum* restrict res, const mjtNum* restrict L,
+                                const mjtNum* restrict vec, const mjEffChol* restrict c) {
   int nb = c->nb;
-  const int *rowadr = c->L_rowadr, *rownnz = c->L_rownnz, *colind = c->L_colind;
+  const int* restrict rowadr = c->L_rowadr;
+  const int* restrict rownnz = c->L_rownnz;
+  const int* restrict colind = c->L_colind;
   mju_copy(res, vec, 3*nb);
   for (int p=nb-1; p >= 0; p--) {
     int nob = rownnz[3*p] - 1;
-    const mjtNum *L0 = L + rowadr[3*p], *L1 = L + rowadr[3*p+1], *L2 = L + rowadr[3*p+2];
+    const mjtNum* restrict L0 = L + rowadr[3*p];
+    const mjtNum* restrict L1 = L + rowadr[3*p+1];
+    const mjtNum* restrict L2 = L + rowadr[3*p+2];
     mjtNum* r = res + 3*p;
     mjtNum x2 = r[2] / L2[nob+2];
     mjtNum x1 = (r[1] - L2[nob+1]*x2) / L1[nob+1];
@@ -1157,7 +1392,7 @@ static void effCholSolveBlocked(mjtNum* res, const mjtNum* L, const mjtNum* vec,
     r[0] = x0;
     r[1] = x1;
     r[2] = x2;
-    const int* ci = colind + rowadr[3*p];
+    const int* restrict ci = colind + rowadr[3*p];
     for (int j=0; j < nob; j += 3) {
       mjtNum* rq = res + ci[j];
       rq[0] -= L0[j]*x0 + L1[j]*x1 + L2[j]*x2;
@@ -1167,8 +1402,10 @@ static void effCholSolveBlocked(mjtNum* res, const mjtNum* L, const mjtNum* vec,
   }
   for (int p=0; p < nb; p++) {
     int nob = rownnz[3*p] - 1;
-    const mjtNum *L0 = L + rowadr[3*p], *L1 = L + rowadr[3*p+1], *L2 = L + rowadr[3*p+2];
-    const int* ci = colind + rowadr[3*p];
+    const mjtNum* restrict L0 = L + rowadr[3*p];
+    const mjtNum* restrict L1 = L + rowadr[3*p+1];
+    const mjtNum* restrict L2 = L + rowadr[3*p+2];
+    const int* restrict ci = colind + rowadr[3*p];
     mjtNum s0 = 0, s1 = 0, s2 = 0;
     for (int j=0; j < nob; j += 3) {
       const mjtNum* rq = res + ci[j];
@@ -1209,7 +1446,8 @@ static void effCholApply(mjData* d, const mjEffChol* c, mjtNum* x, const mjtNum*
   mj_freeStack(d);
 }
 
-// analyse the step's efm_K pattern and allocate d->efm_L with the analysis and the factor
+// analyse the step's efm_K (+ passive contact) pattern and allocate d->efm_L with the analysis
+// and the factor
 static mjtNum* effCholReserve(const mjModel* m, mjData* d, int nb, const int* dofid, int* ntail) {
   *ntail = 0;
   if (!effCholApplies(m, d, nb, dofid)) {
@@ -1218,9 +1456,10 @@ static mjtNum* effCholReserve(const mjModel* m, mjData* d, int nb, const int* do
   int nv = m->nv;
   size_t kcap = effCholKcap(d, nb, dofid);
   size_t avail = mj_stackBytesAvailable(d);
-  size_t sym_bytes = mj_stackFrameBytes() + effIntBytes(nv) + effIntBytes(nb) +
-                     effCholAnalysisBytes(m, nb, kcap);
-  if (avail < sym_bytes) {
+  size_t base_bytes = mj_stackFrameBytes() + effIntBytes(nv) + effIntBytes(nb);
+  size_t count_bytes = d->nefmcon ? (mj_stackFrameBytes() + 2*effIntBytes(nb)) : 0;
+  size_t sym_bytes = base_bytes + effCholAnalysisBytes(m, nb, kcap, /*np_con=*/0);
+  if (avail < mjMAX(sym_bytes, base_bytes + count_bytes)) {
     mj_warning(d, mjWARN_CNSTRFULL, d->narena);
     return NULL;
   }
@@ -1228,6 +1467,22 @@ static mjtNum* effCholReserve(const mjModel* m, mjData* d, int nb, const int* do
   int* blk = effInts(d, nv);
   int* perm = effInts(d, nb);
   effCovered(nv, nb, dofid, blk);
+  int np_con = 0;
+  if (d->nefmcon) {
+    mj_markStack(d);
+    int* vmark = effInts(d, nb);
+    int* vlist = effInts(d, nb);
+    np_con = effCholContactPairs(d, blk, nb, vmark, vlist, NULL);
+    mj_freeStack(d);
+    if (np_con > 0) {
+      size_t con_sym = base_bytes + effCholAnalysisBytes(m, nb, kcap, (size_t)np_con);
+      if (avail < con_sym) {
+        mj_freeStack(d);
+        mj_warning(d, mjWARN_CNSTRFULL, d->narena);
+        return NULL;
+      }
+    }
+  }
   int pos = 0;
   for (int t=0; t < m->nefmCvert && m->efmC_perm[t] >= 0; t++) {
     int k = m->efmC_perm[t] < nv ? blk[m->efmC_perm[t]] : -1;
@@ -1238,7 +1493,7 @@ static mjtNum* effCholReserve(const mjModel* m, mjData* d, int nb, const int* do
   mjEffCholPass pass;
   int ok = (pos == nb) &&
            effCholBegin(m, d, nb, dofid, blk, d->efm_K_rownnz, d->efm_K_rowadr, d->efm_K_colind,
-                        /*order=*/0, perm, &pass) &&
+                        np_con, /*order=*/0, perm, &pass) &&
            pass.nfe;
   if (!ok) {
     mj_freeStack(d);
@@ -1620,6 +1875,368 @@ static void effBlockApply(const mjModel* m, mjData* d, const mjtNum* L, mjtNum* 
 }
 
 
+// forward 3x3-blocked scalar SGS sweep on covered triples: u = (D + L)^-1 * rhs
+static void effBlk3Fwd(const mjData* d, int nb, const int* restrict dofid,
+                       const int* restrict kdiag, const mjtNum* restrict invD,
+                       mjtNum* restrict u, const mjtNum* restrict rhs) {
+  const int *rowadr = d->efm_K_rowadr, *colind = d->efm_K_colind;
+  const mjtNum* val = d->efm_K_val;
+  for (int k=0; k < nb; k++) {
+    int i = dofid[k], ra0 = rowadr[i], pos = kdiag[k];
+    const int* ci = colind + ra0;
+    const mjtNum *v0 = val + ra0, *v1 = val + rowadr[i+1], *v2 = val + rowadr[i+2];
+    mjtNum s0 = 0, s1 = 0, s2 = 0;
+    for (int j=0; j < pos; j += 3) {
+      const mjtNum* uc = u + ci[j];
+      mjtNum u0 = uc[0], u1 = uc[1], u2 = uc[2];
+      s0 += v0[j]*u0 + v0[j+1]*u1 + v0[j+2]*u2;
+      s1 += v1[j]*u0 + v1[j+1]*u1 + v1[j+2]*u2;
+      s2 += v2[j]*u0 + v2[j+1]*u1 + v2[j+2]*u2;
+    }
+    mjtNum u0 = (rhs[i] - s0) * invD[i];
+    mjtNum u1 = (rhs[i+1] - s1 - v1[pos]*u0) * invD[i+1];
+    mjtNum u2 = (rhs[i+2] - s2 - v2[pos]*u0 - v2[pos+1]*u1) * invD[i+2];
+    u[i]   = u0;
+    u[i+1] = u1;
+    u[i+2] = u2;
+  }
+}
+
+
+// true residual r = (D + L)*rt on covered triples
+static void effBlk3Ert(const mjData* d, int nb, const int* restrict dofid,
+                       const int* restrict kdiag, const mjtNum* restrict D,
+                       mjtNum* restrict r, const mjtNum* restrict rt) {
+  const int *rowadr = d->efm_K_rowadr, *colind = d->efm_K_colind;
+  const mjtNum* val = d->efm_K_val;
+  for (int k=0; k < nb; k++) {
+    int i = dofid[k], ra0 = rowadr[i], pos = kdiag[k];
+    const int* ci = colind + ra0;
+    const mjtNum *v0 = val + ra0, *v1 = val + rowadr[i+1], *v2 = val + rowadr[i+2];
+    mjtNum s0 = 0, s1 = 0, s2 = 0;
+    for (int j=0; j < pos; j += 3) {
+      const mjtNum* rc = rt + ci[j];
+      mjtNum r0 = rc[0], r1 = rc[1], r2 = rc[2];
+      s0 += v0[j]*r0 + v0[j+1]*r1 + v0[j+2]*r2;
+      s1 += v1[j]*r0 + v1[j+1]*r1 + v1[j+2]*r2;
+      s2 += v2[j]*r0 + v2[j+1]*r1 + v2[j+2]*r2;
+    }
+    mjtNum r0 = rt[i], r1 = rt[i+1], r2 = rt[i+2];
+    r[i]   = s0 + D[i]*r0;
+    r[i+1] = s1 + v1[pos]*r0 + D[i+1]*r1;
+    r[i+2] = s2 + v2[pos]*r0 + v2[pos+1]*r1 + D[i+2]*r2;
+  }
+}
+
+
+// backward 3x3-blocked scalar SGS sweep on covered triples: t = (D + L^T)^-1 * p, w = p - Dsub*t
+static void effBlk3Bwd(const mjData* d, int nb, const int* restrict dofid,
+                       const int* restrict kdiag, const mjtNum* restrict invD,
+                       const mjtNum* restrict Dsub, mjtNum* restrict t,
+                       mjtNum* restrict w, const mjtNum* restrict p) {
+  const int *rowadr = d->efm_K_rowadr, *rownnz = d->efm_K_rownnz, *colind = d->efm_K_colind;
+  const mjtNum* val = d->efm_K_val;
+  for (int k=nb-1; k >= 0; k--) {
+    int i = dofid[k], ra0 = rowadr[i], nnz = rownnz[i], pos = kdiag[k];
+    const int* ci = colind + ra0;
+    const mjtNum *v0 = val + ra0, *v1 = val + rowadr[i+1], *v2 = val + rowadr[i+2];
+    mjtNum s0 = 0, s1 = 0, s2 = 0;
+    for (int j=nnz-3; j >= pos + 3; j -= 3) {
+      const mjtNum* tc = t + ci[j];
+      mjtNum t0 = tc[0], t1 = tc[1], t2 = tc[2];
+      s0 += v0[j]*t0 + v0[j+1]*t1 + v0[j+2]*t2;
+      s1 += v1[j]*t0 + v1[j+1]*t1 + v1[j+2]*t2;
+      s2 += v2[j]*t0 + v2[j+1]*t1 + v2[j+2]*t2;
+    }
+    mjtNum p0 = p[i], p1 = p[i+1], p2 = p[i+2];
+    mjtNum t2 = (p2 - s2) * invD[i+2];
+    mjtNum t1 = (p1 - s1 - v1[pos+2]*t2) * invD[i+1];
+    mjtNum t0 = (p0 - s0 - v0[pos+1]*t1 - v0[pos+2]*t2) * invD[i];
+    t[i]   = t0;
+    t[i+1] = t1;
+    t[i+2] = t2;
+    w[i]   = p0 - Dsub[i]*t0;
+    w[i+1] = p1 - Dsub[i+1]*t1;
+    w[i+2] = p2 - Dsub[i+2]*t2;
+  }
+}
+
+
+// half-solve dst = L_U^-T * D_U^-1 * src on uncovered trees U (dst may alias src)
+static void effUncovFwd(const mjModel* m, const mjData* d, int nU, const int* restrict u_dofs,
+                        const mjtNum* restrict invD, int sleep_filter, mjtNum* dst,
+                        const mjtNum* src) {
+  for (int idx=0; idx < nU; idx++) {
+    int i = u_dofs[idx];
+    dst[i] = src[i];
+  }
+  for (int idx=nU-1; idx >= 0; idx--) {
+    int i = u_dofs[idx];
+    if (sleep_filter && d->tree_awake[m->dof_treeid[i]] == 0) {
+      continue;
+    }
+    int mstart = m->M_rowadr[i], mdiag = mstart + m->M_rownnz[i] - 1;
+    mjtNum vi = dst[i];
+    if (mstart < mdiag && vi) {
+      for (int a=mstart; a < mdiag; a++) {
+        dst[m->M_colind[a]] -= d->qH[a] * vi;
+      }
+    }
+  }
+  for (int idx=0; idx < nU; idx++) {
+    int i = u_dofs[idx];
+    dst[i] *= invD[i];
+  }
+}
+
+
+// solve (M + B) x = r_io by split-preconditioned CG using symmetric Gauss-Seidel (w=1) with
+// Eisenstat's trick on standalone 3-dof flex triples (d->efm_dofid) and exact qH LDL^T on
+// remaining trees (set U). Reuses d->efm_K in place with zero extra factor memory; non-CSR
+// couplings (rank-1 tendons/actuators/contacts/twist, matrix-free flexes) are applied outside the
+// split. On entry r_io holds b and x is zero; on return 1, x holds the solution, *capped is
+// cleared on convergence or breakdown, and r_io holds the true residual b - A*x whenever *capped
+// remains set or convergence was checked (not recomputed on early breakdown). Returns 0 if not
+// applicable or stack is insufficient (caller falls back to standard PCG).
+static int effSolveSGS(const mjModel* m, mjData* d, mjtNum* x, mjtNum* r_io, mjtNum bn,
+                       mjtNum tol, int* capped) {
+  int nv = m->nv, nb = d->nefmdof;
+  if (!nb || efmGeneralCSR(d)) {
+    return 0;
+  }
+  mjEffRank1Iter it_ext = {0};
+  mjEffRank1 e_ext;
+  size_t mf_scratch = mj_effMulAddScratch(m, d);
+  int has_rank1 = mj_effRank1Next(m, d, &it_ext, &e_ext, /*flg_contact=*/1);
+  int has_mf = mf_scratch > 0;
+  int nU_max = nv - 3*nb;
+  size_t need = mj_stackFrameBytes() + 8*effNumBytes(nv) + effIntBytes(nb) + effIntBytes(nU_max) +
+                mj_stackBytes(sizeof(mjtByte)*(size_t)nv, _Alignof(mjtByte)) + mf_scratch;
+  if (mj_stackBytesAvailable(d) < need) {
+    return 0;
+  }
+
+  mj_markStack(d);
+  const int* dofid = d->efm_dofid;
+  const int *K_rowadr = d->efm_K_rowadr, *K_rownnz = d->efm_K_rownnz;
+  const int* K_colind = d->efm_K_colind;
+  const mjtNum* K_val = d->efm_K_val;
+  mjtByte* in_C = mjSTACKALLOC(d, nv, mjtByte);
+  memset(in_C, 0, sizeof(mjtByte)*(size_t)nv);
+  int* kdiag = effInts(d, nb);
+
+  // verify standalone 3-dof triples (decoupled from U, diagonal M + efm_fluid) and locate diagonal
+  for (int k=0; k < nb; k++) {
+    int i = dofid[k];
+    if (m->tree_dofnum[m->dof_treeid[i]] != 3) {
+      mj_freeStack(d);
+      return 0;
+    }
+    for (int r=0; r < 3; r++) {
+      int mstart = m->M_rowadr[i+r], mdiag = mstart + m->M_rownnz[i+r] - 1;
+      for (int a=mstart; a < mdiag; a++) {
+        if (d->M[a] != 0 || (d->efm_fluid && d->efm_fluid[a] != 0)) {
+          mj_freeStack(d);
+          return 0;
+        }
+      }
+    }
+    int nnz = K_rownnz[i];
+    const int* ci = K_colind + K_rowadr[i];
+    int lo = 0, hi = nnz / 3;
+    while (lo < hi) {
+      int mid = (lo + hi) >> 1;
+      if (ci[3*mid] < i) {
+        lo = mid + 1;
+      } else {
+        hi = mid;
+      }
+    }
+    int pos = 3*lo;
+    if (pos + 2 >= nnz || ci[pos] != i) {
+      mj_freeStack(d);
+      return 0;
+    }
+    kdiag[k] = pos;
+    in_C[i] = in_C[i+1] = in_C[i+2] = 1;
+  }
+  int nU = 0;
+  int* u_dofs = effInts(d, nU_max);
+  if (nU_max > 0) {
+    for (int i=0; i < nv; i++) {
+      if (!in_C[i]) {
+        u_dofs[nU++] = i;
+      }
+    }
+  }
+  int sleep_filter = mjENABLED(mjENBL_SLEEP) && d->nv_awake < nv;
+
+  mjtNum* rt   = mjSTACKALLOC(d, nv, mjtNum);
+  mjtNum* p    = mjSTACKALLOC(d, nv, mjtNum);
+  mjtNum* t    = mjSTACKALLOC(d, nv, mjtNum);
+  mjtNum* w    = mjSTACKALLOC(d, nv, mjtNum);
+  mjtNum* q    = mjSTACKALLOC(d, nv, mjtNum);
+  mjtNum* D    = mjSTACKALLOC(d, nv, mjtNum);
+  mjtNum* invD = mjSTACKALLOC(d, nv, mjtNum);
+  mjtNum* Dsub = mjSTACKALLOC(d, nv, mjtNum);
+
+  // fold non-contact rank-1 diagonals into D, invD, Dsub = 2*D - D0 on covered triples
+  // (passive contacts stay outside the split, matching qH in mj_effActuation: folding their
+  // rank-1 outer-product diagonals without off-diagonals crushes orthogonal-mode eigenvalues)
+  for (int k=0; k < nb; k++) {
+    int i = dofid[k], pos = kdiag[k];
+    for (int r=0; r < 3; r++) {
+      int row = i + r, mdiag = m->M_rowadr[row] + m->M_rownnz[row] - 1;
+      mjtNum diag_df = (d->efm_diag ? d->efm_diag[row] : 0) +
+                       (d->efm_fluid ? d->efm_fluid[mdiag] : 0);
+      mjtNum d0 = d->M[mdiag] + diag_df + K_val[K_rowadr[row] + pos + r];
+      mjtNum extra = d->efm_sdiag ? mju_max(0, d->efm_sdiag[row] - diag_df) : 0;
+      mjtNum di = mju_max(mjMINVAL, d0 + extra);
+      D[row] = di;
+      invD[row] = 1 / di;
+      Dsub[row] = 2*di - d0;
+    }
+  }
+
+  // uncovered trees U use exact qH factor L_U^T * D_U * L_U (E_U = L_U^T * D_U, E_U^T = D_U * L_U)
+  for (int idx=0; idx < nU; idx++) {
+    int i = u_dofs[idx];
+    if (sleep_filter && d->tree_awake[m->dof_treeid[i]] == 0) {
+      D[i] = 1;
+      invD[i] = 1;
+    } else {
+      mjtNum inv = mju_max(mjMINVAL, d->qHDiagInv[i]);
+      invD[i] = inv;
+      D[i] = 1 / inv;
+    }
+  }
+
+  // initial transformed residual rt = E^-1 * b
+  effBlk3Fwd(d, nb, dofid, kdiag, invD, rt, r_io);
+  if (nU > 0) {
+    effUncovFwd(m, d, nU, u_dofs, invD, sleep_filter, rt, r_io);
+  }
+
+  // initial p = tilde_D * rt, rho = rt' * p
+  mjtNum rho = 0;
+  for (int i=0; i < nv; i++) {
+    p[i] = D[i] * rt[i];
+    rho += rt[i] * p[i];
+  }
+  mjtNum ratio = (rho > 0) ? (bn / rho) : 1;
+  mjtNum rho_check = rho;
+
+  for (int it=0; it < m->opt.iterations; it++) {
+    // backward solve t = E^-T * p and Eisenstat RHS w = p - Dsub*t on C
+    effBlk3Bwd(d, nb, dofid, kdiag, invD, Dsub, t, w, p);
+
+    // uncovered trees U: t_U = L_U^-1 * D_U^-1 * p_U
+    for (int idx=0; idx < nU; idx++) {
+      int i = u_dofs[idx];
+      w[i] = 0;
+      if (sleep_filter && d->tree_awake[m->dof_treeid[i]] == 0) {
+        t[i] = p[i];
+        continue;
+      }
+      mjtNum ti = p[i] * invD[i];
+      int mstart = m->M_rowadr[i], mdiag = mstart + m->M_rownnz[i] - 1;
+      for (int a=mstart; a < mdiag; a++) {
+        ti -= d->qH[a] * t[m->M_colind[a]];
+      }
+      t[i] = ti;
+    }
+
+    // non-CSR couplings on all dofs and (M + efm_fluid + efm_diag)*t on U
+    if (has_rank1) {
+      effMulAddRank1(m, d, w, t, /*flg_contact=*/1);
+    }
+    if (has_mf) {
+      effMulAddMatrixFree(m, d, w, t);
+    }
+    for (int idx=0; idx < nU; idx++) {
+      int i = u_dofs[idx];
+      int mstart = m->M_rowadr[i], mdiag = mstart + m->M_rownnz[i] - 1;
+      mjtNum ti = t[i];
+      mjtNum acc = (d->M[mdiag] + (d->efm_diag ? d->efm_diag[i] : 0) +
+                    (d->efm_fluid ? d->efm_fluid[mdiag] : 0)) * ti;
+      for (int a=mstart; a < mdiag; a++) {
+        int c = m->M_colind[a];
+        mjtNum mv = d->efm_fluid ? (d->M[a] + d->efm_fluid[a]) : d->M[a];
+        acc += mv * t[c];
+        w[c] += mv * ti;
+      }
+      w[i] += acc;
+    }
+
+    // forward solve u = E^-1 * w on C, and q_U = E_U^-1 * (A*t)_U on U
+    effBlk3Fwd(d, nb, dofid, kdiag, invD, q, w);
+    if (nU > 0) {
+      effUncovFwd(m, d, nU, u_dofs, invD, sleep_filter, q, w);
+    }
+
+    // q = t + u on C, inner product pq = p'*q = t'*A*t
+    for (int k=0; k < nb; k++) {
+      int i = dofid[k];
+      q[i]   += t[i];
+      q[i+1] += t[i+1];
+      q[i+2] += t[i+2];
+    }
+    mjtNum pq = mju_dot(p, q, nv);
+    if (pq <= 0) {
+      *capped = 0;
+      break;
+    }
+    mjtNum alpha = rho / pq;
+    mjtNum rho_new = 0;
+    for (int i=0; i < nv; i++) {
+      x[i] += alpha * t[i];
+      mjtNum rti = rt[i] - alpha * q[i];
+      rt[i] = rti;
+      rho_new += D[i] * rti * rti;
+    }
+    if (rho_new <= 0) {
+      *capped = 0;
+      break;
+    }
+
+    // adaptive true-residual check: r = E*rt when rho_new nears tol or drops 100x in norm
+    if (ratio * rho_new < 4 * tol || rho_new < 1e-4 * rho_check ||
+        it + 1 == m->opt.iterations) {
+      effBlk3Ert(d, nb, dofid, kdiag, D, r_io, rt);
+      for (int idx=0; idx < nU; idx++) {
+        int i = u_dofs[idx];
+        mjtNum ri = D[i] * rt[i];
+        r_io[i] = ri;
+        if (sleep_filter && d->tree_awake[m->dof_treeid[i]] == 0) {
+          continue;
+        }
+        int mstart = m->M_rowadr[i], mdiag = mstart + m->M_rownnz[i] - 1;
+        if (mstart < mdiag && ri) {
+          for (int a=mstart; a < mdiag; a++) {
+            r_io[m->M_colind[a]] += d->qH[a] * ri;
+          }
+        }
+      }
+      mjtNum rr = mju_dot(r_io, r_io, nv);
+      if (rr < tol) {
+        *capped = 0;
+        break;
+      }
+      ratio = rr / rho_new;
+      rho_check = rho_new;
+    }
+    mjtNum beta = rho_new / rho;
+    for (int i=0; i < nv; i++) {
+      p[i] = D[i]*rt[i] + beta*p[i];
+    }
+    rho = rho_new;
+  }
+
+  mj_freeStack(d);
+  return 1;
+}
+
+
 // accurate solve of (M + K) x = b by PCG with the metric preconditioner, converging the
 // relative residual to opt.tolerance; used for qacc_smooth. Reaching opt.iterations means the
 // metric is too ill-conditioned for the preconditioner: warn (mjWARN_INERTIA, worst-residual dof)
@@ -1640,9 +2257,6 @@ void mj_effSolve(const mjModel* m, mjData* d, mjtNum* x, const mjtNum* b) {
   int nv = m->nv;
   mj_markStack(d);
   mjtNum* r = mjSTACKALLOC(d, nv, mjtNum);
-  mjtNum* z = mjSTACKALLOC(d, nv, mjtNum);
-  mjtNum* p = mjSTACKALLOC(d, nv, mjtNum);
-  mjtNum* Ap = mjSTACKALLOC(d, nv, mjtNum);
   mju_copy(r, b, nv);   // before zeroing x: b may alias x
   mju_zero(x, nv);
   mjtNum bn = mju_dot(r, r, nv);
@@ -1657,24 +2271,31 @@ void mj_effSolve(const mjModel* m, mjData* d, mjtNum* x, const mjtNum* b) {
 #endif
     mjtNum tol = tolerance*tolerance*bn;
     int capped = 1;   // cleared by either exit below; still set means the cap was reached
-    effBlockApply(m, d, NULL, z, r);
-    mju_copy(p, z, nv);
-    mjtNum rz = mju_dot(r, z, nv);
-    for (int it = 0; it < m->opt.iterations; it++) {
-      mju_mulSymVecSparse(Ap, d->M, p, nv, m->M_rownnz, m->M_rowadr, m->M_colind);
-      mj_effMulAdd(m, d, Ap, p, /*flg_contact=*/1);
-      mjtNum pAp = mju_dot(p, Ap, nv);
-      // curvature breakdown: the metric has no curvature along p, so no further progress is
-      // possible and x is the best available. Not a budget failure, so it does not warn.
-      if (pAp <= 0) { capped = 0; break; }
-      mjtNum alpha = rz/pAp;
-      mju_addToScl(x, p, alpha, nv);
-      mju_addToScl(r, Ap, -alpha, nv);
-      if (mju_dot(r, r, nv) < tol) { capped = 0; break; }
+    mjEffChol cs;
+    int use_sgs = d->nefmK && !effCholReady(m, d, /*is_island=*/0, &cs);
+    if (!use_sgs || !effSolveSGS(m, d, x, r, bn, tol, &capped)) {
+      mjtNum* z = mjSTACKALLOC(d, nv, mjtNum);
+      mjtNum* p = mjSTACKALLOC(d, nv, mjtNum);
+      mjtNum* Ap = mjSTACKALLOC(d, nv, mjtNum);
       effBlockApply(m, d, NULL, z, r);
-      mjtNum rznew = mju_dot(r, z, nv);
-      mju_addScl(p, z, p, rznew/rz, nv);
-      rz = rznew;
+      mju_copy(p, z, nv);
+      mjtNum rz = mju_dot(r, z, nv);
+      for (int it = 0; it < m->opt.iterations; it++) {
+        mju_mulSymVecSparse(Ap, d->M, p, nv, m->M_rownnz, m->M_rowadr, m->M_colind);
+        mj_effMulAdd(m, d, Ap, p, /*flg_contact=*/1);
+        mjtNum pAp = mju_dot(p, Ap, nv);
+        // curvature breakdown: the metric has no curvature along p, so no further progress is
+        // possible and x is the best available. Not a budget failure, so it does not warn.
+        if (pAp <= 0) { capped = 0; break; }
+        mjtNum alpha = rz/pAp;
+        mju_addToScl(x, p, alpha, nv);
+        mju_addToScl(r, Ap, -alpha, nv);
+        if (mju_dot(r, r, nv) < tol) { capped = 0; break; }
+        effBlockApply(m, d, NULL, z, r);
+        mjtNum rznew = mju_dot(r, z, nv);
+        mju_addScl(p, z, p, rznew/rz, nv);
+        rz = rznew;
+      }
     }
 
     // Ran out of iterations with the residual still above tolerance: the metric is too
@@ -2160,6 +2781,12 @@ void mj_effShift(const mjModel* m, mjData* d) {
     mju_gather(d->efm_fluid, scratch, m->mapD2M, m->nC);
     mju_scl(d->efm_fluid, d->efm_fluid, -m->opt.timestep, m->nC);
     mj_freeStack(d);
+  }
+
+  // velocity-dependent diagonal/fluid updates invalidate a previously factored effChol
+  // (e.g. mj_forwardSkip re-running the velocity stage without mj_effBuild)
+  if ((d->efm_diag || d->efm_fluid) && effCholReserved(d) && d->efm_L[0] == 1) {
+    d->efm_L[0] = EFF_CHOL_PENDING;
   }
 }
 
@@ -2971,6 +3598,12 @@ void mj_effBuild(const mjModel* m, mjData* d, int active, int flg_factor) {
   d->efm_diag = (any_diag || d->nefmT || any_act || any_fluid || any_twist) ? EFMALLOC(mjtNum, nv) : NULL;
   d->efm_sdiag = d->efm_diag ? EFMALLOC(mjtNum, nv) : NULL;
   d->efm_fluid = any_fluid ? EFMALLOC(mjtNum, m->nC) : NULL;
+  if (d->efm_diag) {
+    mju_zero(d->efm_diag, nv);
+  }
+  if (d->efm_fluid) {
+    mju_zero(d->efm_fluid, m->nC);
+  }
 
   // assemble the standard-flex part of B into CSR (constant during the step). With stretch or
   // assemblable interp present, assemble the FULL matrix (bending included): one CSR then

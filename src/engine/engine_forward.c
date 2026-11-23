@@ -1089,9 +1089,11 @@ static void warmstart(const mjModel* m, mjData* d) {
     mj_mulJacVec(m, d, jar, d->qacc_warmstart);
     mju_subFrom(jar, d->efc_aref, nefc);
 
-    // update constraints, save cost(qacc_warmstart)
+    // update constraints and cost(qacc_warmstart); qfrc_constraint is set by solver/dualFinish
     mjtNum cost_warmstart;
-    mj_constraintUpdate(m, d, jar, &cost_warmstart, 0);
+    mj_constraintUpdate_impl(d->ne, d->nf, nefc, d->efc_D, d->efc_R, d->efc_frictionloss,
+                             jar, d->efc_type, d->efc_id, d->contact, d->efc_state,
+                             d->efc_force, &cost_warmstart, 0);
 
     // PGS
     if (m->opt.solver == mjSOL_PGS) {
@@ -1110,7 +1112,6 @@ static void warmstart(const mjModel* m, mjData* d) {
       // use zero if better
       if (PGS_warmstart > 0) {
         mju_zero(d->efc_force, nefc);
-        mju_zero(d->qfrc_constraint, nv);
       }
     }
 
@@ -1128,7 +1129,9 @@ static void warmstart(const mjModel* m, mjData* d) {
 
       // cost(qacc_smooth)
       mjtNum cost_smooth;
-      mj_constraintUpdate(m, d, d->efc_b, &cost_smooth, 0);
+      mj_constraintUpdate_impl(d->ne, d->nf, nefc, d->efc_D, d->efc_R, d->efc_frictionloss,
+                               d->efc_b, d->efc_type, d->efc_id, d->contact, d->efc_state,
+                               d->efc_force, &cost_smooth, 0);
 
       // use qacc_smooth if better
       if (cost_warmstart > cost_smooth) {
@@ -1170,18 +1173,22 @@ static void solveIslandTask(const mjModel* m, mjData* d, void* arg, int thread_i
 
 // discrete: reinstate the free-body gyroscopic derivative for decoupled standalone free
 // bodies, re-solving their rows of qacc against the local unsymmetric metric. Guarded by
-// mjd_freeGyroPossible: no constraint Jacobian support and no off-diagonal metric coupling
+// mjd_freeGyroJoints: no constraint Jacobian support and no off-diagonal metric coupling
 // on the 6 dofs, so the overwrite leaves all other rows and the constraint solution intact
 static void mj_discreteGyro(const mjModel* m, mjData* d) {
-  if (m->opt.integrator != mjINT_DISCRETE || !d->efm_active) {
+  if (m->opt.integrator != mjINT_DISCRETE || !d->efm_active || !m->ntree) {
     return;
   }
-  for (int j=0; j < m->njnt; j++) {
+
+  mj_markStack(d);
+  int* jnts = mjSTACKALLOC(d, m->ntree, int);
+  int njnt = mjd_freeGyroJoints(m, d, jnts);
+  for (int k=0; k < njnt; k++) {
+    int j = jnts[k];
     mjtNum A[36], rhs[6], x[6];
 
     // skip if the joint cannot take the decoupled local treatment
-    if (!mjd_freeGyroPossible(m, d, j) ||
-        !mjd_freeMhat(m, d, j, m->opt.timestep, A, /*flg_discrete=*/1)) {
+    if (!mjd_freeMhat(m, d, j, m->opt.timestep, A, /*flg_discrete=*/1)) {
       continue;
     }
 
@@ -1199,6 +1206,7 @@ static void mj_discreteGyro(const mjModel* m, mjData* d) {
       mji_copy6(d->qacc + adr, x);
     }
   }
+  mj_freeStack(d);
 }
 
 
@@ -1245,10 +1253,8 @@ static void fwdConstraint(const mjModel* m, mjData* d, mjtSolver solver, int flg
       // copy inputs to islands (vel+acc deps, pos-dependent already copied in mj_island)
       nidof = d->nidof;
       mju_gather(d->ifrc_smooth,     d->qfrc_smooth,     d->map_idof2dof, nidof);
-      mju_gather(d->ifrc_constraint, d->qfrc_constraint, d->map_idof2dof, nidof);
       mju_gather(d->iacc_smooth,     d->qacc_smooth,     d->map_idof2dof, nidof);
       mju_gather(d->iacc,            d->qacc,            d->map_idof2dof, nidof);
-      mju_gather(d->iefc_force,      d->efc_force,       d->map_iefc2efc, nefc);
       mju_gather(d->iefc_aref,       d->efc_aref,        d->map_iefc2efc, nefc);
 
       mju_dispatch(m, d, solveIslandTask, NULL, nisland);

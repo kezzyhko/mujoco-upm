@@ -1978,6 +1978,106 @@ TEST_F(EngineUtilSolveTest, MjuCholUpdate) {
   }
 }
 
+TEST_F(EngineUtilSolveTest, MjuCholUpdateParity) {
+  // Frozen verbatim copy of HEAD mju_cholUpdate
+  auto ref_chol_update = [](mjtNum* mat, mjtNum* x, int n, int flg_plus) {
+    int rank = n;
+    mjtNum r, c, cinv, s, Lkk, tmp;
+
+    for (int k = 0; k < n; k++) {
+      if (x[k]) {
+        Lkk = mat[k * (n + 1)];
+        tmp = Lkk * Lkk + (flg_plus ? x[k] * x[k] : -x[k] * x[k]);
+        if (!(tmp >= mjMINVAL)) {
+          tmp = mjMINVAL;
+          rank--;
+        }
+        r = mju_sqrt(tmp);
+        c = r / Lkk;
+        cinv = 1 / c;
+        s = x[k] / Lkk;
+
+        mat[k * (n + 1)] = r;
+
+        mjtNum s_signed = flg_plus ? s : -s;
+        for (int i = k + 1; i < n; i++) {
+          mjtNum m = (mat[i * n + k] + s_signed * x[i]) * cinv;
+          mat[i * n + k] = m;
+          x[i] = c * x[i] - s * m;
+        }
+      }
+    }
+    return rank;
+  };
+
+  for (int n = 1; n <= 35; n++) {
+    for (int flg_plus : {0, 1}) {
+      for (int pattern = 0; pattern < 6; pattern++) {
+        vector<mjtNum> mat(n * n);
+        for (int i = 0; i < n; i++) {
+          for (int j = 0; j < n; j++) {
+            if (j < i) {
+              bool zero_row =
+                  (pattern == 4 && i % 2 == 1) || (pattern == 5 && i == 1);
+              mat[i * n + j] =
+                  zero_row ? 0.0 : 0.2 * (mju_Halton(i * n + j + 1, 2) - 0.5);
+            } else if (j == i) {
+              mat[i * n + j] = 1.5 + mju_Halton(i + 1, 3);
+            } else {
+              // upper triangle sentinel
+              mat[i * n + j] = -77.0 - (i * n + j);
+            }
+          }
+        }
+
+        vector<mjtNum> x(n, 0.0);
+        for (int i = 0; i < n; i++) {
+          mjtNum val = mju_Halton(i + 1, 5) - 0.5;
+          if (pattern == 0) {
+            // dense
+            x[i] = val;
+          } else if (pattern == 1) {
+            // alternating zeros and non-zeros (tests xk == 0 and fill-in)
+            x[i] = (i % 2 == 0) ? val : 0.0;
+          } else if (pattern == 2) {
+            // leading and trailing zeros with sparse interior
+            x[i] = (i >= n / 4 && i < (3 * n) / 4 && (i % 3 != 1)) ? val : 0.0;
+          } else if (pattern == 3) {
+            // large magnitude to trigger rank deficiency when flg_plus == 0
+            x[i] = 4.0 * val;
+          } else if (pattern == 4) {
+            // alternating zeros with zero odd-row lower triangle (tests xk1==0)
+            x[i] = (i % 2 == 0) ? val : 0.0;
+          } else {
+            // single zero row k=1 (tests xk1==0 with all 4 unrolled lanes != 0)
+            x[i] = (i == 1) ? 0.0 : val;
+          }
+        }
+
+        vector<mjtNum> mat_ref = mat;
+        vector<mjtNum> x_ref = x;
+
+        int rank = mju_cholUpdate(mat.data(), x.data(), n, flg_plus);
+        int rank_ref =
+            ref_chol_update(mat_ref.data(), x_ref.data(), n, flg_plus);
+
+        EXPECT_EQ(rank, rank_ref)
+            << "n=" << n << " flg_plus=" << flg_plus << " pattern=" << pattern;
+        for (int i = 0; i < n * n; i++) {
+          EXPECT_EQ(mat[i], mat_ref[i])
+              << "mat mismatch at " << i << " n=" << n
+              << " flg_plus=" << flg_plus << " pattern=" << pattern;
+        }
+        for (int i = 0; i < n; i++) {
+          EXPECT_EQ(x[i], x_ref[i])
+              << "x mismatch at " << i << " n=" << n << " flg_plus=" << flg_plus
+              << " pattern=" << pattern;
+        }
+      }
+    }
+  }
+}
+
 // Test for mju_cholUpdateSparse: sparse rank-one Cholesky update L'*L +/- x*x'
 // Uses sparse reverse Cholesky factorization and sparse rank-one update.
 TEST_F(EngineUtilSolveTest, MjuCholUpdateSparse) {
@@ -3033,6 +3133,213 @@ TEST_F(Eig3Test, Tolerance) {
   mjtNum recon, orth;
   Eig3Residual(&recon, &orth, mat, eigval, eigvec);
   EXPECT_LE(orth, MjTol(5e-14, 5e-6));
+}
+
+// Verify mju_cholFactorSymbolic matches a scalar reference bit-for-bit
+// (including exact LT_colind traversal order and L_super) on mixed supernodes,
+// partial lower-triangle coupling, empty rows, and n = 0/1.
+TEST_F(EngineUtilSolveTest, CholFactorSymbolicExactMatchesScalar) {
+  MjModelPtr model = LoadModelFromString("<mujoco/>");
+  MjDataPtr d = MakeData(model);
+
+  auto scalar_ref = [](int n, const vector<int>& rownnz,
+                       const vector<int>& rowadr, const vector<int>& colind,
+                       vector<int>& L_rownnz, vector<int>& L_rowadr,
+                       vector<int>& L_colind, vector<int>& LT_rownnz,
+                       vector<int>& LT_rowadr, vector<int>& LT_colind,
+                       vector<int>& LT_map, vector<int>& L_super) {
+    if (n <= 0) return 0;
+    vector<int> parent(n), flag(n);
+    L_rownnz.assign(n, 0);
+    LT_rownnz.assign(n, 0);
+    auto ustart = [&](int r) {
+      int s = rowadr[r], e = s + rownnz[r];
+      while (s < e && colind[s] <= r) s++;
+      return s;
+    };
+    for (int r = n - 1; r >= 0; r--) {
+      parent[r] = -1;
+      flag[r] = r;
+      L_rownnz[r] = 1;
+      int lt_nnz = 1;
+      int end = rowadr[r] + rownnz[r];
+      for (int c = ustart(r); c < end; c++) {
+        int i = colind[c];
+        while (flag[i] != r) {
+          L_rownnz[i]++;
+          lt_nnz++;
+          flag[i] = r;
+          int p = parent[i];
+          if (p == -1) {
+            parent[i] = r;
+            break;
+          }
+          i = p;
+        }
+      }
+      LT_rownnz[r] = lt_nnz;
+    }
+    L_rowadr.resize(n);
+    LT_rowadr.resize(n);
+    L_rowadr[0] = LT_rowadr[0] = 0;
+    int nnz = L_rownnz[0];
+    for (int r = 1; r < n; r++) {
+      L_rowadr[r] = L_rowadr[r - 1] + L_rownnz[r - 1];
+      LT_rowadr[r] = LT_rowadr[r - 1] + LT_rownnz[r - 1];
+      nnz += L_rownnz[r];
+    }
+    L_colind.assign(nnz, -1);
+    LT_colind.assign(nnz, -1);
+    LT_map.assign(nnz, -1);
+    L_super.assign(n, 0);
+    vector<int> cursor(n);
+    for (int r = n - 1; r >= 0; r--) {
+      parent[r] = -1;
+      flag[r] = r;
+      int diag_idx = L_rowadr[r] + L_rownnz[r] - 1;
+      cursor[r] = diag_idx - 1;
+      L_colind[diag_idx] = r;
+      int lt_write = LT_rowadr[r];
+      LT_colind[lt_write] = r;
+      LT_map[lt_write] = diag_idx;
+      lt_write++;
+      int end = rowadr[r] + rownnz[r];
+      int overlap = 0;
+      for (int c = ustart(r); c < end; c++) {
+        int i = colind[c];
+        while (flag[i] != r) {
+          overlap += (flag[i] == r + 1);
+          int L_idx = cursor[i]--;
+          L_colind[L_idx] = r;
+          LT_colind[lt_write] = i;
+          LT_map[lt_write] = L_idx;
+          lt_write++;
+          flag[i] = r;
+          int p = parent[i];
+          if (p == -1) {
+            parent[i] = r;
+            break;
+          }
+          i = p;
+        }
+      }
+      if (r < n - 1) {
+        L_super[r + 1] =
+            (parent[r + 1] == r && L_rownnz[r] == L_rownnz[r + 1] - 1 &&
+             LT_rownnz[r] == LT_rownnz[r + 1] + 1 &&
+             overlap == LT_rownnz[r + 1]);
+      }
+    }
+    L_super[0] = 0;
+    for (int r = n - 1; r >= 0; r--) {
+      int merge = L_super[r];
+      L_super[r] = 1 + merge + (merge && r > 0 && L_super[r - 1]);
+    }
+    return nnz;
+  };
+
+  // n = 0 edge case
+  EXPECT_EQ(mju_cholFactorSymbolic(nullptr, nullptr, nullptr, nullptr, nullptr,
+                                   nullptr, nullptr, nullptr, nullptr, nullptr,
+                                   nullptr, 0, d.get()),
+            0);
+
+  std::mt19937 rng(42);
+  auto check_graph = [&](int n, const vector<vector<int>>& adj, bool upper_only,
+                         mjData* data_ptr) {
+    vector<int> rownnz(n), rowadr(n), colind;
+    for (int r = 0; r < n; r++) {
+      rowadr[r] = colind.size();
+      for (int c : adj[r]) {
+        if (!upper_only || c >= r) {
+          colind.push_back(c);
+        }
+      }
+      rownnz[r] = static_cast<int>(colind.size()) - rowadr[r];
+    }
+
+    vector<int> r_L_nnz, r_L_adr, r_L_col, r_LT_nnz, r_LT_adr, r_LT_col,
+        r_LT_map, r_L_sup;
+    int ref_nnz =
+        scalar_ref(n, rownnz, rowadr, colind, r_L_nnz, r_L_adr, r_L_col,
+                   r_LT_nnz, r_LT_adr, r_LT_col, r_LT_map, r_L_sup);
+
+    vector<int> L_nnz(n), L_adr(n), LT_nnz(n), LT_adr(n);
+    int nnz = mju_cholFactorSymbolic(nullptr, L_nnz.data(), L_adr.data(),
+                                     nullptr, LT_nnz.data(), LT_adr.data(),
+                                     nullptr, nullptr, rownnz.data(),
+                                     rowadr.data(), colind.data(), n, data_ptr);
+    ASSERT_EQ(nnz, ref_nnz);
+    EXPECT_EQ(L_nnz, r_L_nnz);
+    EXPECT_EQ(L_adr, r_L_adr);
+    EXPECT_EQ(LT_nnz, r_LT_nnz);
+    EXPECT_EQ(LT_adr, r_LT_adr);
+
+    vector<int> L_col(nnz), LT_col(nnz), LT_map(nnz), L_sup(n);
+    mju_cholFactorSymbolic(L_col.data(), L_nnz.data(), L_adr.data(),
+                           LT_col.data(), LT_nnz.data(), LT_adr.data(),
+                           LT_map.data(), L_sup.data(), rownnz.data(),
+                           rowadr.data(), colind.data(), n, data_ptr);
+    EXPECT_EQ(L_col, r_L_col);
+    EXPECT_EQ(LT_col, r_LT_col);
+    EXPECT_EQ(LT_map, r_LT_map);
+    EXPECT_EQ(L_sup, r_L_sup);
+  };
+
+  // n = 1
+  check_graph(1, {{0}}, /*upper_only=*/true, d.get());
+  check_graph(1, {{}}, /*upper_only=*/true, nullptr);
+
+  // mixed supernode blocks (1, 2, 3, 6) with partial lower-triangle coupling
+  for (int trial = 0; trial < 40; trial++) {
+    vector<int> bsizes;
+    int n = 0;
+    while (n < 36) {
+      int choices[] = {1, 2, 3, 6};
+      int bs = choices[rng() % 4];
+      bsizes.push_back(bs);
+      n += bs;
+    }
+    int nb = bsizes.size();
+    vector<int> badr(nb + 1, 0);
+    for (int b = 0; b < nb; b++) badr[b + 1] = badr[b] + bsizes[b];
+
+    vector<vector<bool>> mat(n, vector<bool>(n, false));
+    for (int b = 0; b < nb; b++) {
+      // block diagonal clique (occasionally omit diagonal to test empty rows)
+      if (trial % 7 != 0 || b != nb - 1) {
+        for (int i = badr[b]; i < badr[b + 1]; i++) {
+          for (int j = badr[b]; j < badr[b + 1]; j++) {
+            mat[i][j] = true;
+          }
+        }
+      }
+      // block-level couplings
+      for (int b2 = b + 1; b2 < nb; b2++) {
+        if (rng() % 4 == 0) {
+          for (int i = badr[b]; i < badr[b + 1]; i++) {
+            for (int j = badr[b2]; j < badr[b2 + 1]; j++) {
+              mat[i][j] = mat[j][i] = true;
+            }
+          }
+        }
+      }
+    }
+    // add sparse single-DOF partial couplings so rows sharing an upper pattern
+    // can differ in lower triangle (exercises partial target-block hits)
+    for (int k = 0; k < 6; k++) {
+      int u = rng() % n, v = rng() % n;
+      if (u != v) mat[u][v] = mat[v][u] = true;
+    }
+    vector<vector<int>> adj(n);
+    for (int r = 0; r < n; r++) {
+      for (int c = 0; c < n; c++) {
+        if (mat[r][c]) adj[r].push_back(c);
+      }
+    }
+    check_graph(n, adj, /*upper_only=*/(trial % 2 == 0),
+                (trial % 5 == 0) ? nullptr : d.get());
+  }
 }
 
 }  // namespace
