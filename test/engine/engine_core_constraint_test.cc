@@ -16,9 +16,12 @@
 
 #include "src/engine/engine_core_constraint.h"
 
+#include <algorithm>
 #include <array>
+#include <cmath>
 #include <cstdio>
 #include <cstring>
+#include <limits>
 #include <string>
 #include <utility>
 #include <vector>
@@ -567,7 +570,7 @@ TEST_F(CoreConstraintTest, ConstraintUpdateImpl) {
 
       // constraint update for data1 given jar
       mjtNum cost1;
-      mj_constraintUpdate(model, d1, jar, &cost1, /*flg_coneHessian=*/1);
+      mj_constraintUpdate(model, d1, jar, &cost1);
 
       // iterate over islands, check match
       mjtNum cost2 = 0;
@@ -576,7 +579,6 @@ TEST_F(CoreConstraintTest, ConstraintUpdateImpl) {
         for (int i = 0; i < nefc; i++) d2->efc_state[i] = -1;
         mju_zero(d2->efc_force, nefc);
         mju_zero(d2->qfrc_constraint, nv);
-        for (int i = 0; i < d2->ncon; i++) mju_zero(d2->contact[i].H, 36);
 
         // sizes and indices, in this island
         int efcnum = d2->island_nefc[island];
@@ -596,8 +598,7 @@ TEST_F(CoreConstraintTest, ConstraintUpdateImpl) {
         mj_constraintUpdate_impl(ne, nf, efcnum, d2->iefc_D + adr,
                                  d2->iefc_R + adr, d2->iefc_frictionloss + adr,
                                  jari, d2->iefc_type + adr, d2->iefc_id + adr,
-                                 d2->contact, state, force, &cost2i,
-                                 /*flg_coneHessian=*/1);
+                                 d2->contact, state, force, &cost2i);
 
         // compare nefc vectors
         for (int c = 0; c < efcnum; c++) {
@@ -605,20 +606,6 @@ TEST_F(CoreConstraintTest, ConstraintUpdateImpl) {
           EXPECT_EQ(d2->efc_island[i], island);
           EXPECT_EQ(state[c], d1->efc_state[i]);
           EXPECT_THAT(force[c], MjNear(d1->efc_force[i], 1e-12, 1e-4));
-        }
-
-        // compare cone Hessians
-        if (cone == mjCONE_ELLIPTIC) {
-          for (int c = 0; c < d2->ncon; c++) {
-            int efcadr = d2->contact[c].efc_address;
-            if (d2->efc_island[efcadr] == island &&
-                d2->efc_state[efcadr] == mjCNSTRSTATE_CONE) {
-              for (int j = 0; j < 36; j++) {
-                EXPECT_THAT(d2->contact[c].H[j],
-                            MjNear(d1->contact[c].H[j], 1e-12, 1e-4));
-              }
-            }
-          }
         }
 
         // add island cost to total cost
@@ -637,6 +624,146 @@ TEST_F(CoreConstraintTest, ConstraintUpdateImpl) {
   mj_deleteData(d2);
   mj_deleteData(d1);
   mj_deleteModel(model);
+}
+
+// the 4-wide batched dim=3 elliptic path must match the scalar path exactly
+TEST_F(CoreConstraintTest, ConstraintUpdateEllipticBatchMatchesScalar) {
+  // 9 contiguous dim=3 cones (two 4-wide batches + scalar tail), a dim=4 cone
+  // that ends batching, and two more dim=3 cones handled by the scalar loop
+  const std::vector<int> dims = {3, 3, 3, 3, 3, 3, 3, 3, 3, 4, 3, 3};
+  // per-cone (normal, tangent) jar: top, bottom, middle (N > 0 and N < 0),
+  // and T == 0 with N of both signs
+  const mjtNum kJar[6][2] = {{1, 0.1},  {-1, 0.05}, {0.1, 0.8},
+                             {-0.1, 1}, {0.5, 0},   {-0.5, 0}};
+  constexpr int kLead = 2;  // leading frictionless contact rows
+
+  int ncon = dims.size();
+  std::vector<mjContact> con(ncon);
+  std::vector<int> adr(ncon);
+  int nefc = kLead;
+  for (int k = 0; k < ncon; k++) {
+    con[k].dim = dims[k];
+    con[k].mu = 0.5 + 0.1 * k;
+    for (int j = 0; j < 5; j++) con[k].friction[j] = 1 + 0.2 * j + 0.05 * k;
+    adr[k] = nefc;
+    nefc += dims[k];
+  }
+
+  std::vector<mjtNum> D(nefc), R(nefc, 0), floss(nefc, 0), jar(nefc);
+  std::vector<int> type(nefc), id(nefc, 0);
+  for (int i = 0; i < kLead; i++) {
+    type[i] = mjCNSTR_CONTACT_FRICTIONLESS;
+    jar[i] = i ? 0.3 : -0.3;
+    D[i] = 2 + i;
+  }
+  for (int k = 0; k < ncon; k++) {
+    for (int j = 0; j < dims[k]; j++) {
+      int i = adr[k] + j;
+      type[i] = mjCNSTR_CONTACT_ELLIPTIC;
+      id[i] = k;
+      D[i] = 1 + 0.1 * i;
+      jar[i] = j ? kJar[k % 6][1] * (j % 2 ? 1 : -0.7) : kJar[k % 6][0];
+    }
+  }
+
+  // batched: all rows at once
+  std::vector<int> state(nefc, -1);
+  std::vector<mjtNum> force(nefc, -1);
+  mjtNum cost = 0;
+  mj_constraintUpdate_impl(0, 0, nefc, D.data(), R.data(), floss.data(),
+                           jar.data(), type.data(), id.data(), con.data(),
+                           state.data(), force.data(), &cost);
+
+  // scalar reference: leading rows via contact == nullptr fast path,
+  // then one cone per call
+  std::vector<int> state_ref(nefc, -1);
+  std::vector<mjtNum> force_ref(nefc, -1);
+  mjtNum cost_ref = 0, c = 0;
+  mj_constraintUpdate_impl(0, 0, kLead, D.data(), R.data(), floss.data(),
+                           jar.data(), type.data(), id.data(), nullptr,
+                           state_ref.data(), force_ref.data(), &c);
+  cost_ref += c;
+  for (int k = 0; k < ncon; k++) {
+    int a = adr[k];
+    mj_constraintUpdate_impl(0, 0, dims[k], D.data() + a, R.data() + a,
+                             floss.data() + a, jar.data() + a, type.data() + a,
+                             id.data() + a, con.data(), state_ref.data() + a,
+                             force_ref.data() + a, &c);
+    cost_ref += c;
+  }
+
+  EXPECT_EQ(state, state_ref);
+  EXPECT_EQ(force, force_ref);
+  EXPECT_NEAR(cost, cost_ref, MjTol(1e-12, 1e-5) * std::abs(cost_ref));
+
+  // all three zones are exercised
+  for (int s :
+       {mjCNSTRSTATE_SATISFIED, mjCNSTRSTATE_QUADRATIC, mjCNSTRSTATE_CONE}) {
+    EXPECT_NE(std::find(state.begin(), state.end(), s), state.end()) << s;
+  }
+
+  // cost == nullptr gives the same forces
+  std::vector<mjtNum> force_nocost(nefc, -1);
+  mj_constraintUpdate_impl(0, 0, nefc, D.data(), R.data(), floss.data(),
+                           jar.data(), type.data(), id.data(), con.data(),
+                           state.data(), force_nocost.data(), nullptr);
+  EXPECT_EQ(force_nocost, force);
+
+  // NaN parity: leading non-elliptic row and batched dim=3 cones propagate NaN
+  // the same way as the scalar paths (including T == 0 with N == NaN)
+  const mjtNum qnan = std::numeric_limits<mjtNum>::quiet_NaN();
+  {
+    const mjtNum d_lead = 2, r_lead = 0, fl_lead = 0, j_lead = qnan;
+    const int t_lead = mjCNSTR_CONTACT_FRICTIONLESS, id_lead = 0;
+    int s_batch = -1, s_ref = -1;
+    mjtNum f_batch = 0, f_ref = 0, c_batch = 0, c_ref = 0;
+    mj_constraintUpdate_impl(0, 0, 1, &d_lead, &r_lead, &fl_lead, &j_lead,
+                             &t_lead, &id_lead, con.data(), &s_batch, &f_batch,
+                             &c_batch);
+    mj_constraintUpdate_impl(0, 0, 1, &d_lead, &r_lead, &fl_lead, &j_lead,
+                             &t_lead, &id_lead, nullptr, &s_ref, &f_ref,
+                             &c_ref);
+    EXPECT_EQ(s_batch, mjCNSTRSTATE_QUADRATIC);
+    EXPECT_EQ(s_batch, s_ref);
+    EXPECT_TRUE(std::isnan(f_batch));
+    EXPECT_TRUE(std::isnan(f_ref));
+    EXPECT_TRUE(std::isnan(c_batch));
+    EXPECT_TRUE(std::isnan(c_ref));
+  }
+  {
+    constexpr int kN = 12;
+    std::vector<mjtNum> jn = {qnan, 0,    0, qnan, 0.2, 0.3,
+                              0.5,  qnan, 0, 1,    0.1, 0.1};
+    std::vector<mjtNum> dn(kN, 1), rn(kN, 0), fn(kN, 0);
+    std::vector<int> tn(kN, mjCNSTR_CONTACT_ELLIPTIC);
+    std::vector<int> idn = {0, 0, 0, 1, 1, 1, 2, 2, 2, 3, 3, 3};
+    std::vector<int> sb(kN, -1), sr(kN, -1);
+    std::vector<mjtNum> fb(kN, 0), fr(kN, 0);
+    mjtNum cb = 0, cr = 0;
+    mj_constraintUpdate_impl(0, 0, kN, dn.data(), rn.data(), fn.data(),
+                             jn.data(), tn.data(), idn.data(), con.data(),
+                             sb.data(), fb.data(), &cb);
+    for (int k = 0; k < 4; k++) {
+      int a = 3 * k;
+      mj_constraintUpdate_impl(0, 0, 3, dn.data() + a, rn.data() + a,
+                               fn.data() + a, jn.data() + a, tn.data() + a,
+                               idn.data() + a, con.data(), sr.data() + a,
+                               fr.data() + a, &cr);
+      if (k < 3) {
+        EXPECT_TRUE(std::isnan(cr)) << "cone " << k;
+      }
+    }
+    EXPECT_EQ(sb, sr);
+    EXPECT_TRUE(std::isnan(cb));
+    for (int r = 0; r < kN; r++) {
+      if (r < 9) {
+        EXPECT_TRUE(std::isnan(fb[r])) << "r=" << r;
+        EXPECT_TRUE(std::isnan(fr[r])) << "r=" << r;
+      } else {
+        EXPECT_EQ(fb[r], fr[r]) << "r=" << r;
+      }
+    }
+  }
 }
 
 // Test flex strain constraint with pinned nodes attached to freejoint parent
@@ -2009,8 +2136,9 @@ TEST_F(CoreConstraintTest, ArenaOverflowClearsRowCounts) {
   }
 }
 
-// tiny tangential residual T where T^3 underflows must not poison contact.H
-TEST_F(CoreConstraintTest, EllipticConeHessianSmallTangent) {
+// tiny tangential residual T where T^3 underflows must not poison constraint
+// force/cost
+TEST_F(CoreConstraintTest, EllipticConeSmallTangent) {
   static constexpr char xml[] = R"(
   <mujoco>
     <option cone="elliptic"/>
@@ -2033,7 +2161,6 @@ TEST_F(CoreConstraintTest, EllipticConeHessianSmallTangent) {
 
   const mjContact& con = d->contact[0];
   const mjtNum mu = con.mu;
-  const mjtNum Dm = d->efc_D[0] / (mu * mu * (1 + mu * mu));
 
   // T > 0 where T^2 is normal but T^3 underflows to 0 (even with subnormals),
   // while orthogonal tangent components are 0 so Inf * 0 would produce NaN
@@ -2042,26 +2169,13 @@ TEST_F(CoreConstraintTest, EllipticConeHessianSmallTangent) {
   mjtNum jar[6] = {N / mu, T / con.friction[0], 0, 0, 0, 0};
 
   mjtNum cost = 0;
-  mj_constraintUpdate(m.get(), d.get(), jar, &cost, /*flg_coneHessian=*/1);
+  mj_constraintUpdate(m.get(), d.get(), jar, &cost);
 
   EXPECT_EQ(d->efc_state[0], mjCNSTRSTATE_CONE);
   EXPECT_FALSE(mju_isBad(cost));
   for (int j = 0; j < 6; j++) {
     EXPECT_FALSE(mju_isBad(d->efc_force[j])) << "row " << j;
   }
-  for (int j = 0; j < 36; j++) {
-    EXPECT_FALSE(mju_isBad(d->contact[0].H[j])) << "entry " << j;
-  }
-
-  // check exact analytical cone Hessian entries along and orthogonal to Uhat_1
-  const mjtNum f0 = con.friction[0];
-  const mjtNum f1 = con.friction[1];
-  EXPECT_THAT(d->contact[0].H[0], MjNear(Dm * mu * mu, 1e-12, 1e-5));
-  EXPECT_THAT(d->contact[0].H[1], MjNear(-Dm * mu * mu * f0, 1e-12, 1e-5));
-  EXPECT_EQ(d->contact[0].H[2], 0);
-  EXPECT_THAT(d->contact[0].H[7], MjNear(Dm * mu * mu * f0 * f0, 1e-12, 1e-5));
-  EXPECT_THAT(d->contact[0].H[14],
-              MjNear(Dm * (mu * mu + 0.5) * f1 * f1, 1e-12, 1e-5));
 }
 
 TEST_F(CoreConstraintTest, TendonEqualitySetsEfcadr) {

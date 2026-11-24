@@ -209,7 +209,6 @@ void mju_zeroSparse(mjtNum* res, const int* rownnz, const int* rowadr, const int
 void mju_mulMatVecSparse(mjtNum* res, const mjtNum* mat, const mjtNum* vec,
                          int nr, const int* rownnz, const int* rowadr,
                          const int* colind, const int* rowsuper) {
-#ifdef mjUSEAVX
   if (!rowsuper) {
     // regular sparse dot-product
     for (int r=0; r < nr; r++) {
@@ -250,14 +249,6 @@ void mju_mulMatVecSparse(mjtNum* res, const mjtNum* mat, const mjtNum* vec,
       res[r] = mju_dotSparse(mat+rowadr[r], vec, rownnz[r], colind+rowadr[r]);
     }
   }
-#else
-  (void)rowsuper;
-
-  // regular sparse dot-product
-  for (int r=0; r < nr; r++) {
-    res[r] = mju_dotSparse(mat+rowadr[r], vec, rownnz[r], colind+rowadr[r]);
-  }
-#endif
 }
 
 
@@ -594,79 +585,252 @@ int mju_compressSparse(mjtNum* mat, int nr, int nc, int* rownnz, int* rowadr, in
 }
 
 
-// transpose sparse matrix, optionally compute row supernodes
-void mju_transposeSparse(mjtNum* res, const mjtNum* mat, int nr, int nc,
-                         int* res_rownnz, int* res_rowadr, int* res_colind, int* res_rowsuper,
-                         const int* rownnz, const int* rowadr, const int* colind) {
+// scatter 4 contiguous rows of a supernode into transposed CSR
+static void transposeScatter4(mjtNum* restrict res, int* restrict res_rowadr,
+                              int* restrict res_colind, const int* restrict col_r,
+                              const mjtNum* restrict mat_r, int r, int nnz) {
+  const mjtNum* restrict m0 = mat_r;
+  const mjtNum* restrict m1 = m0 + nnz;
+  const mjtNum* restrict m2 = m1 + nnz;
+  const mjtNum* restrict m3 = m2 + nnz;
+  for (int j=0; j < nnz; j++) {
+    int c = col_r[j];
+    int adr = res_rowadr[c];
+    res_rowadr[c] = adr + 4;
+    res_colind[adr+0] = r;
+    res_colind[adr+1] = r+1;
+    res_colind[adr+2] = r+2;
+    res_colind[adr+3] = r+3;
+    res[adr+0] = m0[j];
+    res[adr+1] = m1[j];
+    res[adr+2] = m2[j];
+    res[adr+3] = m3[j];
+  }
+}
+
+
+// scatter 3 contiguous rows of a supernode into transposed CSR
+static void transposeScatter3(mjtNum* restrict res, int* restrict res_rowadr,
+                              int* restrict res_colind, const int* restrict col_r,
+                              const mjtNum* restrict mat_r, int r, int nnz) {
+  const mjtNum* restrict m0 = mat_r;
+  const mjtNum* restrict m1 = m0 + nnz;
+  const mjtNum* restrict m2 = m1 + nnz;
+  for (int j=0; j < nnz; j++) {
+    int c = col_r[j];
+    int adr = res_rowadr[c];
+    res_rowadr[c] = adr + 3;
+    res_colind[adr+0] = r;
+    res_colind[adr+1] = r+1;
+    res_colind[adr+2] = r+2;
+    res[adr+0] = m0[j];
+    res[adr+1] = m1[j];
+    res[adr+2] = m2[j];
+  }
+}
+
+
+// scatter 2 contiguous rows of a supernode into transposed CSR
+static void transposeScatter2(mjtNum* restrict res, int* restrict res_rowadr,
+                              int* restrict res_colind, const int* restrict col_r,
+                              const mjtNum* restrict mat_r, int r, int nnz) {
+  const mjtNum* restrict m0 = mat_r;
+  const mjtNum* restrict m1 = m0 + nnz;
+  for (int j=0; j < nnz; j++) {
+    int c = col_r[j];
+    int adr = res_rowadr[c];
+    res_rowadr[c] = adr + 2;
+    res_colind[adr+0] = r;
+    res_colind[adr+1] = r+1;
+    res[adr+0] = m0[j];
+    res[adr+1] = m1[j];
+  }
+}
+
+
+// scatter 1 row into transposed CSR
+static void transposeScatter1(mjtNum* restrict res, int* restrict res_rowadr,
+                              int* restrict res_colind, const int* restrict col_r,
+                              const mjtNum* restrict mat_r, int r, int nnz) {
+  for (int j=0; j < nnz; j++) {
+    int c = col_r[j];
+    int adr = res_rowadr[c]++;
+    res_colind[adr] = r;
+    res[adr] = mat_r[j];
+  }
+}
+
+
+// pattern-only scatter pass of sparse transpose using optional input row supernodes
+static inline void transposePattern(int nr, int* restrict res_rowadr, int* restrict res_colind,
+                                    const int* restrict rownnz, const int* restrict rowadr,
+                                    const int* restrict colind, const int* restrict rowsuper) {
+  int row_offset = rowadr[0];
+  for (int r=0; r < nr; ) {
+    int ns = rowsuper ? rowsuper[r] + 1 : 1;
+    int nnz = rownnz[r];
+    if (nnz > 0) {
+      const int* restrict col_r = colind + (rowadr[r] - row_offset);
+      if (ns == 1) {
+        for (int j=0; j < nnz; j++) {
+          res_colind[res_rowadr[col_r[j]]++] = r;
+        }
+      } else {
+        for (int j=0; j < nnz; j++) {
+          int c = col_r[j];
+          int adr = res_rowadr[c];
+          res_rowadr[c] = adr + ns;
+          int* restrict dst_col = res_colind + adr;
+          for (int s=0; s < ns; s++) {
+            dst_col[s] = r + s;
+          }
+        }
+      }
+    }
+    r += ns;
+  }
+}
+
+
+// pass 2 of sparse transpose: fill res_colind (and res if non-NULL) using optional row supernodes;
+// res_rowadr holds row starts on entry, advances as per-row write cursors, and is restored on exit
+static void transposeSparseScatter(mjtNum* restrict res, const mjtNum* restrict mat, int nr, int nc,
+                                   int* restrict res_rowadr, int* restrict res_colind,
+                                   const int* restrict rownnz, const int* restrict rowadr,
+                                   const int* restrict colind, const int* restrict rowsuper) {
   if (!nr || !nc) return;
 
-  // clear number of non-zeros for each row of transposed
-  mju_zeroInt(res_rownnz, nc);
-
-  // handle the case where the first row of mat is nonzero (offset wrt the base pointers)
-  int row_offset = rowadr[0];
-
-  // count the number of non-zeros for each row of the transposed matrix
-  for (int r = 0; r < nr; r++) {
-    int start = rowadr[r] - row_offset;
-    int end = start + rownnz[r];
-    for (int j = start; j < end; j++) {
-      res_rownnz[colind[j]]++;
-    }
-  }
-
-  // init res_rowsuper
-  if (res_rowsuper) {
-    for (int i = 0; i < nc - 1; i++) {
-      res_rowsuper[i] = (res_rownnz[i] == res_rownnz[i + 1]);
-    }
-    res_rowsuper[nc - 1] = 0;
-  }
-
-  // compute the row addresses for the transposed matrix
-  res_rowadr[0] = 0;
-  for (int i = 1; i < nc; i++) {
-    res_rowadr[i] = res_rowadr[i-1] + res_rownnz[i-1];
-  }
-
-  // iterate through each row (column) of mat (res)
-  for (int r = 0; r < nr; r++) {
-    int c_prev = -1;
-    int start = rowadr[r] - row_offset;
-    int end = start + rownnz[r];
-    for (int i = start; i < end; i++) {
-      // swap rows with columns and increment res_rowadr
-      int c = colind[i];
-      int adr = res_rowadr[c]++;
-      res_colind[adr] = r;
-      if (res) {
-        res[adr] = mat[i];
+  // scatter with values
+  if (res) {
+    int row_offset = rowadr[0];
+    for (int r=0; r < nr; ) {
+      int ns = rowsuper ? rowsuper[r] + 1 : 1;
+      int nnz = rownnz[r];
+      if (!nnz) {
+        r += ns;
+        continue;
       }
 
-      // mark non-supernodes
-      if (res_rowsuper) {
-        if (c > 0 && c != c_prev + 1 && res_rowsuper[c - 1]) {
-          res_rowsuper[c - 1] = 0;
-        }
-        c_prev = c;
+      int start0 = rowadr[r] - row_offset;
+
+      // require contiguous row storage across the supernode for strided value access
+      if (ns > 1 && rowadr[r+ns-1] - row_offset != start0 + (ns-1)*nnz) {
+        ns = 1;
       }
+
+      const int* restrict col_r = colind + start0;
+      const mjtNum* restrict mat_r = mat + start0;
+
+      // decompose supernode into 4-row blocks plus a 1..3-row tail
+      int s = 0;
+      while (ns - s >= 4) {
+        transposeScatter4(res, res_rowadr, res_colind, col_r, mat_r + s*nnz, r + s, nnz);
+        s += 4;
+      }
+      int rem = ns - s;
+      if (rem == 3) {
+        transposeScatter3(res, res_rowadr, res_colind, col_r, mat_r + s*nnz, r + s, nnz);
+      } else if (rem == 2) {
+        transposeScatter2(res, res_rowadr, res_colind, col_r, mat_r + s*nnz, r + s, nnz);
+      } else if (rem == 1) {
+        transposeScatter1(res, res_rowadr, res_colind, col_r, mat_r + s*nnz, r + s, nnz);
+      }
+
+      r += ns;
     }
+  }
+
+  // pattern-only scatter
+  else {
+    transposePattern(nr, res_rowadr, res_colind, rownnz, rowadr, colind, rowsuper);
   }
 
   // shift back row addresses
-  for (int i = nc-1; i > 0; i--) {
+  for (int i=nc-1; i > 0; i--) {
     res_rowadr[i] = res_rowadr[i-1];
   }
   res_rowadr[0] = 0;
+}
 
-  // accumulate supernodes
-  if (res_rowsuper) {
-    for (int i = nc - 2; i >= 0; i--) {
-      if (res_rowsuper[i]) {
-        res_rowsuper[i] += res_rowsuper[i + 1];
+
+// transpose sparse matrix, optionally compute output row supernodes and use input row supernodes
+void mju_transposeSparse(mjtNum* restrict res, const mjtNum* restrict mat, int nr, int nc,
+                         int* restrict res_rownnz, int* restrict res_rowadr,
+                         int* restrict res_colind, int* restrict res_rowsuper,
+                         const int* restrict rownnz, const int* restrict rowadr,
+                         const int* restrict colind, const int* restrict rowsuper) {
+  if (!nr || !nc) return;
+
+  // pass 1: count non-zeros per transposed row, compute res_rowsuper and res_rowadr
+  if (res_rownnz) {
+    // clear number of non-zeros for each row of transposed
+    mju_zeroInt(res_rownnz, nc);
+
+    // handle the case where the first row of mat is nonzero (offset wrt the base pointers)
+    int row_offset = rowadr[0];
+
+    // count non-zeros per transposed row, optionally tracking non-supernode column boundaries
+    if (res_rowsuper) {
+      for (int i=0; i < nc-1; i++) {
+        res_rowsuper[i] = 1;
+      }
+      res_rowsuper[nc-1] = 0;
+
+      for (int r=0; r < nr; ) {
+        int ns = rowsuper ? rowsuper[r] + 1 : 1;
+        int nnz = rownnz[r];
+        if (nnz > 0) {
+          const int* restrict col_r = colind + (rowadr[r] - row_offset);
+          int c_prev = col_r[0];
+          res_rownnz[c_prev] += ns;
+          if (c_prev > 0) {
+            res_rowsuper[c_prev-1] = 0;
+          }
+          for (int j=1; j < nnz; j++) {
+            int c = col_r[j];
+            res_rownnz[c] += ns;
+            if (c != c_prev + 1) {
+              res_rowsuper[c-1] = 0;
+            }
+            c_prev = c;
+          }
+        }
+        r += ns;
+      }
+
+      // finalize and accumulate output supernodes
+      for (int i=0; i < nc-1; i++) {
+        res_rowsuper[i] &= (res_rownnz[i] == res_rownnz[i+1]);
+      }
+      for (int i=nc-2; i >= 0; i--) {
+        if (res_rowsuper[i]) {
+          res_rowsuper[i] += res_rowsuper[i+1];
+        }
+      }
+    } else {
+      for (int r=0; r < nr; ) {
+        int ns = rowsuper ? rowsuper[r] + 1 : 1;
+        int nnz = rownnz[r];
+        if (nnz > 0) {
+          const int* restrict col_r = colind + (rowadr[r] - row_offset);
+          for (int j=0; j < nnz; j++) {
+            res_rownnz[col_r[j]] += ns;
+          }
+        }
+        r += ns;
       }
     }
+
+    // compute the row addresses for the transposed matrix
+    res_rowadr[0] = 0;
+    for (int i=1; i < nc; i++) {
+      res_rowadr[i] = res_rowadr[i-1] + res_rownnz[i-1];
+    }
   }
+
+  // pass 2: fill res_colind and optional res values (advances and restores res_rowadr)
+  transposeSparseScatter(res, mat, nr, nc, res_rowadr, res_colind,
+                         rownnz, rowadr, colind, rowsuper);
 }
 
 
@@ -1673,90 +1837,6 @@ void mju_blockDiag(mjtNum* restrict res, const mjtNum* restrict mat,
     int adr = nc_res * block_r[b];
     mju_block(res + adr, mat, nc_mat, block_nc[b], block_nr[b],
               perm_r + block_r[b], perm_c + block_c[b]);
-  }
-}
-
-
-// extract a single block of a sparse matrix
-//   res, res2     target matrix values
-//   res_rownnz    non-zeros in each row of target matrix
-//   res_rowadr    row address of each initial row in target matrix
-//   res_colind    column indices for each extracted value (relative)
-//   mat, mat2     source matrix values
-//   rownnz        non-zeros in each row of source matrix
-//   rowadr        addresses within the source matrix values
-//   colind        source matrix column indices
-//   nr            number of rows to extract
-//   perm_r        row permutation (maps local row to source row)
-//   perm_c        column permutation (maps source col to local col)
-//   col_offset    subtrahend to shift mapped absolute columns into relative block space
-//   res_offset    rowadr starting offset for the extracted submatrix
-void mju_blockSparse(mjtNum* restrict res, int* restrict res_rownnz,
-                     int* restrict res_rowadr, int* restrict res_colind,
-                     const mjtNum* restrict mat, const int* restrict rownnz,
-                     const int* restrict rowadr, const int* restrict colind,
-                     int nr,
-                     const int* restrict perm_r, const int* restrict perm_c,
-                     int col_offset, int res_offset,
-                     mjtNum* restrict res2, const mjtNum* restrict mat2) {
-  for (int r = 0; r < nr; r++) {
-    int k = perm_r[r];
-    int nnz = rownnz[k];
-    res_rownnz[r] = nnz;
-
-    int res_adr = (r == 0) ? res_offset : (res_rowadr[r-1] + res_rownnz[r-1]);
-    res_rowadr[r] = res_adr;
-
-    int* res_colind_r = res_colind + (res_adr - res_offset);
-    int mat_adr = rowadr[k];
-    const int* colind_k = colind + mat_adr;
-    for (int j = 0; j < nnz; j++) {
-      res_colind_r[j] = perm_c[colind_k[j]] - col_offset;
-    }
-
-    mju_copy(res + (res_adr - res_offset), mat + mat_adr, nnz);
-    if (mat2 && res2) {
-      mju_copy(res2 + (res_adr - res_offset), mat2 + mat_adr, nnz);
-    }
-  }
-}
-
-
-// block-diagonalize a sparse matrix
-//   res         values of the target matrix res
-//   res_rownnz  number of non-zeros in each row of res
-//   res_rowadr  row address of each non-zero in res
-//   res_colind  column index of each non-zero in res
-//   mat         values of the source matrix mat
-//   mat_rownnz  number of non-zeros in each row of mat
-//   mat_rowadr  row address of each non-zero in mat
-//   mat_colind  column index of each non-zero in mat
-//   nr          number of rows in mat/res
-//   nb          number of blocks
-//   perm_r      reverse permutation of rows (res -> mat)
-//   perm_c      forward permutation of columns (mat -> res)
-//   block_r     first row of each block in res
-//   block_c     first column of each block in res
-//   mat2        optional additional source matrix (same structure as mat)
-//   res2        optional additional target matrix (same structure as res)
-void mju_blockDiagSparse(mjtNum* restrict res, int* restrict res_rownnz,
-                         int* restrict res_rowadr, int* restrict res_colind,
-                         const mjtNum* restrict mat, const int* restrict rownnz,
-                         const int* restrict rowadr, const int* restrict colind,
-                         int nr, int nb,
-                         const int* restrict perm_r, const int* restrict perm_c,
-                         const int* restrict block_r, const int* restrict block_c,
-                         mjtNum* restrict res2, const mjtNum* restrict mat2) {
-  for (int b = 0; b < nb; b++) {
-    int nr_block = (b + 1 < nb ? block_r[b + 1] : nr) - block_r[b];
-    int res_adr = (block_r[b] == 0) ? 0 : (res_rowadr[block_r[b] - 1] + res_rownnz[block_r[b] - 1]);
-
-    mju_blockSparse(res + res_adr, res_rownnz + block_r[b],
-                    res_rowadr + block_r[b], res_colind + res_adr,
-                    mat, rownnz, rowadr, colind,
-                    nr_block, perm_r + block_r[b], perm_c,
-                    block_c[b], res_adr,
-                    res2 ? res2 + res_adr : NULL, mat2);
   }
 }
 

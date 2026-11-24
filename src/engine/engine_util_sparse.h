@@ -107,10 +107,14 @@ int mju_addToSparseMat(mjtNum* dst, const mjtNum* src, int n, int nrow, mjtNum s
 int mju_addChains(int* res, int n, int NV1, int NV2,
                   const int* chain1, const int* chain2);
 
-// transpose sparse matrix, optionally compute row supernodes
+// transpose sparse matrix, optionally compute output row supernodes and use input row supernodes
+//   if res is NULL: pattern-only (populate res_colind without copying values)
+//   if res_rownnz is NULL: skip counting pass (and res_rowsuper); res_rowadr must hold
+//     packed, zero-based precomputed row starts on entry (used as write cursors and restored)
 MJAPI void mju_transposeSparse(mjtNum* res, const mjtNum* mat, int nr, int nc,
-                               int* res_rownnz, int* res_rowadr, int* res_colind, int* res_rowsuper,
-                               const int* rownnz, const int* rowadr, const int* colind);
+                               int* res_rownnz, int* res_rowadr, int* res_colind,
+                               int* res_rowsuper, const int* rownnz, const int* rowadr,
+                               const int* colind, const int* rowsuper);
 
 // construct row supernodes
 MJAPI void mju_superSparse(int nr, int* rowsuper,
@@ -173,24 +177,6 @@ MJAPI void mju_blockDiag(mjtNum* res, const mjtNum* mat, int nc_mat, int nc_res,
                          const int* perm_r, const int* perm_c,
                          const int* block_nr, const int* block_nc,
                          const int* block_r, const int* block_c);
-
-// extract a single block of a sparse matrix
-MJAPI void mju_blockSparse(
-  mjtNum* res, int* res_rownnz, int* res_rowadr, int* res_colind,
-  const mjtNum* mat, const int* rownnz, const int* rowadr, const int* colind,
-  int nr,
-  const int* perm_r, const int* perm_c,
-  int col_offset, int res_offset,
-  mjtNum* res2, const mjtNum* mat2);
-
-// block-diagonalize a sparse matrix
-MJAPI void mju_blockDiagSparse(
-  mjtNum* res, int* res_rownnz, int* res_rowadr, int* res_colind,
-  const mjtNum* mat, const int* rownnz, const int* rowadr, const int* colind,
-  int nr, int nb,
-  const int* perm_r, const int* perm_c,
-  const int* block_r, const int* block_c,
-  mjtNum* res2, const mjtNum* mat2);
 
 // sort sparse row (colind, val) of length nnz ascending by colind
 MJAPI void mju_sortSparseRow(int nnz, int* colind, mjtNum* val);
