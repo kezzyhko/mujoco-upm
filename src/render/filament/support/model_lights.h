@@ -33,6 +33,9 @@ class ModelLights {
   // Updates the state of the lights in the scene.
   void Update(const mjData* data = nullptr);
 
+  // Sets the visualization options for lights, applied on the next Update().
+  void SetOptions(const mjvOption& opt);
+
   // Returns the light with the given index in the mjModel.
   mjrfLight* GetLight(int index);
 
@@ -54,17 +57,19 @@ class ModelLights {
 
   mjrfScene* scene_ = nullptr;
   ModelResources* model_resources_ = nullptr;
+  mjvOption vopts_;
 
   UniquePtr<mjrfLight> fallback_ibl_{nullptr, nullptr};
   UniquePtr<mjrfTexture> fallback_ibl_texture_{nullptr, nullptr};
   std::vector<UniquePtr<mjrfLight>> lights_;
   int shadowsize_ = 0;
   int shadow_map_size_ = 0;
-  float fallback_head_light_intensity_ = 40'000.f;
+  float fallback_head_light_intensity_ = 150'000.f;
   float headlight_intensity_ = 0.f;
-  float fallback_scene_light_intensity_ = 80'000.f;
+  float fallback_scene_light_intensity_ = 120'000.f;
   float fallback_intensity_ = 0.f;
-  float fallback_environment_light_intensity_ = 5'000.f;
+  float fallback_environment_light_intensity_ = 30'000.f;
+  float fallback_environment_light_diffuse_scale_ = 0.2f;
 };
 
 }  // namespace mujoco

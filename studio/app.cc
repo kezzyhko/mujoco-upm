@@ -67,6 +67,7 @@
 #include "studio/ux/picture_gui.h"
 #include "studio/ux/plugin.h"
 #include "studio/ux/status_bar.h"
+#include "studio/ux/touch_gesture.h"
 
 namespace mujoco::studio {
 
@@ -879,11 +880,36 @@ void App::HandleWindowEvents() {
 
 void App::HandleMouseEvents() {
   auto& io = ImGui::GetIO();
-  if (io.WantCaptureMouse) {
-    return;
+  const TouchGestureState& touch = window_->GetTouchGesture();
+  if (touch.active) {
+    if (touch.just_started) {
+      const ImVec2 origin(touch.origin_x, touch.origin_y);
+      tmp_.pinch_mouse_focus = !io.WantCaptureMouse && !HitTestImGuiWindows(origin);
+    }
+  } else {
+    tmp_.pinch_mouse_focus = false;
   }
 
   if (!has_model() || !has_data()) {
+    return;
+  }
+
+  if (touch.active) {
+    perturb_.active = 0;
+    if (tmp_.pinch_mouse_focus && io.DisplaySize.x > 0 && io.DisplaySize.y > 0) {
+      CameraInput camera_input{};
+      camera_input.mouse_focus = true;
+      camera_input.aspect_ratio = window_->GetDrawableAspectRatio();
+      camera_input.pinch_zoom = touch.pinch_log_scale;
+      camera_input.pan_dx = touch.pan_dx_px / io.DisplaySize.x;
+      camera_input.pan_dy = touch.pan_dy_px / io.DisplaySize.y;
+      camera_input.twist_angle = touch.twist_angle;
+      MoveCameraWithMouse(model(), &camera_, tmp_.camera_idx == kFreeCameraIdx, camera_input);
+    }
+    return;
+  }
+
+  if (io.WantCaptureMouse) {
     return;
   }
 
@@ -929,14 +955,19 @@ void App::HandleMouseEvents() {
     }
   }
 
-  // Camera drags and wheel (Ctrl drags are left to the perturbation above).
+  // Camera drags and wheel (Ctrl drags are left to the perturbation above;
+  // multi-touch gestures are handled before mouse capture above).
   MoveCameraWithMouse(model(), &camera_, tmp_.camera_idx == kFreeCameraIdx, ReadImGuiCameraInput());
+
+  const bool is_touch = io.MouseSource == ImGuiMouseSource_TouchScreen;
+  const float pick_tol =
+      (is_touch && io.DisplaySize.y > 0.0f) ? (kTouchPickTolerancePx / io.DisplaySize.y) : 0.0f;
 
   // Left double click.
   if (ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left)) {
     const mjrCamera view_camera = ViewCamera(model(), data(), &camera_, aspect_ratio);
     PickResult picked =
-        Pick(model(), data(), view_camera, mouse_x, mouse_y, aspect_ratio, &vis_options_);
+        Pick(model(), data(), view_camera, mouse_x, mouse_y, aspect_ratio, &vis_options_, pick_tol);
     if (picked.body >= 0) {
       perturb_.select = picked.body;
       perturb_.flexselect = picked.flex;
@@ -968,7 +999,7 @@ void App::HandleMouseEvents() {
   if (ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Right)) {
     const mjrCamera view_camera = ViewCamera(model(), data(), &camera_, aspect_ratio);
     PickResult picked =
-        Pick(model(), data(), view_camera, mouse_x, mouse_y, aspect_ratio, &vis_options_);
+        Pick(model(), data(), view_camera, mouse_x, mouse_y, aspect_ratio, &vis_options_, pick_tol);
     mju_copy3(camera_.lookat, picked.point);
     if (picked.body > 0 && io.KeyCtrl) {
       // Switch camera to tracking mode and track the selected body.
@@ -2393,8 +2424,7 @@ void App::FileDialogGui() {
     }
 
     if (res.status != DialogResult::kError) {
-      strncpy(tmp_.filename, res.path.c_str(), res.path.size());
-      tmp_.filename[res.path.size()] = 0;
+      tmp_.filename = res.path;
     }
     if (res.status != DialogResult::kPending) {
       tmp_.file_dialog = UiTempState::FileDialog_None;
@@ -2405,9 +2435,7 @@ void App::FileDialogGui() {
   }
 
   if (!ImGui::IsPopupOpen("FileDialog") && tmp_.file_dialog != UiTempState::FileDialog_None) {
-    const std::string& src = tmp_.last_path[tmp_.file_dialog];
-    strncpy(tmp_.filename, src.c_str(), src.size());
-    tmp_.filename[src.size()] = 0;
+    tmp_.filename = tmp_.last_path[tmp_.file_dialog];
     ImGui::OpenPopup("FileDialog");
     window_->DisableWindowResizing();
   }

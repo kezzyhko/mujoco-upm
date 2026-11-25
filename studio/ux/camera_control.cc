@@ -15,6 +15,7 @@
 #include "studio/ux/camera_control.h"
 
 #include <algorithm>
+#include <cmath>
 
 #include <imgui.h>
 #include <mujoco/mujoco.h>
@@ -30,6 +31,11 @@ static constexpr float kMaxFastFlySpeed = 0.1f;
 
 // Wheel steps per unit of zoom motion.
 static constexpr float kWheelStepsPerZoom = 50.0f;
+
+// Calibrates pinch log-scale ln(span_curr / span_prev) to mjv_moveCamera's
+// mjMOUSE_ZOOM formula (d -= 9 * E * ln(1 + d / (3 * E)) * reldy) so doubling
+// finger span halves camera distance in the near/mid field (d << 3 * E).
+static constexpr float kPinchZoomDivisor = 3.0f;
 
 // Returns `button`'s ButtonState flags this frame.
 static int ReadImGuiButton(ImGuiMouseButton button) {
@@ -109,6 +115,39 @@ bool MoveCameraWithMouse(const mjModel* m, mjvCamera* cam, bool fly_camera,
   if (input.mouse_wheel != 0 && !fly_camera) {
     mjv_moveCamera(m, mjMOUSE_ZOOM, 0, -input.mouse_wheel / kWheelStepsPerZoom, cam);
     moved = true;
+  }
+
+  // Two-finger midpoint pan moves in the vertical/horizontal plane like right
+  // drag (including portrait 1 / aspect_ratio vertical span scaling);
+  // two-finger pinch zooms in tumble/tracking mode and dollies forward/backward
+  // in the fly camera (where touchscreens have no W/S keys); two-finger twist
+  // rotates azimuth weighted by -sin(elevation) so turntable spinning matches
+  // fingertip motion above/below the ground plane and fades to zero at the
+  // horizon (elevation == 0).
+  if ((input.pan_dx != 0 || input.pan_dy != 0) && !input.ctrl) {
+    const float pan_dy = input.pan_dy * PortraitFovScale(cam, input.aspect_ratio);
+    mjv_moveCamera(m, input.shift ? mjMOUSE_MOVE_H : mjMOUSE_MOVE_V, input.pan_dx, pan_dy, cam);
+    moved = true;
+  }
+  if (input.pinch_zoom != 0) {
+    if (fly_camera) {
+      mjv_moveCamera(m, mjMOUSE_MOVE_H_REL, 0, m->stat.extent * input.pinch_zoom, cam);
+    } else {
+      mjv_moveCamera(m, mjMOUSE_ZOOM, 0, input.pinch_zoom / kPinchZoomDivisor, cam);
+    }
+    moved = true;
+  }
+  if (input.twist_angle != 0 && !input.ctrl) {
+    // mjv_moveCamera subtracts `reldx * 180` from `cam->azimuth`, so passing
+    // `reldx = sin(elevation) * (twist_angle / pi)` yields
+    // `delta_azimuth_deg = -sin(elevation) * twist_angle_deg`.
+    const double elevation_rad = static_cast<double>(cam->elevation) * (mjPI / 180.0);
+    const mjtNum twist_reldx = static_cast<mjtNum>(std::sin(elevation_rad) *
+                                                   (static_cast<double>(input.twist_angle) / mjPI));
+    if (twist_reldx != 0) {
+      mjv_moveCamera(m, fly_camera ? mjMOUSE_TURN_H : mjMOUSE_ROTATE_H, twist_reldx, 0, cam);
+      moved = true;
+    }
   }
   return moved;
 }

@@ -14,6 +14,7 @@
 
 #include "studio/ux/camera_control.h"
 
+#include <cmath>
 #include <initializer_list>
 
 #include "testing/base/public/gunit.h"
@@ -221,6 +222,162 @@ TEST_F(CameraControlTest, WheelZoomsExceptTheFlyCamera) {
   EXPECT_TRUE(MoveCameraWithMouse(model_, &camera_,
                                   /*fly_camera=*/false, input));
   ExpectSameCamera(camera_, expected);
+}
+
+TEST_F(CameraControlTest, PinchZoomsTumbleAndDolliesFlyCamera) {
+  constexpr float kPinch = 0.6f;
+  CameraInput input = Drag(0, 0);
+  input.pinch_zoom = kPinch;
+
+  const mjvCamera expected_tumble = Moved({{mjMOUSE_ZOOM, 0, kPinch / 3.0f}});
+  const mjtNum initial_distance = camera_.distance;
+  EXPECT_TRUE(MoveCameraWithMouse(model_, &camera_,
+                                  /*fly_camera=*/false, input));
+  ExpectSameCamera(camera_, expected_tumble);
+  EXPECT_LT(camera_.distance, initial_distance);
+
+  mjv_defaultFreeCamera(model_, &camera_);
+  const mjvCamera expected_fly = Moved({{mjMOUSE_MOVE_H_REL, 0, model_->stat.extent * kPinch}});
+  EXPECT_TRUE(MoveCameraWithMouse(model_, &camera_,
+                                  /*fly_camera=*/true, input));
+  ExpectSameCamera(camera_, expected_fly);
+}
+
+TEST_F(CameraControlTest, TwoFingerPanMovesInPlaneShiftPicks) {
+  CameraInput input = Drag(0, 0);
+  input.pan_dx = kDx;
+  input.pan_dy = kDy;
+  const mjvCamera expected_v = Moved({{mjMOUSE_MOVE_V, kDx, kDy}});
+
+  EXPECT_TRUE(MoveCameraWithMouse(model_, &camera_,
+                                  /*fly_camera=*/false, input));
+  ExpectSameCamera(camera_, expected_v);
+
+  mjv_defaultFreeCamera(model_, &camera_);
+  input.shift = true;
+  const mjvCamera expected_h = Moved({{mjMOUSE_MOVE_H, kDx, kDy}});
+  EXPECT_TRUE(MoveCameraWithMouse(model_, &camera_,
+                                  /*fly_camera=*/false, input));
+  ExpectSameCamera(camera_, expected_h);
+
+  // Portrait viewports (< 1:1) scale pan_dy by 1 / aspect_ratio, matching right drag.
+  constexpr float kPortraitAspect = 0.5f;
+  mjv_defaultFreeCamera(model_, &camera_);
+  input.shift = false;
+  input.aspect_ratio = kPortraitAspect;
+  const mjvCamera expected_portrait = Moved({{mjMOUSE_MOVE_V, kDx, kDy / kPortraitAspect}});
+  EXPECT_TRUE(MoveCameraWithMouse(model_, &camera_,
+                                  /*fly_camera=*/false, input));
+  ExpectSameCamera(camera_, expected_portrait);
+}
+
+TEST_F(CameraControlTest, TouchPreservesOneFingerOrbitAndTwoFingerPan) {
+  CameraInput one_finger = Drag(kDx, kDy);
+  one_finger.left_button = kButtonPressed;
+  const mjvCamera expected_orbit = Moved({{mjMOUSE_ROTATE_H, kDx, 0}, {mjMOUSE_ROTATE_V, 0, kDy}});
+
+  EXPECT_TRUE(MoveCameraWithMouse(model_, &camera_,
+                                  /*fly_camera=*/false, one_finger));
+  ExpectSameCamera(camera_, expected_orbit);
+
+  mjv_defaultFreeCamera(model_, &camera_);
+  constexpr float kPortraitAspect = 0.5f;
+  CameraInput two_finger_pan = Drag(0, 0);
+  two_finger_pan.pan_dx = kDx;
+  two_finger_pan.pan_dy = kDy;
+  two_finger_pan.aspect_ratio = kPortraitAspect;
+  const mjvCamera expected_pan = Moved({{mjMOUSE_MOVE_V, kDx, kDy / kPortraitAspect}});
+
+  EXPECT_TRUE(MoveCameraWithMouse(model_, &camera_,
+                                  /*fly_camera=*/false, two_finger_pan));
+  ExpectSameCamera(camera_, expected_pan);
+}
+
+TEST_F(CameraControlTest, TwoFingerTwistSpinsTurntableWeightedByElevation) {
+  constexpr float kTwistRad = 0.4f;  // Clockwise screen twist (~22.92 deg).
+
+  // 1. Ctrl-held ignores twist_angle (left to perturbation).
+  camera_.azimuth = 10.0;
+  camera_.elevation = -60.0;
+  CameraInput ctrl_twist = Drag(0, 0);
+  ctrl_twist.twist_angle = kTwistRad;
+  ctrl_twist.ctrl = true;
+  const mjvCamera unmoved = camera_;
+  EXPECT_FALSE(MoveCameraWithMouse(model_, &camera_,
+                                   /*fly_camera=*/false, ctrl_twist));
+  ExpectSameCamera(camera_, unmoved);
+
+  // 2. Top-down view (elevation = -89 deg): clockwise twist increases azimuth
+  // nearly 1:1 (-sin(-89 deg) * twist_deg > 0).
+  camera_.azimuth = 10.0;
+  camera_.elevation = -89.0;
+  CameraInput touch_twist = Drag(0, 0);
+  touch_twist.twist_angle = kTwistRad;
+  const mjtNum top_reldx =
+      static_cast<mjtNum>(std::sin(-89.0 * (mjPI / 180.0)) * (kTwistRad / mjPI));
+  const mjvCamera expected_top = Moved({{mjMOUSE_ROTATE_H, top_reldx, 0}});
+  EXPECT_TRUE(MoveCameraWithMouse(model_, &camera_,
+                                  /*fly_camera=*/false, touch_twist));
+  ExpectSameCamera(camera_, expected_top);
+  EXPECT_NEAR(static_cast<double>(camera_.azimuth),
+              10.0 - std::sin(-89.0 * (mjPI / 180.0)) * (kTwistRad * 180.0 / mjPI), 1e-4);
+
+  // 3. Bottom-up view (elevation = +89 deg): clockwise twist flips azimuth sign
+  // (-sin(+89 deg) * twist_deg < 0) so the ceiling still turns with the fingers.
+  camera_.azimuth = 10.0;
+  camera_.elevation = 89.0;
+  const mjtNum bottom_reldx =
+      static_cast<mjtNum>(std::sin(89.0 * (mjPI / 180.0)) * (kTwistRad / mjPI));
+  const mjvCamera expected_bottom = Moved({{mjMOUSE_ROTATE_H, bottom_reldx, 0}});
+  EXPECT_TRUE(MoveCameraWithMouse(model_, &camera_,
+                                  /*fly_camera=*/false, touch_twist));
+  ExpectSameCamera(camera_, expected_bottom);
+  EXPECT_LT(camera_.azimuth, 10.0);
+
+  // 4. Horizon view (elevation = 0 deg): -sin(0) == 0, so twist moves nothing.
+  camera_.azimuth = 10.0;
+  camera_.elevation = 0.0;
+  const mjvCamera horizon_unmoved = camera_;
+  EXPECT_FALSE(MoveCameraWithMouse(model_, &camera_,
+                                   /*fly_camera=*/false, touch_twist));
+  ExpectSameCamera(camera_, horizon_unmoved);
+
+  // 5. Fly camera turns azimuth with mjMOUSE_TURN_H, and simultaneous pan +
+  // pinch + twist in tumble mode composes all three gestures.
+  mjv_defaultFreeCamera(model_, &camera_);
+  camera_.elevation = -45.0;
+  const mjtNum fly_reldx =
+      static_cast<mjtNum>(std::sin(-45.0 * (mjPI / 180.0)) * (kTwistRad / mjPI));
+  const mjvCamera expected_fly = Moved({{mjMOUSE_TURN_H, fly_reldx, 0}});
+  EXPECT_TRUE(MoveCameraWithMouse(model_, &camera_,
+                                  /*fly_camera=*/true, touch_twist));
+  ExpectSameCamera(camera_, expected_fly);
+
+  mjv_defaultFreeCamera(model_, &camera_);
+  camera_.elevation = -45.0;
+  CameraInput combined = touch_twist;
+  combined.pan_dx = kDx;
+  combined.pan_dy = kDy;
+  combined.pinch_zoom = 0.6f;
+  const mjvCamera expected_combined = Moved({{mjMOUSE_MOVE_V, kDx, kDy},
+                                             {mjMOUSE_ZOOM, 0, 0.6f / 3.0f},
+                                             {mjMOUSE_ROTATE_H, fly_reldx, 0}});
+  EXPECT_TRUE(MoveCameraWithMouse(model_, &camera_,
+                                  /*fly_camera=*/false, combined));
+  ExpectSameCamera(camera_, expected_combined);
+}
+
+TEST_F(CameraControlTest, PinchAndPanWithoutFocusMoveNothing) {
+  CameraInput input;
+  input.pinch_zoom = 0.5f;
+  input.pan_dx = kDx;
+  input.pan_dy = kDy;
+  input.mouse_focus = false;
+  const mjvCamera unmoved = camera_;
+
+  EXPECT_FALSE(MoveCameraWithMouse(model_, &camera_,
+                                   /*fly_camera=*/false, input));
+  ExpectSameCamera(camera_, unmoved);
 }
 
 TEST_F(CameraControlTest, KeysFlyFasterWhileHeldAndResetOnRelease) {

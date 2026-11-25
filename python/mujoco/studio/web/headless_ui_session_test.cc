@@ -117,6 +117,12 @@ class HeadlessUiSessionTest : public ::testing::Test {
         session->QueueClipboard(text);
       }
     };
+    platform_io.Platform_GetClipboardTextFn =
+        [](ImGuiContext*) -> const char* {
+      const auto* session = static_cast<const HeadlessUiSession*>(
+          ImGui::GetPlatformIO().Platform_ClipboardUserData);
+      return session ? session->GetClipboardText() : nullptr;
+    };
   }
 
   ~HeadlessUiSessionTest() override { ImGui::DestroyContext(context_); }
@@ -604,12 +610,138 @@ TEST_F(HeadlessUiSessionTest, ForwardsClipboardTextWithNextFrame) {
   BeginFrame();
   Connect();
   ImGui::SetClipboardText("stale secret");
+  // Nor is it kept as the UI's clipboard for the new browser to paste.
+  EXPECT_STRNE(session_.GetClipboardText(), "stale secret");
   EndFrame("Hello");
   RunFrame("Hello");
   messages = session_.TakeMessages();
   for (const netui::Bytes& msg : messages) {
     EXPECT_NE(KindOf(msg), netui::MessageKind::kClipboard);
   }
+}
+
+TEST_F(HeadlessUiSessionTest, PastesIncomingBrowserClipboardIntoInputText) {
+  Connect();
+  char buf[128] = "";
+  ImVec2 input_pos(0.0f, 0.0f);
+
+  auto run_input_text_frame = [&]() {
+    session_.ApplyInput();
+    ImGui::NewFrame();
+    ImGui::SetNextWindowPos(ImVec2(10, 10));
+    ImGui::SetNextWindowSize(ImVec2(300, 100));
+    ImGui::Begin("PasteWin");
+    const ImVec2 cur = ImGui::GetCursorScreenPos();
+    input_pos = ImVec2(cur.x + 10.0f, cur.y + 5.0f);
+    ImGui::InputText("##uri", buf, sizeof(buf));
+    ImGui::End();
+    ImGui::Render();
+    session_.CaptureFrame(ImGuiMouseCursor_Arrow);
+  };
+
+  // Layout frame, click the InputText widget, and complete the click so
+  // InputText registers its shortcut routes before the paste arrives.
+  run_input_text_frame();
+  netui::Input click;
+  click.screen_size[0] = 640;
+  click.screen_size[1] = 480;
+  click.mouse_pos[0] = input_pos.x;
+  click.mouse_pos[1] = input_pos.y;
+  click.mouse_down_mask = 1u << ImGuiMouseButton_Left;
+  ASSERT_TRUE(PushInput(click));
+  run_input_text_frame();
+  click.mouse_down_mask = 0;
+  ASSERT_TRUE(PushInput(click));
+  run_input_text_frame();
+
+  // Pushing a browser kClipboard message pastes the full UTF-8 URI into the
+  // active InputText immediately on the next frame.
+  const std::string kText = "https://mujoco.org/models/humanoid.xml";
+  ASSERT_TRUE(session_.PushInput(netui::EncodeClipboard(kText)));
+  // Open-URL clipboard messages from a client are rejected as input.
+  EXPECT_FALSE(
+      session_.PushInput(netui::EncodeClipboard("https://example.com", true)));
+
+  run_input_text_frame();
+  EXPECT_STREQ(buf, kText.c_str());
+
+  // The synthesized paste key releases cleanly on the following frame.
+  run_input_text_frame();
+  EXPECT_FALSE(ImGui::IsKeyDown(ImGuiKey_V));
+  EXPECT_STREQ(buf, kText.c_str());
+
+  // Two pastes that arrive together are applied one after the other, with the
+  // paste keys released in between, so both register.
+  ASSERT_TRUE(session_.PushInput(netui::EncodeClipboard("_a")));
+  ASSERT_TRUE(session_.PushInput(netui::EncodeClipboard("_b")));
+  run_input_text_frame();
+  EXPECT_STREQ(buf, (kText + "_a").c_str());
+  run_input_text_frame();
+  run_input_text_frame();
+  EXPECT_STREQ(buf, (kText + "_a_b").c_str());
+  run_input_text_frame();
+
+  // Also verify macOS Cmd+V behavior (kMacOsBehaviors) with trickle enabled.
+  ImGui::GetIO().ConfigInputTrickleEventQueue = true;
+  netui::Input mac_input = click;
+  mac_input.header.flags = netui::Input::kMacOsBehaviors;
+  mac_input.SetImGuiKeyDown(ImGuiKey_LeftSuper);
+  mac_input.SetImGuiKeyDown(ImGuiKey_ReservedForModSuper);
+  ASSERT_TRUE(PushInput(mac_input));
+  ASSERT_TRUE(session_.PushInput(netui::EncodeClipboard("_mac")));
+  run_input_text_frame();
+  EXPECT_STREQ(buf, (kText + "_a_b_mac").c_str());
+  run_input_text_frame();
+  EXPECT_FALSE(ImGui::IsKeyDown(ImGuiKey_V));
+  EXPECT_TRUE(ImGui::GetIO().KeyCtrl);
+}
+
+TEST_F(HeadlessUiSessionTest, SessionChangeReleasesPasteKeysAndHeldKeys) {
+  Connect();
+  RunFrame("Frame");  // A session's first frame only releases old input.
+  ImGuiIO& io = ImGui::GetIO();
+
+  // The browser holds Shift (as for a Shift+Insert paste) and pastes.
+  netui::Input shift;
+  shift.screen_size[0] = 640;
+  shift.screen_size[1] = 480;
+  shift.SetImGuiKeyDown(ImGuiKey_LeftShift);
+  shift.SetImGuiKeyDown(ImGuiKey_ReservedForModShift);
+  ASSERT_TRUE(PushInput(shift));
+  ASSERT_TRUE(session_.PushInput(netui::EncodeClipboard("pasted")));
+  RunFrame("Frame");
+  ASSERT_TRUE(ImGui::IsKeyDown(ImGuiKey_V));
+  ASSERT_TRUE(io.KeyCtrl);
+  ASSERT_FALSE(io.KeyShift);
+  ASSERT_STREQ(session_.GetClipboardText(), "pasted");
+
+  // Control changes hands while the synthetic paste keys are still down: the
+  // next frame lifts them along with everything the old browser held, and
+  // forgets its clipboard text. With Dear ImGui spreading input over frames as
+  // it does outside tests, this also checks the old browser's Shift is not
+  // pressed again on the way to being released.
+  io.ConfigInputTrickleEventQueue = true;
+  session_.EndSession();
+  Connect();
+  RunFrame("Frame");
+  EXPECT_FALSE(ImGui::IsKeyDown(ImGuiKey_V));
+  EXPECT_FALSE(io.KeyCtrl);
+  EXPECT_FALSE(io.KeyShift);
+  EXPECT_FALSE(ImGui::IsKeyDown(ImGuiKey_LeftShift));
+  EXPECT_STREQ(session_.GetClipboardText(), "");
+
+  // No paste release is left owed: a Ctrl the new browser holds stays held.
+  netui::Input ctrl;
+  ctrl.screen_size[0] = 640;
+  ctrl.screen_size[1] = 480;
+  ctrl.SetImGuiKeyDown(ImGuiKey_LeftCtrl);
+  ctrl.SetImGuiKeyDown(ImGuiKey_ReservedForModCtrl);
+  ASSERT_TRUE(PushInput(ctrl));
+  RunFrame("Frame");
+  EXPECT_TRUE(io.KeyCtrl);
+  RunFrame("Frame");
+  EXPECT_TRUE(io.KeyCtrl);
+  EXPECT_FALSE(ImGui::IsKeyDown(ImGuiKey_V));
 }
 
 TEST_F(HeadlessUiSessionTest,
@@ -694,6 +826,51 @@ TEST_F(HeadlessUiSessionTest, AppliesFramebufferScaleAndMacOsModifierSwap) {
   EXPECT_FALSE(ImGui::IsKeyDown(ImGuiKey_LeftCtrl));
   EXPECT_FALSE(ImGui::IsKeyDown(ImGuiKey_LeftSuper));
   EndFrame("Linux");
+}
+
+TEST_F(HeadlessUiSessionTest, TracksTouchScreenSourceAndDoubleClickThresholds) {
+  StartSession();
+
+  // Mouse client keeps Dear ImGui default mouse source and double-click
+  // thresholds.
+  netui::Input mouse_input;
+  mouse_input.screen_size[0] = 1280;
+  mouse_input.screen_size[1] = 720;
+  mouse_input.mouse_pos[0] = 100.0f;
+  mouse_input.mouse_pos[1] = 100.0f;
+  ASSERT_TRUE(PushInput(mouse_input));
+  BeginFrame();
+  ImGuiIO& io = ImGui::GetIO();
+  EXPECT_EQ(io.MouseSource, ImGuiMouseSource_Mouse);
+  EXPECT_FLOAT_EQ(io.MouseDoubleClickTime, 0.30f);
+  EXPECT_FLOAT_EQ(io.MouseDoubleClickMaxDist, 6.0f);
+  EXPECT_FLOAT_EQ(io.MouseSingleClickDelay, 0.50f);
+  EndFrame("Mouse");
+
+  // Direct touch input switches ImGui's MouseSource to TouchScreen and uses
+  // touch double-tap thresholds.
+  netui::Input touch_input;
+  touch_input.screen_size[0] = 390;
+  touch_input.screen_size[1] = 844;
+  touch_input.mouse_pos[0] = 200.0f;
+  touch_input.mouse_pos[1] = 300.0f;
+  touch_input.header.flags = netui::Input::kTouchScreen;
+  ASSERT_TRUE(PushInput(touch_input));
+  BeginFrame();
+  EXPECT_EQ(io.MouseSource, ImGuiMouseSource_TouchScreen);
+  EXPECT_FLOAT_EQ(io.MouseDoubleClickTime, 0.50f);
+  EXPECT_FLOAT_EQ(io.MouseDoubleClickMaxDist, 32.0f);
+  EXPECT_FLOAT_EQ(io.MouseSingleClickDelay, 0.60f);
+  EndFrame("TouchScreen");
+
+  // Ending the session restores Mouse source and desktop defaults.
+  session_.EndSession();
+  BeginFrame();
+  EXPECT_EQ(io.MouseSource, ImGuiMouseSource_Mouse);
+  EXPECT_FLOAT_EQ(io.MouseDoubleClickTime, 0.30f);
+  EXPECT_FLOAT_EQ(io.MouseDoubleClickMaxDist, 6.0f);
+  EXPECT_FLOAT_EQ(io.MouseSingleClickDelay, 0.50f);
+  EndFrame("Disconnected");
 }
 }  // namespace
 }  // namespace mujoco::studio

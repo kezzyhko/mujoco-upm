@@ -19,11 +19,12 @@
 #include <mujoco/mjdata.h>
 #include <mujoco/mjsan.h>  // IWYU pragma: keep
 #include "engine/engine_crossplatform.h"
+#include "engine/engine_memory.h"
+#include "engine/engine_simd.h"
 #include "engine/engine_util_blas.h"
 #include "engine/engine_util_errmem.h"
 #include "engine/engine_util_misc.h"
 #include "engine/engine_util_sparse.h"
-#include "engine/engine_memory.h"
 
 //---------------------------- dense Cholesky ------------------------------------------------------
 
@@ -70,30 +71,182 @@ int mju_cholFactor(mjtNum* restrict mat, int n, mjtNum mindiag) {
 
 // Cholesky solve
 void mju_cholSolve(mjtNum* res, const mjtNum* restrict mat, const mjtNum* vec, int n) {
+  // nothing to do
+  if (n <= 0) {
+    return;
+  }
+
   // copy if source and destination are different
   if (res != vec) {
     mju_copy(res, vec, n);
   }
 
-  // forward substitution: solve L*res = vec
-  for (int i=0; i < n; i++) {
+  // 4-row blocking parameters (n4 is multiple of 4, rem in 0..3)
+  const mjtNum4 one = v4_splat(1);
+  const size_t sn = n;
+  const int n4 = n & ~3;
+  const int rem = n - n4;
+  mjtNum4 last_inv = one;
+
+  // forward substitution: solve L*res = vec (4-row blocked with parallel diagonal reciprocals)
+  //   scalar equivalent:
+  //     for (int i=0; i < n; i++) {
+  //       if (i) res[i] -= mju_dot(mat+i*n, res, i);
+  //       res[i] /= mat[i*(n+1)];
+  //     }
+  for (int i=0; i < n4; i += 4) {
+    const mjtNum* restrict r0 = mat + (i+0)*sn;
+    const mjtNum* restrict r1 = mat + (i+1)*sn;
+    const mjtNum* restrict r2 = mat + (i+2)*sn;
+    const mjtNum* restrict r3 = mat + (i+3)*sn;
+
+    // diagonal reciprocals overlapped with off-diagonal dot products
+    mjtNum4 inv = v4_div(one, v4_set(r0[i+0], r1[i+1], r2[i+2], r3[i+3]));
+    last_inv = inv;
+
     // off-diagonal
+    mjtNum b[4];
     if (i) {
-      res[i] -= mju_dot(mat+i*n, res, i);
+      mjtNum4 s0 = v4_splat(0), s1 = v4_splat(0), s2 = v4_splat(0), s3 = v4_splat(0);
+      for (int k=0; k < i; k += 4) {
+        mjtNum4 v = v4_load(res+k);
+        s0 = v4_add(s0, v4_mul(v4_load(r0+k), v));
+        s1 = v4_add(s1, v4_mul(v4_load(r1+k), v));
+        s2 = v4_add(s2, v4_mul(v4_load(r2+k), v));
+        s3 = v4_add(s3, v4_mul(v4_load(r3+k), v));
+      }
+
+      // reduce partial sums and subtract from rhs
+      v4_transpose(&s0, &s1, &s2, &s3);
+      mjtNum4 sums = v4_add(v4_add(s0, s2), v4_add(s1, s3));
+      v4_store(b, v4_sub(v4_load(res+i), sums));
+    } else {
+      v4_store(b, v4_load(res+i));
     }
 
-    // diagonal
-    res[i] /= mat[i*(n+1)];
+    // diagonal: solve 4x4 lower-triangular block
+    mjtNum inv_d[4];
+    v4_store(inv_d, inv);
+    mjtNum x0 = b[0] * inv_d[0];
+    mjtNum x1 = (b[1] - r1[i+0]*x0) * inv_d[1];
+    mjtNum x2 = (b[2] - r2[i+0]*x0 - r2[i+1]*x1) * inv_d[2];
+    mjtNum x3 = (b[3] - r3[i+0]*x0 - r3[i+1]*x1 - r3[i+2]*x2) * inv_d[3];
+    v4_store(res+i, v4_set(x0, x1, x2, x3));
+  }
+
+  // forward tail (1..3 rows); reuse diagonal reciprocals in backward tail
+  mjtNum inv_tail[4] = {0, 0, 0, 0};
+  if (rem) {
+    const mjtNum* restrict r0 = mat + (n4+0)*sn;
+    const mjtNum* restrict r1 = rem > 1 ? mat + (n4+1)*sn : NULL;
+    const mjtNum* restrict r2 = rem > 2 ? mat + (n4+2)*sn : NULL;
+
+    // diagonal reciprocals
+    mjtNum4 inv = v4_div(one, v4_set(r0[n4], rem > 1 ? r1[n4+1] : 1, rem > 2 ? r2[n4+2] : 1, 1));
+
+    // off-diagonal
+    mjtNum b0 = res[n4];
+    mjtNum b1 = rem > 1 ? res[n4+1] : 0;
+    mjtNum b2 = rem > 2 ? res[n4+2] : 0;
+    if (n4) {
+      mjtNum4 s0 = v4_splat(0), s1 = v4_splat(0), s2 = v4_splat(0);
+      for (int k=0; k < n4; k += 4) {
+        mjtNum4 v = v4_load(res+k);
+        s0 = v4_add(s0, v4_mul(v4_load(r0+k), v));
+        if (rem > 1) s1 = v4_add(s1, v4_mul(v4_load(r1+k), v));
+        if (rem > 2) s2 = v4_add(s2, v4_mul(v4_load(r2+k), v));
+      }
+      b0 -= v4_sum(s0);
+      if (rem > 1) b1 -= v4_sum(s1);
+      if (rem > 2) b2 -= v4_sum(s2);
+    }
+
+    // diagonal: solve 1..3-row lower-triangular tail
+    v4_store(inv_tail, inv);
+    mjtNum x0 = b0 * inv_tail[0];
+    res[n4] = x0;
+    if (rem > 1) {
+      mjtNum x1 = (b1 - r1[n4]*x0) * inv_tail[1];
+      res[n4+1] = x1;
+      if (rem > 2) {
+        res[n4+2] = (b2 - r2[n4]*x0 - r2[n4+1]*x1) * inv_tail[2];
+      }
+    }
   }
 
   // backward substitution: solve L'*res = res
-  for (int i=n-1; i >= 0; i--) {
-    // diagonal
-    res[i] /= mat[i*(n+1)];
+  //   scalar equivalent:
+  //     for (int i=n-1; i >= 0; i--) {
+  //       res[i] /= mat[i*(n+1)];
+  //       if (i && res[i]) mju_addToScl(res, mat+i*n, -res[i], i);
+  //     }
 
-    // update res[0..i-1] with row i of L
-    if (i && res[i]) {
-      mju_addToScl(res, mat+i*n, -res[i], i);
+  // backward tail (1..3 rows)
+  if (rem) {
+    const mjtNum* restrict r0 = mat + (n4+0)*sn;
+    const mjtNum* restrict r1 = rem > 1 ? mat + (n4+1)*sn : NULL;
+    const mjtNum* restrict r2 = rem > 2 ? mat + (n4+2)*sn : NULL;
+
+    // diagonal: solve 1..3-row upper-triangular tail
+    mjtNum x2 = 0, x1 = 0;
+    if (rem > 2) {
+      x2 = res[n4+2] * inv_tail[2];
+      res[n4+2] = x2;
+    }
+    if (rem > 1) {
+      x1 = (res[n4+1] - (rem > 2 ? r2[n4+1]*x2 : 0)) * inv_tail[1];
+      res[n4+1] = x1;
+    }
+    mjtNum x0 = (res[n4] - (rem > 2 ? r2[n4]*x2 : 0) - (rem > 1 ? r1[n4]*x1 : 0)) * inv_tail[0];
+    res[n4] = x0;
+
+    // update res[0..n4-1] with tail rows of L
+    if (n4 && (x0 || x1 || x2)) {
+      mjtNum4 vx0 = v4_splat(x0), vx1 = v4_splat(x1), vx2 = v4_splat(x2);
+      for (int k=0; k < n4; k += 4) {
+        mjtNum4 r = v4_load(res+k);
+        if (rem > 2) r = v4_sub(r, v4_mul(v4_load(r2+k), vx2));
+        if (rem > 1) r = v4_sub(r, v4_mul(v4_load(r1+k), vx1));
+        r = v4_sub(r, v4_mul(v4_load(r0+k), vx0));
+        v4_store(res+k, r);
+      }
+    }
+  }
+
+  // backward 4-row blocks: software-pipeline diagonal reciprocals across blocks
+  mjtNum4 cur_inv = last_inv;
+  for (int i=n4-4; i >= 0; i -= 4) {
+    const mjtNum* restrict r0 = mat + (i+0)*sn;
+    const mjtNum* restrict r1 = mat + (i+1)*sn;
+    const mjtNum* restrict r2 = mat + (i+2)*sn;
+    const mjtNum* restrict r3 = mat + (i+3)*sn;
+
+    // diagonal: solve 4x4 upper-triangular block
+    mjtNum inv_d[4];
+    v4_store(inv_d, cur_inv);
+    mjtNum x3 = res[i+3] * inv_d[3];
+    mjtNum x2 = (res[i+2] - r3[i+2]*x3) * inv_d[2];
+    mjtNum x1 = (res[i+1] - r3[i+1]*x3 - r2[i+1]*x2) * inv_d[1];
+    mjtNum x0 = (res[i+0] - r3[i+0]*x3 - r2[i+0]*x2 - r1[i+0]*x1) * inv_d[0];
+    v4_store(res+i, v4_set(x0, x1, x2, x3));
+
+    // update res[0..i-1] with rows i..i+3 of L
+    if (i) {
+      // prefetch reciprocals for next block
+      const mjtNum* p0 = mat + (i-4)*sn;
+      cur_inv = v4_div(one, v4_set(p0[i-4], p0[sn+i-3], p0[2*sn+i-2], p0[3*sn+i-1]));
+
+      // subtract scaled rows if any entry is nonzero
+      if (x0 || x1 || x2 || x3) {
+        mjtNum4 vx0 = v4_splat(x0), vx1 = v4_splat(x1);
+        mjtNum4 vx2 = v4_splat(x2), vx3 = v4_splat(x3);
+        for (int k=0; k < i; k += 4) {
+          mjtNum4 r = v4_load(res+k);
+          mjtNum4 t32 = v4_add(v4_mul(v4_load(r3+k), vx3), v4_mul(v4_load(r2+k), vx2));
+          mjtNum4 t10 = v4_add(v4_mul(v4_load(r1+k), vx1), v4_mul(v4_load(r0+k), vx0));
+          v4_store(res+k, v4_sub(r, v4_add(t32, t10)));
+        }
+      }
     }
   }
 }
@@ -711,6 +864,119 @@ int mju_cholFactorSymbolicBlocked(int* restrict L_colind, int* restrict L_rownnz
 }
 
 
+// load width (3 or 4) consecutive elements
+static mjALWAYS_INLINE mjtNum4 cholLoad(const mjtNum* p, int width) {
+  return width == 4 ? v4_load(p) : v4_load3(p);
+}
+
+
+// store width (3 or 4) consecutive elements
+static mjALWAYS_INLINE void cholStore(mjtNum* p, mjtNum4 v, int width) {
+  if (width == 4) {
+    v4_store(p, v);
+  } else {
+    v4_store3(p, v);
+  }
+}
+
+
+// broadcast ns x batch update weights into SIMD vectors (ns, batch are compile-time constants)
+static mjALWAYS_INLINE
+void cholSplatScales(int ns, int batch, mjtNum4 s4[3][4], mjtNum s[3][4]) {
+  for (int t=0; t < ns; t++) {
+    for (int b=0; b < batch; b++) {
+      s4[t][b] = v4_splat(s[t][b]);
+    }
+  }
+}
+
+
+// update width (3 or 4) consecutive elements of ns target rows from batch descendant rows
+//   scalar equivalent: dptr[t][dst+k] -= sum_b s[t][b] * p[b][src+k],  for k < width
+static mjALWAYS_INLINE
+void cholUpdateStepSIMD(int ns, int batch, int width,
+                        mjtNum* restrict dptr0, mjtNum* restrict dptr1, mjtNum* restrict dptr2,
+                        int dst,
+                        const mjtNum* restrict p0, const mjtNum* restrict p1,
+                        const mjtNum* restrict p2, const mjtNum* restrict p3,
+                        int src, mjtNum4 s4[3][4]) {
+  mjtNum* restrict dptr[3] = {dptr0, dptr1, dptr2};
+  const mjtNum* restrict p[4] = {p0, p1, p2, p3};
+
+  // load target rows
+  mjtNum4 a[3];
+  for (int t=0; t < ns; t++) {
+    a[t] = cholLoad(dptr[t]+dst, width);
+  }
+
+  // subtract weighted descendant rows
+  for (int b=0; b < batch; b++) {
+    mjtNum4 v = cholLoad(p[b]+src, width);
+    for (int t=0; t < ns; t++) {
+      a[t] = v4_sub(a[t], v4_mul(s4[t][b], v));
+    }
+  }
+
+  // store target rows
+  for (int t=0; t < ns; t++) {
+    cholStore(dptr[t]+dst, a[t], width);
+  }
+}
+
+
+// update one element of ns target rows from batch descendant rows (scalar cholUpdateStepSIMD)
+static mjALWAYS_INLINE
+void cholUpdateStepScalar(int ns, int batch,
+                          mjtNum* restrict dptr0, mjtNum* restrict dptr1, mjtNum* restrict dptr2,
+                          int dst,
+                          const mjtNum* restrict p0, const mjtNum* restrict p1,
+                          const mjtNum* restrict p2, const mjtNum* restrict p3,
+                          int src, mjtNum s[3][4]) {
+  mjtNum* restrict dptr[3] = {dptr0, dptr1, dptr2};
+  const mjtNum* restrict p[4] = {p0, p1, p2, p3};
+
+  // gather descendant values
+  mjtNum v[4];
+  for (int b=0; b < batch; b++) {
+    v[b] = p[b][src];
+  }
+
+  // subtract weighted descendant values from each target row
+  for (int t=0; t < ns; t++) {
+    mjtNum a = dptr[t][dst];
+    for (int b=0; b < batch; b++) {
+      a -= s[t][b] * v[b];
+    }
+    dptr[t][dst] = a;
+  }
+}
+
+
+// contiguous update of ns target rows from batch descendant rows (ns, batch compile-time constants)
+static mjALWAYS_INLINE
+void cholContigUpdate(int ns, int batch, int n,
+                      mjtNum* restrict dptr0, mjtNum* restrict dptr1, mjtNum* restrict dptr2,
+                      const mjtNum* restrict p0, const mjtNum* restrict p1,
+                      const mjtNum* restrict p2, const mjtNum* restrict p3,
+                      mjtNum s[3][4]) {
+  // 4-wide SIMD loop
+  int i = 0;
+  if (n >= 4) {
+    mjtNum4 s4[3][4];
+    cholSplatScales(ns, batch, s4, s);
+
+    for (; i <= n-4; i += 4) {
+      cholUpdateStepSIMD(ns, batch, 4, dptr0, dptr1, dptr2, i, p0, p1, p2, p3, i, s4);
+    }
+  }
+
+  // scalar remainder
+  for (; i < n; i++) {
+    cholUpdateStepScalar(ns, batch, dptr0, dptr1, dptr2, i, p0, p1, p2, p3, i, s);
+  }
+}
+
+
 // suffix update of ns target rows from batch descendant rows (ns, batch are compile-time constants)
 static mjALWAYS_INLINE
 void cholSuffixUpdate(int ns, int batch, int nlead,
@@ -719,17 +985,7 @@ void cholSuffixUpdate(int ns, int batch, int nlead,
                       const mjtNum* restrict p2, const mjtNum* restrict p3,
                       mjtNum s[3][4]) {
   // leading columns shared by all ns rows
-  for (int i=0; i < nlead; i++) {
-    mjtNum v[4] = {p0[i], (batch >= 2) ? p1[i] : 0,
-                   (batch >= 3) ? p2[i] : 0, (batch >= 4) ? p3[i] : 0};
-    for (int b=0; b < batch; b++) dptr0[i] -= s[0][b] * v[b];
-    if (ns >= 2) {
-      for (int b=0; b < batch; b++) dptr1[i] -= s[1][b] * v[b];
-    }
-    if (ns >= 3) {
-      for (int b=0; b < batch; b++) dptr2[i] -= s[2][b] * v[b];
-    }
-  }
+  cholContigUpdate(ns, batch, nlead, dptr0, dptr1, dptr2, p0, p1, p2, p3, s);
 
   // triangular tail: column nlead+u is present in rows t <= ns-2-u
   for (int u=0; u < ns-1; u++) {
@@ -754,22 +1010,36 @@ void cholMappedUpdate(int ns, int batch, int nlead, int L_nnz,
                       const mjtNum* restrict p2, const mjtNum* restrict p3,
                       mjtNum s[3][4]) {
   // leading columns shared by all ns rows at identical pos_map[colptr[i]]
-  for (int i=0; i < nlead; i++) {
-    int pos = pos_map[colptr[i]];
-    mjtNum v[4] = {p0[i], (batch >= 2) ? p1[i] : 0,
-                   (batch >= 3) ? p2[i] : 0, (batch >= 4) ? p3[i] : 0};
-    mjtNum a0 = dptr0[pos];
-    for (int b=0; b < batch; b++) a0 -= s[0][b] * v[b];
-    dptr0[pos] = a0;
-    if (ns >= 2) {
-      mjtNum a1 = dptr1[pos];
-      for (int b=0; b < batch; b++) a1 -= s[1][b] * v[b];
-      dptr1[pos] = a1;
-    }
-    if (ns >= 3) {
-      mjtNum a2 = dptr2[pos];
-      for (int b=0; b < batch; b++) a2 -= s[2][b] * v[b];
-      dptr2[pos] = a2;
+  if (nlead >= 4 && pos_map[colptr[nlead-1]] == pos_map[colptr[0]] + nlead - 1) {
+    // entire leading segment is contiguous in pos_map
+    int pos0 = pos_map[colptr[0]];
+    cholContigUpdate(ns, batch, nlead, dptr0+pos0, (ns >= 2) ? dptr1+pos0 : NULL,
+                     (ns >= 3) ? dptr2+pos0 : NULL, p0, p1, p2, p3, s);
+  } else {
+    // scan pos_map for 4-wide and 3-wide contiguous runs, else update a single column
+    mjtNum4 s4[3][4];
+    cholSplatScales(ns, batch, s4, s);
+    int i = 0;
+    while (i < nlead) {
+      int pos = pos_map[colptr[i]];
+
+      // 4-wide contiguous run (pos_map is strictly ascending, so all 4 are consecutive)
+      if (i + 4 <= nlead && pos_map[colptr[i+3]] == pos + 3) {
+        cholUpdateStepSIMD(ns, batch, 4, dptr0, dptr1, dptr2, pos, p0, p1, p2, p3, i, s4);
+        i += 4;
+      }
+
+      // 3-wide contiguous run (e.g. 3-DOF flex vertex blocks)
+      else if (i + 3 <= nlead && pos_map[colptr[i+2]] == pos + 2) {
+        cholUpdateStepSIMD(ns, batch, 3, dptr0, dptr1, dptr2, pos, p0, p1, p2, p3, i, s4);
+        i += 3;
+      }
+
+      // single column
+      else {
+        cholUpdateStepScalar(ns, batch, dptr0, dptr1, dptr2, pos, p0, p1, p2, p3, i, s);
+        i++;
+      }
     }
   }
 
@@ -1068,11 +1338,14 @@ int cholFactorSupernode(
       for (int t=s+1; t < ns; t++) {
         s_st[t] = (row_s[L_nnz-1-t] *= L_rr_inv);
       }
-      for (int i=0; i < n_off; i++) {
-        mjtNum l_si = (row_s[i] *= L_rr_inv);
-        if (s + 1 < ns) Lptr_s[s+1][i] -= s_st[s+1] * l_si;
-        if (s + 2 < ns) Lptr_s[s+2][i] -= s_st[s+2] * l_si;
+
+      // scale off-diagonal entries of row s, eliminate them from the remaining supernode rows
+      mju_scl(row_s, row_s, L_rr_inv, n_off);
+      for (int t=s+1; t < ns; t++) {
+        mju_addToScl(Lptr_s[t], row_s, -s_st[t], n_off);
       }
+
+      // update remaining supernode diagonal block
       for (int t=s+1; t < ns; t++) {
         for (int u=t; u < ns; u++) {
           Lptr_s[t][L_nnz-1-u] -= s_st[t] * s_st[u];
@@ -1130,10 +1403,7 @@ int mju_cholFactorNumeric(mjtNum* restrict L, int n, mjtNum mindiag,
       if (deficient) {
         mju_zero(Lptr, L_nnz-1);
       } else {
-        mjtNum L_rr_inv = 1.0 / L_rr;
-        for (int i=0; i < L_nnz-1; i++) {
-          Lptr[i] = Hptr[i] * L_rr_inv;
-        }
+        mju_scl(Lptr, Hptr, 1.0 / L_rr, L_nnz-1);
       }
       Lptr[L_nnz-1] = L_rr;
       continue;

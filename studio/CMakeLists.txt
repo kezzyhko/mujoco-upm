@@ -37,6 +37,9 @@ target_sources(${MUJOCO_STUDIO_PLATFORM_TARGET_NAME}
         io/resources.h
         render/model_scene.cc
         render/model_scene.h
+        sim/batch_view.h
+        sim/batched_model.cc
+        sim/batched_model.h
         sim/model_holder.cc
         sim/model_holder.h
         sim/sim_history.cc
@@ -75,6 +78,8 @@ target_sources(${MUJOCO_STUDIO_PLATFORM_TARGET_NAME}
         ux/status_bar.h
         ux/theme.cc
         ux/theme.h
+        ux/touch_gesture.cc
+        ux/touch_gesture.h
         ux/well_tempered.h
 )
 

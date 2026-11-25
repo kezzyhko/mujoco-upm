@@ -16,8 +16,14 @@
 #define MUJOCO_STUDIO_UX_INTERACTION_H_
 
 #include <mujoco/mujoco.h>
+#include "studio/sim/batch_view.h"
 
 namespace mujoco::studio {
+
+// Touch selection tolerance radius in logical CSS pixels for direct touch
+// input, matching the 44x44 pt / CSS px minimum touch target diameter (22 px
+// radius) recommended by Apple Human Interface Guidelines and WCAG 2.2 (2.5.5).
+inline constexpr float kTouchPickTolerancePx = 22.0f;
 
 // The result of a pick operation.
 struct PickResult {
@@ -43,15 +49,35 @@ float PortraitFovScale(const mjvCamera* camera, float aspect_ratio);
 mjrCamera ViewCamera(const mjModel* m, const mjData* d, const mjvCamera* camera,
                      float aspect_ratio);
 
-// Returns information about the object (if any) under the mouse cursor using an
-// explicit GL camera (such as one returned by ViewCamera).
+// Returns information about the object (if any) under the mouse/touch cursor
+// `(x, y)` in normalized `[0, 1]` viewport coordinates using an explicit GL
+// camera (such as one returned by ViewCamera).
+//
+// When `tolerance > 0` (normalized vertical viewport radius as a fraction of
+// viewport height, e.g. `kTouchPickTolerancePx / height`; horizontal radius is
+// derived as `tolerance / aspect_ratio`):
+//   1. An exact ray at `(x, y)` is cast first. If it hits the visible bounds of
+//      any finite object (non-plane geom, flex, or skin), that hit is ALWAYS
+//      returned immediately, even if `(x, y)` also lies within the padded
+//      tolerance halo of another closer object.
+//   2. Otherwise, concentric rings up to `(tolerance / aspect_ratio, tolerance)`
+//      are sampled outward with true camera rays (respecting 3D occlusion),
+//      preferring dynamic/articulated objects (`body > 0`) at the smallest
+//      angular/screen-space offset from `(x, y)` and falling back to static
+//      non-plane geoms (`body == 0`) or the exact center ray.
 PickResult Pick(const mjModel* m, const mjData* d, const mjrCamera& camera, float x, float y,
-                float aspect_ratio, const mjvOption* vis_options);
+                float aspect_ratio, const mjvOption* vis_options, float tolerance = 0.0f);
 
-// Returns information about the object (if any) under the mouse cursor using
-// the unmodified mjv_camera2GLCamera projection for `camera`.
+// Returns information about the object (if any) under the mouse/touch cursor
+// using the unmodified mjv_camera2GLCamera projection for `camera`.
 PickResult Pick(const mjModel* m, const mjData* d, const mjvCamera* camera, float x, float y,
-                float aspect_ratio, const mjvOption* vis_options);
+                float aspect_ratio, const mjvOption* vis_options, float tolerance = 0.0f);
+
+// Like Pick, but across all visible simulations in `batch`. If `sim` is
+// non-null, writes the hit simulation index (or -1 on a miss).
+PickResult PickBatch(mjModel* m, const mjData* d, mjData* scratch_data, const BatchView& batch,
+                     const mjvCamera* camera, float x, float y, float aspect_ratio,
+                     const mjvOption* vis_options, int* sim);
 
 // Indices for cameras that are not defined in the model.
 static constexpr int kTumbleCameraIdx = -3;

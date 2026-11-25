@@ -16,6 +16,7 @@
 
 #include <algorithm>
 #include <cfloat>
+#include <cmath>
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
@@ -590,7 +591,10 @@ void RemoteUi::CaptureAndSendInput() {
       io.DisplayFramebufferScale.x > 0.0f ? io.DisplayFramebufferScale.x : 1.0f;
   input.header.flags =
       (request_keyframe_ ? netui::Input::kRequestKeyframe : 0) |
-      (io.ConfigMacOSXBehaviors ? netui::Input::kMacOsBehaviors : 0);
+      (io.ConfigMacOSXBehaviors ? netui::Input::kMacOsBehaviors : 0) |
+      (io.MouseSource == ImGuiMouseSource_TouchScreen
+           ? netui::Input::kTouchScreen
+           : 0);
 
   // Wheel fields are lifetime running totals so freezing accumulation while a
   // local overlay captures the mouse avoids spurious deltas on release.
@@ -641,10 +645,63 @@ void RemoteUi::CaptureAndSendInput() {
   }
 }
 
+// Handles text from the browser's DOM "paste" event (see netui::Clipboard in
+// ui_codec.h for why paste chords are synthesized instead of forwarded via
+// SDL2).
+void RemoteUi::SendBrowserPaste(std::string_view text) {
+  if (text.empty()) return;
+  // The page can paste before the viewer has started and created the context.
+  if (ImGui::GetCurrentContext() == nullptr) return;
+  ImGuiIO& io = ImGui::GetIO();
+  if (io.WantCaptureKeyboard) {  // Browser (WASM) UI.
+    // A text field in the browser-side Dear ImGui (a local overlay such as the
+    // role bar) has keyboard focus, so paste into it here and send nothing to
+    // the server.
+    SetClipboardTextFromBrowser(std::string(text));
+    QueuePasteShortcut(io);
+  } else {  // Remote (Python) UI.
+    // The streamed Studio UI has keyboard focus, so send the text to the
+    // server, which pastes it into the headless Dear ImGui. Dropped if the /ui
+    // connection is not up yet.
+    if (socket_ && handshake_sent_ && ConnectionState() == ReadyState::kOpen) {
+      socket_->SendBinary(netui::EncodeClipboard(text, /*open_url=*/false));
+    }
+  }
+}
+
 void RemoteUi::Shutdown() {
   ResetSessionState();
   socket_.reset();
   last_state_ = ReadyState::kDisconnected;
+}
+
+bool RemoteUi::HitTest(ImVec2 pos) const {
+  if (!last_decoded_frame_.has_value() || !std::isfinite(pos.x) ||
+      !std::isfinite(pos.y)) {
+    return false;
+  }
+  if (screen_area_[0] > 0.0f && screen_area_[1] > 0.0f &&
+      (pos.x < 0.0f || pos.y < 0.0f || pos.x >= screen_area_[0] ||
+       pos.y >= screen_area_[1])) {
+    return false;
+  }
+  const netui::DecodedFrame& frame = *last_decoded_frame_;
+  if (frame.has_open_popup) {
+    return true;
+  }
+  for (const netui::HitRegion& region : frame.hit_regions) {
+    if (pos.x < region.rect[0] || pos.x >= region.rect[2] ||
+        pos.y < region.rect[1] || pos.y >= region.rect[3]) {
+      continue;
+    }
+    if (region.hole[2] > region.hole[0] && region.hole[3] > region.hole[1] &&
+        pos.x >= region.hole[0] && pos.x < region.hole[2] &&
+        pos.y >= region.hole[1] && pos.y < region.hole[3]) {
+      continue;
+    }
+    return true;
+  }
+  return false;
 }
 
 }  // namespace mujoco::studio

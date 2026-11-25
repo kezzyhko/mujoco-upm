@@ -71,6 +71,7 @@ struct Input {
   // MessageHeader::flags bits.
   static constexpr uint16_t kRequestKeyframe = 1u << 0;
   static constexpr uint16_t kMacOsBehaviors = 1u << 1;
+  static constexpr uint16_t kTouchScreen = 1u << 2;
 
   // Fixed capacities sized above Dear ImGui's named key count so the wire ABI
   // stays stable across Dear ImGui updates.
@@ -91,8 +92,8 @@ struct Input {
     if (key_offset < 0 || key_offset >= static_cast<int>(kMaxKeys)) {
       return false;
     }
-    return (keys_down[key_offset / 64] &
-            (uint64_t{1} << (key_offset % 64))) != 0;
+    return (keys_down[key_offset / 64] & (uint64_t{1} << (key_offset % 64))) !=
+           0;
   }
 
   void SetKeyDown(int key_offset, bool down = true) {
@@ -146,6 +147,34 @@ struct Texture {
 
 // Followed immediately on the wire by `header.size - sizeof(Clipboard)` bytes
 // of UTF-8 text.
+//
+// Clipboard flow over /ui:
+//
+// Copy and open URL (server -> browser). The headless UI's SetClipboardText
+// callback queues a kClipboard message. The browser copies its text to the OS
+// clipboard, or opens it in a new tab when kOpenUrl is set.
+//
+// Paste (browser -> whichever UI has keyboard focus). index.html takes the text
+// from the DOM "paste" event and hands it to RemoteUi::SendBrowserPaste():
+// - Browser (WASM) UI, i.e. a local overlay such as the role bar: the text
+//   becomes the local Dear ImGui clipboard and the paste shortcut is
+//   synthesized there. Nothing is sent to the server.
+// - Remote (Python) UI: the text is sent as a kClipboard message.
+//   HeadlessUiSession::ApplyInput() makes it the headless Dear ImGui clipboard
+//   and synthesizes the paste shortcut there.
+//
+// Why paste works this way:
+// - The text comes from the "paste" event because browsers do not let a page
+//   poll the OS clipboard, and navigator.clipboard.readText() is async, needs a
+//   permission prompt, and is blocked on plain HTTP.
+// - index.html stops Ctrl+V / Cmd+V keydowns before SDL2 sees them, for two
+//   reasons. Emscripten's SDL2 calls preventDefault() on any keydown with
+//   ctrlKey, which would suppress the "paste" event. And keydown fires before
+//   "paste", so a forwarded Ctrl+V would run Dear ImGui's paste shortcut before
+//   the new text arrives.
+// - Neither UI therefore sees the real V key press (and Edit -> Paste has no
+//   key event at all), so the shortcut is synthesized once the text is in
+//   place; see QueuePasteShortcut() in the Studio clipboard.h.
 struct Clipboard {
   // MessageHeader::flags bits.
   //
@@ -162,6 +191,11 @@ struct Clipboard {
 struct DrawFrame {
   // MessageHeader::flags bits.
   static constexpr uint16_t kCompressed = 1u << 0;
+  // Trailing 8-byte-aligned block of interactive window HitRegions follows the
+  // draw lists: `{uint32_t count, uint32_t reserved}` then `count` HitRegions.
+  static constexpr uint16_t kHasHitRegions = 1u << 1;
+  // True when an ImGui popup or modal is open in this frame (captures input).
+  static constexpr uint16_t kHasOpenPopup = 1u << 2;
 
   MessageHeader header{sizeof(DrawFrame), 0, MessageKind::kDrawFrame,
                        kCodecVersion};
@@ -170,6 +204,15 @@ struct DrawFrame {
   uint32_t list_count = 0;
   float display_pos[2] = {};
   float display_size[2] = {};
+};
+
+// Interactive window hit region in ImGui screen coordinates: outer bounds
+// [min_x, min_y, max_x, max_y] (including resize border padding) and an
+// optional passthrough hole (empty when hole[2] <= hole[0] || hole[3] <=
+// hole[1], e.g. for a dockspace central node).
+struct HitRegion {
+  float rect[4] = {};
+  float hole[4] = {};
 };
 
 // Quantized vertex: position relative to the draw list's `ref_pos` in exact
@@ -218,6 +261,8 @@ struct DecodedFrame {
   float display_pos[2] = {};
   float display_size[2] = {};
   std::vector<DrawList> lists;
+  std::vector<HitRegion> hit_regions;
+  bool has_open_popup = false;
 };
 
 // Canonical byte representation of a single window's draw list (padded to an
@@ -233,6 +278,8 @@ struct SerializedFrame {
   float display_pos[2] = {};
   float display_size[2] = {};
   std::vector<SerializedList> lists;
+  std::vector<HitRegion> hit_regions;
+  bool has_open_popup = false;
 
   void Clear() {
     mouse_cursor = 0;
@@ -241,6 +288,8 @@ struct SerializedFrame {
     display_size[0] = 0.0f;
     display_size[1] = 0.0f;
     lists.clear();
+    hit_regions.clear();
+    has_open_popup = false;
   }
 };
 

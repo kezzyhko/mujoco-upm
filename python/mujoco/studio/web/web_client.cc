@@ -51,9 +51,11 @@
 #include "studio/render/model_scene.h"
 #include "studio/sim/model_holder.h"
 #include "studio/ux/camera_control.h"
+#include "studio/ux/clipboard.h"
 #include "studio/ux/imgui_widgets.h"
 #include "studio/ux/interaction.h"
 #include "studio/ux/theme.h"
+#include "studio/ux/touch_gesture.h"
 #include "logging.h"
 #include "state_payload.h"
 #include "web_client_local_ui.h"
@@ -146,7 +148,8 @@ struct App {
   // state from the latest payload and sends the moved camera back.
   int spectator_cam_mode = kSpecCamTumble;
   mujoco::studio::ViewerInputState viewer_input;
-  bool view_mouse_focus = false;  // The 3D view has the mouse (drag) focus.
+  bool view_mouse_focus = false;   // The 3D view has the mouse (drag) focus.
+  bool pinch_mouse_focus = false;  // The 3D view has the multi-touch focus.
   float cam_speed = mujoco::studio::kMinFlySpeed;  // WASD fly speed.
   // The viewer's camera generation (ViewerInputState::camera_generation) as of
   // the last payload camera adopted; see client_camera.py. Invalid until this
@@ -284,30 +287,76 @@ void SetSpectatorCameraMode(int mode) {
 bool MoveLocalCamera(const mjModel* model, bool wasd, bool viewer_mouse_focus,
                      bool viewer_keyboard_focus) {
   mujoco::studio::CameraInput input = mujoco::studio::ReadImGuiCameraInput();
+  const ImGuiIO& io = ImGui::GetIO();
 
   // Mouse motion is normalised by the scene rect (the canvas above the role
   // bar), the area the camera actually renders into, not the whole display.
   const ImVec4& rect = g_app.scene_rect;
   if (rect.z > 0 && rect.w > 0) {
-    input.mouse_dx = ImGui::GetIO().MouseDelta.x / rect.z;
-    input.mouse_dy = ImGui::GetIO().MouseDelta.y / rect.w;
+    input.mouse_dx = io.MouseDelta.x / rect.z;
+    input.mouse_dy = io.MouseDelta.y / rect.w;
     input.aspect_ratio = rect.z / rect.w;
   } else {
     input.mouse_focus = false;
   }
 
-  // The viewer's mouse focus arrives a round trip late, so whether the view
-  // has the mouse focus for a drag is decided as it starts and kept until it
-  // ends, as ImGui does for its own UI.
-  const bool any_button =
-      ((input.left_button | input.right_button | input.middle_button) &
-       mujoco::studio::kButtonPressed) != 0;
-  if (!any_button || ImGui::IsMouseClicked(ImGuiMouseButton_Left) ||
-      ImGui::IsMouseClicked(ImGuiMouseButton_Right) ||
-      ImGui::IsMouseClicked(ImGuiMouseButton_Middle)) {
-    g_app.view_mouse_focus = viewer_mouse_focus && input.mouse_focus;
+  const mujoco::studio::TouchGestureState* touch =
+      g_app.window ? &g_app.window->GetTouchGesture() : nullptr;
+  if (touch != nullptr && touch->active) {
+    if (touch->just_started) {
+      const ImVec2 origin(touch->origin_x, touch->origin_y);
+      const bool in_scene = rect.z > 0 && rect.w > 0 && origin.x >= rect.x &&
+                            origin.x < rect.x + rect.z && origin.y >= rect.y &&
+                            origin.y < rect.y + rect.w;
+      const bool local_hit =
+          io.WantCaptureMouse || mujoco::studio::HitTestImGuiWindows(origin);
+      const bool remote_hit =
+          g_app.session.Role() == SessionRole::kControlling &&
+          g_app.remote_ui.HitTest(origin);
+      g_app.pinch_mouse_focus = in_scene && !local_hit && !remote_hit;
+    }
+    input.left_button = 0;
+    input.right_button = 0;
+    input.middle_button = 0;
+    input.mouse_wheel = 0.0f;
+    if (rect.z > 0 && rect.w > 0) {
+      input.pinch_zoom = touch->pinch_log_scale;
+      input.pan_dx = touch->pan_dx_px / rect.z;
+      input.pan_dy = touch->pan_dy_px / rect.w;
+      input.twist_angle = touch->twist_angle;
+    }
+    input.mouse_focus = g_app.pinch_mouse_focus;
+  } else {
+    g_app.pinch_mouse_focus = false;
+    // The viewer's mouse focus arrives a round trip late, so whether the view
+    // has the mouse focus for a drag is decided as it starts and kept until it
+    // ends, as ImGui does for its own UI.
+    const bool any_button =
+        ((input.left_button | input.right_button | input.middle_button) &
+         mujoco::studio::kButtonPressed) != 0;
+    const bool any_clicked = ImGui::IsMouseClicked(ImGuiMouseButton_Left) ||
+                             ImGui::IsMouseClicked(ImGuiMouseButton_Right) ||
+                             ImGui::IsMouseClicked(ImGuiMouseButton_Middle);
+    if (!any_button || any_clicked) {
+      // Touchscreens have no hover stream before FingerDown, so the remote
+      // server's `viewer_mouse_focus` still reflects the previous tap rather
+      // than where this touch just landed. Hit-test the cached remote UI on
+      // click frames for zero-RTT touch focus.
+      bool effective_viewer_mouse_focus = viewer_mouse_focus;
+      if (any_clicked && io.MouseSource == ImGuiMouseSource_TouchScreen &&
+          g_app.session.Role() == SessionRole::kControlling &&
+          g_app.remote_ui.RemoteDrawData() != nullptr) {
+        effective_viewer_mouse_focus = !g_app.remote_ui.HitTest(io.MousePos);
+      }
+      const bool in_scene =
+          rect.z > 0 && rect.w > 0 && io.MousePos.x >= rect.x &&
+          io.MousePos.x < rect.x + rect.z && io.MousePos.y >= rect.y &&
+          io.MousePos.y < rect.y + rect.w;
+      g_app.view_mouse_focus =
+          in_scene && effective_viewer_mouse_focus && input.mouse_focus;
+    }
+    input.mouse_focus = g_app.view_mouse_focus;
   }
-  input.mouse_focus = g_app.view_mouse_focus;
   input.keyboard_focus = viewer_keyboard_focus && input.keyboard_focus;
 
   bool moved =
@@ -546,10 +595,10 @@ static mujoco::Renderer::View GetSceneView() {
   // The renderer truncates rel_viewport * target size to whole pixels; the
   // half pixel keeps float error from landing one pixel short of the bar.
   const mjrRect viewport = SceneViewport(width, height);
-  const float aspect_ratio =
-      viewport.height > 0 ? static_cast<float>(viewport.width) /
-                                static_cast<float>(viewport.height)
-                          : 1.0f;
+  const float aspect_ratio = viewport.height > 0
+                                 ? static_cast<float>(viewport.width) /
+                                       static_cast<float>(viewport.height)
+                                 : 1.0f;
   view.camera =
       mujoco::studio::ViewCamera(model, data, &g_app.camera, aspect_ratio);
   view.rel_viewport[1] = (viewport.bottom + 0.5f) / height;
@@ -1078,6 +1127,10 @@ void UpdateModelDownloadProgress(size_t bytes_downloaded, size_t total_bytes,
   g_app.download_status.retry_count = retry_count;
 }
 
+void OnBrowserPaste(std::string text) {
+  g_app.remote_ui.SendBrowserPaste(text);
+}
+
 void FinishModelLoad() {
   mj_forward(g_app.model_holder->model(), g_app.model_holder->data());
   if (g_app.window) {
@@ -1189,6 +1242,8 @@ void StartApp() {
 
   g_app.window = std::make_unique<mujoco::studio::Window>("MuJoCo Web Viewer",
                                                           1400, 720, config);
+  // Text copied in the browser-side UI also goes to the browser's clipboard.
+  mujoco::studio::SyncClipboardWithBrowser();
   ImPlot::CreateContext();  // Needed if the server app uses ImPlot.
   // The local UI's theme from the first frame: the one this browser last
   // chose, or dark.
@@ -1264,4 +1319,8 @@ EMSCRIPTEN_BINDINGS(web_client_bindings) {
   // display a real-time progress bar and status while downloading.
   emscripten::function("updateModelDownloadProgress",
                        &UpdateModelDownloadProgress);
+
+  // Forwards plain-text clipboard data from a browser DOM "paste" event to
+  // the remote Studio UI over /ui.
+  emscripten::function("onBrowserPaste", &OnBrowserPaste);
 }

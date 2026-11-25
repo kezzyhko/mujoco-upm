@@ -18,6 +18,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
+#include <limits>
 #include <memory>
 #include <span>
 #include <string>
@@ -30,6 +31,7 @@
 #include "absl/log/check.h"
 #include <imgui.h>
 #include <mujoco/mujoco.h>
+#include "studio/ux/gui.h"
 #include "state_payload.h"
 #include "ui_codec.h"
 #include "web_client_websocket.h"
@@ -116,6 +118,11 @@ class RemoteUiTest : public ::testing::Test {
  protected:
   RemoteUiTest() : context_(ImGui::CreateContext()), remote_ui_(callbacks_) {
     ImGui::SetCurrentContext(context_);
+    ImGuiIO& io = ImGui::GetIO();
+    unsigned char* font_pixels = nullptr;
+    int font_w = 0, font_h = 0;
+    io.Fonts->GetTexDataAsAlpha8(&font_pixels, &font_w, &font_h);
+    io.Fonts->SetTexID(static_cast<ImTextureID>(1));
     remote_ui_.SetScreenArea(1920.0f, 1080.0f);
   }
 
@@ -455,6 +462,117 @@ TEST_F(RemoteUiTest,
   EXPECT_EQ(draw_data->CmdLists[0]->CmdBuffer.Size, 0);
 }
 
+TEST_F(RemoteUiTest,
+       HitTestsVisibleWindowGeometryAndMissesPassthroughViewport) {
+  EXPECT_FALSE(remote_ui_.HitTest(ImVec2(100.0f, 80.0f)));
+
+  RegisterDummyTexture(/*tex_id=*/1);
+  remote_ui_.SetScreenArea(640.0f, 480.0f);
+
+  // Window1 occupies [10..260, 10..160]; the rest of [0..640, 0..480] is open
+  // 3D viewport with no background geometry.
+  const netui::SerializedFrame frame = RenderSerializedFrame("Panel content");
+  remote_ui_.ProcessDrawFrameMessage(
+      netui::EncodeDrawFrame(frame, /*frame_index=*/1));
+
+  EXPECT_TRUE(remote_ui_.HitTest(ImVec2(100.0f, 80.0f)));
+  EXPECT_FALSE(remote_ui_.HitTest(ImVec2(450.0f, 300.0f)));
+  EXPECT_FALSE(remote_ui_.HitTest(ImVec2(2.0f, 2.0f)));
+
+  // Clamping screen_area_ shrinks each command's ClipRect on rebuild, so
+  // geometry past the clamped area is no longer hit.
+  remote_ui_.SetScreenArea(120.0f, 80.0f);
+  remote_ui_.ProcessDrawFrameMessage(
+      netui::EncodeDrawFrame(frame, /*frame_index=*/2));
+  EXPECT_TRUE(remote_ui_.HitTest(ImVec2(60.0f, 50.0f)));
+  EXPECT_FALSE(remote_ui_.HitTest(ImVec2(200.0f, 120.0f)));
+
+  // Non-finite coordinates must never false-positive.
+  const float nan = std::numeric_limits<float>::quiet_NaN();
+  const float inf = std::numeric_limits<float>::infinity();
+  EXPECT_FALSE(remote_ui_.HitTest(ImVec2(nan, 50.0f)));
+  EXPECT_FALSE(remote_ui_.HitTest(ImVec2(60.0f, nan)));
+  EXPECT_FALSE(remote_ui_.HitTest(ImVec2(inf, 50.0f)));
+  EXPECT_FALSE(remote_ui_.HitTest(ImVec2(60.0f, -inf)));
+
+  // NoMouseInputs overlays are excluded from hit regions, while open popups
+  // capture anywhere within screen_area_.
+  {
+    remote_ui_.SetScreenArea(640.0f, 480.0f);
+    ImGuiIO& io = ImGui::GetIO();
+    io.DisplaySize = ImVec2(640.0f, 480.0f);
+    ImGui::NewFrame();
+    ImGui::SetNextWindowPos(ImVec2(10.0f, 10.0f), ImGuiCond_Always);
+    ImGui::SetNextWindowSize(ImVec2(200.0f, 100.0f), ImGuiCond_Always);
+    ImGui::Begin("PassiveOverlay", nullptr,
+                 ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoInputs);
+    ImGui::TextUnformatted("HUD");
+    ImGui::End();
+    ImGui::Render();
+    netui::SerializedFrame passive_frame;
+    netui::SerializeDrawData(ImGui::GetDrawData(), ImGuiMouseCursor_Arrow,
+                             &passive_frame);
+    remote_ui_.ProcessDrawFrameMessage(
+        netui::EncodeDrawFrame(passive_frame, /*frame_index=*/3));
+    EXPECT_FALSE(remote_ui_.HitTest(ImVec2(60.0f, 50.0f)));
+
+    passive_frame.has_open_popup = true;
+    remote_ui_.ProcessDrawFrameMessage(
+        netui::EncodeDrawFrame(passive_frame, /*frame_index=*/4));
+    EXPECT_TRUE(remote_ui_.HitTest(ImVec2(450.0f, 300.0f)));
+    EXPECT_FALSE(remote_ui_.HitTest(ImVec2(450.0f, 500.0f)));
+  }
+
+  remote_ui_.Shutdown();
+  EXPECT_FALSE(remote_ui_.HitTest(ImVec2(60.0f, 50.0f)));
+}
+
+TEST_F(RemoteUiTest, HitTestsUnhoveredViewGizmoDiscBetweenAxisBubbles) {
+  RegisterDummyTexture(/*tex_id=*/1);
+  remote_ui_.SetScreenArea(390.0f, 812.0f);
+
+  char err[256] = "";
+  mjSpec* spec = mj_parseXMLString("<mujoco/>", nullptr, err, sizeof(err));
+  ASSERT_NE(spec, nullptr) << err;
+  mjModel* model = mj_compile(spec, nullptr);
+  mj_deleteSpec(spec);
+  ASSERT_NE(model, nullptr);
+  mjData* data = mj_makeData(model);
+  ASSERT_NE(data, nullptr);
+  mj_forward(model, data);
+
+  ImGuiIO& io = ImGui::GetIO();
+  io.DisplaySize = ImVec2(390.0f, 812.0f);
+  io.MousePos = ImVec2(-FLT_MAX, -FLT_MAX);  // Unhovered (touch pre-tap state).
+  ImGui::NewFrame();
+
+  mjvCamera cam{};
+  mjv_defaultCamera(&cam);
+  int cam_idx = -1;
+  ViewGizmoAnimation anim{};
+  const ImVec4 workspace(0.0f, 0.0f, 390.0f, 812.0f);
+  ViewGizmoGui(model, data, cam, cam_idx, anim, workspace);
+
+  ImGui::Render();
+  netui::SerializedFrame frame;
+  netui::SerializeDrawData(ImGui::GetDrawData(), ImGuiMouseCursor_Arrow,
+                           &frame);
+  ASSERT_FALSE(frame.lists.empty());
+  remote_ui_.ProcessDrawFrameMessage(
+      netui::EncodeDrawFrame(frame, /*frame_index=*/1));
+
+  // ViewGizmo sits in the top-right corner of workspace (margin=8,
+  // half_extent=49): center = (390 - 8 - 49, 8 + 49) = (333, 57), radius = 49.
+  // Point (302, 26) is inside the disc (dist = 43.8 < 49) in the empty
+  // quadrant between axis bubbles.
+  EXPECT_TRUE(remote_ui_.HitTest(ImVec2(302.0f, 26.0f)));
+  // Outside the disc (top-left of screen) must miss.
+  EXPECT_FALSE(remote_ui_.HitTest(ImVec2(100.0f, 100.0f)));
+
+  mj_deleteData(data);
+  mj_deleteModel(model);
+}
+
 TEST_F(RemoteUiTest, SocketHandshakeReceiveAndInputRoundTrip) {
   FakeWebSocket* socket = ConnectFakeSocket();
   ASSERT_TRUE(remote_ui_.HasSocket());
@@ -660,6 +778,87 @@ TEST_F(RemoteUiTest, CopiesClipboardMessagesAndInterceptsOpenUrls) {
   EXPECT_STREQ(ImGui::GetClipboardText(), "camera_xml");
 }
 
+TEST_F(RemoteUiTest, SendsBrowserPasteOverUiSocketWhenRemoteHasFocus) {
+  FakeWebSocket* socket = ConnectFakeSocket();
+  remote_ui_.ReceiveAndProcessCommands(/*frame=*/1);
+  ASSERT_EQ(socket->sent.size(), 1u);  // Hello handshake.
+
+  remote_ui_.SendBrowserPaste("pasted text");
+  ASSERT_EQ(socket->sent.size(), 2u);
+  std::string decoded;
+  bool open_url = true;
+  ASSERT_TRUE(netui::DecodeClipboard(socket->sent[1], &decoded, &open_url));
+  EXPECT_EQ(decoded, "pasted text");
+  EXPECT_FALSE(open_url);
+}
+
+TEST_F(RemoteUiTest, IgnoresBrowserPasteWithoutDearImGuiContext) {
+  FakeWebSocket* socket = ConnectFakeSocket();
+  remote_ui_.ReceiveAndProcessCommands(/*frame=*/1);
+  ASSERT_EQ(socket->sent.size(), 1u);  // Hello handshake.
+
+  ImGui::SetCurrentContext(nullptr);
+  remote_ui_.SendBrowserPaste("pasted text");
+  ImGui::SetCurrentContext(context_);
+  EXPECT_EQ(socket->sent.size(), 1u);  // Nothing went to the server.
+}
+
+TEST_F(RemoteUiTest, BrowserPasteLandsInFocusedLocalTextFieldAndKeepsHeldKeys) {
+  FakeWebSocket* socket = ConnectFakeSocket();
+  remote_ui_.ReceiveAndProcessCommands(/*frame=*/1);
+  ASSERT_EQ(socket->sent.size(), 1u);  // Hello handshake.
+
+  ImGuiIO& io = ImGui::GetIO();
+  io.DisplaySize = ImVec2(800, 600);
+  unsigned char* font_pixels = nullptr;
+  int font_w = 0, font_h = 0;
+  io.Fonts->GetTexDataAsAlpha8(&font_pixels, &font_w, &font_h);
+  io.Fonts->SetTexID(static_cast<ImTextureID>(1));
+
+  char text[64] = "";
+  auto run_frame = [&text](bool focus = false) {
+    ImGui::NewFrame();
+    ImGui::Begin("Local overlay");
+    if (focus) ImGui::SetKeyboardFocusHere();
+    ImGui::InputText("##field", text, sizeof(text));
+    ImGui::End();
+    ImGui::Render();
+  };
+  // Focus a local text field, and hold Shift as for a Shift+Insert paste.
+  run_frame(/*focus=*/true);
+  io.AddKeyEvent(ImGuiMod_Shift, true);
+  run_frame();
+  run_frame();
+  ASSERT_TRUE(io.WantCaptureKeyboard);
+  ASSERT_TRUE(io.KeyShift);
+
+  remote_ui_.SendBrowserPaste("16");
+  run_frame();
+  EXPECT_STREQ(text, "16");
+  EXPECT_EQ(socket->sent.size(), 1u);  // Nothing went to the server.
+
+  // The synthetic keys are released and Shift is still held afterwards.
+  run_frame();
+  EXPECT_STREQ(text, "16");
+  EXPECT_FALSE(ImGui::IsKeyDown(ImGuiKey_V));
+  EXPECT_FALSE(io.KeyCtrl);
+  EXPECT_TRUE(io.KeyShift);
+
+  // With macOS behaviors the user holds Cmd, which Dear ImGui reports as Ctrl.
+  io.AddKeyEvent(ImGuiMod_Shift, false);
+  io.ConfigMacOSXBehaviors = true;
+  io.AddKeyEvent(ImGuiMod_Super, true);
+  run_frame();
+  ASSERT_TRUE(io.KeyCtrl);
+  remote_ui_.SendBrowserPaste("0");
+  run_frame();
+  EXPECT_STREQ(text, "160");
+  run_frame();
+  EXPECT_FALSE(ImGui::IsKeyDown(ImGuiKey_V));
+  EXPECT_TRUE(io.KeyCtrl);
+  EXPECT_FALSE(io.KeySuper);
+}
+
 TEST_F(RemoteUiTest, StateQueueSynchronizesFullPayloadAndBoundsLatency) {
   StateQueue queue;
   EXPECT_TRUE(queue.Empty());
@@ -859,10 +1058,20 @@ TEST_F(RemoteUiTest, PreservesPhysicalModifierKeysUnderMacOsBehaviors) {
   const netui::Input sent = CommandIn<netui::Input>(socket->sent[1]);
   EXPECT_FLOAT_EQ(sent.framebuffer_scale, 2.0f);
   EXPECT_NE(sent.header.flags & netui::Input::kMacOsBehaviors, 0u);
+  EXPECT_EQ(sent.header.flags & netui::Input::kTouchScreen, 0u);
   EXPECT_TRUE(sent.IsImGuiKeyDown(ImGuiKey_LeftSuper));
   EXPECT_TRUE(sent.IsImGuiKeyDown(ImGuiKey_ReservedForModSuper));
   EXPECT_FALSE(sent.IsImGuiKeyDown(ImGuiKey_LeftCtrl));
   EXPECT_FALSE(sent.IsImGuiKeyDown(ImGuiKey_ReservedForModCtrl));
+
+  io.AddMouseSourceEvent(ImGuiMouseSource_TouchScreen);
+  io.AddMousePosEvent(100.0f, 100.0f);
+  ImGui::NewFrame();
+  remote_ui_.CaptureAndSendInput();
+  ImGui::EndFrame();
+  ASSERT_EQ(socket->sent.size(), 3u);
+  const netui::Input sent_touch = CommandIn<netui::Input>(socket->sent[2]);
+  EXPECT_NE(sent_touch.header.flags & netui::Input::kTouchScreen, 0u);
 }
 }  // namespace
 }  // namespace mujoco::studio

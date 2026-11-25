@@ -100,6 +100,7 @@ static void SetLightColorAndIntensity(mjrfLight* light, const mjModel* model,
 
 ModelLights::ModelLights(mjrfScene* scene, ModelResources* model_resources)
     : scene_(scene), model_resources_(model_resources) {
+  mjv_defaultOption(&vopts_);
   const mjModel* model = model_resources->GetModel();
   shadowsize_ = model->vis.quality.shadowsize;
   fallback_head_light_intensity_ =
@@ -111,6 +112,9 @@ ModelLights::ModelLights(mjrfScene* scene, ModelResources* model_resources)
   fallback_environment_light_intensity_ =
       ReadElement(model, "filament.fallback.environment_light_intensity",
                   fallback_environment_light_intensity_);
+  fallback_environment_light_diffuse_scale_ =
+      ReadElement(model, "filament.fallback.environment_light_diffuse_scale",
+                  fallback_environment_light_diffuse_scale_);
   Prepare();
 }
 
@@ -196,6 +200,7 @@ void ModelLights::Prepare() {
     params.type = mjLIGHT_IMAGE;
     params.texture = fallback_ibl_texture_.get();
     params.intensity = fallback_environment_light_intensity_;
+    params.image_diffuse_scale = fallback_environment_light_diffuse_scale_;
     fallback_ibl_ = CreateLight(ctx, params);
     mjrf_addSceneLight(scene_, fallback_ibl_.get());
 
@@ -229,6 +234,10 @@ void ModelLights::UpdateShadowMapSize() {
   }
 }
 
+void ModelLights::SetOptions(const mjvOption& opt) {
+  vopts_ = opt;
+}
+
 void ModelLights::Update(const mjData* data) {
   UpdateShadowMapSize();
   if (data == nullptr) {
@@ -240,9 +249,10 @@ void ModelLights::Update(const mjData* data) {
     total_light_intensity += model->light_intensity[i];
   }
 
+  const float3 offset = ReadFloat3(vopts_.offset);
   for (int i = 0; i < model->nlight; ++i) {
     mjrfLight* light = lights_[i].get();
-    const float3 pos = ReadFloat3(data->light_xpos, i);
+    const float3 pos = ReadFloat3(data->light_xpos, i) + offset;
     const float3 dir = ReadFloat3(data->light_xdir, i);
     mjrf_setLightPose(light, pos.v, dir.v);
 
