@@ -2022,8 +2022,8 @@ Only ``image/png`` and ``image/ktx`` are supported.
 :at:`mark`: :at-val:`[none, edge, cross, random], "none"`
    Procedural textures can be marked with the markrgb color, on top of the colors determined by the builtin type. "edge"
    means that the edges of all texture images are marked. "cross" means that a cross is marked in the middle of each
-   image. "random" means that randomly chosen pixels are marked. All markings are one-pixel wide, thus the markings
-   appear larger and more diffuse on smaller textures.
+   image. "random" means that randomly chosen pixels are marked. All markings are either one or two pixels wide, thus
+   the markings may appear larger and more diffuse on smaller textures.
 
 .. _asset-texture-markrgb:
 
@@ -4623,9 +4623,8 @@ A vertex or node pinned to a moving body follows that body's motion and applies 
 body. **Newton** is fastest when every vertex and node is fixed or sits on a body with three slide joints along the
 world axes: their stiffness is then assembled as 3x3 vertex blocks. Once any flex in the model has another kind of
 attachment, the stiffness of all its flexes is pulled back through the attachment Jacobians, which costs more per step.
-MuJoCo Warp does not yet support articulated attachments with **Newton**; use **CG** there. Mocap attachments are not
-supported for non-rigid flexes with elasticity because mocap poses do not provide velocities for elastic damping,
-except for 1D flexes with zero :ref:`damping<flex-elasticity-damping>`.
+Mocap attachments are not supported for non-rigid flexes with elasticity because mocap poses do not provide velocities
+for elastic damping, except for 1D flexes with zero :ref:`damping<flex-elasticity-damping>`.
 
 .. _flex-elasticity-young:
 

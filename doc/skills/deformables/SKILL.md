@@ -6,12 +6,13 @@ description: >-
   (make_flex, add_flex). Covers 1D elastic rods (cables, ropes, wires, coils),
   2D cloth draping, garments, and thin shells, and 3D FEM/tetrahedral soft
   bodies (sponges, foam, rubber, elasto-plastic clay, compliant gripper pads),
-  plus implicit position-stiffness integration and reduced-DOF interpolation.
-  Use when creating, migrating (from removed composite or cable plugins),
-  attaching, or debugging unstable flex or soft-body simulations. Don't use for
-  rigid-only modeling (mujoco-spec-editing), general stepping loops
-  (mujoco-python), GPU rollout setup (mujoco-accelerated), cross-engine parity
-  (mujoco-parity), or rendering (mujoco-rendering).
+  plus implicit position-stiffness integration, reduced-DOF interpolation, and
+  CPU vs. MJWarp GPU flex benchmarks/solver regimes. Use when creating,
+  migrating (from removed composite or cable plugins), attaching, debugging, or
+  benchmarking flex or soft-body simulations. Don't use for rigid-only modeling
+  (mujoco-spec-editing), general stepping loops (mujoco-python), non-flex GPU
+  rollout setup (mujoco-accelerated), cross-engine parity (mujoco-parity), or
+  rendering (mujoco-rendering).
 metadata:
   publisher: google
 ---
@@ -453,26 +454,25 @@ Tracks A and B run on **`MJWarp` (`mujoco_warp`, `impl='warp'`)** in `float32`
 [`references/mjwarp.md`](references/mjwarp.md), setup in
 [`mujoco-accelerated`](../accelerated/SKILL.md)):
 
--   **Use for batched rollouts:** At `nworld=64` on H100, all 33 runnable flex
+-   **Use for batched rollouts:** At `nworld=64` on H100, all 34 runnable flex
     scenes beat 1 CPU core (`1.5x`-`86x`); at `nworld=1` it is often slower
     (`gripper_2d.xml`: `3.0x` slower at `1`, `6.2x` faster at `64` -- use CPU
     `mujoco.batch.Batch` / `mujoco.rollout` for small batches).
 -   **Integrator & solver regimes:** **`Euler`** runs `< 3` ms/step at `1` world
     across all 16 scenes (`13` `Newton`, plus `3` `CG` on `basket`/`plate`/
     `sphere_full`). **`Newton` + `discrete`** beats 1 CPU core at `1` world on
-    4/15 scenes (up to `3.1x`) and 1D rods use exact sparse `effChol` (`1.2`-
+    4/16 scenes (up to `3.1x`) and 1D rods use exact sparse `effChol` (`1.2`-
     `2.8` ms at `1`, `1.9x`-`8.0x` at `64`), while cloth/3D contact fill-in and
     `efm0_L` hold back 3 scenes; **`CG` + `discrete`** (`bunny_shell`, `clay`)
     beats CPU at `1` world (`1.2x`, `8.2x`) when `solver_niter < iterations`.
     Unlike CPU, other `discrete` flexes keep parallel Jacobi PCG in
     `eff_solve`: serial SGS is much slower on GPU (`references/mjwarp.md`).
--   **Size buffers (`make_data` / `put_data`):** Defaults overflow on 20/33
+-   **Size buffers (`make_data` / `put_data`):** Defaults overflow on 20/34
     scenes (`nefc`, causing `NaN`s); `nconmax >= 16384`, `njmax >= 16384`,
-    `njmax_nnz >= 1048576` cleared all 33 (`--measure_alloc` / `d.overflow`).
+    `njmax_nnz >= 1048576` cleared all 34 (`--measure_alloc` / `d.overflow`).
 -   **Not supported:** `ipc`, `dof="quadratic"`, `rigid` flexes, interpolated
     self-collision, flex-`SDF`/`HField`, `sleep` with `discrete`/`<edge
-    equality="true"/>`, contact sensor `linvel`/`angvel`, and `discrete` +
-    `Newton` with articulated/general attachments (`gripper_trilinear.xml`).
+    equality="true"/>`, and contact sensor `linvel`/`angvel`.
 
 ## 8. Quick Troubleshooting Matrix
 

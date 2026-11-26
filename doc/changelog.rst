@@ -36,6 +36,14 @@ Engine
   `1733 <https://github.com/google-deepmind/mujoco_warp/issues/1733>`__ and to :github:user:`vishalkotak` for the
   implementation in :doc:`MJWarp <mjwarp/index>` pull request
   `2014 <https://github.com/google-deepmind/mujoco_warp/pull/2014>`__.
+- Fixed capsule-box collisions when the capsule's centerline intersects the box, which could miss the contact.
+- Fixed floating-point cancellation and non-orthogonal fallback frames in ``mju_makeFrame`` and ``mjc_PlaneCylinder``
+  for plane-capsule and plane-cylinder contacts on tilted planes. Previously, axes parallel or nearly parallel to a
+  tilted plane normal could produce non-orthogonal or singular contact frames and inaccurate contact depths (especially
+  in single precision). Discovered via :doc:`MJWarp <mjwarp/index>` issue
+  `1949 <https://github.com/google-deepmind/mujoco_warp/issues/1949>`__ and pull requests
+  `1950 <https://github.com/google-deepmind/mujoco_warp/pull/1950>`__ (:github:user:`YannBerthelot`) and
+  `1989 <https://github.com/google-deepmind/mujoco_warp/pull/1989>`__ (:github:user:`etaoxing`).
 
 Deformables
 ^^^^^^^^^^^
@@ -147,6 +155,8 @@ Rendering
 - Fixed Filament planar reflections leaking geometry behind or crossing the mirror plane by clipping the reflection
   camera at the mirror plane with an oblique near-plane projection (:issue:`3902`).
 - Added ``image_diffuse_scale`` to :ref:`mjrfLightParams` to control the diffuse colour of image based lights.
+- Builtin textures with mark=\"cross\" now draw a 2-pixel wide cross on even-sized textures so that it is centered.
+- Fixed Filament cube textures with texuniform being scaled inversely, they now match the classic renderer.
 
 Python bindings
 ^^^^^^^^^^^^^^^
@@ -156,8 +166,8 @@ Python bindings
 
 Studio
 ^^^^^^
-- Text can now be pasted into text fields of the MuJoCo Studio :ref:`Web Viewer <StudioWebViewers>` with ``Ctrl+V``
-  (``Cmd+V`` on macOS).
+- Text can now be pasted into text fields of :ref:`MuJoCo Live <StudioLive>` and the MuJoCo Studio
+  :ref:`Web Viewer <StudioWebViewers>` with ``Ctrl+V`` (``Cmd+V`` on macOS).
 
 Plugins
 ^^^^^^^
@@ -172,6 +182,15 @@ OpenUSD
 - The native C++ :doc:`OpenUSD exporter <OpenUSD/exporting>` and ``LayerSink`` now author ``xformOp:translate``
   (``double3``) and ``xformOp:orient`` (``quatd``) instead of ``xformOp:transform`` (``matrix4d``), avoiding shear
   artifacts when USD or external renderers interpolate between time samples.
+
+Bug fixes
+^^^^^^^^^
+- Under the ``discrete`` :ref:`integrator<option-integrator>`, negative flex :ref:`damping<flex-elasticity-damping>` is
+  clamped to zero in the effective metric, like negative joint and tendon damping, and its force is integrated
+  explicitly. Previously it made the metric indefinite.
+- Under the ``discrete`` :ref:`integrator<option-integrator>`, the ellipsoid :ref:`fluid model<flEllipsoid>` contributes
+  the dissipative part of its drag derivative to the effective metric. The symmetrized derivative used before is
+  indefinite for slender shapes at small angles of attack.
 
 Version 4.0.1 (November 11, 2026)
 ---------------------------------
