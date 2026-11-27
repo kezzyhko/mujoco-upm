@@ -2007,5 +2007,248 @@ TEST_F(SolverTest, PGSWarmstartDisabled) {
   }
 }
 
+// Verify 4-wide batched PrimalEvalFriction across all 3 Huber zones, zone
+// crossings, and scalar remainder (nf = 11) under Newton and CG.
+TEST_F(SolverTest, PrimalFrictionLossBatchAndZones) {
+  std::string xml = R"(
+  <mujoco>
+    <option timestep="0.01" iterations="100" tolerance="1e-12"/>
+    <worldbody>)";
+  for (int i = 0; i < 11; ++i) {
+    xml +=
+        "\n      <body pos=\"" + std::to_string(0.5 * i) +
+        " 0 1\">\n"
+        "        <joint type=\"slide\" axis=\"1 0 0\" frictionloss=\"" +
+        std::to_string(0.5 + 0.2 * (i % 4)) +
+        "\"/>\n"
+        "        <geom type=\"sphere\" size=\"0.05\" mass=\"1\" contype=\"0\""
+        " conaffinity=\"0\"/>\n"
+        "      </body>";
+  }
+  xml += R"(
+    </worldbody>
+  </mujoco>
+  )";
+
+  char error[1024];
+  MjModelPtr model = LoadModelFromString(xml.c_str(), error, sizeof(error));
+  ASSERT_THAT(model, NotNull()) << error;
+  model->opt.enableflags |= mjENBL_FWDINV;
+  model->opt.tolerance = MjTol(1e-12, 1e-6);
+
+  // drives quadratic (near zero), linear negative, linear positive, and
+  // crossings during linesearch
+  const double qfrc[11] = {-5.0, 0.05, 6.0, -0.02, -4.0, 5.5,
+                           0.01, -6.5, 4.5, -0.03, 7.0};
+  const double qvel[11] = {0.2, -0.01, -0.3, 0.01, 0.4, -0.2,
+                           0.0, 0.3,   -0.4, 0.02, -0.5};
+
+  for (mjtSolver solver : {mjSOL_NEWTON, mjSOL_CG}) {
+    for (mjtJacobian jac : {mjJAC_DENSE, mjJAC_SPARSE}) {
+      model->opt.solver = solver;
+      model->opt.jacobian = jac;
+      MjDataPtr data = MakeData(model);
+      mju_d2n(data->qfrc_applied, qfrc, 11);
+      mju_d2n(data->qvel, qvel, 11);
+      mj_forward(model.get(), data.get());
+      mj_compareFwdInv(model.get(), data.get());
+
+      ASSERT_EQ(data->nf, 11);
+      EXPECT_EQ(data->warning[mjWARN_BADQACC].number, 0);
+      int n_quad = 0, n_neg = 0, n_pos = 0;
+      for (int i = 0; i < data->nf; ++i) {
+        n_quad += (data->efc_state[i] == mjCNSTRSTATE_QUADRATIC);
+        n_neg += (data->efc_state[i] == mjCNSTRSTATE_LINEARNEG);
+        n_pos += (data->efc_state[i] == mjCNSTRSTATE_LINEARPOS);
+      }
+      EXPECT_GT(n_quad, 0);
+      EXPECT_GT(n_neg, 0);
+      EXPECT_GT(n_pos, 0);
+
+      // verify against mj_inverse (solver_fwdinv[0])
+      mjtNum fwdinv = data->solver_fwdinv[0];
+      EXPECT_LT(fwdinv, MjTol(1e-12, 2e-6))
+          << "solver=" << solver << " jac=" << jac;
+    }
+  }
+}
+
+// Verify multi-span dim=3 and 4-wide dim=4/6 elliptic PrimalPrepare/PrimalEval
+// across all 3 cone zones and scalar remainders under Newton and CG.
+TEST_F(SolverTest, PrimalEllipticMultiSpanAndCondim46) {
+  std::string xml = R"(
+  <mujoco>
+    <option cone="elliptic" timestep="0.01" iterations="100" tolerance="1e-12"/>
+    <worldbody>
+      <geom type="plane" size="20 20 0.1" condim="1" friction="0.6 0.02 0.002"/>)";
+  // interleaved condim runs: 5x dim=3, 5x dim=4, 5x dim=6, 5x dim=3
+  const int condims[] = {3, 3, 3, 3, 3, 4, 4, 4, 4, 4,
+                         6, 6, 6, 6, 6, 3, 3, 3, 3, 3};
+  for (int i = 0; i < 20; ++i) {
+    xml += "\n      <body pos=\"" + std::to_string(0.5 * i) +
+           " 0 0.095\">\n"
+           "        <freejoint/>\n"
+           "        <geom type=\"sphere\" size=\"0.1\" mass=\"1\" condim=\"" +
+           std::to_string(condims[i]) +
+           "\" friction=\"0.6 0.02 0.002\"/>\n"
+           "      </body>";
+  }
+  xml += R"(
+    </worldbody>
+  </mujoco>
+  )";
+
+  char error[1024];
+  MjModelPtr model = LoadModelFromString(xml.c_str(), error, sizeof(error));
+  ASSERT_THAT(model, NotNull()) << error;
+  model->opt.enableflags |= mjENBL_FWDINV;
+  model->opt.tolerance = MjTol(1e-11, 1e-5);
+  // keep all 20 contacts in one solver pass so 4-wide batching triggers
+  model->opt.disableflags |= mjDSBL_ISLAND;
+
+  auto setup_state = [](const MjModelPtr& m, MjDataPtr& d) {
+    for (int i = 0; i < 20; ++i) {
+      // mix sliding, sticking, spinning, and separating contacts
+      d->qvel[6 * i + 0] = (i % 3 == 0) ? 2.5 : (i % 3 == 1 ? 0.02 : -1.8);
+      d->qvel[6 * i + 1] = (i % 2 == 0) ? -1.0 : 0.05;
+      d->qvel[6 * i + 2] = (i % 5 == 4) ? 1.5 : -0.2;
+      d->qvel[6 * i + 3] = 0.8 * ((i % 3) - 1);
+      d->qvel[6 * i + 4] = -0.6 * ((i % 2) ? 1 : -1);
+      d->qvel[6 * i + 5] = 1.2 * ((i % 2) ? -1 : 1);
+    }
+    mj_forward(m.get(), d.get());
+    mj_compareFwdInv(m.get(), d.get());
+  };
+
+  for (mjtSolver solver : {mjSOL_NEWTON, mjSOL_CG}) {
+    model->opt.solver = solver;
+    model->opt.jacobian = mjJAC_DENSE;
+    MjDataPtr d_dense = MakeData(model);
+    setup_state(model, d_dense);
+
+    model->opt.jacobian = mjJAC_SPARSE;
+    MjDataPtr d_sparse = MakeData(model);
+    setup_state(model, d_sparse);
+
+    ASSERT_EQ(d_dense->ncon, 20);
+    ASSERT_EQ(d_dense->nefc, d_sparse->nefc);
+    EXPECT_EQ(d_dense->warning[mjWARN_BADQACC].number, 0);
+    EXPECT_EQ(d_sparse->warning[mjWARN_BADQACC].number, 0);
+
+    // confirm cone-state contacts occurred across all three batched dims
+    int cone_by_dim[7] = {0};
+    for (int c = 0; c < d_dense->ncon; ++c) {
+      int adr = d_dense->contact[c].efc_address;
+      if (adr >= 0 && d_dense->efc_state[adr] == mjCNSTRSTATE_CONE) {
+        cone_by_dim[d_dense->contact[c].dim]++;
+      }
+    }
+    EXPECT_GT(cone_by_dim[3], 0);
+    EXPECT_GT(cone_by_dim[4], 0);
+    EXPECT_GT(cone_by_dim[6], 0);
+    EXPECT_LT(d_dense->solver_fwdinv[0], MjTol(5e-11, 4e-2))
+        << "solver=" << solver;
+    EXPECT_LT(d_sparse->solver_fwdinv[0], MjTol(5e-11, 4e-2))
+        << "solver=" << solver;
+
+    for (int i = 0; i < model->nv; ++i) {
+      mjtNum scale = std::max(mjtNum{1}, mju_abs(d_dense->qacc[i]));
+      EXPECT_NEAR(d_dense->qacc[i] / scale, d_sparse->qacc[i] / scale,
+                  MjTol(5e-14, 2e-5))
+          << "solver=" << solver << " dof=" << i;
+    }
+  }
+}
+
+// Verify dense elliptic Newton does not latch cone folding on a single small
+// late-column cone contact (10*U << Lflops) after refactor_L fires on earlier
+// DOFs. On iteration 0, boxes 0..2 transition SATISFIED -> QUADRATIC with
+// 10*U_quad > Lflops while sphere 3 slides on DOFs 18..23 (10*U = 1050 vs
+// Lflops = 4900). Continuing to iteration 1 must stay on rank-1 cone updates
+// and match restarting from iteration 0's qacc (where FactorizeHessian passes
+// cost_L = 0), rather than latching folded Cholesky on H + V'*V.
+TEST_F(SolverTest, DenseEllipticConeFoldDoesNotLatch) {
+  constexpr char xml[] = R"(
+  <mujoco>
+    <option cone="elliptic" solver="Newton" jacobian="dense"
+            timestep="0.01" tolerance="0">
+      <flag island="disable"/>
+    </option>
+    <worldbody>
+      <geom type="plane" size="20 20 0.1" condim="1"/>
+      <body pos="-2 0 0.049">
+        <freejoint/>
+        <geom type="box" size="0.05 0.05 0.05" condim="1"/>
+      </body>
+      <body pos="0 0 0.049">
+        <freejoint/>
+        <geom type="box" size="0.05 0.05 0.05" condim="1"/>
+      </body>
+      <body pos="2 0 0.049">
+        <freejoint/>
+        <geom type="box" size="0.05 0.05 0.05" condim="1"/>
+      </body>
+      <body pos="4 0 0.095">
+        <freejoint/>
+        <geom type="sphere" size="0.1" condim="6" priority="1"
+              solimp="0.9999 0.9999 0.001" friction="0.5 0.05 0.01"/>
+      </body>
+    </worldbody>
+  </mujoco>
+  )";
+  char error[1024];
+  MjModelPtr model = LoadModelFromString(xml, error, sizeof(error));
+  ASSERT_THAT(model, NotNull()) << error;
+  ASSERT_EQ(model->nv, 24);
+
+  auto init_state = [](MjDataPtr& d) {
+    // small upward box qvel makes aref slightly negative so qacc=0 is
+    // SATISFIED (accepted over qacc_smooth=-9.81) and flips QUADRATIC on iter 0
+    for (int b = 0; b < 3; ++b) {
+      d->qvel[6 * b + 2] = 0.03;
+    }
+    d->qvel[18] = 2.5;
+    d->qvel[19] = -1.3;
+    d->qvel[20] = -0.2;
+    d->qvel[21] = 1.7;
+    d->qvel[22] = -0.9;
+    d->qvel[23] = 2.1;
+  };
+
+  // two continuous Newton iterations: iter 0 triggers refactor_L on boxes 0..2
+  model->opt.iterations = 2;
+  MjDataPtr d_cont = MakeData(model);
+  init_state(d_cont);
+  mj_forward(model.get(), d_cont.get());
+  ASSERT_EQ(d_cont->solver_niter[0], 2);
+  ASSERT_EQ(d_cont->solver[0].nchange, 12);
+  ASSERT_EQ(d_cont->solver[0].nupdate, 17);
+
+  // 1 + 1 restart: pass 2 starts at iter 0's qacc where FactorizeHessian
+  // passes cost_L = 0 and therefore uses rank-1 HessianConeUpdate
+  model->opt.iterations = 1;
+  MjDataPtr d_step1 = MakeData(model);
+  init_state(d_step1);
+  mj_forward(model.get(), d_step1.get());
+  int sphere_adr = d_step1->contact[d_step1->ncon - 1].efc_address;
+  ASSERT_EQ(d_step1->efc_state[sphere_adr], mjCNSTRSTATE_CONE);
+
+  MjDataPtr d_step2 = MakeData(model);
+  init_state(d_step2);
+  mju_copy(d_step2->qacc_warmstart, d_step1->qacc, model->nv);
+  mj_forward(model.get(), d_step2.get());
+  ASSERT_EQ(d_cont->efc_state[sphere_adr], mjCNSTRSTATE_CONE);
+
+  // sphere 3 (DOFs 18..23) is decoupled from boxes 0..2; stiff solimp separates
+  // folded cholFactor(H + V'*V) (~7.7e-13 / ~1.0e-4) from rank-1
+  // cholUpdate(L, V) (~7.1e-14 / ~7.3e-7)
+  for (int i = 18; i < 24; ++i) {
+    mjtNum scale = std::max(mjtNum{1}, mju_abs(d_step2->qacc[i]));
+    EXPECT_NEAR(d_cont->qacc[i] / scale, d_step2->qacc[i] / scale,
+                MjTol(2e-13, 2e-5))
+        << "dof=" << i;
+  }
+}
+
 }  // namespace
 }  // namespace mujoco

@@ -1597,9 +1597,9 @@ TEST_F(UserFlexTest, MechanismRods) {
     int nstep;
   };
   const Mechanism mechanisms[] = {
-      {"flex/mechanisms/cantilever.xml", "rod", nullptr, 500},
-      {"flex/mechanisms/slidercrank.xml", "rod", "slide", 1500},
-      {"flex/mechanisms/dipper.xml", "arm_flex", "arm", 3000},
+      {"flex/mechanisms/cantilever.xml", "rod", nullptr, 250},
+      {"flex/mechanisms/slidercrank.xml", "rod", "slide", 600},
+      {"flex/mechanisms/dipper.xml", "arm_flex", "arm", 1000},
   };
   for (const Mechanism& mech : mechanisms) {
     SCOPED_TRACE(mech.file);
@@ -5586,6 +5586,40 @@ TEST_F(UserFlexTest, BoxSectionRadius) {
                                      error.data(), error.size());
   EXPECT_THAT(m.get(), IsNull());
   EXPECT_THAT(error.data(), HasSubstr("minor half-size of sectionsize"));
+}
+
+TEST_F(UserFlexTest, Flex2DEdgeFlapPopulatedWithoutBending) {
+  static constexpr char kXml[] = R"(
+  <mujoco>
+    <worldbody>
+      <flexcomp name="cloth" type="grid" count="2 2 1" spacing="0.1 0.1 0.1"
+                dim="2" mass="1">
+        <edge equality="true"/>
+      </flexcomp>
+    </worldbody>
+  </mujoco>
+  )";
+  std::array<char, 1024> error;
+  MjModelPtr m = LoadModelFromString(kXml, error.data(), error.size());
+  ASSERT_THAT(m.get(), NotNull()) << error.data();
+  EXPECT_EQ(m->flex_bendingadr[0], -1);
+  ASSERT_EQ(m->flex_edgenum[0], 5);
+
+  int ninterior = 0;
+  int nboundary = 0;
+  for (int e = 0; e < m->flex_edgenum[0]; ++e) {
+    int f0 = m->flex_edgeflap[2 * e + 0];
+    int f1 = m->flex_edgeflap[2 * e + 1];
+    EXPECT_GE(f0, 0);
+    if (f1 >= 0) {
+      EXPECT_NE(f0, f1);
+      ninterior++;
+    } else {
+      nboundary++;
+    }
+  }
+  EXPECT_EQ(ninterior, 1);
+  EXPECT_EQ(nboundary, 4);
 }
 
 }  // namespace

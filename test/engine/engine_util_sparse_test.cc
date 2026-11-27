@@ -1952,6 +1952,176 @@ TEST_F(EngineUtilSparseTest, MjuSqrMatTDSparseSymbolicLargeSupernodes) {
   }
 }
 
+TEST_F(EngineUtilSparseTest, MjuMulMatVecSparseSupernodes) {
+  constexpr int kMaxNnz = 19;
+  constexpr int kNc = 3 * kMaxNnz + 5;
+  std::vector<mjtNum> vec(kNc);
+  for (int c = 0; c < kNc; ++c) {
+    vec[c] = mjtNum(1) / (c + 2) - mjtNum(1) / (2 * c + 3);
+  }
+
+  const int sizes[] = {1, 1, 1, 2, 3, 4, 5, 1, 1, 6, 7, 8, 9, 10, 12, 13};
+  const int nnzs[] = {0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 11, 13, 19};
+
+  for (int pad : {0, 3}) {
+    for (int nnz : nnzs) {
+      std::vector<int> rownnz, rowadr, colind;
+      std::vector<mjtNum> mat;
+      int row_id = 0;
+      int block_idx = 0;
+      for (int rs : sizes) {
+        std::vector<int> cols(nnz);
+        for (int j = 0; j < nnz; ++j) {
+          cols[j] = 3 * j + ((j + block_idx) % 3);
+        }
+        ++block_idx;
+        for (int s = 0; s < rs; ++s) {
+          rowadr.push_back(static_cast<int>(colind.size()));
+          rownnz.push_back(nnz);
+          for (int j = 0; j < nnz; ++j) {
+            colind.push_back(cols[j]);
+            mjtNum sign = ((j + row_id) & 2) ? mjtNum(-1) : mjtNum(1);
+            mat.push_back(sign * (mjtNum(1) / ((j / 4) + 1 + (row_id % 5))) +
+                          mjtNum(1e-6) * (row_id + j + 1));
+          }
+          for (int p = 0; p < pad; ++p) {
+            colind.push_back(-1);
+            mat.push_back(mjtNum(-999));
+          }
+          ++row_id;
+        }
+      }
+
+      const int nr = static_cast<int>(rownnz.size());
+      std::vector<int> rowsuper(nr, 0);
+      mju_superSparse(nr, rowsuper.data(), rownnz.data(), rowadr.data(),
+                      colind.data());
+
+      std::vector<mjtNum> ref(nr, mjtNum(-1));
+      for (int r = 0; r < nr; ++r) {
+        ref[r] = mju_dotSparse(mat.data() + rowadr[r], vec.data(), rownnz[r],
+                               colind.data() + rowadr[r]);
+      }
+      std::vector<mjtNum> got_nosuper(nr, mjtNum(-1)),
+          got_super(nr, mjtNum(-1));
+      mju_mulMatVecSparse(got_nosuper.data(), mat.data(), vec.data(), nr,
+                          rownnz.data(), rowadr.data(), colind.data(), nullptr);
+      mju_mulMatVecSparse(got_super.data(), mat.data(), vec.data(), nr,
+                          rownnz.data(), rowadr.data(), colind.data(),
+                          rowsuper.data());
+      EXPECT_EQ(
+          std::memcmp(got_nosuper.data(), ref.data(), nr * sizeof(mjtNum)), 0)
+          << "pad=" << pad << " nnz=" << nnz;
+      EXPECT_EQ(std::memcmp(got_super.data(), ref.data(), nr * sizeof(mjtNum)),
+                0)
+          << "pad=" << pad << " nnz=" << nnz;
+    }
+  }
+}
+
+TEST_F(EngineUtilSparseTest, MjuSqrMatTDSparseNumericSupernodeParity) {
+  MjModelPtr model = LoadModelFromString("<mujoco/>");
+  MjDataPtr data = MakeData(model);
+
+  // column supernodes covering sizes 1..8 and 10 (> mjMAXSUPER), plus isolated
+  // 3- and 6-col blocks (any_off == 0) and an empty block (zero-row path)
+  const int col_blocks[] = {1, 2, 3, 4, 5, 6, 7, 8, 10, 3, 6, 2};
+  int nc = 0;
+  std::vector<int> blk_start;
+  for (int b : col_blocks) {
+    blk_start.push_back(nc);
+    nc += b;
+  }
+
+  // build rows of M with identical groups (matching k pairs), partial prefixes
+  // (diverging k pairs), singletons, and isolated blocks (no cols < r)
+  struct RowSpec {
+    int count;
+    std::vector<int> blocks;
+  };
+  const std::vector<RowSpec> specs = {
+      {4, {0, 2, 5}},                    // pyramidal-like 4 identical rows
+      {3, {1, 2, 4, 7}},                 // elliptic-like 3 identical rows
+      {1, {1, 2, 3, 6}},                 // partial prefix match with previous
+      {2, {0, 3, 6, 8}},                 // 2 identical rows
+      {1, {2, 5, 8}},                    // disjoint prefix
+      {5, {0, 1, 2, 3, 4, 5, 6, 7, 8}},  // dense across all non-empty blocks
+      {3, {4, 5, 6}},     // 3 identical rows across 5..7-col blocks
+      {1, {4, 5, 7, 8}},  // shares prefix {4,5} then diverges
+      {2, {7, 8}},        // 2 identical rows across 8-col and 10-col blocks
+      {3, {9}},           // isolated 3-col block: any_off == 0 in sqrMatSuper4
+      {5, {10}},          // isolated 6-col block: any_off == 0 in sqrMatSuper8
+  };
+
+  std::vector<int> rownnz, rowadr, colind;
+  std::vector<mjtNum> mat;
+  int r_idx = 0;
+  for (const auto& sp : specs) {
+    for (int rep = 0; rep < sp.count; ++rep) {
+      rowadr.push_back(static_cast<int>(colind.size()));
+      int count = 0;
+      for (int b : sp.blocks) {
+        for (int off = 0; off < col_blocks[b]; ++off) {
+          int c = blk_start[b] + off;
+          colind.push_back(c);
+          mjtNum sign = ((r_idx + c) & 1) ? mjtNum(-1) : mjtNum(1);
+          mat.push_back(sign * (mjtNum(1) / (1 + (r_idx % 7) + (c % 5))) +
+                        mjtNum(1e-5) * (r_idx + 1));
+          ++count;
+        }
+      }
+      rownnz.push_back(count);
+      ++r_idx;
+    }
+  }
+
+  const int nr = static_cast<int>(rownnz.size());
+  const int nJ = static_cast<int>(colind.size());
+  std::vector<mjtNum> matT(nJ);
+  std::vector<int> rownnzT(nc), rowadrT(nc), colindT(nJ), rowsuperT(nc);
+  mju_transposeSparse(matT.data(), mat.data(), nr, nc, rownnzT.data(),
+                      rowadrT.data(), colindT.data(), rowsuperT.data(),
+                      rownnz.data(), rowadr.data(), colind.data(), nullptr);
+
+  // include zeros in diag so active k pairs skip inactive rows
+  std::vector<mjtNum> diag(nr);
+  for (int i = 0; i < nr; ++i) {
+    diag[i] = (i % 5 == 2) ? mjtNum(0) : mjtNum(0.5) + mjtNum(0.25) * (i % 4);
+  }
+
+  for (int use_upper : {0, 1}) {
+    std::vector<int> H_nnz(nc), H_adr(nc), H_diag(nc);
+    int nH = mju_sqrMatTDSparseSymbolic(
+        H_nnz.data(), H_adr.data(), nullptr,
+        use_upper ? H_diag.data() : nullptr, nr, nc, rownnz.data(),
+        rowadr.data(), colind.data(), nullptr, rownnzT.data(), rowadrT.data(),
+        colindT.data(), rowsuperT.data(), data.get());
+    std::vector<int> H_col(nH);
+    mju_sqrMatTDSparseSymbolic(H_nnz.data(), H_adr.data(), H_col.data(),
+                               use_upper ? H_diag.data() : nullptr, nr, nc,
+                               rownnz.data(), rowadr.data(), colind.data(),
+                               nullptr, rownnzT.data(), rowadrT.data(),
+                               colindT.data(), rowsuperT.data(), data.get());
+
+    for (const mjtNum* dptr : {static_cast<const mjtNum*>(nullptr),
+                               static_cast<const mjtNum*>(diag.data())}) {
+      std::vector<mjtNum> ref(nH, mjtNum(-99)), got(nH, mjtNum(-99));
+      mju_sqrMatTDSparseNumeric(
+          ref.data(), nc, H_nnz.data(), H_adr.data(), H_col.data(),
+          use_upper ? H_diag.data() : nullptr, mat.data(), rownnz.data(),
+          rowadr.data(), colind.data(), matT.data(), rownnzT.data(),
+          rowadrT.data(), colindT.data(), nullptr, dptr, data.get());
+      mju_sqrMatTDSparseNumeric(
+          got.data(), nc, H_nnz.data(), H_adr.data(), H_col.data(),
+          use_upper ? H_diag.data() : nullptr, mat.data(), rownnz.data(),
+          rowadr.data(), colind.data(), matT.data(), rownnzT.data(),
+          rowadrT.data(), colindT.data(), rowsuperT.data(), dptr, data.get());
+      EXPECT_EQ(std::memcmp(got.data(), ref.data(), nH * sizeof(mjtNum)), 0)
+          << "use_upper=" << use_upper << " diag=" << (dptr != nullptr);
+    }
+  }
+}
+
 TEST_F(EngineUtilSparseTest, MjuAddToSclSparseIncParity) {
   auto ref_add_inc = [](mjtNum* dst, const mjtNum* src, int nnzdst,
                         const int* inddst, int nnzsrc, const int* indsrc,
