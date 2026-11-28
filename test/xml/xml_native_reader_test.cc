@@ -1221,6 +1221,48 @@ TEST_F(XMLReaderTest, IncludeAbsoluteMeshDirTest) {
   mj_deleteModel(model);
 }
 
+TEST_F(XMLReaderTest, IncludeAbsoluteFlexcompMeshDirTest) {
+  static constexpr char xml[] = R"(
+  <mujoco>
+    <include file="model.xml"/>
+  </mujoco>
+  )";
+  static constexpr char model_xml[] = R"(
+  <mujoco>
+    <compiler meshdir="meshes/"/>
+    <worldbody>
+      <flexcomp name="flex" type="mesh" file="cube.obj" dim="2"/>
+    </worldbody>
+  </mujoco>
+  )";
+
+  static constexpr char cube[] = R"(
+  v -0.500000 -0.500000  0.500000
+  v  0.500000 -0.500000  0.500000
+  v -0.500000  0.500000  0.500000
+  v  0.500000  0.500000  0.500000
+  v -0.500000  0.500000 -0.500000
+  v  0.500000  0.500000 -0.500000
+  v -0.500000 -0.500000 -0.500000
+  v  0.500000 -0.500000 -0.500000
+  f 1 2 3
+  f 3 2 4)";
+
+  MockFilesystem fs("IncludeAbsoluteFlexcompMeshDirTest");
+  fs.AddFile("meshes/cube.obj", (const unsigned char*)cube, sizeof(cube));
+  fs.AddFile("model.xml", (const unsigned char*)model_xml, sizeof(model_xml));
+  fs.AddFile("scene.xml", (const unsigned char*)xml, sizeof(xml));
+  std::string scenepath = fs.FullPath("scene.xml");
+
+  std::array<char, 1024> error;
+  mjModel* model =
+      mj_loadXML(scenepath.c_str(), nullptr, error.data(), error.size());
+  ASSERT_THAT(model, NotNull()) << error.data();
+  EXPECT_EQ(model->nflex, 1);
+
+  mj_deleteModel(model);
+}
+
 TEST_F(XMLReaderTest, ParsePolycoef) {
   static constexpr char xml[] = R"(
   <mujoco>
@@ -5024,6 +5066,170 @@ TEST_F(XMLReaderTest, CameraOutputDefault) {
   EXPECT_EQ(model->cam_output[0], mjCAMOUT_RGB);  // main default
   EXPECT_EQ(model->cam_output[1], mjCAMOUT_DEPTH | mjCAMOUT_DIST);
   EXPECT_EQ(model->cam_output[2], mjCAMOUT_NORMAL);
+}
+
+TEST_F(XMLReaderTest, CameraDistortion) {
+  static constexpr char xml[] = R"(
+  <mujoco>
+    <default>
+      <default class="fisheye">
+        <camera projection="fisheye"
+                distortion="0.1 -0.02 0.003 -0.0004"/>
+      </default>
+    </default>
+    <worldbody>
+      <camera name="pinhole"/>
+      <camera name="fisheye" class="fisheye"/>
+      <camera name="override" class="fisheye" distortion="0.5"/>
+      <camera name="explicit" projection="perspective"
+              distortion="1 2 3 4 5 6 7 8"/>
+    </worldbody>
+  </mujoco>
+  )";
+  std::array<char, 1024> error;
+  MjModelPtr model = LoadModelFromString(xml, error.data(), error.size());
+  ASSERT_THAT(model.get(), NotNull()) << error.data();
+  ASSERT_EQ(model->ncam, 4);
+
+  // perspective with no distortion by default
+  EXPECT_EQ(model->cam_projection[0], mjPROJ_PERSPECTIVE);
+  for (int i = 0; i < mjNDISTCOEF; i++) {
+    EXPECT_EQ(model->cam_distortion[i], 0);
+  }
+
+  // from default class
+  const float* coef = model->cam_distortion + mjNDISTCOEF;
+  EXPECT_EQ(model->cam_projection[1], mjPROJ_FISHEYE);
+  EXPECT_FLOAT_EQ(coef[0], 0.1);
+  EXPECT_FLOAT_EQ(coef[1], -0.02);
+  EXPECT_FLOAT_EQ(coef[2], 0.003);
+  EXPECT_FLOAT_EQ(coef[3], -0.0004);
+  for (int i = 4; i < mjNDISTCOEF; i++) {
+    EXPECT_EQ(coef[i], 0);
+  }
+
+  // a partial override replaces the leading coefficients only
+  coef = model->cam_distortion + 2 * mjNDISTCOEF;
+  EXPECT_EQ(model->cam_projection[2], mjPROJ_FISHEYE);
+  EXPECT_FLOAT_EQ(coef[0], 0.5);
+  EXPECT_FLOAT_EQ(coef[1], -0.02);
+
+  // all coefficients on perspective
+  coef = model->cam_distortion + 3 * mjNDISTCOEF;
+  EXPECT_EQ(model->cam_projection[3], mjPROJ_PERSPECTIVE);
+  for (int i = 0; i < mjNDISTCOEF; i++) {
+    EXPECT_FLOAT_EQ(coef[i], i + 1);
+  }
+}
+
+TEST_F(XMLReaderTest, CameraDistortionTooManyCoefficients) {
+  static constexpr char xml[] = R"(
+  <mujoco>
+    <worldbody>
+      <camera projection="fisheye" distortion="1 2 3 4 5 6 7 8 9"/>
+    </worldbody>
+  </mujoco>
+  )";
+  std::array<char, 1024> error;
+  MjModelPtr model = LoadModelFromString(xml, error.data(), error.size());
+  EXPECT_THAT(model.get(), IsNull());
+  EXPECT_THAT(error.data(), HasSubstr("distortion"));
+}
+
+TEST_F(XMLReaderTest, CameraDistortionDisallowedForOrthographic) {
+  static constexpr char xml[] = R"(
+  <mujoco>
+    <worldbody>
+      <camera projection="orthographic" distortion="0.1"/>
+    </worldbody>
+  </mujoco>
+  )";
+  std::array<char, 1024> error;
+  MjModelPtr model = LoadModelFromString(xml, error.data(), error.size());
+  EXPECT_THAT(model.get(), IsNull());
+  EXPECT_THAT(error.data(),
+              HasSubstr("lens distortion is not supported for orthographic"));
+}
+
+TEST_F(XMLReaderTest, CameraSensorDisallowedForFisheye) {
+  std::array<char, 1024> error;
+  static constexpr char rangefinder_xml[] = R"(
+  <mujoco>
+    <worldbody>
+      <camera name="fisheye" projection="fisheye" resolution="4 4"/>
+    </worldbody>
+    <sensor>
+      <rangefinder camera="fisheye"/>
+    </sensor>
+  </mujoco>
+  )";
+  MjModelPtr rf_model =
+      LoadModelFromString(rangefinder_xml, error.data(), error.size());
+  EXPECT_THAT(rf_model.get(), IsNull());
+  EXPECT_THAT(
+      error.data(),
+      HasSubstr("rangefinder camera sensor is not supported for fisheye"));
+
+  static constexpr char camproj_xml[] = R"(
+  <mujoco>
+    <worldbody>
+      <camera name="fisheye" projection="fisheye" resolution="4 4"/>
+      <site name="s"/>
+    </worldbody>
+    <sensor>
+      <camprojection site="s" camera="fisheye"/>
+    </sensor>
+  </mujoco>
+  )";
+  MjModelPtr cp_model =
+      LoadModelFromString(camproj_xml, error.data(), error.size());
+  EXPECT_THAT(cp_model.get(), IsNull());
+  EXPECT_THAT(
+      error.data(),
+      HasSubstr("camera projection sensor is not supported for fisheye"));
+}
+
+TEST_F(XMLReaderTest, CameraDistortionCopyBack) {
+  static constexpr char xml[] = R"(
+  <mujoco>
+    <worldbody>
+      <camera name="fisheye" projection="fisheye" distortion="0.1"/>
+    </worldbody>
+  </mujoco>
+  )";
+  std::array<char, 1024> error;
+  mjSpec* spec = mj_parseXMLString(xml, nullptr, error.data(), error.size());
+  ASSERT_THAT(spec, NotNull()) << error.data();
+  mjModel* model = mj_compile(spec, nullptr);
+  ASSERT_THAT(model, NotNull()) << mjs_getError(spec);
+
+  // values edited in the model are copied back to the spec
+  model->cam_distortion[0] = 0.25;
+  model->cam_distortion[mjNDISTCOEF - 1] = -0.5;
+  ASSERT_EQ(mj_copyBack(spec, model), 1) << mjs_getError(spec);
+  mjsCamera* camera =
+      mjs_asCamera(mjs_findElement(spec, mjOBJ_CAMERA, "fisheye"));
+  ASSERT_THAT(camera, NotNull());
+  EXPECT_EQ(camera->proj, mjPROJ_FISHEYE);
+  EXPECT_FLOAT_EQ(camera->distortion[0], 0.25);
+  EXPECT_FLOAT_EQ(camera->distortion[mjNDISTCOEF - 1], -0.5);
+
+  mj_deleteModel(model);
+  mj_deleteSpec(spec);
+}
+
+TEST_F(XMLReaderTest, CameraProjectionInvalidKeyword) {
+  static constexpr char xml[] = R"(
+  <mujoco>
+    <worldbody>
+      <camera projection="kannalabrandt"/>
+    </worldbody>
+  </mujoco>
+  )";
+  std::array<char, 1024> error;
+  MjModelPtr model = LoadModelFromString(xml, error.data(), error.size());
+  EXPECT_THAT(model.get(), IsNull());
+  EXPECT_THAT(error.data(), HasSubstr("invalid keyword: 'kannalabrandt'"));
 }
 
 // ------------- test delay attribute parsing ----------------------------------
